@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/rs/zerolog/log"
 
 	"github.com/spectrocloud-labs/herd"
@@ -18,6 +19,8 @@ import (
 // If Not netboot:
 //     download iso -> Edit it to attach cloud config (?) -> Offer link to download modified ISO with cloud config
 //     download IPXE iso -> offer ISO that boots over ipxe with pixiecore
+// TODO ops: start HTTP server, offer artifacts from dir
+// TODO ops: download ISO save it to dir
 //
 //    or, offer generic IPXE iso -> and start netboot anyway
 
@@ -65,14 +68,14 @@ func pixieCore(kernel, bootmsg, cmdline string, initrds []string) error {
 	return s.Serve()
 }
 
-func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact) error {
+func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigFile string) error {
 
 	dst := "/tmp/netboot"
 	os.MkdirAll("/tmp/netboot", 0700)
 
-	g.Add(opDownloadInitrd, herd.WithCallback(dowloadArtifact(artifact.InitrdURL(), dst)))
-	g.Add(opDownloadKernel, herd.WithCallback(dowloadArtifact(artifact.KernelURL(), dst)))
-	g.Add(opDownloadSquashFS, herd.WithCallback(dowloadArtifact(artifact.SquashFSURL(), dst)))
+	g.Add(opDownloadInitrd, herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), dst)))
+	g.Add(opDownloadKernel, herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), dst)))
+	g.Add(opDownloadSquashFS, herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), dst)))
 
 	//TODO: add Validate step
 	g.Add(
@@ -98,7 +101,7 @@ func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact) error {
 				return err
 			}
 			kernelFile := filepath.Join(dst, p)
-			configFile := ""
+			configFile := cloudConfigFile
 
 			return pixieCore(kernelFile, "AuroraBoot", fmt.Sprintf(`rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile), []string{initrdFile})
 		},

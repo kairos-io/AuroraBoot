@@ -1,4 +1,4 @@
-package deployer
+package ops
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func dowloadArtifact(url, dst string) func(ctx context.Context) error {
+func DownloadArtifact(url, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		// https://github.com/kairos-io/kairos/releases/download/v1.5.0/kairos-alpine-ubuntu-v1.5.0.iso
 		_, err := download(ctx, url, dst)

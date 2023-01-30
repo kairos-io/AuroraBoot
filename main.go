@@ -20,7 +20,7 @@ func main() {
 		ReleaseVersion:  "v1.5.0",
 		Flavor:          "rockylinux",
 		Repository:      "kairos-io/kairos",
-	}); err != nil {
+	}, ""); err != nil {
 		panic(err)
 	}
 
