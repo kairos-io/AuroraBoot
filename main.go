@@ -2,9 +2,11 @@ package main
 
 import (
 	"context"
-	"fmt"
+	"os"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/rs/zerolog"
+	"github.com/rs/zerolog/log"
 	"github.com/spectrocloud-labs/herd"
 )
 
@@ -12,7 +14,7 @@ func main() {
 
 	// Have a dag for our ops
 	g := herd.DAG()
-
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	if err := deployer.RegisterNetbootOperations(g, deployer.ReleaseArtifact{
 		ArtifactVersion: "v1.5.0",
 		ReleaseVersion:  "v1.5.0",
@@ -23,23 +25,22 @@ func main() {
 	}
 
 	for i, layer := range g.Analyze() {
-		fmt.Printf("%d.", (i + 1))
+		log.Printf("%d.", (i + 1))
 		for _, op := range layer {
-			fmt.Printf(" <%s> (background: %t)", op.Name, op.Background)
+			log.Printf(" <%s> (background: %t)", op.Name, op.Background)
 		}
-		fmt.Println("")
 	}
 
-	fmt.Println(g.Run(context.Background()))
+	g.Run(context.Background())
 
 	for i, layer := range g.Analyze() {
-		fmt.Printf("%d.", (i + 1))
+		log.Printf("%d.", (i + 1))
 		for _, op := range layer {
 			if op.Error != nil {
-				fmt.Printf(" <%s> (error: %s)", op.Name, op.Error.Error())
+				log.Printf(" <%s> (error: %s)", op.Name, op.Error.Error())
 			}
 		}
-		fmt.Println("")
+		log.Print("")
 	}
 
 }

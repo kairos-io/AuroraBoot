@@ -4,8 +4,9 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
+
+	"github.com/rs/zerolog/log"
 
 	"github.com/spectrocloud-labs/herd"
 	"go.universe.tf/netboot/out/ipxe"
@@ -27,14 +28,6 @@ const (
 
 	opStartNetboot = "start-netboot"
 )
-
-func sh(command, dir string) error {
-	cmd := exec.Command("/bin/sh", "-c", command)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	cmd.Dir = dir
-	return cmd.Run()
-}
 
 func pixieCore(kernel, bootmsg, cmdline string, initrds []string) error {
 
@@ -60,7 +53,7 @@ func pixieCore(kernel, bootmsg, cmdline string, initrds []string) error {
 	ipxeFw[pixiecore.FirmwareX86Ipxe] = ipxe.MustAsset("third_party/ipxe/src/bin/ipxe.pxe")
 	s := &pixiecore.Server{
 		Ipxe:           ipxeFw,
-		Log:            func(subsystem, msg string) { fmt.Printf("%s: %s\n", subsystem, msg) },
+		Log:            func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) },
 		HTTPPort:       80,
 		HTTPStatusPort: 0,
 		DHCPNoBind:     false,
@@ -86,7 +79,7 @@ func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact) error {
 		opStartNetboot,
 		herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS),
 		herd.WithCallback(func(ctx context.Context) error {
-			fmt.Println("Start pixiecore")
+			log.Info().Msgf("Start pixiecore")
 
 			p, err := urlBase(artifact.SquashFSURL())
 			if err != nil {

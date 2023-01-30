@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/cavaliergopher/grab/v3"
+	"github.com/rs/zerolog/log"
 )
 
 func dowloadArtifact(url, dst string) func(ctx context.Context) error {
@@ -24,9 +25,9 @@ func download(ctx context.Context, url, dst string) (string, error) {
 	req, _ := grab.NewRequest(dst, url)
 
 	// start download
-	fmt.Printf("Downloading %v...\n", req.URL())
+	log.Info().Msgf("Downloading %v...", req.URL())
 	resp := client.Do(req)
-	fmt.Printf("  %v\n", resp.HTTPResponse.Status)
+	log.Printf("%s:  %v", url, resp.HTTPResponse.Status)
 
 	// start UI loop
 	t := time.NewTicker(500 * time.Millisecond)
@@ -39,7 +40,8 @@ Loop:
 			defer os.RemoveAll(dstFile)
 			return dst, fmt.Errorf("context canceled")
 		case <-t.C:
-			fmt.Printf("  transferred %v / %v bytes (%.2f%%)\n",
+			log.Printf("%s: transferred %v / %v bytes (%.2f%%)",
+				url,
 				resp.BytesComplete(),
 				resp.Size(),
 				100*resp.Progress())
