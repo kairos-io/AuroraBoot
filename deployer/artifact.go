@@ -7,10 +7,10 @@ import (
 )
 
 type ReleaseArtifact struct {
-	ArtifactVersion string
-	ReleaseVersion  string
-	Flavor          string
-	Repository      string
+	ArtifactVersion string `yaml:"artifact_version"`
+	ReleaseVersion  string `yaml:"release_version"`
+	Flavor          string `yaml:"flavor"`
+	Repository      string `yaml:"repository"`
 }
 
 func urlBase(target string) (string, error) {
