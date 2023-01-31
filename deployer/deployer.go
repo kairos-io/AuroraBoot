@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -29,7 +30,6 @@ func Start(file string) error {
 	if err := yaml.Unmarshal(dat, release); err != nil {
 		return err
 	}
-	fmt.Println(config)
 
 	f, err := ioutil.TempFile("", "auroraboot-dat")
 	if err != nil {
@@ -45,28 +45,51 @@ func Start(file string) error {
 	g := herd.DAG()
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
+	// Register what to do!
 	if err := RegisterNetbootOperations(g, *release, f.Name()); err != nil {
 		return err
 	}
 
-	for i, layer := range g.Analyze() {
-		log.Printf("%d.", (i + 1))
-		for _, op := range layer {
-			log.Printf(" <%s> (background: %t)", op.Name, op.Background)
+	if err := RegisterISOOperations(g, *release, f.Name()); err != nil {
+		return err
+	}
+
+	writeDag(g.Analyze())
+
+	ctx := context.Background()
+	err = g.Run(ctx)
+
+	if err != nil {
+		return err
+	}
+
+	// Print update to screen
+	writeDag(g.Analyze())
+
+	t := time.NewTicker(10 * time.Second)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("context canceled")
+		case <-t.C:
+			writeDag(g.Analyze())
 		}
 	}
 
-	err = g.Run(context.Background())
+	return err
+}
 
-	for i, layer := range g.Analyze() {
+func writeDag(d [][]herd.GraphEntry) {
+	for i, layer := range d {
 		log.Printf("%d.", (i + 1))
 		for _, op := range layer {
 			if op.Error != nil {
-				log.Printf(" <%s> (error: %s)", op.Name, op.Error.Error())
+				log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
+			} else {
+				log.Printf(" <%s> (background: %t)", op.Name, op.Background)
 			}
 		}
 		log.Print("")
 	}
-
-	return err
 }

@@ -27,23 +27,29 @@ const (
 	opDownloadInitrd   = "download-initrd"
 	opDownloadKernel   = "download-kernel"
 	opDownloadSquashFS = "download-squashfs"
-
-	opStartNetboot = "start-netboot"
+	opPrepareNetboot   = "prepare-netboot"
+	opStartNetboot     = "start-netboot"
 )
 
 func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigFile string) error {
 
 	dst := "/tmp/netboot"
-	os.MkdirAll("/tmp/netboot", 0700)
 
-	g.Add(opDownloadInitrd, herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), dst)))
-	g.Add(opDownloadKernel, herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), dst)))
-	g.Add(opDownloadSquashFS, herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), dst)))
+	g.Add(opPrepareNetboot, herd.WithCallback(
+		func(ctx context.Context) error {
+			return os.MkdirAll(dst, 0700)
+		},
+	))
+
+	g.Add(opDownloadInitrd, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), dst)))
+	g.Add(opDownloadKernel, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), dst)))
+	g.Add(opDownloadSquashFS, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), dst)))
 
 	//TODO: add Validate step
 	g.Add(
 		opStartNetboot,
 		herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS),
+		herd.Background,
 		herd.WithCallback(func(ctx context.Context) error {
 			log.Info().Msgf("Start pixiecore")
 
