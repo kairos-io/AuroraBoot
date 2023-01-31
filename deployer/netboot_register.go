@@ -6,12 +6,11 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/rs/zerolog/log"
 
 	"github.com/spectrocloud-labs/herd"
-	"go.universe.tf/netboot/out/ipxe"
-	"go.universe.tf/netboot/pixiecore"
 )
 
 // converts chema to Operations
@@ -31,42 +30,6 @@ const (
 
 	opStartNetboot = "start-netboot"
 )
-
-func pixieCore(kernel, bootmsg, cmdline string, initrds []string) error {
-
-	spec := &pixiecore.Spec{
-		Kernel:  pixiecore.ID(kernel),
-		Cmdline: cmdline,
-		Message: bootmsg,
-	}
-	for _, initrd := range initrds {
-		spec.Initrd = append(spec.Initrd, pixiecore.ID(initrd))
-	}
-
-	booter, err := pixiecore.StaticBooter(spec)
-	if err != nil {
-		return err
-	}
-
-	ipxeFw := map[pixiecore.Firmware][]byte{}
-	ipxeFw[pixiecore.FirmwareX86PC] = ipxe.MustAsset("third_party/ipxe/src/bin/undionly.kpxe")
-	ipxeFw[pixiecore.FirmwareEFI32] = ipxe.MustAsset("third_party/ipxe/src/bin-i386-efi/ipxe.efi")
-	ipxeFw[pixiecore.FirmwareEFI64] = ipxe.MustAsset("third_party/ipxe/src/bin-x86_64-efi/ipxe.efi")
-	ipxeFw[pixiecore.FirmwareEFIBC] = ipxe.MustAsset("third_party/ipxe/src/bin-x86_64-efi/ipxe.efi")
-	ipxeFw[pixiecore.FirmwareX86Ipxe] = ipxe.MustAsset("third_party/ipxe/src/bin/ipxe.pxe")
-	s := &pixiecore.Server{
-		Ipxe:           ipxeFw,
-		Log:            func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) },
-		HTTPPort:       80,
-		HTTPStatusPort: 0,
-		DHCPNoBind:     false,
-		Address:        "0.0.0.0",
-		UIAssetsDir:    "",
-	}
-	s.Booter = booter
-
-	return s.Serve()
-}
 
 func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigFile string) error {
 
@@ -103,7 +66,7 @@ func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, cloudCon
 			kernelFile := filepath.Join(dst, p)
 			configFile := cloudConfigFile
 
-			return pixieCore(kernelFile, "AuroraBoot", fmt.Sprintf(`rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile), []string{initrdFile})
+			return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(`rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile), []string{initrdFile})
 		},
 		),
 	)
