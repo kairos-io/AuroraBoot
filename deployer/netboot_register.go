@@ -49,7 +49,7 @@ func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, cloudCon
 	g.Add(
 		opStartNetboot,
 		herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS),
-		herd.Background,
+		herd.Background, // TODO: the dag should wait for background processes before returning from Run()
 		herd.WithCallback(func(ctx context.Context) error {
 			log.Info().Msgf("Start pixiecore")
 

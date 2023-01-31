@@ -7,7 +7,10 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
+	"github.com/kairos-io/kairos/pkg/utils"
 
 	"github.com/spectrocloud-labs/herd"
 )
@@ -27,6 +30,7 @@ const (
 	opCopyCloudConfig = "copy-cloud-config"
 	opPrepareISO      = "prepare-iso"
 	opStartHTTPServer = "start-httpserver"
+	opInjectCC        = "inject-cloud-config"
 )
 
 func RegisterISOOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigFile string) error {
@@ -44,11 +48,26 @@ func RegisterISOOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigF
 		}))
 	g.Add(opDownloadISO, herd.WithCallback(ops.DownloadArtifact(artifact.ISOUrl(), dst)))
 
+	g.Add(opInjectCC,
+		herd.WithDeps(opCopyCloudConfig),
+		herd.WithCallback(func(ctx context.Context) error {
+			os.Chdir(dst)
+			p, err := urlBase(artifact.ISOUrl())
+			if err != nil {
+				return err
+			}
+			isoFile := filepath.Join(dst, p)
+			injectedIso := isoFile + ".custom.iso"
+			os.Remove(injectedIso)
+			out, err := utils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s /config.yaml -boot_image any replay", isoFile, injectedIso, filepath.Join(dst, "config.yaml")))
+			log.Print(out)
+			return err
+		}))
+
 	//TODO: add Validate step
 	g.Add(
 		opStartHTTPServer,
-		herd.WithDeps(opDownloadISO, opCopyCloudConfig),
-		herd.Background,
+		herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC),
 		herd.WithCallback(ops.ServeArtifacts(":8080", dst)),
 	)
 
