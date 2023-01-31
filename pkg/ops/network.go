@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"time"
@@ -10,6 +11,24 @@ import (
 	"github.com/cavaliergopher/grab/v3"
 	"github.com/rs/zerolog/log"
 )
+
+func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+
+		fs := http.FileServer(http.Dir(dir))
+		http.Handle("/", fs)
+		serverOne := &http.Server{
+			Addr:    listenAddr,
+			Handler: nil,
+		}
+		go func() {
+			<-ctx.Done()
+			serverOne.Shutdown(context.Background())
+		}()
+		log.Info().Msgf("Listening on %v...", listenAddr)
+		return serverOne.ListenAndServe()
+	}
+}
 
 func DownloadArtifact(url, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
