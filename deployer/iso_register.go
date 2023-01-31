@@ -18,12 +18,11 @@ import (
 // converts chema to Operations
 // Netboot or not netboot
 // If Not netboot:
-//     download iso -> Edit it to attach cloud config (?) -> Offer link to download modified ISO with cloud config
-//     download IPXE iso -> offer ISO that boots over ipxe with pixiecore
-// TODO ops: start HTTP server, offer artifacts from dir
-// TODO ops: download ISO save it to dir
-//
-//    or, offer generic IPXE iso -> and start netboot anyway
+//     download iso -> Edit it to attach cloud config (?) -> Offer link to download modified ISO with cloud config (for offline/airgap installs?)
+//     download IPXE iso -> offer ISO that boots over ipxe with pixiecore (requires client to be online)
+// ops: start HTTP server, offer artifacts from dir (requires client to be online)
+// ops: download ISO save it to dir
+//  or, offer generic IPXE iso -> and start netboot anyway
 
 const (
 	opDownloadISO     = "download-iso"
