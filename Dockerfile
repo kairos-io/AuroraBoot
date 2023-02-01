@@ -1,4 +1,4 @@
-FROM golang:alpine as builder
+FROM golang as builder
 ADD . /work
 RUN cd /work && \
     CGO_ENABLED=0 && \
