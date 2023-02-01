@@ -1,10 +1,8 @@
-ARG LDFLAGS=-s -w
 FROM golang:alpine as builder
-ENV LDFLAGS=$LDFLAGS
 ADD . /work
 RUN cd /work && \
     CGO_ENABLED=0 && \
-    go build -ldflags="$LDFLAGS" -o auroraboot
+    go build -o auroraboot
 
 FROM opensuse/tumbleweed
 RUN zypper in -y xorriso
