@@ -66,6 +66,7 @@ func RegisterISOOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigF
 	//TODO: add Validate step
 	g.Add(
 		opStartHTTPServer,
+		herd.Background,
 		herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC),
 		herd.WithCallback(ops.ServeArtifacts(":8080", dst)),
 	)

@@ -6,7 +6,7 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/kairos-io/kairos v1.5.0
 	github.com/rs/zerolog v1.29.0
-	github.com/spectrocloud-labs/herd v0.1.1
+	github.com/spectrocloud-labs/herd v0.1.2-0.20230201084705-8e524743ec9c
 	go.universe.tf/netboot v0.0.0-20210617221821-fc2840fa7b05
 	gopkg.in/yaml.v3 v3.0.1
 )

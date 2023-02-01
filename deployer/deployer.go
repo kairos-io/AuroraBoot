@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"os"
-	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
@@ -42,7 +41,7 @@ func Start(file string) error {
 	}
 
 	// Have a dag for our ops
-	g := herd.DAG()
+	g := herd.DAG(herd.CollectOrphans)
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	// Register what to do!
@@ -57,27 +56,7 @@ func Start(file string) error {
 	writeDag(g.Analyze())
 
 	ctx := context.Background()
-	err = g.Run(ctx)
-
-	if err != nil {
-		return err
-	}
-
-	// Print update to screen
-	writeDag(g.Analyze())
-
-	t := time.NewTicker(10 * time.Second)
-	defer t.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return fmt.Errorf("context canceled")
-		case <-t.C:
-			writeDag(g.Analyze())
-		}
-	}
-
-	return err
+	return g.Run(ctx)
 }
 
 func writeDag(d [][]herd.GraphEntry) {
