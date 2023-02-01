@@ -6,7 +6,8 @@ RUN cd /work && \
     CGO_ENABLED=0 && \
     go build -ldflags="$LDFLAGS" -o auroraboot
 
-FROM quay.io/pixiecore/pixiecore
+FROM opensuse/tumbleweed
+RUN zypper in -y xorriso
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
 ENTRYPOINT ["/usr/bin/auroraboot"]
