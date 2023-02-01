@@ -7,7 +7,7 @@ import (
 	"go.universe.tf/netboot/pixiecore"
 )
 
-func Server(kernel, bootmsg, cmdline string, initrds []string) error {
+func Server(kernel, bootmsg, cmdline string, initrds []string, nobind bool) error {
 
 	spec := &pixiecore.Spec{
 		Kernel:  pixiecore.ID(kernel),
@@ -34,7 +34,7 @@ func Server(kernel, bootmsg, cmdline string, initrds []string) error {
 		Log:            func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) },
 		HTTPPort:       80,
 		HTTPStatusPort: 0,
-		DHCPNoBind:     false,
+		DHCPNoBind:     nobind,
 		Address:        "0.0.0.0",
 		UIAssetsDir:    "",
 	}

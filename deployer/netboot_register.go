@@ -72,7 +72,7 @@ func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, c Config
 			kernelFile := filepath.Join(dst, p)
 			configFile := cloudConfigFile
 
-			return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(`rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile), []string{initrdFile})
+			return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(`rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile), []string{initrdFile}, true)
 		},
 		),
 	)
