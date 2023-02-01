@@ -2,7 +2,6 @@ package deployer
 
 import (
 	"context"
-	"fmt"
 	"io/ioutil"
 	"os"
 
@@ -13,7 +12,10 @@ import (
 )
 
 func Start(file string) error {
-	fmt.Println("Reading ", file)
+	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
+	log.Printf("Reading '%s'", file)
+
 	config := &Config{}
 	release := &ReleaseArtifact{}
 
@@ -42,15 +44,18 @@ func Start(file string) error {
 
 	// Have a dag for our ops
 	g := herd.DAG(herd.CollectOrphans)
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
-	// Register what to do!
-	if err := RegisterNetbootOperations(g, *release, f.Name()); err != nil {
-		return err
+	if !config.DisableNetboot {
+		// Register what to do!
+		if err := RegisterNetbootOperations(g, *release, *config, f.Name()); err != nil {
+			return err
+		}
 	}
 
-	if err := RegisterISOOperations(g, *release, f.Name()); err != nil {
-		return err
+	if !config.DisableISOboot {
+		if err := RegisterISOOperations(g, *release, *config, f.Name()); err != nil {
+			return err
+		}
 	}
 
 	writeDag(g.Analyze())

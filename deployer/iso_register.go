@@ -32,8 +32,8 @@ const (
 	opInjectCC        = "inject-cloud-config"
 )
 
-func RegisterISOOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigFile string) error {
-	dst := "/tmp/iso"
+func RegisterISOOperations(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile string) error {
+	dst := c.StateDir("iso")
 
 	g.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
 		return os.MkdirAll(dst, 0700)

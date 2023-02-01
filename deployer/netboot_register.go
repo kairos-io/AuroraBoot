@@ -31,9 +31,9 @@ const (
 	opStartNetboot     = "start-netboot"
 )
 
-func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, cloudConfigFile string) error {
+func RegisterNetbootOperations(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile string) error {
 
-	dst := "/tmp/netboot"
+	dst := c.StateDir("netboot")
 
 	g.Add(opPrepareNetboot, herd.WithCallback(
 		func(ctx context.Context) error {
