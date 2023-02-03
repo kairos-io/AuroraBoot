@@ -5,32 +5,32 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
 	"github.com/spectrocloud-labs/herd"
 	"gopkg.in/yaml.v3"
 )
 
-func Start(file string) error {
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-
-	log.Printf("Reading '%s'", file)
-
+func LoadFile(file string) (*Config, *ReleaseArtifact, error) {
 	config := &Config{}
 	release := &ReleaseArtifact{}
 
 	dat, err := os.ReadFile(file)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	if err := yaml.Unmarshal(dat, config); err != nil {
-		return err
+		return nil, nil, err
 	}
 
 	if err := yaml.Unmarshal(dat, release); err != nil {
-		return err
+		return nil, nil, err
 	}
+
+	return config, release, nil
+}
+
+func Start(config *Config, release *ReleaseArtifact) error {
 
 	f, err := ioutil.TempFile("", "auroraboot-dat")
 	if err != nil {
