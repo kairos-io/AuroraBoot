@@ -82,6 +82,33 @@ This command will:
 - **Create a custom ISO with the cloud config attached to drive automated installations**
 - **Provision Kairos from network, with the same settings**
 
+### Use container images
+
+Auroraboot can also boostrap nodes by using custom container images or [the official kairos releases](https://kairos.io/docs/reference/image_matrix/), for instance:
+
+```
+docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=docker://quay.io/kairos/core-rockylinux:v1.5.0
+```
+
+This command will:
+- **Use the image in the docker daemon running in the local host to boot it over network**
+- **Create a custom ISO with the cloud config attached to drive automated installations**
+- **Provision Kairos from network, with the same settings**
+
+### Pulling without docker
+
+If you don't have a running docker daemon, Auroraboot can also pull directly from remotes, for instance:
+
+
+```
+docker run --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/core-rockylinux:v1.5.0
+```
+
+This command will:
+- **Pull an image remotely to boot it over network**
+- **Create a custom ISO with the cloud config attached to drive automated installations**
+- **Provision Kairos from network, with the same settings**
+
 ### Configuration
 
 `AuroraBoot` takes configuration settings either from the CLI arguments or from a `YAML` configuration file.
@@ -91,6 +118,7 @@ A configuration file can be for instance:
 ```yaml
 artifact_version: "v1.5.0"
 release_version: "v1.5.0"
+container_image: "..."
 flavor: "rockylinux"
 repository: "kairos-io/kairos"
 
@@ -98,3 +126,7 @@ cloud_config: |
 ```
 
 Any field of the `YAML` file, excluding `cloud_config` can be configured with the `--set` argument in the CLI. 
+
+**Note**
+
+- Specyfing a `container_image` takes precedence over the specified artifacts.
