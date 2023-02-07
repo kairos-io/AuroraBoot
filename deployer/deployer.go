@@ -10,26 +10,31 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+func LoadByte(b []byte) (*Config, *ReleaseArtifact, error) {
+	config := &Config{}
+	release := &ReleaseArtifact{}
+
+	if err := yaml.Unmarshal(b, config); err != nil {
+		return nil, nil, err
+	}
+
+	if err := yaml.Unmarshal(b, release); err != nil {
+		return nil, nil, err
+	}
+
+	return config, release, nil
+}
+
 // LoadFile loads a configuration file and returns the AuroraBoot configuration
 // and release artifact information
 func LoadFile(file string) (*Config, *ReleaseArtifact, error) {
-	config := &Config{}
-	release := &ReleaseArtifact{}
 
 	dat, err := os.ReadFile(file)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	if err := yaml.Unmarshal(dat, config); err != nil {
-		return nil, nil, err
-	}
-
-	if err := yaml.Unmarshal(dat, release); err != nil {
-		return nil, nil, err
-	}
-
-	return config, release, nil
+	return LoadByte(dat)
 }
 
 // Start starts the auroraboot deployer
