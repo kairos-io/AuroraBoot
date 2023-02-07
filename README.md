@@ -109,6 +109,14 @@ This command will:
 - **Create a custom ISO with the cloud config attached to drive automated installations**
 - **Provision Kairos from network, with the same settings**
 
+### Disable Netboot
+
+To disable netboot, and allow only ISO generation (for offline usage), use `--set disable_netboot=true`:
+
+```
+docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/core-rockylinux:v1.5.0 --set disable_netboot=true
+```
+
 ### Configuration
 
 `AuroraBoot` takes configuration settings either from the CLI arguments or from a `YAML` configuration file.
