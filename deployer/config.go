@@ -9,12 +9,12 @@ type Config struct {
 	CloudConfig string `yaml:"cloud_config"`
 
 	// Disable Netboot
-	DisableNetboot bool
+	DisableNetboot bool `yaml:"disable_netboot"`
 
 	// Disable manual ISO boot
-	DisableISOboot bool
+	DisableISOboot bool `yaml:"disable_iso"`
 
-	State string
+	State string `yaml:"state_dir"`
 }
 
 func (c Config) StateDir(s ...string) string {
