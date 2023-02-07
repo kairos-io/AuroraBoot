@@ -45,6 +45,11 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 	dst := c.StateDir("iso")
 	dstNetboot := c.StateDir("netboot")
 
+	listenAddr := ":8080"
+	if c.ListenAddr != "" {
+		listenAddr = c.ListenAddr
+	}
+
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	squashFSfile := filepath.Join(dstNetboot, "kairos.squashfs")
 	kernelFile := filepath.Join(dstNetboot, "kairos-kernel")
@@ -117,7 +122,7 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 			herd.Background,
 			herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO, opCopyCloudConfig, opInjectCC)),
 			herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC)),
-			herd.WithCallback(ops.ServeArtifacts(":8080", dst)),
+			herd.WithCallback(ops.ServeArtifacts(listenAddr, dst)),
 		)
 	}
 

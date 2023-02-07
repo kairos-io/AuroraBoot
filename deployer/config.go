@@ -15,6 +15,8 @@ type Config struct {
 	DisableISOboot bool `yaml:"disable_iso"`
 
 	State string `yaml:"state_dir"`
+
+	ListenAddr string `yaml:"listen_addr"`
 }
 
 func (c Config) StateDir(s ...string) string {
