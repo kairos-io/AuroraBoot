@@ -87,7 +87,9 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 	if fromImage {
 		g.Add(opContainerPull, herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(containerImage, tmpRootfs, local)))
 		g.Add(opGenISO, herd.WithDeps(opContainerPull), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, tmpRootfs, dst)))
-		g.Add(opExtractNetboot, herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
+		if !c.DisableNetboot {
+			g.Add(opExtractNetboot, herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
+		}
 	} else {
 		//TODO: add Validate step
 		g.Add(opDownloadInitrd, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), initrdFile)))
@@ -96,34 +98,36 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 		g.Add(opDownloadISO, herd.WithCallback(ops.DownloadArtifact(artifact.ISOUrl(), isoFile)))
 	}
 
-	g.Add(opCopyCloudConfig,
-		herd.WithDeps(opPrepareISO),
-		herd.WithCallback(func(ctx context.Context) error {
-			_, err := copy(cloudConfigFile, filepath.Join(dst, "config.yaml"))
-			return err
-		}))
-
-	g.Add(opInjectCC,
-		herd.WithDeps(opCopyCloudConfig),
-		herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO)),
-		herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO)),
-		herd.WithCallback(func(ctx context.Context) error {
-			os.Chdir(dst)
-			injectedIso := isoFile + ".custom.iso"
-			os.Remove(injectedIso)
-			out, err := utils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s /config.yaml -boot_image any replay", isoFile, injectedIso, filepath.Join(dst, "config.yaml")))
-			log.Print(out)
-			return err
-		}))
-
 	if !c.DisableISOboot {
-		g.Add(
-			opStartHTTPServer,
-			herd.Background,
-			herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO, opCopyCloudConfig, opInjectCC)),
-			herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC)),
-			herd.WithCallback(ops.ServeArtifacts(listenAddr, dst)),
-		)
+		g.Add(opCopyCloudConfig,
+			herd.WithDeps(opPrepareISO),
+			herd.WithCallback(func(ctx context.Context) error {
+				_, err := copy(cloudConfigFile, filepath.Join(dst, "config.yaml"))
+				return err
+			}))
+
+		g.Add(opInjectCC,
+			herd.WithDeps(opCopyCloudConfig),
+			herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO)),
+			herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO)),
+			herd.WithCallback(func(ctx context.Context) error {
+				os.Chdir(dst)
+				injectedIso := isoFile + ".custom.iso"
+				os.Remove(injectedIso)
+				out, err := utils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s /config.yaml -boot_image any replay", isoFile, injectedIso, filepath.Join(dst, "config.yaml")))
+				log.Print(out)
+				return err
+			}))
+
+		if !c.DisableHTTPServer {
+			g.Add(
+				opStartHTTPServer,
+				herd.Background,
+				herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO, opCopyCloudConfig, opInjectCC)),
+				herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC)),
+				herd.WithCallback(ops.ServeArtifacts(listenAddr, dst)),
+			)
+		}
 	}
 
 	if !c.DisableNetboot {
