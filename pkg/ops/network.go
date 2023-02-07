@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+// ServeArtifacts serve local artifacts as standard http server
 func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 
@@ -30,6 +31,7 @@ func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
 	}
 }
 
+// DownloadArtifact downloads artifacts remotely (e.g. http(s), ...)
 func DownloadArtifact(url, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		// https://github.com/kairos-io/kairos/releases/download/v1.5.0/kairos-alpine-ubuntu-v1.5.0.iso

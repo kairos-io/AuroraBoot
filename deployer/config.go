@@ -2,10 +2,16 @@ package deployer
 
 import "path/filepath"
 
+// Config represent the AuroraBoot
+// configuration
 type Config struct {
+	// CloudConfig to use for generating installation mediums
 	CloudConfig string `yaml:"cloud_config"`
 
+	// Disable Netboot
 	DisableNetboot bool
+
+	// Disable manual ISO boot
 	DisableISOboot bool
 
 	State string

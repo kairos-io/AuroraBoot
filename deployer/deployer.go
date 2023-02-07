@@ -10,6 +10,8 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// LoadFile loads a configuration file and returns the AuroraBoot configuration
+// and release artifact information
 func LoadFile(file string) (*Config, *ReleaseArtifact, error) {
 	config := &Config{}
 	release := &ReleaseArtifact{}
@@ -30,6 +32,7 @@ func LoadFile(file string) (*Config, *ReleaseArtifact, error) {
 	return config, release, nil
 }
 
+// Start starts the auroraboot deployer
 func Start(config *Config, release *ReleaseArtifact) error {
 
 	f, err := ioutil.TempFile("", "auroraboot-dat")
@@ -45,18 +48,7 @@ func Start(config *Config, release *ReleaseArtifact) error {
 	// Have a dag for our ops
 	g := herd.DAG(herd.CollectOrphans)
 
-	if !config.DisableNetboot {
-		// Register what to do!
-		if err := RegisterNetbootOperations(g, *release, *config, f.Name()); err != nil {
-			return err
-		}
-	}
-
-	if !config.DisableISOboot {
-		if err := RegisterISOOperations(g, *release, *config, f.Name()); err != nil {
-			return err
-		}
-	}
+	Register(g, *release, *config, f.Name())
 
 	writeDag(g.Analyze())
 

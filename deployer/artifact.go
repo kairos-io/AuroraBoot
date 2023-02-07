@@ -2,8 +2,6 @@ package deployer
 
 import (
 	"fmt"
-	"net/url"
-	"path"
 )
 
 type ReleaseArtifact struct {
@@ -11,14 +9,8 @@ type ReleaseArtifact struct {
 	ReleaseVersion  string `yaml:"release_version"`
 	Flavor          string `yaml:"flavor"`
 	Repository      string `yaml:"repository"`
-}
 
-func urlBase(target string) (string, error) {
-	u, err := url.Parse(target)
-	if err != nil {
-		return "", err
-	}
-	return path.Base(u.Path), nil
+	ContainerImage string `yaml:"container_image"`
 }
 
 func urlGen(repository, releaseVersion, flavor, artifactVersion, artifactType string) string {

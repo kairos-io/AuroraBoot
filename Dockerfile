@@ -4,7 +4,7 @@ RUN cd /work && \
     CGO_ENABLED=0 && \
     go build -o auroraboot
 
-FROM opensuse/tumbleweed
+FROM quay.io/kairos/osbuilder-tools
 RUN zypper in -y xorriso
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
