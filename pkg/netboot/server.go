@@ -2,12 +2,15 @@ package netboot
 
 import (
 	"log"
+	"strconv"
 
 	"go.universe.tf/netboot/out/ipxe"
 	"go.universe.tf/netboot/pixiecore"
 )
 
-func Server(kernel, bootmsg, cmdline string, initrds []string, nobind bool) error {
+// Server starts a netboot server which takes over and start to serve off booting in the same network
+// It doesn't need any special configuration, however, requires binding to low ports.
+func Server(kernel, bootmsg, cmdline string, httpPort string, initrds []string, nobind bool) error {
 
 	spec := &pixiecore.Spec{
 		Kernel:  pixiecore.ID(kernel),
@@ -23,6 +26,11 @@ func Server(kernel, bootmsg, cmdline string, initrds []string, nobind bool) erro
 		return err
 	}
 
+	port, err := strconv.Atoi(httpPort)
+	if err != nil {
+		return err
+	}
+
 	ipxeFw := map[pixiecore.Firmware][]byte{}
 	ipxeFw[pixiecore.FirmwareX86PC] = ipxe.MustAsset("third_party/ipxe/src/bin/undionly.kpxe")
 	ipxeFw[pixiecore.FirmwareEFI32] = ipxe.MustAsset("third_party/ipxe/src/bin-i386-efi/ipxe.efi")
@@ -32,7 +40,7 @@ func Server(kernel, bootmsg, cmdline string, initrds []string, nobind bool) erro
 	s := &pixiecore.Server{
 		Ipxe:           ipxeFw,
 		Log:            func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) },
-		HTTPPort:       80,
+		HTTPPort:       port,
 		HTTPStatusPort: 0,
 		DHCPNoBind:     nobind,
 		Address:        "0.0.0.0",

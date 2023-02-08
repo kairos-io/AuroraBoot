@@ -17,6 +17,9 @@ type Config struct {
 	// Disable manual ISO boot
 	DisableISOboot bool `yaml:"disable_iso"`
 
+	// PixieCore HTTPServer Port
+	NetBootHTTPPort string `yaml:"netboot_http_port"`
+
 	State string `yaml:"state_dir"`
 
 	ListenAddr string `yaml:"listen_addr"`
