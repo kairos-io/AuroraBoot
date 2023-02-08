@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"text/template"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/kairos/sdk/unstructured"
@@ -43,6 +44,14 @@ func downloadFile(url string) (content string, err error) {
 	return b.String(), nil
 }
 
+func render(data string, foo any) string {
+	t := template.New("fieldname example").Delims("[[", "]]").Option("missingkey=zero")
+	t, _ = t.Parse(data)
+	b := bytes.NewBuffer([]byte{})
+	t.Execute(b, foo)
+	return b.String()
+}
+
 func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Config, *deployer.ReleaseArtifact, error) {
 	c := &deployer.Config{}
 	r := &deployer.ReleaseArtifact{}
@@ -67,6 +76,8 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Con
 	}
 
 	m := map[string]interface{}{}
+	var templateValues map[string]interface{}
+
 	for _, c := range options {
 		dat := strings.Split(c, "=")
 		if len(dat) != 2 {
@@ -83,18 +94,23 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Con
 	yaml.Unmarshal(y, c)
 	yaml.Unmarshal(y, r)
 
+	err = yaml.Unmarshal(y, &templateValues)
+	if err != nil {
+		panic(err)
+	}
+
 	if cloudConfig != "" {
 		if _, err := os.Stat(cloudConfig); err == nil {
 			dat, err := os.ReadFile(cloudConfig)
 			if err == nil {
-				c.CloudConfig = string(dat)
+				c.CloudConfig = render(string(dat), templateValues)
 			}
 		} else if isUrl(cloudConfig) {
 			d, err := downloadFile(cloudConfig)
 			if err != nil {
 				return c, r, err
 			}
-			c.CloudConfig = d
+			c.CloudConfig = render(d, templateValues)
 		} else {
 			return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
 		}
