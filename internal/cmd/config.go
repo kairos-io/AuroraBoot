@@ -45,7 +45,7 @@ func downloadFile(url string) (content string, err error) {
 }
 
 func render(data string, foo any) string {
-	t := template.New("fieldname example").Delims("[[", "]]").Option("missingkey=zero")
+	t := template.New("cloudConfig template").Delims("[[", "]]").Option("missingkey=zero")
 	t, _ = t.Parse(data)
 	b := bytes.NewBuffer([]byte{})
 	t.Execute(b, foo)
@@ -55,6 +55,7 @@ func render(data string, foo any) string {
 func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Config, *deployer.ReleaseArtifact, error) {
 	c := &deployer.Config{}
 	r := &deployer.ReleaseArtifact{}
+
 	if fileConfig != "" {
 		var err error
 		if isUrl(fileConfig) {
@@ -93,11 +94,7 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Con
 
 	yaml.Unmarshal(y, c)
 	yaml.Unmarshal(y, r)
-
-	err = yaml.Unmarshal(y, &templateValues)
-	if err != nil {
-		panic(err)
-	}
+	yaml.Unmarshal(y, &templateValues)
 
 	if cloudConfig != "" {
 		if _, err := os.Stat(cloudConfig); err == nil {
