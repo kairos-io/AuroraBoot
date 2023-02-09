@@ -10,7 +10,7 @@ require (
 	github.com/urfave/cli v1.22.12
 	github.com/urfave/cli/v2 v2.24.3
 	go.universe.tf/netboot v0.0.0-20210617221821-fc2840fa7b05
-	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
+	gopkg.in/yaml.v3 v3.0.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
