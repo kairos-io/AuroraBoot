@@ -54,6 +54,10 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 	if c.NetBootHTTPPort != "" {
 		netbootPort = c.NetBootHTTPPort
 	}
+	address := "0.0.0.0"
+	if c.NetBootListenAddr != "" {
+		netbootPort = c.NetBootListenAddr
+	}
 
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	squashFSfile := filepath.Join(dstNetboot, "kairos.squashfs")
@@ -147,7 +151,7 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 				configFile := cloudConfigFile
 
 				cmdLine := `rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
-				return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(cmdLine, squashFSfile, configFile), netbootPort, []string{initrdFile}, true)
+				return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, []string{initrdFile}, true)
 			},
 			),
 		)

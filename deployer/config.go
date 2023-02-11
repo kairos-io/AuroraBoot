@@ -20,6 +20,9 @@ type Config struct {
 	// PixieCore HTTPServer Port
 	NetBootHTTPPort string `yaml:"netboot_http_port"`
 
+	// PixieCore Listen addr
+	NetBootListenAddr string `yaml:"netboot_listen_addr"`
+
 	State string `yaml:"state_dir"`
 
 	ListenAddr string `yaml:"listen_addr"`

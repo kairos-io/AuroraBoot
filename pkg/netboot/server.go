@@ -10,7 +10,7 @@ import (
 
 // Server starts a netboot server which takes over and start to serve off booting in the same network
 // It doesn't need any special configuration, however, requires binding to low ports.
-func Server(kernel, bootmsg, cmdline string, httpPort string, initrds []string, nobind bool) error {
+func Server(kernel, bootmsg, cmdline string, address, httpPort string, initrds []string, nobind bool) error {
 
 	spec := &pixiecore.Spec{
 		Kernel:  pixiecore.ID(kernel),
@@ -43,7 +43,7 @@ func Server(kernel, bootmsg, cmdline string, httpPort string, initrds []string, 
 		HTTPPort:       port,
 		HTTPStatusPort: 0,
 		DHCPNoBind:     nobind,
-		Address:        "0.0.0.0",
+		Address:        address,
 		UIAssetsDir:    "",
 	}
 	s.Booter = booter
