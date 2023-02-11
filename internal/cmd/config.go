@@ -10,6 +10,8 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/rs/zerolog/log"
+
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/kairos/sdk/unstructured"
 	"gopkg.in/yaml.v1"
@@ -80,11 +82,14 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Con
 	var templateValues map[string]interface{}
 
 	for _, c := range options {
-		dat := strings.Split(c, "=")
-		if len(dat) != 2 {
+		i := strings.Index(c, "=")
+		if i != -1 {
+			k := c[:i]
+			v := c[i+1:]
+			m[k] = v
+		} else {
 			return nil, nil, fmt.Errorf("Invalid arguments for set")
 		}
-		m[dat[0]] = dat[1]
 	}
 
 	y, err := unstructured.ToYAML(m)
