@@ -117,6 +117,6 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Con
 			return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
 		}
 	}
-
+	log.Print(c.CloudConfig)
 	return c, r, nil
 }

@@ -16,7 +16,6 @@ import (
 func main() {
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-
 	app := &cli.App{
 		Name:    "AuroraBoot",
 		Version: "0.1",
@@ -29,12 +28,19 @@ func main() {
 			cli.StringFlag{
 				Name: "cloud-config",
 			},
+			cli.BoolFlag{
+				Name: "debug",
+			},
 		},
 		Description: `
 `,
 		UsageText: ``,
 		Copyright: "kairos authors",
 		Action: func(ctx *cli.Context) error {
+			zerolog.SetGlobalLevel(zerolog.InfoLevel)
+			if ctx.Bool("debug") {
+				zerolog.SetGlobalLevel(zerolog.DebugLevel)
+			}
 			c, r, err := cmd.ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
 
 			if err != nil {
