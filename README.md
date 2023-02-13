@@ -65,6 +65,8 @@ Contribute
 - **Provision** machines from network with a version of Kairos and cloud config
 - **Customize** The installation media for installations from USB
 
+Check out the full [reference of AuroraBoot  in our documentation](https://kairos.io/docs/reference/auroraboot/).
+
 ## Usage
 
 `AuroraBoot` can be used with its container image to provision machines on the same network that will attempt to netboot. 
