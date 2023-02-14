@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -102,19 +103,27 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Con
 	yaml.Unmarshal(y, &templateValues)
 
 	if cloudConfig != "" {
-		if _, err := os.Stat(cloudConfig); err == nil {
-			dat, err := os.ReadFile(cloudConfig)
-			if err == nil {
-				c.CloudConfig = render(string(dat), templateValues)
-			}
-		} else if isUrl(cloudConfig) {
-			d, err := downloadFile(cloudConfig)
+		if cloudConfig == "-" {
+			d, err := ioutil.ReadAll(os.Stdin)
 			if err != nil {
-				return c, r, err
+				return c, r, fmt.Errorf("error reading from STDIN")
 			}
-			c.CloudConfig = render(d, templateValues)
+			c.CloudConfig = render(string(d), templateValues)
 		} else {
-			return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
+			if _, err := os.Stat(cloudConfig); err == nil {
+				dat, err := os.ReadFile(cloudConfig)
+				if err == nil {
+					c.CloudConfig = render(string(dat), templateValues)
+				}
+			} else if isUrl(cloudConfig) {
+				d, err := downloadFile(cloudConfig)
+				if err != nil {
+					return c, r, err
+				}
+				c.CloudConfig = render(d, templateValues)
+			} else {
+				return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
+			}
 		}
 	}
 	log.Print(c.CloudConfig)
