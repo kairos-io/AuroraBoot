@@ -135,7 +135,44 @@ repository: "kairos-io/kairos"
 cloud_config: |
 ```
 
-Any field of the `YAML` file, excluding `cloud_config` can be configured with the `--set` argument in the CLI. 
+Any field of the `YAML` file, excluding `cloud_config` can be configured with the `--set` argument in the CLI. And by passing "-" to `--cloud-config`, the cloud config can be passed from the STDIN, for example:
+
+```bash
+cat <<EOF | docker run --rm -ti --net host quay.io/kairos/auroraboot \
+                    --cloud-config - \
+                    --set "container_image=quay.io/kairos/kairos-opensuse-leap:v1.5.1-k3sv1.21.14-k3s1"
+#cloud-config
+
+install:
+ device: "auto"
+ auto: true
+ reboot: true
+
+hostname: metal-bundle-test-{{ trunc 4 .MachineID }}
+
+users:
+- name: kairos
+  # Change to your pass here
+  passwd: kairos
+  ssh_authorized_keys:
+  # Replace with your github user and un-comment the line below:
+  - github:mudler
+
+k3s:
+  enabled: true
+
+# Specify the bundle to use
+bundles:
+- targets:
+  - run://quay.io/kairos/community-bundles:system-upgrade-controller_latest
+  - run://quay.io/kairos/community-bundles:cert-manager_latest
+  - run://quay.io/kairos/community-bundles:kairos_latest
+
+kairos:
+  entangle:
+    enable: true
+EOF
+```
 
 **Note**
 
