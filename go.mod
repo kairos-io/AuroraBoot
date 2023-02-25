@@ -9,7 +9,7 @@ require (
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli v1.22.12
 	github.com/urfave/cli/v2 v2.24.4
-	go.universe.tf/netboot v0.0.0-20210617221821-fc2840fa7b05
+	go.universe.tf/netboot v0.0.0-20230225040044-0e2ca55deb50
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -39,10 +39,10 @@ require (
 	github.com/samber/lo v1.37.0 // indirect
 	github.com/wayneashleyberry/terminal-dimensions v1.1.0 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
-	golang.org/x/crypto v0.5.0 // indirect
+	golang.org/x/crypto v0.6.0 // indirect
 	golang.org/x/exp v0.0.0-20220909182711-5c715a9e8561 // indirect
-	golang.org/x/net v0.5.0 // indirect
-	golang.org/x/sys v0.4.0 // indirect
-	golang.org/x/term v0.4.0 // indirect
-	golang.org/x/text v0.6.0 // indirect
+	golang.org/x/net v0.7.0 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/term v0.5.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
 )
