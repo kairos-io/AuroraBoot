@@ -5,4 +5,4 @@ persistent=$(blkid -L COS_PERSISTENT)
 mkdir /tmp/persistent
 mount $persistent /tmp/persistent
 mkdir -p /usr/local/.state/var-lib-rancher.bind/k3s/agent/images/
-cp ./assets/k3s-airgap-images-amd64.tar /usr/local/.state/var-lib-rancher.bind/k3s/agent/images/
+cp ./assets/k3s-airgap-images-amd64.tar.gz /usr/local/.state/var-lib-rancher.bind/k3s/agent/images/
