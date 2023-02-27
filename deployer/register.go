@@ -68,6 +68,8 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 	fromImage := artifact.ContainerImage != ""
 	fromImageOption := func() bool { return fromImage }
 	isoOption := func() bool { return !fromImage }
+	netbootOption := func() bool { return !c.DisableNetboot }
+	netbootReleaseOption := func() bool { return !c.DisableNetboot && !fromImage }
 
 	// Pull locak docker daemon if container image starts with docker://
 	containerImage := artifact.ContainerImage
@@ -116,13 +118,13 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 	//TODO: add Validate step
 	// Ops to download from releases
 	g.Add(opDownloadInitrd,
-		herd.EnableIf(isoOption),
+		herd.EnableIf(netbootReleaseOption),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), initrdFile)))
 	g.Add(opDownloadKernel,
-		herd.EnableIf(isoOption),
+		herd.EnableIf(netbootReleaseOption),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), kernelFile)))
 	g.Add(opDownloadSquashFS,
-		herd.EnableIf(isoOption),
+		herd.EnableIf(netbootReleaseOption),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), squashFSfile)))
 	g.Add(opDownloadISO,
 		herd.EnableIf(isoOption),
@@ -150,7 +152,7 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 
 	g.Add(
 		opStartNetboot,
-		herd.EnableIf(func() bool { return !c.DisableNetboot }),
+		herd.EnableIf(netbootOption),
 		herd.ConditionalOption(isoOption, herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS)),
 		herd.ConditionalOption(fromImageOption, herd.WithDeps(opExtractNetboot)),
 		herd.Background,
