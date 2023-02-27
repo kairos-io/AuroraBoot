@@ -5,6 +5,8 @@ install:
  device: "auto"
  reboot: true
  bundles:
+  # This bundle needs to run after-install as it consumes assets from the LiveCD
+  # which is not accessible otherwise at the first boot (there is no live-cd with any bundle.tar)
  - targets:
    - run:///run/initramfs/live/bundle.tar
    local_file: true
@@ -17,4 +19,4 @@ users:
   - github:mudler                       # A key from the user's GitHub account.
 
 k3s:
-  enable: true
+  enabled: true
