@@ -46,19 +46,21 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 		injectedIso := isoFile + ".custom.iso"
 		os.Remove(injectedIso)
 
-		log.Info().Msgf("Adding cloud config file to '%s'", isoFile)
-
 		tmp, err := os.MkdirTemp("", "injectiso")
 		if err != nil {
 			return err
 		}
 		defer os.RemoveAll(tmp)
 
-		err = copy.Copy(i.DataPath, tmp)
-		if err != nil {
-			return err
+		if i.DataPath != "" {
+			log.Info().Msgf("Adding data in '%s' to '%s'", i.DataPath, isoFile)
+			err = copy.Copy(i.DataPath, tmp)
+			if err != nil {
+				return err
+			}
 		}
 
+		log.Info().Msgf("Adding cloud config file to '%s'", isoFile)
 		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
 		if err != nil {
 			return err
@@ -69,7 +71,7 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 		if err != nil {
 			return err
 		}
-
+		log.Info().Msgf("Wrote '%s'", injectedIso)
 		return err
 	}
 }
