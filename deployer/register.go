@@ -162,6 +162,11 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 			configFile := cloudConfigFile
 
 			cmdLine := `rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
+
+			if c.NetBoot.Cmdline != "" {
+				cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + c.NetBoot.Cmdline
+			}
+
 			return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, []string{initrdFile}, true)
 		},
 		),

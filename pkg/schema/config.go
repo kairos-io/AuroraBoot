@@ -27,7 +27,15 @@ type Config struct {
 
 	ListenAddr string `yaml:"listen_addr"`
 
+	// ISO block configuration
 	ISO ISO `yaml:"iso"`
+
+	// Netboot block configuration
+	NetBoot NetBoot `yaml:"netboot"`
+}
+
+type NetBoot struct {
+	Cmdline string `yaml:"cmdline"`
 }
 
 type ISO struct {
