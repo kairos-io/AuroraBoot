@@ -1,4 +1,4 @@
-package deployer
+package schema
 
 import "path/filepath"
 
@@ -26,6 +26,12 @@ type Config struct {
 	State string `yaml:"state_dir"`
 
 	ListenAddr string `yaml:"listen_addr"`
+
+	ISO ISO `yaml:"iso"`
+}
+
+type ISO struct {
+	DataPath string `yaml:"data"`
 }
 
 func (c Config) StateDir(s ...string) string {

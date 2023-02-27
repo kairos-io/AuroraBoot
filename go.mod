@@ -5,10 +5,10 @@ go 1.19
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/kairos-io/kairos v1.5.0
+	github.com/otiai10/copy v1.9.0
 	github.com/rs/zerolog v1.29.0
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli v1.22.12
-	github.com/urfave/cli/v2 v2.24.4
 	go.universe.tf/netboot v0.0.0-20230225040044-0e2ca55deb50
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1

@@ -11,6 +11,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/rs/zerolog/log"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
@@ -55,9 +56,9 @@ func render(data string, foo any) string {
 	return b.String()
 }
 
-func ReadConfig(fileConfig, cloudConfig string, options []string) (*deployer.Config, *deployer.ReleaseArtifact, error) {
-	c := &deployer.Config{}
-	r := &deployer.ReleaseArtifact{}
+func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Config, *schema.ReleaseArtifact, error) {
+	c := &schema.Config{}
+	r := &schema.ReleaseArtifact{}
 
 	if fileConfig != "" {
 		var err error
