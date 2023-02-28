@@ -8,11 +8,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/rs/zerolog/log"
-
-	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
-	"github.com/kairos-io/kairos/pkg/utils"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 
 	"github.com/spectrocloud-labs/herd"
 )
@@ -41,7 +38,7 @@ const (
 )
 
 // Register register the op dag based on the configuration and the artifact wanted.
-func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile string) {
+func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, cloudConfigFile string) {
 	dst := c.StateDir("iso")
 	dstNetboot := c.StateDir("netboot")
 
@@ -64,25 +61,12 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 	kernelFile := filepath.Join(dstNetboot, "kairos-kernel")
 	initrdFile := filepath.Join(dstNetboot, "kairos-initrd")
 	isoFile := filepath.Join(dst, "kairos.iso")
-
 	tmpRootfs := c.StateDir("temp-rootfs")
-
-	g.Add(opPreparetmproot, herd.WithCallback(
-		func(ctx context.Context) error {
-			return os.MkdirAll(dstNetboot, 0700)
-		},
-	))
-	g.Add(opPrepareNetboot, herd.WithCallback(
-		func(ctx context.Context) error {
-			return os.MkdirAll(dstNetboot, 0700)
-		},
-	))
-
-	g.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
-		return os.MkdirAll(dst, 0700)
-	}))
-
 	fromImage := artifact.ContainerImage != ""
+	fromImageOption := func() bool { return fromImage }
+	isoOption := func() bool { return !fromImage }
+	netbootOption := func() bool { return !c.DisableNetboot }
+	netbootReleaseOption := func() bool { return !c.DisableNetboot && !fromImage }
 
 	// Pull locak docker daemon if container image starts with docker://
 	containerImage := artifact.ContainerImage
@@ -93,69 +77,86 @@ func Register(g *herd.Graph, artifact ReleaseArtifact, c Config, cloudConfigFile
 		containerImage = strings.ReplaceAll(containerImage, "docker://", "")
 	}
 
-	if fromImage {
-		g.Add(opContainerPull, herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(containerImage, tmpRootfs, local)))
-		g.Add(opGenISO, herd.WithDeps(opContainerPull), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, tmpRootfs, dst)))
-		if !c.DisableNetboot {
-			g.Add(opExtractNetboot, herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
-		}
-	} else {
-		//TODO: add Validate step
-		g.Add(opDownloadInitrd, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), initrdFile)))
-		g.Add(opDownloadKernel, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), kernelFile)))
-		g.Add(opDownloadSquashFS, herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), squashFSfile)))
-		g.Add(opDownloadISO, herd.WithCallback(ops.DownloadArtifact(artifact.ISOUrl(), isoFile)))
-	}
+	// Preparation steps
+	g.Add(opPreparetmproot, herd.WithCallback(
+		func(ctx context.Context) error {
+			return os.MkdirAll(dstNetboot, 0700)
+		},
+	))
 
-	if !c.DisableISOboot {
-		g.Add(opCopyCloudConfig,
-			herd.WithDeps(opPrepareISO),
-			herd.WithCallback(func(ctx context.Context) error {
-				_, err := copy(cloudConfigFile, filepath.Join(dst, "config.yaml"))
-				return err
-			}))
+	g.Add(opPrepareNetboot, herd.WithCallback(
+		func(ctx context.Context) error {
+			return os.MkdirAll(dstNetboot, 0700)
+		},
+	))
 
-		g.Add(opInjectCC,
-			herd.WithDeps(opCopyCloudConfig),
-			herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO)),
-			herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO)),
-			herd.WithCallback(func(ctx context.Context) error {
-				os.Chdir(dst)
-				injectedIso := isoFile + ".custom.iso"
-				os.Remove(injectedIso)
-				out, err := utils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s /config.yaml -boot_image any replay", isoFile, injectedIso, filepath.Join(dst, "config.yaml")))
-				log.Print(out)
-				return err
-			}))
+	g.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
+		return os.MkdirAll(dst, 0700)
+	}))
 
-		if !c.DisableHTTPServer {
-			g.Add(
-				opStartHTTPServer,
-				herd.Background,
-				herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opGenISO, opCopyCloudConfig, opInjectCC)),
-				herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC)),
-				herd.WithCallback(ops.ServeArtifacts(listenAddr, dst)),
-			)
-		}
-	}
+	g.Add(opCopyCloudConfig,
+		herd.WithDeps(opPrepareISO),
+		herd.WithCallback(func(ctx context.Context) error {
+			_, err := copy(cloudConfigFile, filepath.Join(dst, "config.yaml"))
+			return err
+		}))
 
-	if !c.DisableNetboot {
-		g.Add(
-			opStartNetboot,
-			herd.ConditionalOption(func() bool { return !fromImage }, herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS)),
-			herd.ConditionalOption(func() bool { return fromImage }, herd.WithDeps(opExtractNetboot)),
-			herd.Background,
-			herd.WithCallback(func(ctx context.Context) error {
-				log.Info().Msgf("Start pixiecore")
+	// Ops to generate from container image
+	g.Add(opContainerPull,
+		herd.EnableIf(fromImageOption),
+		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(containerImage, tmpRootfs, local)))
+	g.Add(opGenISO,
+		herd.EnableIf(fromImageOption),
+		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, tmpRootfs, dst, c.ISO)))
+	g.Add(opExtractNetboot,
+		herd.EnableIf(func() bool { return fromImage && !c.DisableNetboot }),
+		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
 
-				configFile := cloudConfigFile
+	//TODO: add Validate step
+	// Ops to download from releases
+	g.Add(opDownloadInitrd,
+		herd.EnableIf(netbootReleaseOption),
+		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.InitrdURL(), initrdFile)))
+	g.Add(opDownloadKernel,
+		herd.EnableIf(netbootReleaseOption),
+		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), kernelFile)))
+	g.Add(opDownloadSquashFS,
+		herd.EnableIf(netbootReleaseOption),
+		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), squashFSfile)))
+	g.Add(opDownloadISO,
+		herd.EnableIf(isoOption),
+		herd.WithCallback(ops.DownloadArtifact(artifact.ISOUrl(), isoFile)))
 
-				cmdLine := `rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
-				return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, []string{initrdFile}, true)
-			},
-			),
-		)
-	}
+	// Inject the data into the ISO
+	g.Add(opInjectCC,
+		herd.EnableIf(isoOption),
+		herd.WithDeps(opCopyCloudConfig),
+		herd.ConditionalOption(isoOption, herd.WithDeps(opDownloadISO)),
+		herd.WithCallback(ops.InjectISO(dst, isoFile, c.ISO)))
+
+	// Start servers
+	g.Add(
+		opStartHTTPServer,
+		herd.Background,
+		herd.EnableIf(func() bool { return !c.DisableISOboot && !c.DisableHTTPServer }),
+		herd.IfElse(
+			fromImage,
+			herd.WithDeps(opGenISO, opCopyCloudConfig),
+			herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC),
+		),
+		herd.WithCallback(ops.ServeArtifacts(listenAddr, dst)),
+	)
+
+	g.Add(
+		opStartNetboot,
+		herd.EnableIf(netbootOption),
+		herd.ConditionalOption(isoOption, herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS)),
+		herd.ConditionalOption(fromImageOption, herd.WithDeps(opExtractNetboot)),
+		herd.Background,
+		herd.WithCallback(
+			ops.StartPixiecore(cloudConfigFile, squashFSfile, address, netbootPort, initrdFile, kernelFile, c.NetBoot),
+		),
+	)
 }
 
 func copy(src, dst string) (int64, error) {

@@ -5,14 +5,16 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
+
 	"github.com/rs/zerolog/log"
 	"github.com/spectrocloud-labs/herd"
 	"gopkg.in/yaml.v3"
 )
 
-func LoadByte(b []byte) (*Config, *ReleaseArtifact, error) {
-	config := &Config{}
-	release := &ReleaseArtifact{}
+func LoadByte(b []byte) (*schema.Config, *schema.ReleaseArtifact, error) {
+	config := &schema.Config{}
+	release := &schema.ReleaseArtifact{}
 
 	if err := yaml.Unmarshal(b, config); err != nil {
 		return nil, nil, err
@@ -27,7 +29,7 @@ func LoadByte(b []byte) (*Config, *ReleaseArtifact, error) {
 
 // LoadFile loads a configuration file and returns the AuroraBoot configuration
 // and release artifact information
-func LoadFile(file string) (*Config, *ReleaseArtifact, error) {
+func LoadFile(file string) (*schema.Config, *schema.ReleaseArtifact, error) {
 
 	dat, err := os.ReadFile(file)
 	if err != nil {
@@ -38,7 +40,7 @@ func LoadFile(file string) (*Config, *ReleaseArtifact, error) {
 }
 
 // Start starts the auroraboot deployer
-func Start(config *Config, release *ReleaseArtifact) error {
+func Start(config *schema.Config, release *schema.ReleaseArtifact) error {
 
 	f, err := ioutil.TempFile("", "auroraboot-dat")
 	if err != nil {
