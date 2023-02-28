@@ -5,6 +5,7 @@ import (
 	"io/ioutil"
 	"os"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 
 	"github.com/rs/zerolog/log"
@@ -60,7 +61,20 @@ func Start(config *schema.Config, release *schema.ReleaseArtifact) error {
 	writeDag(g.Analyze())
 
 	ctx := context.Background()
-	return g.Run(ctx)
+	err = g.Run(ctx)
+	if err != nil {
+		return err
+	}
+
+	for _, layer := range g.Analyze() {
+		for _, op := range layer {
+			if op.Error != nil {
+				err = multierror.Append(err, op.Error)
+			}
+		}
+	}
+
+	return err
 }
 
 func writeDag(d [][]herd.GraphEntry) {
