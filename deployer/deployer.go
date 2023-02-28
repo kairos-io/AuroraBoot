@@ -70,7 +70,7 @@ func writeDag(d [][]herd.GraphEntry) {
 			if op.Error != nil {
 				log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
 			} else {
-				log.Printf(" <%s> (background: %t enabled: %t)", op.Name, op.Background)
+				log.Printf(" <%s> (background: %t)", op.Name, op.Background)
 			}
 		}
 		log.Print("")
