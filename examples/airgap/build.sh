@@ -14,7 +14,7 @@ popd
 docker run -v $PWD/config.yaml:/config.yaml \
              -v $PWD/build:/tmp/auroraboot \
              -v $PWD/data:/tmp/data \
-             --rm -ti auroraboot \
+             --rm -ti quay.io/kairos/auroraboot:v0.2.0 \
              --set "disable_http_server=true" \
              --set "disable_netboot=true" \
              --set "iso.data=/tmp/data" \
