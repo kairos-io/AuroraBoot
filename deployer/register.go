@@ -113,6 +113,7 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
 
 	//TODO: add Validate step
+
 	// Ops to download from releases
 	g.Add(opDownloadInitrd,
 		herd.EnableIf(netbootReleaseOption),
@@ -121,11 +122,20 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 		herd.EnableIf(netbootReleaseOption),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), kernelFile)))
 	g.Add(opDownloadSquashFS,
-		herd.EnableIf(netbootReleaseOption),
+		herd.EnableIf(func() bool { return !c.DisableNetboot && !fromImage || c.Disk.RAW && !fromImage }),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), squashFSfile)))
 	g.Add(opDownloadISO,
 		herd.EnableIf(isoOption),
 		herd.WithCallback(ops.DownloadArtifact(artifact.ISOUrl(), isoFile)))
+
+	g.Add("extract-squashfs",
+		herd.EnableIf(func() bool { return c.Disk.RAW && !fromImage }),
+		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(squashFSfile, tmpRootfs)))
+
+	g.Add("gen-raw-disk",
+		herd.EnableIf(func() bool { return c.Disk.RAW }),
+		herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps("extract-squashfs")),
+		herd.WithCallback(ops.GenRawDisk(tmpRootfs, filepath.Join(dst, "disk.raw"))))
 
 	// Inject the data into the ISO
 	g.Add(opInjectCC,

@@ -32,6 +32,13 @@ type Config struct {
 
 	// Netboot block configuration
 	NetBoot NetBoot `yaml:"netboot"`
+
+	Disk Disk `yaml:"disk"`
+}
+
+type Disk struct {
+	RAW bool `yaml:"raw"`
+	GCE bool `yaml:"gce"`
 }
 
 type NetBoot struct {
