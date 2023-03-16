@@ -39,6 +39,7 @@ type Config struct {
 type Disk struct {
 	RAW bool `yaml:"raw"`
 	GCE bool `yaml:"gce"`
+	VHD bool `yaml:"vhd"`
 }
 
 type NetBoot struct {

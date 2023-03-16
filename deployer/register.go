@@ -31,6 +31,12 @@ const (
 	opGenISO         = "gen-iso"
 	opPreparetmproot = "prepare-temp"
 	opExtractNetboot = "extract-netboot"
+
+	opGenRawDisk      = "gen-raw-disk"
+	opExtractSquashFS = "extract-squashfs"
+
+	opConvertGCE = "convert-gce"
+	opConvertVHD = "convert-vhd"
 )
 
 const (
@@ -128,14 +134,27 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 		herd.EnableIf(isoOption),
 		herd.WithCallback(ops.DownloadArtifact(artifact.ISOUrl(), isoFile)))
 
-	g.Add("extract-squashfs",
+	// Ops to generate disk images
+
+	// Extract SquashFS from released asset to build the raw disk image if needed
+	g.Add(opExtractSquashFS,
 		herd.EnableIf(func() bool { return c.Disk.RAW && !fromImage }),
 		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(squashFSfile, tmpRootfs)))
 
-	g.Add("gen-raw-disk",
-		herd.EnableIf(func() bool { return c.Disk.RAW }),
-		herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps("extract-squashfs")),
+	g.Add(opGenRawDisk,
+		herd.EnableIf(func() bool { return c.Disk.RAW || c.Disk.GCE || c.Disk.VHD }),
+		herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS)),
 		herd.WithCallback(ops.GenRawDisk(tmpRootfs, filepath.Join(dst, "disk.raw"))))
+
+	g.Add(opConvertGCE,
+		herd.EnableIf(func() bool { return c.Disk.GCE }),
+		herd.WithDeps(opGenRawDisk),
+		herd.WithCallback(ops.ConvertRawDiskToGCE(filepath.Join(dst, "disk.raw"), filepath.Join(dst, "disk.raw.gce"))))
+
+	g.Add(opConvertVHD,
+		herd.EnableIf(func() bool { return c.Disk.VHD }),
+		herd.WithDeps(opGenRawDisk),
+		herd.WithCallback(ops.ConvertRawDiskToVHD(filepath.Join(dst, "disk.raw"), filepath.Join(dst, "disk.raw.vhd"))))
 
 	// Inject the data into the ISO
 	g.Add(opInjectCC,

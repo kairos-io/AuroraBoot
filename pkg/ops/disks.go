@@ -11,7 +11,7 @@ import (
 )
 
 // TODO
-func GenArmImages(src, dst string) func(ctx context.Context) error {
+func PrepareArmPartitions(src, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
@@ -92,11 +92,11 @@ func ConvertRawDiskToVHD(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s' to '%s'", dst, src)
+		log.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
 		out, err := utils.SH(fmt.Sprintf("/azure.sh %s %s", src, dst))
 		log.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			log.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
@@ -110,11 +110,11 @@ func ConvertRawDiskToGCE(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s' to '%s'", dst, src)
+		log.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
 		out, err := utils.SH(fmt.Sprintf("/gce.sh %s %s", src, dst))
 		log.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			log.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
