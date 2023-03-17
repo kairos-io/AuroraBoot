@@ -81,10 +81,12 @@ func writeDag(d [][]herd.GraphEntry) {
 	for i, layer := range d {
 		log.Printf("%d.", (i + 1))
 		for _, op := range layer {
-			if op.Error != nil {
-				log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
-			} else {
-				log.Printf(" <%s> (background: %t)", op.Name, op.Background)
+			if !op.Ignored {
+				if op.Error != nil {
+					log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
+				} else {
+					log.Printf(" <%s> (background: %t)", op.Name, op.Background)
+				}
 			}
 		}
 		log.Print("")

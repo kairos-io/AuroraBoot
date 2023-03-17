@@ -12,7 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
-func PrepareArmPartitions(src, dstPath string, do schema.ARMDiskOptions) func(ctx context.Context) error {
+func PrepareArmPartitions(src, dstPath string, do schema.Config) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
@@ -20,7 +20,7 @@ func PrepareArmPartitions(src, dstPath string, do schema.ARMDiskOptions) func(ct
 		}
 		defer os.RemoveAll(tmp)
 
-		env := genPrepareImageEnv(src, do)
+		env := genPrepareImageEnv(src, *do.Disk.ARM)
 		os.Mkdir("bootloader", 0650)
 		log.Info().Msgf("Preparing ARM raw disks from '%s' to '%s'", src, dstPath)
 		out, err := utils.SH(fmt.Sprintf("%s /prepare_arm_images.sh", strings.Join(env, " ")))
@@ -96,7 +96,7 @@ func genARMBuildArgs(src, cloudConfig string, do schema.ARMDiskOptions) []string
 
 }
 
-func GenArmDisk(src, dst string, do schema.ARMDiskOptions) func(ctx context.Context) error {
+func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
@@ -104,7 +104,7 @@ func GenArmDisk(src, dst string, do schema.ARMDiskOptions) func(ctx context.Cont
 		}
 		defer os.RemoveAll(tmp)
 
-		args := genARMBuildArgs(src, filepath.Join(filepath.Dir(dst), "config.yaml"), do)
+		args := genARMBuildArgs(src, filepath.Join(filepath.Dir(dst), "config.yaml"), *do.Disk.ARM)
 
 		log.Info().Msgf("Generating ARM disk '%s' from '%s'", dst, src)
 		log.Printf("Running 'build-arm-image.sh %s %s'", strings.Join(args, " "), dst)
