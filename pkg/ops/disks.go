@@ -5,13 +5,14 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos/pkg/utils"
 	"github.com/rs/zerolog/log"
 )
 
-// TODO
-func PrepareArmPartitions(src, dst string) func(ctx context.Context) error {
+func PrepareArmPartitions(src, dstPath string, do schema.ARMDiskOptions) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
@@ -19,18 +20,83 @@ func PrepareArmPartitions(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s' to '%s'", dst, src)
-		out, err := utils.SH(fmt.Sprintf("/prepare-arm-images.sh %s %s %s", src, dst, filepath.Join(dst, "config.yaml")))
+		env := genPrepareImageEnv(src, do)
+
+		log.Info().Msgf("Preparing raw disks from '%s' to '%s'", src, dstPath)
+		out, err := utils.SH(fmt.Sprintf("%s /prepare-arm-images.sh", strings.Join(env, " ")))
 		log.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			log.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
+		}
+
+		out, err = utils.SH(fmt.Sprintf("mv bootloader/*.img %s", dstPath))
+		log.Printf("Output '%s'", out)
+		if err != nil {
+			log.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
 		}
 		return err
 	}
 }
 
-// TODO
-func GenArmDisk(src, dst string) func(ctx context.Context) error {
+func genPrepareImageEnv(src string, do schema.ARMDiskOptions) []string {
+	args := []string{fmt.Sprintf("directory=%s", src)}
+
+	if do.DiskSize.Disk != "" {
+		args = append(args, fmt.Sprintf("size=%s", do.DiskSize.Disk))
+	}
+
+	if do.DiskSize.StatePartition != "" {
+		args = append(args, fmt.Sprintf("state_size=%s", do.DiskSize.StatePartition))
+	}
+
+	if do.DiskSize.RecoveryPartition != "" {
+		args = append(args, fmt.Sprintf("recovery_size=%s", do.DiskSize.RecoveryPartition))
+	}
+
+	if do.DiskSize.Images != "" {
+		args = append(args, fmt.Sprintf("default_active_size=%s", do.DiskSize.Images))
+	}
+
+	return args
+}
+
+func genARMBuildArgs(src, cloudConfig string, do schema.ARMDiskOptions) []string {
+	args := []string{fmt.Sprintf("--directory %s", src)}
+
+	if do.DiskSize.Disk != "" {
+		args = append(args, fmt.Sprintf("--size %s", do.DiskSize.Disk))
+	}
+
+	if do.DiskSize.StatePartition != "" {
+		args = append(args, fmt.Sprintf("--state-partition-size %s", do.DiskSize.StatePartition))
+	}
+
+	if do.DiskSize.RecoveryPartition != "" {
+		args = append(args, fmt.Sprintf("--recovery-partition-size %s", do.DiskSize.RecoveryPartition))
+	}
+
+	if do.DiskSize.Images != "" {
+		args = append(args, fmt.Sprintf("--images-size %s", do.DiskSize.Images))
+	}
+
+	if do.Model != "" {
+		args = append(args, fmt.Sprintf("--model %s", do.Model))
+	}
+	if do.LVM {
+		args = append(args, "--use-lvm")
+	}
+
+	if do.EFIOverlay != "" {
+		args = append(args, fmt.Sprintf("--efi-dir %s", do.EFIOverlay))
+	}
+
+	args = append(args, fmt.Sprintf("--cloud-config %s", cloudConfig))
+
+	return args
+
+}
+
+func GenArmDisk(src, dst string, do schema.ARMDiskOptions) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
@@ -38,11 +104,14 @@ func GenArmDisk(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
+		args := genARMBuildArgs(src, filepath.Join(filepath.Dir(dst), "config.yaml"), do)
+
 		log.Info().Msgf("Generating raw disk '%s' from '%s' to '%s'", dst, src)
-		out, err := utils.SH(fmt.Sprintf("/build-arm-image.sh %s %s %s", src, dst, filepath.Join(dst, "config.yaml")))
+		log.Printf("Running 'build-arm-image.sh %s %s'", strings.Join(args, " "), dst)
+		out, err := utils.SH(fmt.Sprintf("/build-arm-image.sh %s %s", strings.Join(args, " "), dst))
 		log.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			log.Error().Msgf("Generating ARM disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}

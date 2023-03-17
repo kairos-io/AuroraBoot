@@ -35,8 +35,10 @@ const (
 	opGenRawDisk      = "gen-raw-disk"
 	opExtractSquashFS = "extract-squashfs"
 
-	opConvertGCE = "convert-gce"
-	opConvertVHD = "convert-vhd"
+	opConvertGCE       = "convert-gce"
+	opConvertVHD       = "convert-vhd"
+	opGenARMImages     = "build-arm-image"
+	opPrepareARMImages = "prepare_arm"
 )
 
 const (
@@ -119,7 +121,6 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
 
 	//TODO: add Validate step
-
 	// Ops to download from releases
 	g.Add(opDownloadInitrd,
 		herd.EnableIf(netbootReleaseOption),
@@ -128,7 +129,9 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 		herd.EnableIf(netbootReleaseOption),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.KernelURL(), kernelFile)))
 	g.Add(opDownloadSquashFS,
-		herd.EnableIf(func() bool { return !c.DisableNetboot && !fromImage || c.Disk.RAW && !fromImage }),
+		herd.EnableIf(func() bool {
+			return !c.DisableNetboot && !fromImage || c.Disk.RAW && !fromImage || !fromImage && c.Disk.ARM != nil
+		}),
 		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(artifact.SquashFSURL(), squashFSfile)))
 	g.Add(opDownloadISO,
 		herd.EnableIf(isoOption),
@@ -138,13 +141,25 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 
 	// Extract SquashFS from released asset to build the raw disk image if needed
 	g.Add(opExtractSquashFS,
-		herd.EnableIf(func() bool { return c.Disk.RAW && !fromImage }),
+		herd.EnableIf(func() bool { return c.Disk.RAW && !fromImage || !fromImage && c.Disk.ARM != nil }),
 		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(squashFSfile, tmpRootfs)))
+
+	imageOrSquashFS := herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS))
 
 	g.Add(opGenRawDisk,
 		herd.EnableIf(func() bool { return c.Disk.RAW || c.Disk.GCE || c.Disk.VHD }),
-		herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS)),
+		imageOrSquashFS,
 		herd.WithCallback(ops.GenRawDisk(tmpRootfs, filepath.Join(dst, "disk.raw"))))
+
+	g.Add(opGenARMImages,
+		herd.EnableIf(func() bool { return c.Disk.ARM != nil && !c.Disk.ARM.PrepareOnly }),
+		imageOrSquashFS,
+		herd.WithCallback(ops.GenArmDisk(tmpRootfs, filepath.Join(dst, "disk.img"), *c.Disk.ARM)))
+
+	g.Add(opPrepareARMImages,
+		herd.EnableIf(func() bool { return c.Disk.ARM != nil && c.Disk.ARM.PrepareOnly }),
+		imageOrSquashFS,
+		herd.WithCallback(ops.PrepareArmPartitions(tmpRootfs, dst, *c.Disk.ARM)))
 
 	g.Add(opConvertGCE,
 		herd.EnableIf(func() bool { return c.Disk.GCE }),
