@@ -21,9 +21,9 @@ func PrepareArmPartitions(src, dstPath string, do schema.ARMDiskOptions) func(ct
 		defer os.RemoveAll(tmp)
 
 		env := genPrepareImageEnv(src, do)
-
-		log.Info().Msgf("Preparing raw disks from '%s' to '%s'", src, dstPath)
-		out, err := utils.SH(fmt.Sprintf("%s /prepare-arm-images.sh", strings.Join(env, " ")))
+		os.Mkdir("bootloader", 0650)
+		log.Info().Msgf("Preparing ARM raw disks from '%s' to '%s'", src, dstPath)
+		out, err := utils.SH(fmt.Sprintf("%s /prepare_arm_images.sh", strings.Join(env, " ")))
 		log.Printf("Output '%s'", out)
 		if err != nil {
 			log.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
@@ -90,7 +90,7 @@ func genARMBuildArgs(src, cloudConfig string, do schema.ARMDiskOptions) []string
 		args = append(args, fmt.Sprintf("--efi-dir %s", do.EFIOverlay))
 	}
 
-	args = append(args, fmt.Sprintf("--cloud-config %s", cloudConfig))
+	args = append(args, fmt.Sprintf("--config %s", cloudConfig))
 
 	return args
 
@@ -106,12 +106,12 @@ func GenArmDisk(src, dst string, do schema.ARMDiskOptions) func(ctx context.Cont
 
 		args := genARMBuildArgs(src, filepath.Join(filepath.Dir(dst), "config.yaml"), do)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s' to '%s'", dst, src)
+		log.Info().Msgf("Generating ARM disk '%s' from '%s'", dst, src)
 		log.Printf("Running 'build-arm-image.sh %s %s'", strings.Join(args, " "), dst)
 		out, err := utils.SH(fmt.Sprintf("/build-arm-image.sh %s %s", strings.Join(args, " "), dst))
 		log.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating ARM disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			log.Error().Msgf("Generating ARM disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
