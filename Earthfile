@@ -12,5 +12,5 @@ test:
     WITH DOCKER \
             --allow-privileged \
             --load auroraboot:latest=+image
-        RUN go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p ./...
+        RUN go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --flake-attempts 3 ./...
     END
