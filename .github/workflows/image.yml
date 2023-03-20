@@ -7,7 +7,9 @@ on:
       - master
     tags:
       - '*'
-
+concurrency:
+  group: ci-image-${{ github.head_ref || github.ref }}-${{ github.repository }}
+  cancel-in-progress: true
 jobs:
   docker:
     runs-on: ubuntu-latest

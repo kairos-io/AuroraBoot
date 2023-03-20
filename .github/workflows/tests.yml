@@ -4,6 +4,9 @@ on:
   push:
     branches:
       - master
+concurrency:
+  group: ci-tests-${{ github.head_ref || github.ref }}-${{ github.repository }}
+  cancel-in-progress: true
 jobs:
   tests:
     runs-on: ubuntu-latest
