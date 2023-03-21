@@ -32,6 +32,16 @@ type Config struct {
 
 	// Netboot block configuration
 	NetBoot NetBoot `yaml:"netboot"`
+
+	Disk Disk `yaml:"disk"`
+}
+
+type Disk struct {
+	RAW bool `yaml:"raw"`
+	GCE bool `yaml:"gce"`
+	VHD bool `yaml:"vhd"`
+
+	ARM *ARMDiskOptions `yaml:"arm"`
 }
 
 type NetBoot struct {
@@ -49,4 +59,19 @@ func (c Config) StateDir(s ...string) string {
 	}
 
 	return filepath.Join(append([]string{d}, s...)...)
+}
+
+type ARMDiskOptions struct {
+	Model       string     `yaml:"model"`
+	LVM         bool       `yaml:"lvm"`
+	DiskSize    SizeOption `yaml:"size"`
+	EFIOverlay  string     `yaml:"efi_overlay_dir"`
+	PrepareOnly bool       `yaml:"prepare_only"`
+}
+
+type SizeOption struct {
+	Disk              string `yaml:"size"`
+	StatePartition    string `yaml:"state_partition"`
+	Images            string `yaml:"images"`
+	RecoveryPartition string `yaml:"recovery_partition"`
 }

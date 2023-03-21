@@ -5,7 +5,6 @@ RUN cd /work && \
     go build -o auroraboot
 
 FROM quay.io/kairos/osbuilder-tools
-RUN zypper in -y xorriso
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
 ENTRYPOINT ["/usr/bin/auroraboot"]

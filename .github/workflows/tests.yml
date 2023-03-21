@@ -1,0 +1,20 @@
+name: Tests
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+concurrency:
+  group: ci-tests-${{ github.head_ref || github.ref }}-${{ github.repository }}
+  cancel-in-progress: true
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Run tests
+        run: |
+          docker run --privileged -v /var/run/docker.sock:/var/run/docker.sock --rm -t -v $(pwd):/workspace -v earthly-tmp:/tmp/earthly:rw earthly/earthly:v0.6.21 --allow-privileged +test
