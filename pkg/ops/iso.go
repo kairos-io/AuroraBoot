@@ -31,7 +31,7 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-		out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
+		out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --squash-no-compression --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
 		log.Printf("Output '%s'", out)
 		if err != nil {
 			log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
