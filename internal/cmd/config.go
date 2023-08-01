@@ -19,6 +19,9 @@ import (
 	"gopkg.in/yaml.v1"
 )
 
+const delimLeft = "[[["
+const delimright = "]]]"
+
 func isUrl(s string) bool {
 	u, err := url.Parse(s)
 	return err == nil && u.Scheme != "" && u.Host != ""
@@ -48,12 +51,19 @@ func downloadFile(url string) (content string, err error) {
 	return b.String(), nil
 }
 
-func render(data string, foo any) string {
-	t := template.New("cloudConfig template").Delims("[[", "]]").Option("missingkey=zero")
-	t, _ = t.Parse(data)
+func render(data string, foo any) (string, error) {
+	t, err := template.New("cloudConfig template").Delims(delimLeft, delimright).Option("missingkey=zero").Parse(data)
+	if err != nil {
+		log.Logger.Error().Err(err).Msg("Parsing data")
+		log.Logger.Debug().Err(err).Str("data", data).Str("Left delimiter", delimLeft).Str("Right delimiter", delimright).Msg("Parsing data")
+		return "", err
+	}
 	b := bytes.NewBuffer([]byte{})
-	t.Execute(b, foo)
-	return b.String()
+	err = t.Execute(b, foo)
+	if err != nil {
+		return "", err
+	}
+	return b.String(), nil
 }
 
 func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Config, *schema.ReleaseArtifact, error) {
@@ -109,19 +119,28 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 			if err != nil {
 				return c, r, fmt.Errorf("error reading from STDIN")
 			}
-			c.CloudConfig = render(string(d), templateValues)
+			c.CloudConfig, err = render(string(d), templateValues)
+			if err != nil {
+				return nil, nil, err
+			}
 		} else {
 			if _, err := os.Stat(cloudConfig); err == nil {
 				dat, err := os.ReadFile(cloudConfig)
 				if err == nil {
-					c.CloudConfig = render(string(dat), templateValues)
+					c.CloudConfig, err = render(string(dat), templateValues)
+					if err != nil {
+						return nil, nil, err
+					}
 				}
 			} else if isUrl(cloudConfig) {
 				d, err := downloadFile(cloudConfig)
 				if err != nil {
 					return c, r, err
 				}
-				c.CloudConfig = render(d, templateValues)
+				c.CloudConfig, err = render(d, templateValues)
+				if err != nil {
+					return nil, nil, err
+				}
 			} else {
 				return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
 			}
