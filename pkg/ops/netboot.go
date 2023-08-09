@@ -29,7 +29,7 @@ func StartPixiecore(cloudConfigFile, squashFSfile, address, netbootPort, initrdF
 
 		configFile := cloudConfigFile
 
-		cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
+		cmdLine := `rd.live.overlay.overlayfs selinux=0 rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
 
 		if nb.Cmdline != "" {
 			cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
