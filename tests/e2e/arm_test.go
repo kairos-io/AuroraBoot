@@ -37,7 +37,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
-			--set "disk.arm.model=rpi64" \
+			--set "disk.arm.model=rpi4" \
 			--set "state_dir=/tmp/auroraboot"`, image), tempDir)
 			Expect(out).To(ContainSubstring("done"), out)
 			Expect(out).To(ContainSubstring("build-arm-image"), out)
