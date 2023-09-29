@@ -12,6 +12,10 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const (
+	UserAgent =  "AuroraBoot"
+)
+
 // ServeArtifacts serve local artifacts as standard http server
 func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
@@ -43,6 +47,8 @@ func DownloadArtifact(url, dst string) func(ctx context.Context) error {
 func download(ctx context.Context, url, dst string) (string, error) {
 	// create client
 	client := grab.NewClient()
+	// https://github.com/cavaliergopher/grab/issues/104
+	client.UserAgent = UserAgent
 	req, _ := grab.NewRequest(dst, url)
 
 	// start download
