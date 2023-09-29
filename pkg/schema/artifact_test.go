@@ -27,6 +27,13 @@ var _ = Describe("Artifact", func() {
 			Expect(artifact.FileName()).To(Equal("kairos-core-rockylinux-amd64-generic-v2.4.0"))
 		})
 
+		Context("when the container_image is set", func() {
+			It("should return an empty string", func() {
+				artifact.ContainerImage = "docker://quay.io/kairos/core-rockylinux:latest"
+				Expect(artifact.FileName()).To(Equal(""))
+			})
+		})
+
 		Context("when the model is empty", func() {
 			It("should default to generic", func() {
 				artifact.Model = ""

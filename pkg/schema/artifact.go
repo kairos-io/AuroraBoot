@@ -20,6 +20,10 @@ type ReleaseArtifact struct {
 }
 
 func (a ReleaseArtifact) FileName() string {
+	if a.ContainerImage != "" {
+		return ""
+	}
+
 	if a.Model == "" {
 		a.Model = "generic"
 	}
