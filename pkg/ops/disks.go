@@ -117,7 +117,53 @@ func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) err
 	}
 }
 
-func GenRawDisk(src, dst string) func(ctx context.Context) error {
+func GenBIOSRawDisk(srcISO, dst string, kvm bool) func(ctx context.Context) error {
+	cloudConfigFile := filepath.Join(filepath.Dir(dst), "config.yaml")
+	return func(ctx context.Context) error {
+		tmp, err := os.MkdirTemp("", "gendisk")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+
+		log.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
+
+		extra := ""
+		if kvm {
+			extra = "-enable-kvm"
+		}
+		out, err := utils.SH(
+			fmt.Sprintf(`mkdir -p build
+pushd build
+touch meta-data
+cp -rfv %s user-data
+
+mkisofs -output ci.iso -volid cidata -joliet -rock user-data meta-data
+truncate -s "+$((20000*1024*1024))" %s
+
+qemu-system-x86_64 -m 8096 -smp cores=2 \
+        -nographic -cpu host \
+        -serial mon:stdio \
+        -rtc base=utc,clock=rt \
+        -chardev socket,path=qga.sock,server,nowait,id=qga0 \
+        -device virtio-serial \
+        -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+        -drive if=virtio,media=disk,file=%s \
+        -drive format=raw,media=cdrom,readonly=on,file=$ISO \
+        -drive format=raw,media=cdrom,readonly=on,file=ci.iso \
+        -boot d %s
+        
+`, cloudConfigFile, dst, dst, extra),
+		)
+		log.Printf("Output '%s'", out)
+		if err != nil {
+			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, kvm, err.Error())
+		}
+		return err
+	}
+}
+
+func GenEFIRawDisk(src, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {

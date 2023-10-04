@@ -40,6 +40,7 @@ type Disk struct {
 	RAW bool `yaml:"raw"`
 	GCE bool `yaml:"gce"`
 	VHD bool `yaml:"vhd"`
+	MBR bool `yaml:"mbr"`
 
 	ARM *ARMDiskOptions `yaml:"arm"`
 }
