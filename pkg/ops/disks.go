@@ -149,11 +149,11 @@ qemu-system-x86_64 -m 8096 -smp cores=2 \
         -device virtio-serial \
         -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
         -drive if=virtio,media=disk,file=%s \
-        -drive format=raw,media=cdrom,readonly=on,file=$ISO \
+        -drive format=raw,media=cdrom,readonly=on,file=%s \
         -drive format=raw,media=cdrom,readonly=on,file=ci.iso \
         -boot d %s
         
-`, cloudConfigFile, dst, dst, extra),
+`, cloudConfigFile, dst, dst, srcISO, extra),
 		)
 		log.Printf("Output '%s'", out)
 		if err != nil {
