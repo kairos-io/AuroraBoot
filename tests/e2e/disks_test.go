@@ -2,6 +2,7 @@ package auroraboot_test
 
 import (
 	"fmt"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -20,8 +21,11 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t
+			fixtureConfig := os.Getenv("FIXTURE_CONFIG")
+			fixtureConfigDat, err := ioutil.ReadFile(fixtureConfig)
+			Expect(err).ToNot(HaveOccurred())
 
-			err = WriteConfig("", t)
+			err = WriteConfig(string(fixtureConfigDat), t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -104,7 +108,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			--set "state_dir=/tmp/auroraboot"`, tempDir)
 			Expect(out).To(ContainSubstring("Generating raw disk"), out)
 			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+			Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
 			Expect(out).To(ContainSubstring("download-squashfs"), out)
 			Expect(out).To(ContainSubstring("extract-squashfs"), out)
 			Expect(out).ToNot(ContainSubstring("container-pull"), out)

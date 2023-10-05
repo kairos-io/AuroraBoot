@@ -10,12 +10,13 @@ test-label:
     WORKDIR /test
     RUN apk add go docker jq
     ENV GOPATH=/go
+    ENV FIXTURE_CONFIG=/test/tests/fixtures/raw_disk.yaml
     ARG LABEL
     COPY . .
     WITH DOCKER \
             --allow-privileged \
             --load auroraboot:latest=+image
-        RUN go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --label-filter="$LABEL" --flake-attempts 3 ./...
+        RUN pwd && ls -liah && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --label-filter="$LABEL" --flake-attempts 3 ./...
     END
 
 test:
@@ -23,9 +24,10 @@ test:
     WORKDIR /test
     RUN apk add go docker jq
     ENV GOPATH=/go
+    ENV FIXTURE_CONFIG=/test/tests/fixtures/raw_disk.yaml
     COPY . .
     WITH DOCKER \
             --allow-privileged \
             --load auroraboot:latest=+image
-        RUN go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --flake-attempts 3 ./...
+        RUN pwd && ls -liah && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --flake-attempts 3 ./...
     END

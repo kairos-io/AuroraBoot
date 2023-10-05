@@ -142,7 +142,7 @@ mkisofs -output ci.iso -volid cidata -joliet -rock user-data meta-data
 truncate -s "+$((20000*1024*1024))" %s
 
 qemu-system-x86_64 -m 8096 -smp cores=2 \
-        -nographic -cpu host \
+        -nographic \
         -serial mon:stdio \
         -rtc base=utc,clock=rt \
         -chardev socket,path=qga.sock,server,nowait,id=qga0 \
