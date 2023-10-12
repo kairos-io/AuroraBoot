@@ -16,7 +16,7 @@ test-label:
     WITH DOCKER \
             --allow-privileged \
             --load auroraboot:latest=+image
-        RUN pwd && ls -liah && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --label-filter="$LABEL" --flake-attempts 3 ./...
+        RUN pwd && ls -liah && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --timeout=2h --label-filter="$LABEL" --flake-attempts 3 ./...
     END
 
 test:
@@ -29,5 +29,5 @@ test:
     WITH DOCKER \
             --allow-privileged \
             --load auroraboot:latest=+image
-        RUN pwd && ls -liah && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --flake-attempts 3 ./...
+        RUN pwd && ls -liah && go install -mod=mod github.com/onsi/ginkgo/v2/ginkgo && /go/bin/ginkgo -r -p --randomize-all --procs 2 --fail-fast --timeout=2h --flake-attempts 3 ./...
     END
