@@ -136,7 +136,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			os.RemoveAll(tempDir)
 		})
 
-		It("generate a raw  file", func() {
+		It("generate a raw build/iso/disk.raw (EFI) file", Label("efi"), func() {
 			image := "quay.io/kairos/core-rockylinux:latest"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
@@ -156,7 +156,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("generates a gce image", func() {
+		It("generates a gce image (EFI)", Label("efi"), func() {
 			image := "quay.io/kairos/core-opensuse-leap-arm-rpi:latest"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
@@ -177,7 +177,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		It("generates a vhd image", func() {
+		It("generates a vhd image", Label("efi"), func() {
 			image := "quay.io/kairos/core-opensuse-leap-arm-rpi:latest"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
