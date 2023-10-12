@@ -96,26 +96,26 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		// It("generates a raw MBR image", Label("mbr"), func() {
-		// 	out, err := RunAurora(`--set "disable_http_server=true" \
-		// 	--set "disable_netboot=true" \
-		// 	--cloud-config /config.yaml \
-		// 	--set "artifact_version=v1.5.0" \
-		// 	--set repository="kairos-io/kairos" \
-		// 	--set "release_version=v1.5.0" \
-		// 	--set "flavor=rockylinux" \
-		// 	--set "disk.mbr=true" \
-		// 	--set "state_dir=/tmp/auroraboot"`, tempDir)
-		// 	Expect(out).To(ContainSubstring("Generating raw disk"), out)
-		// 	Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-		// 	Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
-		// 	Expect(out).To(ContainSubstring("download-squashfs"), out)
-		// 	Expect(out).To(ContainSubstring("extract-squashfs"), out)
-		// 	Expect(out).ToNot(ContainSubstring("container-pull"), out)
-		// 	Expect(err).ToNot(HaveOccurred())
-		// 	_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
-		// 	Expect(err).ToNot(HaveOccurred())
-		// })
+		It("generates a raw MBR image", Label("mbr"), func() {
+			out, err := RunAurora(`--set "disable_http_server=true" \
+			--set "disable_netboot=true" \
+			--cloud-config /config.yaml \
+			--set "artifact_version=v1.5.0" \
+			--set repository="kairos-io/kairos" \
+			--set "release_version=v1.5.0" \
+			--set "flavor=rockylinux" \
+			--set "disk.mbr=true" \
+			--set "state_dir=/tmp/auroraboot"`, tempDir)
+			Expect(out).To(ContainSubstring("Generating raw disk"), out)
+			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+			Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
+			Expect(out).To(ContainSubstring("download-squashfs"), out)
+			Expect(out).To(ContainSubstring("extract-squashfs"), out)
+			Expect(out).ToNot(ContainSubstring("container-pull"), out)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
+			Expect(err).ToNot(HaveOccurred())
+		})
 	})
 
 	Context("build from a container image", func() {
