@@ -161,9 +161,9 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 		),
 		herd.IfElse(isoOption(),
 			herd.WithCallback(
-				ops.GenBIOSRawDisk(isoFile, filepath.Join(dst, "disk.raw"), false)),
+				ops.GenBIOSRawDisk(c, isoFile, filepath.Join(dst, "disk.raw"))),
 			herd.WithCallback(
-				ops.GenBIOSRawDisk(isoFile, filepath.Join(dst, "disk.raw"), false)),
+				ops.GenBIOSRawDisk(c, isoFile, filepath.Join(dst, "disk.raw"))),
 		),
 	)
 

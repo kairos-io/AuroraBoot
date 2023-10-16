@@ -117,9 +117,24 @@ func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) err
 	}
 }
 
-func GenBIOSRawDisk(srcISO, dst string, kvm bool) func(ctx context.Context) error {
+func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.Context) error {
 	cloudConfigFile := filepath.Join(filepath.Dir(dst), "config.yaml")
 	return func(ctx context.Context) error {
+
+		ram := "4096"
+		if config.System.Memory != "" {
+			ram = config.System.Memory
+		}
+		cores := "1"
+		if config.System.Cores != "" {
+			cores = config.System.Cores
+		}
+
+		qemuBin := "qemu-system-x86_64"
+		if config.System.Qemubin != "" {
+			qemuBin = config.System.Qemubin
+		}
+
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
 			return err
@@ -129,7 +144,7 @@ func GenBIOSRawDisk(srcISO, dst string, kvm bool) func(ctx context.Context) erro
 		log.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
 
 		extra := ""
-		if kvm {
+		if config.System.KVM {
 			extra = "-enable-kvm"
 		}
 		out, err := utils.SH(
@@ -141,7 +156,7 @@ cp -rfv %s user-data
 mkisofs -output ci.iso -volid cidata -joliet -rock user-data meta-data
 truncate -s "+$((20000*1024*1024))" %s
 
-qemu-system-x86_64 -m 8096 -smp cores=2 \
+%s -m %s -smp cores=%s \
         -nographic \
         -serial mon:stdio \
         -rtc base=utc,clock=rt \
@@ -153,11 +168,11 @@ qemu-system-x86_64 -m 8096 -smp cores=2 \
         -drive format=raw,media=cdrom,readonly=on,file=ci.iso \
         -boot d %s
         
-`, cloudConfigFile, dst, dst, srcISO, extra),
+`, cloudConfigFile, dst, qemuBin, ram, cores, dst, srcISO, extra),
 		)
 		log.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, kvm, err.Error())
+			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, extra, err.Error())
 		}
 		return err
 	}
