@@ -127,8 +127,11 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t
+			fixtureConfig := os.Getenv("FIXTURE_CONFIG")
+			fixtureConfigDat, err := ioutil.ReadFile(fixtureConfig)
+			Expect(err).ToNot(HaveOccurred())
 
-			err = WriteConfig("", t)
+			err = WriteConfig(string(fixtureConfigDat), t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -200,13 +203,13 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 		It("generates a raw MBR image", Label("mbr"), func() {
 			image := "quay.io/kairos/core-opensuse-leap:latest"
-			_, err := PullImage(image)
-			Expect(err).ToNot(HaveOccurred())
+			// _, err := PullImage(image)
+			// Expect(err).ToNot(HaveOccurred())
 
 			out, err := RunAurora(fmt.Sprintf(`--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
-			--set container_image=docker://%s \
+			--set container_image=%s \
 			--set "disk.mbr=true" \
 			--set "state_dir=/tmp/auroraboot"`, image), tempDir)
 			Expect(out).To(ContainSubstring("Generating raw disk"), out)
