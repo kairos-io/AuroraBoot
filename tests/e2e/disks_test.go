@@ -198,26 +198,26 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 		})
 
-		// It("generates a raw MBR image", Label("mbr"), func() {
-		// 	image := "quay.io/kairos/core-rockylinux:latest"
-		// 	_, err := PullImage(image)
-		// 	Expect(err).ToNot(HaveOccurred())
+		It("generates a raw MBR image", Label("mbr"), func() {
+			image := "quay.io/kairos/core-opensuse-leap:latest"
+			_, err := PullImage(image)
+			Expect(err).ToNot(HaveOccurred())
 
-		// 	out, err := RunAurora(fmt.Sprintf(`--set "disable_http_server=true" \
-		// 	--set "disable_netboot=true" \
-		// 	--cloud-config /config.yaml \
-		// 	--set container_image=docker://%s \
-		// 	--set "disk.mbr=true" \
-		// 	--set "state_dir=/tmp/auroraboot"`, image), tempDir)
-		// 	Expect(out).To(ContainSubstring("Generating raw disk"), out)
-		// 	Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-		// 	Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
-		// 	Expect(out).To(ContainSubstring("download-squashfs"), out)
-		// 	Expect(out).To(ContainSubstring("extract-squashfs"), out)
-		// 	Expect(out).ToNot(ContainSubstring("container-pull"), out)
-		// 	Expect(err).ToNot(HaveOccurred())
-		// 	_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
-		// 	Expect(err).ToNot(HaveOccurred())
-		// })
+			out, err := RunAurora(fmt.Sprintf(`--set "disable_http_server=true" \
+			--set "disable_netboot=true" \
+			--cloud-config /config.yaml \
+			--set container_image=docker://%s \
+			--set "disk.mbr=true" \
+			--set "state_dir=/tmp/auroraboot"`, image), tempDir)
+			Expect(out).To(ContainSubstring("Generating raw disk"), out)
+			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+			Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
+			Expect(out).To(ContainSubstring("download-squashfs"), out)
+			Expect(out).To(ContainSubstring("extract-squashfs"), out)
+			Expect(out).ToNot(ContainSubstring("container-pull"), out)
+			Expect(err).ToNot(HaveOccurred())
+			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
+			Expect(err).ToNot(HaveOccurred())
+		})
 	})
 })
