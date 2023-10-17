@@ -237,7 +237,8 @@ stages:
 			out, err := RunAurora(fmt.Sprintf(`--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
-			--set container_image=%s \
+			--set "container_image=%s" \
+			--set "system.kvm=true" \
 			--set "disk.mbr=true" \
 			--set "state_dir=/tmp/auroraboot"`, image), tempDir)
 			Expect(out).To(ContainSubstring("Generating raw disk"), out)

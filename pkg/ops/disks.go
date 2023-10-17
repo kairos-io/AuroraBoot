@@ -121,11 +121,11 @@ func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.C
 	cloudConfigFile := filepath.Join(filepath.Dir(dst), "config.yaml")
 	return func(ctx context.Context) error {
 
-		ram := "4096"
+		ram := "8096"
 		if config.System.Memory != "" {
 			ram = config.System.Memory
 		}
-		cores := "1"
+		cores := "3"
 		if config.System.Cores != "" {
 			cores = config.System.Cores
 		}
