@@ -241,7 +241,7 @@ stages:
 			--set "system.kvm=true" \
 			--set "disk.mbr=true" \
 			--set "state_dir=/tmp/auroraboot"`, image), tempDir)
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
+			Expect(out).To(ContainSubstring("Generating MBR disk"), out)
 			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 			Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
 			Expect(out).To(ContainSubstring("container-pull"), out)
