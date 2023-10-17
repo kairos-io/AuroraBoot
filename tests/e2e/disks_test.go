@@ -2,7 +2,6 @@ package auroraboot_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 
@@ -21,11 +20,8 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t
-			fixtureConfig := os.Getenv("FIXTURE_CONFIG")
-			fixtureConfigDat, err := ioutil.ReadFile(fixtureConfig)
-			Expect(err).ToNot(HaveOccurred())
 
-			err = WriteConfig(string(fixtureConfigDat), t)
+			err = WriteConfig("", t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -122,16 +118,48 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 		tempDir := ""
 
+		config := `#cloud-config
+
+hostname: kairos-{{ trunc 4 .MachineID }}
+
+# Automated install block
+install:
+  # Device for automated installs
+  device: "auto"
+  # Reboot after installation
+  reboot: false
+  # Power off after installation
+  poweroff: true
+  # Set to true to enable automated installations
+  auto: true
+
+## Login
+users:
+- name: "kairos"
+  lock_passwd: true
+  ssh_authorized_keys:
+  - github:mudler
+
+stages:
+  boot:
+  - name: "Repart image"
+    layout:
+      device:
+        label: COS_PERSISTENT
+      expand_partition:
+        size: 0 # all space
+    commands:
+      # grow filesystem if not used 100%
+      - |
+         [[ "$(echo "$(df -h | grep COS_PERSISTENT)" | awk '{print $5}' | tr -d '%')" -ne 100 ]] && resize2fs /dev/disk/by-label/COS_PERSISTENT`
+
 		BeforeEach(func() {
 			t, err := os.MkdirTemp("", "")
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t
-			fixtureConfig := os.Getenv("FIXTURE_CONFIG")
-			fixtureConfigDat, err := ioutil.ReadFile(fixtureConfig)
-			Expect(err).ToNot(HaveOccurred())
 
-			err = WriteConfig(string(fixtureConfigDat), t)
+			err = WriteConfig(config, t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
