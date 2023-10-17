@@ -50,7 +50,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("extract-squashfs"), out)
 			Expect(out).ToNot(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -71,7 +71,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("extract-squashfs"), out)
 			Expect(out).ToNot(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw.gce"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -92,7 +92,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("extract-squashfs"), out)
 			Expect(out).ToNot(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.vhd"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw.vhd"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -113,7 +113,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 		// 	Expect(out).To(ContainSubstring("extract-squashfs"), out)
 		// 	Expect(out).ToNot(ContainSubstring("container-pull"), out)
 		// 	Expect(err).ToNot(HaveOccurred())
-		// 	_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
+		// 	_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw.gce"))
 		// 	Expect(err).ToNot(HaveOccurred())
 		// })
 	})
@@ -139,7 +139,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			os.RemoveAll(tempDir)
 		})
 
-		It("generate a raw build/iso/disk.raw (EFI) file", Label("efi"), func() {
+		It("generate a raw build/build/disk.raw (EFI) file", Label("efi"), func() {
 			image := "quay.io/kairos/core-rockylinux:latest"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
@@ -155,7 +155,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
 			Expect(out).To(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -176,7 +176,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("convert-gce"), out)
 			Expect(out).To(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.gce"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw.gce"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -197,7 +197,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("convert-vhd"), out)
 			Expect(out).To(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw.vhd"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw.vhd"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -217,7 +217,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
 			Expect(out).To(ContainSubstring("container-pull"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/iso/disk.raw"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.raw"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

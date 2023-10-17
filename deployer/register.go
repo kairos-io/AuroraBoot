@@ -49,7 +49,7 @@ const (
 
 // Register register the op dag based on the configuration and the artifact wanted.
 func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, cloudConfigFile string) {
-	dst := c.StateDir("iso")
+	dst := c.StateDir("build")
 	dstNetboot := c.StateDir("netboot")
 
 	listenAddr := ":8080"

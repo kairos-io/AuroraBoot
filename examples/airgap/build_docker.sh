@@ -27,4 +27,4 @@ docker run -v $PWD/config.yaml:/config.yaml \
              --cloud-config /config.yaml \
              --set "state_dir=/tmp/auroraboot"
 
-echo "Custom ISO ready at $PWD/build/iso/kairos.iso"
+echo "Custom ISO ready at $PWD/build/build/kairos.iso"
