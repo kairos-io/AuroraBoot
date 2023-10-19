@@ -117,7 +117,68 @@ func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) err
 	}
 }
 
-func GenRawDisk(src, dst string) func(ctx context.Context) error {
+func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.Context) error {
+	cloudConfigFile := filepath.Join(filepath.Dir(dst), "config.yaml")
+	return func(ctx context.Context) error {
+
+		ram := "8096"
+		if config.System.Memory != "" {
+			ram = config.System.Memory
+		}
+		cores := "3"
+		if config.System.Cores != "" {
+			cores = config.System.Cores
+		}
+
+		qemuBin := "qemu-system-x86_64"
+		if config.System.Qemubin != "" {
+			qemuBin = config.System.Qemubin
+		}
+
+		tmp, err := os.MkdirTemp("", "gendisk")
+		if err != nil {
+			return err
+		}
+		defer os.RemoveAll(tmp)
+
+		log.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
+
+		extra := ""
+		if config.System.KVM {
+			extra = "-enable-kvm"
+		}
+		out, err := utils.SH(
+			fmt.Sprintf(`mkdir -p build
+pushd build
+touch meta-data
+cp -rfv %s user-data
+
+mkisofs -output ci.iso -volid cidata -joliet -rock user-data meta-data
+truncate -s "+$((20000*1024*1024))" %s
+
+%s -m %s -smp cores=%s \
+        -nographic \
+        -serial mon:stdio \
+        -rtc base=utc,clock=rt \
+        -chardev socket,path=qga.sock,server,nowait,id=qga0 \
+        -device virtio-serial \
+        -device virtserialport,chardev=qga0,name=org.qemu.guest_agent.0 \
+        -drive if=virtio,media=disk,file=%s \
+        -drive format=raw,media=cdrom,readonly=on,file=%s \
+        -drive format=raw,media=cdrom,readonly=on,file=ci.iso \
+        -boot d %s
+        
+`, cloudConfigFile, dst, qemuBin, ram, cores, dst, srcISO, extra),
+		)
+		log.Printf("Output '%s'", out)
+		if err != nil {
+			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, extra, err.Error())
+		}
+		return err
+	}
+}
+
+func GenEFIRawDisk(src, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {

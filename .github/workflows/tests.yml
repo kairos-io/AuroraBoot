@@ -9,12 +9,17 @@ concurrency:
   cancel-in-progress: true
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: kvm
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
         with:
           fetch-depth: 0
+      - name: Set up Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.21
       - name: Run tests
         run: |
-          docker run --privileged -v /var/run/docker.sock:/var/run/docker.sock --rm -t -v $(pwd):/workspace -v earthly-tmp:/tmp/earthly:rw earthly/earthly:v0.6.21 --allow-privileged +test
+          docker build -t auroraboot:latest .
+          sudo go run github.com/onsi/ginkgo/v2/ginkgo -r -p --fail-fast --timeout=2h ./...

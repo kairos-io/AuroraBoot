@@ -34,12 +34,22 @@ type Config struct {
 	NetBoot NetBoot `yaml:"netboot"`
 
 	Disk Disk `yaml:"disk"`
+
+	System System `yaml:"system"`
+}
+
+type System struct {
+	Memory  string `yaml:"memory"`
+	Cores   string `yaml:"cores"`
+	Qemubin string `yaml:"qemu_bin"`
+	KVM     bool   `yaml:"kvm"`
 }
 
 type Disk struct {
 	RAW bool `yaml:"raw"`
 	GCE bool `yaml:"gce"`
 	VHD bool `yaml:"vhd"`
+	MBR bool `yaml:"mbr"`
 
 	ARM *ARMDiskOptions `yaml:"arm"`
 }
