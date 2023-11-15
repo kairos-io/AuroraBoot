@@ -55,7 +55,7 @@ func (a ReleaseArtifact) FileName() string {
 		return fmt.Sprintf("kairos-%s-%s", a.Flavor, a.ArtifactVersion)
 	}
 
-	return fmt.Sprintf("kairos-%s-%s-%s-generic-%s", a.Variant, a.Flavor, a.Platform, a.ArtifactVersion)
+	return fmt.Sprintf("kairos-%s-%s-%s-generic-%s", a.Flavor, a.Variant, a.Platform, a.ArtifactVersion)
 }
 
 func (a ReleaseArtifact) urlGen(ext string) string {
