@@ -16,7 +16,7 @@ var _ = Describe("Artifact", func() {
 				ArtifactVersion: "v2.4.2",
 				Model:           "generic",
 				Flavor:          "rockylinux",
-				FlavorVersion:   "9",
+				FlavorRelease:   "9",
 				Platform:        "amd64",
 				ReleaseVersion:  "v2.4.2",
 				Repository:      "kairos-io/kairos",

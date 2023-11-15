@@ -10,7 +10,7 @@ type ReleaseArtifact struct {
 	ArtifactVersion string `yaml:"artifact_version"`
 	Model           string `yaml:"model"`
 	Flavor          string `yaml:"flavor"`
-	FlavorVersion   string `yaml:"flavor_version"`
+	FlavorRelease   string `yaml:"flavor_release"`
 	Platform        string `yaml:"platform"`
 	ReleaseVersion  string `yaml:"release_version"`
 	Repository      string `yaml:"repository"`
@@ -51,7 +51,7 @@ func (a ReleaseArtifact) FileName() string {
 		return fmt.Sprintf("kairos-%s-%s-%s-generic-%s", a.Variant, a.Flavor, a.Platform, a.ArtifactVersion)
 	}
 
-	return fmt.Sprintf("kairos-%s-%s-%s-%s-generic-%s", a.Flavor, a.FlavorVersion, a.Variant, a.Platform, a.ArtifactVersion)
+	return fmt.Sprintf("kairos-%s-%s-%s-%s-generic-%s", a.Flavor, a.FlavorRelease, a.Variant, a.Platform, a.ArtifactVersion)
 }
 
 func (a ReleaseArtifact) urlGen(ext string) string {
