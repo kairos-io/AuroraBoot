@@ -47,9 +47,10 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 
 		It("generate an iso image from a release", func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
-			--set "artifact_version=v1.5.0" \
-			--set "release_version=v1.5.0" \
+			--set "artifact_version=v2.4.2" \
+			--set "release_version=v2.4.2" \
 			--set "flavor=rockylinux" \
+			--set "flavor_release=9" \
 			--set repository="kairos-io/kairos" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \

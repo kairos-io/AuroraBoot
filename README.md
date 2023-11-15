@@ -74,7 +74,7 @@ Check out the full [reference of AuroraBoot  in our documentation](https://kairo
 For instance, in one machine from your workstation, you can run:
 
 ```bash
-$ docker run --rm -ti --net host quay.io/kairos/auroraboot --set "artifact_version=v1.5.0" --set "release_version=v1.5.0" --set "flavor=rockylinux" --set repository="kairos-io/kairos" --cloud-config /....
+$ docker run --rm -ti --net host quay.io/kairos/auroraboot --set "artifact_version=v2.4.2" --set "release_version=v2.4.2" --set "flavor=rockylinux"--set "flavor_release=9"  --set repository="kairos-io/kairos" --cloud-config /....
 ```
 
 And then start machines attempting to boot over network.
@@ -89,7 +89,7 @@ This command will:
 Auroraboot can also boostrap nodes by using custom container images or [the official kairos releases](https://kairos.io/docs/reference/image_matrix/), for instance:
 
 ```
-docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=docker://quay.io/kairos/core-rockylinux:v1.5.0
+docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=docker://quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
 ```
 
 This command will:
@@ -103,7 +103,7 @@ If you don't have a running docker daemon, Auroraboot can also pull directly fro
 
 
 ```
-docker run --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/core-rockylinux:v1.5.0
+docker run --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
 ```
 
 This command will:
@@ -116,7 +116,7 @@ This command will:
 To disable netboot, and allow only ISO generation (for offline usage), use `--set disable_netboot=true`:
 
 ```
-docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/core-rockylinux:v1.5.0 --set disable_netboot=true
+docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2 --set disable_netboot=true
 ```
 
 ### Configuration
@@ -126,10 +126,11 @@ docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay
 A configuration file can be for instance:
 
 ```yaml
-artifact_version: "v1.5.0"
-release_version: "v1.5.0"
+artifact_version: "v2.4.2"
+release_version: "v2.4.2"
 container_image: "..."
 flavor: "rockylinux"
+flavor_release: "9"
 repository: "kairos-io/kairos"
 
 cloud_config: |

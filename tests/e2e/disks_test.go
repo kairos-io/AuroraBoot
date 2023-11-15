@@ -31,9 +31,10 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 		It("generate a raw file", func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
-			--set "artifact_version=v1.5.0" \
-			--set "release_version=v1.5.0" \
+			--set "artifact_version=v2.4.2" \
+			--set "release_version=v2.4.2" \
 			--set "flavor=rockylinux" \
+			--set "flavor_release=9" \
 			--set "disable_netboot=true" \
 			--set repository="kairos-io/kairos" \
 			--cloud-config /config.yaml \
@@ -54,10 +55,11 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
-			--set "artifact_version=v1.5.0" \
+			--set "artifact_version=v2.4.2" \
 			--set repository="kairos-io/kairos" \
-			--set "release_version=v1.5.0" \
+			--set "release_version=v2.4.2" \
 			--set "flavor=rockylinux" \
+			--set "flavor_release=9" \
 			--set "disk.gce=true" \
 			--set "state_dir=/tmp/auroraboot"`, tempDir)
 			Expect(out).To(ContainSubstring("Generating raw disk"), out)
@@ -73,9 +75,10 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 		It("generates a vhd image", func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
-			--set "artifact_version=v1.5.0" \
-			--set "release_version=v1.5.0" \
+			--set "artifact_version=v2.4.2" \
+			--set "release_version=v2.4.2" \
 			--set "flavor=rockylinux" \
+			--set "flavor_release=9" \
 			--set repository="kairos-io/kairos" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
@@ -96,10 +99,11 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 		// 	out, err := RunAurora(`--set "disable_http_server=true" \
 		// 	--set "disable_netboot=true" \
 		// 	--cloud-config /config.yaml \
-		// 	--set "artifact_version=v1.5.0" \
+		// 	--set "artifact_version=v2.4.2" \
 		// 	--set repository="kairos-io/kairos" \
-		// 	--set "release_version=v1.5.0" \
+		// 	--set "release_version=v2.4.2" \
 		// 	--set "flavor=rockylinux" \
+		// 	--set "flavor_release=9" \
 		// 	--set "disk.mbr=true" \
 		// 	--set "state_dir=/tmp/auroraboot"`, tempDir)
 		// 	Expect(out).To(ContainSubstring("Generating raw disk"), out)

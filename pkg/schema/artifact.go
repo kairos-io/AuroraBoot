@@ -2,8 +2,7 @@ package schema
 
 import (
 	"fmt"
-	"regexp"
-	"strconv"
+	"golang.org/x/mod/semver"
 	"strings"
 )
 
@@ -11,6 +10,7 @@ type ReleaseArtifact struct {
 	ArtifactVersion string `yaml:"artifact_version"`
 	Model           string `yaml:"model"`
 	Flavor          string `yaml:"flavor"`
+	FlavorRelease   string `yaml:"flavor_release"`
 	Platform        string `yaml:"platform"`
 	ReleaseVersion  string `yaml:"release_version"`
 	Repository      string `yaml:"repository"`
@@ -39,23 +39,19 @@ func (a ReleaseArtifact) FileName() string {
 
 	}
 
-	var re = regexp.MustCompile(`v(?P<major>\d+)\.(?P<minor>\d+).+`)
-	match := re.FindStringSubmatch(a.ReleaseVersion)
-	result := make(map[string]string)
-	for i, name := range re.SubexpNames() {
-		if i != 0 && name != "" {
-			result[name] = match[i]
+	if semver.Compare(a.ReleaseVersion, "v2.4.0") < 0 {
+		variant := a.Variant
+		if variant == "standard" {
+			variant = "kairos"
 		}
+		return fmt.Sprintf("%s-%s-%s", variant, a.Flavor, a.ArtifactVersion)
 	}
 
-	major, _ := strconv.Atoi(result["major"])
-	minor, _ := strconv.Atoi(result["minor"])
-
-	if major < 2 || (major == 2 && minor < 4) {
-		return fmt.Sprintf("kairos-%s-%s", a.Flavor, a.ArtifactVersion)
+	if semver.Compare(a.ReleaseVersion, "v2.4.2") < 0 {
+		return fmt.Sprintf("kairos-%s-%s-%s-generic-%s", a.Variant, a.Flavor, a.Platform, a.ArtifactVersion)
 	}
 
-	return fmt.Sprintf("kairos-%s-%s-%s-generic-%s", a.Variant, a.Flavor, a.Platform, a.ArtifactVersion)
+	return fmt.Sprintf("kairos-%s-%s-%s-%s-generic-%s", a.Flavor, a.FlavorRelease, a.Variant, a.Platform, a.ArtifactVersion)
 }
 
 func (a ReleaseArtifact) urlGen(ext string) string {
