@@ -6,7 +6,7 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/kairos v1.5.0
-	github.com/onsi/ginkgo/v2 v2.13.1
+	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.30.0
 	github.com/otiai10/copy v1.10.0
 	github.com/rs/zerolog v1.30.0
