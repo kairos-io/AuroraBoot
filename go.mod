@@ -13,7 +13,7 @@ require (
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli v1.22.14
 	go.universe.tf/netboot v0.0.0-20230225040044-0e2ca55deb50
-	golang.org/x/mod v0.13.0
+	golang.org/x/mod v0.16.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1
 )
