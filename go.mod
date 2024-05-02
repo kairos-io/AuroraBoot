@@ -11,7 +11,7 @@ require (
 	github.com/otiai10/copy v1.10.0
 	github.com/rs/zerolog v1.30.0
 	github.com/spectrocloud-labs/herd v0.4.2
-	github.com/urfave/cli v1.22.14
+	github.com/urfave/cli v1.22.15
 	go.universe.tf/netboot v0.0.0-20230225040044-0e2ca55deb50
 	golang.org/x/mod v0.13.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
@@ -23,7 +23,7 @@ require (
 	atomicgo.dev/keyboard v0.2.9 // indirect
 	github.com/aybabtme/rgbterm v0.0.0-20170906152045-cc83f3b3ce59 // indirect
 	github.com/containerd/console v1.0.3 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
 	github.com/go-logr/logr v1.3.0 // indirect
 	github.com/go-task/slim-sprig v0.0.0-20230315185526-52ccab3ef572 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
