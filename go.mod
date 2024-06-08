@@ -8,7 +8,7 @@ require (
 	github.com/kairos-io/kairos v1.5.0
 	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.30.0
-	github.com/otiai10/copy v1.10.0
+	github.com/otiai10/copy v1.14.0
 	github.com/rs/zerolog v1.30.0
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli v1.22.15
@@ -49,6 +49,7 @@ require (
 	golang.org/x/crypto v0.14.0 // indirect
 	golang.org/x/exp v0.0.0-20220909182711-5c715a9e8561 // indirect
 	golang.org/x/net v0.17.0 // indirect
+	golang.org/x/sync v0.4.0 // indirect
 	golang.org/x/sys v0.14.0 // indirect
 	golang.org/x/term v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
