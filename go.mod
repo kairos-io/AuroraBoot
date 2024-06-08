@@ -5,7 +5,7 @@ go 1.19
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/kairos-io/kairos v1.5.0
+	github.com/kairos-io/kairos v1.22.2
 	github.com/onsi/ginkgo/v2 v2.13.2
 	github.com/onsi/gomega v1.30.0
 	github.com/otiai10/copy v1.10.0
