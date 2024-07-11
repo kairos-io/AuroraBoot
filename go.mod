@@ -1,6 +1,6 @@
 module github.com/kairos-io/AuroraBoot
 
-go 1.19
+go 1.22
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
