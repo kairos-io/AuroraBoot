@@ -1,4 +1,4 @@
-ARG VERSION=v0.9.0
+ARG VERSION=v0.300.3
 
 FROM golang as builder
 ADD . /work
