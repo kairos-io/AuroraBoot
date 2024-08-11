@@ -810,6 +810,7 @@ github.com/subosito/gotenv v1.4.2/go.mod h1:ayKnFf/c6rvx/2iiLrJUk1e6plDbT3edrFNG
 github.com/tv42/httpunix v0.0.0-20150427012821-b75d8614f926/go.mod h1:9ESjWnEqriFuLhtthL60Sar/7RFoluCcXsuvEwTV5KM=
 github.com/urfave/cli v1.22.15 h1:nuqt+pdC/KqswQKhETJjo7pvn/k4xMUxgW6liI7XpnM=
 github.com/urfave/cli v1.22.15/go.mod h1:wSan1hmo5zeyLGBjRJbzRTNk8gwoYa2B9n4q9dmRIc0=
+github.com/urfave/cli/v2 v2.27.4/go.mod h1:m4QzxcD2qpra4z7WhzEGn74WZLViBnMpb1ToCAKdGRQ=
 github.com/wayneashleyberry/terminal-dimensions v1.1.0 h1:EB7cIzBdsOzAgmhTUtTTQXBByuPheP/Zv1zL2BRPY6g=
 github.com/wayneashleyberry/terminal-dimensions v1.1.0/go.mod h1:2lc/0eWCObmhRczn2SdGSQtgBooLUzIotkkEGXqghyg=
 github.com/xo/terminfo v0.0.0-20210125001918-ca9a967f8778/go.mod h1:2MuV+tbUrU1zIOPMxZ5EncGwgmMJsa+9ucAQZXxsObs=
