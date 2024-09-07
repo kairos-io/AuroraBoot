@@ -11,7 +11,7 @@ require (
 	github.com/otiai10/copy v1.10.0
 	github.com/rs/zerolog v1.33.0
 	github.com/spectrocloud-labs/herd v0.4.2
-	github.com/urfave/cli v1.22.15
+	github.com/urfave/cli/v2 v2.27.4
 	github.com/urfave/cli/v2 v2.27.4
 	go.universe.tf/netboot v0.0.0-20230916172012-64f6de6d0e3b
 	golang.org/x/mod v0.20.0
