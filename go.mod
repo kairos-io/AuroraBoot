@@ -5,7 +5,7 @@ go 1.22
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/kairos-io/kairos v1.5.0
+	github.com/kairos-io/kairos/v2 v2.0.3
 	github.com/onsi/ginkgo/v2 v2.20.1
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.10.0
