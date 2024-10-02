@@ -145,7 +145,11 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 				return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
 			}
 		}
+		if c.CloudConfig == "" {
+			return nil, nil, fmt.Errorf("cloud config set but contents are empty. Check that the content of the file is correct or the path is the proper one")
+		}
 	}
-	log.Print(c.CloudConfig)
+
+	log.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
 	return c, r, nil
 }
