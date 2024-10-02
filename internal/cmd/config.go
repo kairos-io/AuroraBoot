@@ -148,8 +148,8 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 		if c.CloudConfig == "" {
 			return nil, nil, fmt.Errorf("cloud config set but contents are empty. Check that the content of the file is correct or the path is the proper one")
 		}
+		log.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
 	}
-
-	log.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
+	
 	return c, r, nil
 }
