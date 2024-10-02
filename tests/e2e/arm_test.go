@@ -20,7 +20,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 
 			tempDir = t
 
-			err = WriteConfig("", t)
+			err = WriteConfig("test", t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 

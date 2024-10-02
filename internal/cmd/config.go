@@ -150,6 +150,6 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 		}
 		log.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
 	}
-	
+
 	return c, r, nil
 }

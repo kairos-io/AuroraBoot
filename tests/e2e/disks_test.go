@@ -21,7 +21,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 			tempDir = t
 
-			err = WriteConfig("", t)
+			err = WriteConfig("test", t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
