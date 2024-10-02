@@ -19,7 +19,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 
 			tempDir = t
 
-			err = WriteConfig("", t)
+			err = WriteConfig("test", t)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -43,6 +43,17 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 			Expect(err).ToNot(HaveOccurred())
 			_, err = os.Stat(filepath.Join(tempDir, "build/build/kairos.iso"))
 			Expect(err).ToNot(HaveOccurred())
+		})
+		It("fails if cloud config is empty", func() {
+			err := WriteConfig("", tempDir)
+			Expect(err).ToNot(HaveOccurred())
+
+			out, err := RunAurora(fmt.Sprintf(`--set container_image=quay.io/kairos/core-rockylinux:latest \
+			--set "disable_http_server=true" \
+			--set "disable_netboot=true" \
+			--cloud-config /config.yaml \
+			--set "state_dir=/tmp/auroraboot"`), tempDir)
+			Expect(err).To(HaveOccurred(), out)
 		})
 
 		It("generate an iso image from a release", func() {
