@@ -31,6 +31,8 @@ func Server(kernel, bootmsg, cmdline string, address, httpPort string, initrds [
 		return err
 	}
 
+	logger := func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) }
+
 	ipxeFw := map[pixiecore.Firmware][]byte{}
 	ipxeFw[pixiecore.FirmwareX86PC] = ipxe.MustAsset("third_party/ipxe/src/bin/undionly.kpxe")
 	ipxeFw[pixiecore.FirmwareEFI32] = ipxe.MustAsset("third_party/ipxe/src/bin-i386-efi/ipxe.efi")
@@ -39,7 +41,8 @@ func Server(kernel, bootmsg, cmdline string, address, httpPort string, initrds [
 	ipxeFw[pixiecore.FirmwareX86Ipxe] = ipxe.MustAsset("third_party/ipxe/src/bin/ipxe.pxe")
 	s := &pixiecore.Server{
 		Ipxe:           ipxeFw,
-		Log:            func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) },
+		Log:            logger,
+		Debug:          logger,
 		HTTPPort:       port,
 		HTTPStatusPort: 0,
 		DHCPNoBind:     nobind,
