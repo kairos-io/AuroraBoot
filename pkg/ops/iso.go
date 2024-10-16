@@ -10,6 +10,12 @@ import (
 	"github.com/kairos-io/kairos/pkg/utils"
 	"github.com/otiai10/copy"
 	"github.com/rs/zerolog/log"
+
+	enkiaction "github.com/kairos-io/enki/pkg/action"
+	enkiconfig "github.com/kairos-io/enki/pkg/config"
+	enkitypes "github.com/kairos-io/enki/pkg/types"
+	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	"github.com/spf13/pflag"
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
@@ -31,12 +37,36 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-		out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --squash-no-compression --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
-		log.Printf("Output '%s'", out)
+		// TODO: entrypoing.sh is simply calling `enki`. We can call enki here directly or even use it as a library
+		// adds only `--config-dir /config`
+
+		cfg, err := enkiconfig.ReadConfigBuild("/config", &pflag.FlagSet{})
 		if err != nil {
-			log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
+			return err
+		}
+		cfg.Name = name
+		spec := &enkitypes.LiveISO{}
+		spec.Image = append(spec.Image, v1.NewDirSrc(overlay))
+		imgSource, err := v1.NewSrcFromURI(src)
+		if err != nil {
+			cfg.Logger.Errorf("not a valid rootfs source: %s", src)
+			return err
+		}
+		spec.RootFS = []*v1.ImageSource{imgSource}
+
+		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
+		err = buildISO.ISORun()
+		if err != nil {
+			cfg.Logger.Errorf(err.Error())
 		}
 		return err
+
+		// out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --squash-no-compression --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
+		// log.Printf("Output '%s'", out)
+		// if err != nil {
+		// 	log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
+		// }
+		//return err
 	}
 }
 
