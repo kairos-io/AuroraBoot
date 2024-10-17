@@ -15,6 +15,7 @@ import (
 	enkiconfig "github.com/kairos-io/enki/pkg/config"
 	enkitypes "github.com/kairos-io/enki/pkg/types"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/spf13/pflag"
 )
 
@@ -37,22 +38,30 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-		// TODO: entrypoing.sh is simply calling `enki`. We can call enki here directly or even use it as a library
-		// adds only `--config-dir /config`
-
 		cfg, err := enkiconfig.ReadConfigBuild("/config", &pflag.FlagSet{})
 		if err != nil {
 			return err
 		}
 		cfg.Name = name
+		cfg.OutDir = dst
+		cfg.Logger = sdkTypes.NewKairosLogger("enki", "debug", false)
+		//logrus.SetLevel(logrus.DebugLevel) // what on earth? Globally and for all deps?
 		spec := &enkitypes.LiveISO{}
-		spec.Image = append(spec.Image, v1.NewDirSrc(overlay))
-		imgSource, err := v1.NewSrcFromURI(src)
+		imgSource, err := v1.NewSrcFromURI("dir:" + src)
 		if err != nil {
 			cfg.Logger.Errorf("not a valid rootfs source: %s", src)
 			return err
 		}
 		spec.RootFS = []*v1.ImageSource{imgSource}
+
+		uefi := v1.NewDirSrc("/efi")
+		grub := v1.NewDirSrc("/grub2")
+		isoOverlay := v1.NewDirSrc(overlay)
+		spec.UEFI = append(spec.UEFI, uefi)
+		spec.Image = append(spec.Image, uefi, grub, isoOverlay)
+		spec.Label = "COS_LIVE"
+		spec.GrubEntry = "Kairos"
+		spec.BootloaderInRootFs = false
 
 		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
@@ -62,11 +71,12 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		return err
 
 		// out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --squash-no-compression --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
+		// fmt.Printf("out = %+v\n", out)
 		// log.Printf("Output '%s'", out)
 		// if err != nil {
 		// 	log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
 		// }
-		//return err
+		// return err
 	}
 }
 
