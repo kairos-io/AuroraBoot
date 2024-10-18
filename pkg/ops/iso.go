@@ -59,11 +59,13 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		// config was copied in place here: https://github.com/kairos-io/osbuilder/blob/405eda716a6c291eb539a98765a291e893d0eda1/tools-image/Dockerfile#L86
 		// which is part of the auroraboot image: https://github.com/kairos-io/AuroraBoot/blob/9ca30fc6e3b6cac2d227e7937bd6895198bdc4d0/Dockerfile#L1
 		// TODO: Cleanup this madness!
-		uefi := v1.NewDirSrc("/efi")
+
+		//uefi := v1.NewDirSrc("/efi")
 		grub := v1.NewDirSrc("/grub2")
 		isoOverlay := v1.NewDirSrc(overlay)
-		spec.UEFI = append(spec.UEFI, uefi)
-		spec.Image = append(spec.Image, uefi, grub, isoOverlay)
+		// spec.UEFI = append(spec.UEFI, uefi)
+		//spec.Image = append(spec.Image, uefi, grub, isoOverlay)
+		spec.Image = append(spec.Image, grub, isoOverlay)
 		spec.Label = "COS_LIVE"
 		spec.GrubEntry = "Kairos"
 		spec.BootloaderInRootFs = false
