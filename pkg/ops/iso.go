@@ -45,11 +45,7 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		cfg.Name = name
 		cfg.OutDir = dst
 		cfg.Logger = sdkTypes.NewKairosLogger("enki", "debug", false)
-		imgSource, err := v1.NewSrcFromURI("dir:" + src)
-		if err != nil {
-			cfg.Logger.Errorf("not a valid rootfs source: %s", src)
-			return err
-		}
+		imgSource := v1.NewDirSrc(src)
 		grub := v1.NewDirSrc("/grub2")
 		isoOverlay := v1.NewDirSrc(overlay)
 
