@@ -61,10 +61,10 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		// TODO: Cleanup this madness!
 
 		//uefi := v1.NewDirSrc("/efi")
+		//spec.UEFI = append(spec.UEFI, uefi)
+		//spec.Image = append(spec.Image, uefi, grub, isoOverlay)
 		grub := v1.NewDirSrc("/grub2")
 		isoOverlay := v1.NewDirSrc(overlay)
-		// spec.UEFI = append(spec.UEFI, uefi)
-		//spec.Image = append(spec.Image, uefi, grub, isoOverlay)
 		spec.Image = append(spec.Image, grub, isoOverlay)
 		spec.Label = "COS_LIVE"
 		spec.GrubEntry = "Kairos"
@@ -76,14 +76,6 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 			cfg.Logger.Errorf(err.Error())
 		}
 		return err
-
-		// out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --squash-no-compression --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
-		// fmt.Printf("out = %+v\n", out)
-		// log.Printf("Output '%s'", out)
-		// if err != nil {
-		// 	log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
-		// }
-		// return err
 	}
 }
 
