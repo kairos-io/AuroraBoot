@@ -45,13 +45,13 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		cfg.Name = name
 		cfg.OutDir = dst
 		cfg.Logger = sdkTypes.NewKairosLogger("enki", "debug", false)
-		spec := &enkitypes.LiveISO{}
 		imgSource, err := v1.NewSrcFromURI("dir:" + src)
 		if err != nil {
 			cfg.Logger.Errorf("not a valid rootfs source: %s", src)
 			return err
 		}
-		spec.RootFS = []*v1.ImageSource{imgSource}
+		grub := v1.NewDirSrc("/grub2")
+		isoOverlay := v1.NewDirSrc(overlay)
 
 		// Removed here: https://github.com/kairos-io/osbuilder/commit/866dc42c48878fa8bebab26d8f24bf0f2953eb6e#diff-5e18c6520d9fb094d1d4c52b4fb652f09becd65053d95f8d7ac89c7998172fd4
 		// enki is called here: https://github.com/kairos-io/AuroraBoot/blob/9ca30fc6e3b6cac2d227e7937bd6895198bdc4d0/pkg/ops/iso.go#L34
@@ -63,13 +63,13 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		//uefi := v1.NewDirSrc("/efi")
 		//spec.UEFI = append(spec.UEFI, uefi)
 		//spec.Image = append(spec.Image, uefi, grub, isoOverlay)
-		grub := v1.NewDirSrc("/grub2")
-		isoOverlay := v1.NewDirSrc(overlay)
-		spec.Image = append(spec.Image, grub, isoOverlay)
-		spec.Label = "COS_LIVE"
-		spec.GrubEntry = "Kairos"
-		spec.BootloaderInRootFs = false
-
+		spec := &enkitypes.LiveISO{
+			RootFS:             []*v1.ImageSource{imgSource},
+			Image:              []*v1.ImageSource{grub, isoOverlay},
+			Label:              "COS_LIVE",
+			GrubEntry:          "Kairos",
+			BootloaderInRootFs: false,
+		}
 		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
 		if err != nil {
