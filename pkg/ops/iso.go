@@ -12,9 +12,10 @@ import (
 	"github.com/rs/zerolog/log"
 
 	enkiaction "github.com/kairos-io/enki/pkg/action"
-	"github.com/kairos-io/enki/pkg/types"
+	enkiconfig "github.com/kairos-io/enki/pkg/config"
 	enkitypes "github.com/kairos-io/enki/pkg/types"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
@@ -36,10 +37,12 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-		cfg := &types.BuildConfig{
-			Name:   name,
-			OutDir: dst,
-		}
+
+		cfg := enkiconfig.NewBuildConfig(
+			enkiconfig.WithLogger(sdkTypes.NewKairosLogger("enki", "debug", false)),
+		)
+		cfg.Name = name
+		cfg.OutDir = dst
 		// Live grub artifacts:
 		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
 		spec := &enkitypes.LiveISO{
