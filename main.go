@@ -31,10 +31,9 @@ func main() {
 				Name: "debug",
 			},
 		},
-		Description: `
-`,
-		UsageText: ``,
-		Copyright: "kairos authors",
+		Description: "Auroraboot is a tool that builds various Kairos artifacts suitable to run Kairos on Vms, bare metal, public cloud or single board computers (SBCs).\nIt also provides functionality like network booting to install Kairos. Read more in the docs: https://kairos.io/docs/reference/auroraboot/",
+		UsageText:   ``,
+		Copyright:   "Kairos authors",
 		Action: func(ctx *cli.Context) error {
 			zerolog.SetGlobalLevel(zerolog.InfoLevel)
 			if ctx.Bool("debug") {
