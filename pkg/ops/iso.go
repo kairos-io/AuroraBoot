@@ -10,6 +10,12 @@ import (
 	"github.com/kairos-io/kairos/pkg/utils"
 	"github.com/otiai10/copy"
 	"github.com/rs/zerolog/log"
+
+	enkiaction "github.com/kairos-io/enki/pkg/action"
+	enkiconfig "github.com/kairos-io/enki/pkg/config"
+	enkitypes "github.com/kairos-io/enki/pkg/types"
+	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
@@ -31,8 +37,26 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-		out, err := utils.SH(fmt.Sprintf("/entrypoint.sh --debug --name %s build-iso --squash-no-compression --overlay-iso %s --date=false --output %s dir:%s", name, overlay, dst, src))
-		log.Printf("Output '%s'", out)
+
+		cfg := enkiconfig.NewBuildConfig(
+			enkiconfig.WithLogger(sdkTypes.NewKairosLogger("enki", "debug", false)),
+		)
+		cfg.Name = name
+		cfg.OutDir = dst
+		// Live grub artifacts:
+		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
+		// but /efi is not needed because we handle it here:
+		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L256
+		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L325
+		spec := &enkitypes.LiveISO{
+			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
+			Image:              []*v1.ImageSource{v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
+			Label:              "COS_LIVE",
+			GrubEntry:          "Kairos",
+			BootloaderInRootFs: false,
+		}
+		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
+		err = buildISO.ISORun()
 		if err != nil {
 			log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
 		}
