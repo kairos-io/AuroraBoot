@@ -45,6 +45,9 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		cfg.OutDir = dst
 		// Live grub artifacts:
 		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
+		// but /efi is not needed because we handle it here:
+		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L256
+		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L325
 		spec := &enkitypes.LiveISO{
 			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
 			Image:              []*v1.ImageSource{v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
