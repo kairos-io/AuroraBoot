@@ -13,8 +13,7 @@ import (
 )
 
 var (
-	// https://goreleaser.com/cookbooks/using-main.version/
-	version = "dev"
+	version = "v0.0.0"
 )
 
 func main() {
