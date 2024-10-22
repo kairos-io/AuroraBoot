@@ -12,11 +12,9 @@ import (
 	"github.com/rs/zerolog/log"
 
 	enkiaction "github.com/kairos-io/enki/pkg/action"
-	enkiconfig "github.com/kairos-io/enki/pkg/config"
+	"github.com/kairos-io/enki/pkg/types"
 	enkitypes "github.com/kairos-io/enki/pkg/types"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
-	"github.com/spf13/pflag"
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
@@ -38,30 +36,15 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-		cfg, err := enkiconfig.ReadConfigBuild("/config", &pflag.FlagSet{})
-		if err != nil {
-			return err
+		cfg := &types.BuildConfig{
+			Name:   name,
+			OutDir: dst,
 		}
-		cfg.Name = name
-		cfg.OutDir = dst
-		cfg.Logger = sdkTypes.NewKairosLogger("enki", "debug", false)
-		imgSource := v1.NewDirSrc(src)
-		grub := v1.NewDirSrc("/grub2")
-		isoOverlay := v1.NewDirSrc(overlay)
-
-		// Removed here: https://github.com/kairos-io/osbuilder/commit/866dc42c48878fa8bebab26d8f24bf0f2953eb6e#diff-5e18c6520d9fb094d1d4c52b4fb652f09becd65053d95f8d7ac89c7998172fd4
-		// enki is called here: https://github.com/kairos-io/AuroraBoot/blob/9ca30fc6e3b6cac2d227e7937bd6895198bdc4d0/pkg/ops/iso.go#L34
-		// config is loaded here: https://github.com/kairos-io/enki/blob/844bd15261e89f103c16d1caa656ec41524b8d4f/pkg/config/config.go#L110-L114
-		// config was copied in place here: https://github.com/kairos-io/osbuilder/blob/405eda716a6c291eb539a98765a291e893d0eda1/tools-image/Dockerfile#L86
-		// which is part of the auroraboot image: https://github.com/kairos-io/AuroraBoot/blob/9ca30fc6e3b6cac2d227e7937bd6895198bdc4d0/Dockerfile#L1
-		// TODO: Cleanup this madness!
-
-		//uefi := v1.NewDirSrc("/efi")
-		//spec.UEFI = append(spec.UEFI, uefi)
-		//spec.Image = append(spec.Image, uefi, grub, isoOverlay)
+		// Live grub artifacts:
+		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
 		spec := &enkitypes.LiveISO{
-			RootFS:             []*v1.ImageSource{imgSource},
-			Image:              []*v1.ImageSource{grub, isoOverlay},
+			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
+			Image:              []*v1.ImageSource{v1.NewDirSrc("/efi"), v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
 			Label:              "COS_LIVE",
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
