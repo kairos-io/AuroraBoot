@@ -47,7 +47,7 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
 		spec := &enkitypes.LiveISO{
 			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
-			Image:              []*v1.ImageSource{v1.NewDirSrc("/efi"), v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
+			Image:              []*v1.ImageSource{v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
 			Label:              "COS_LIVE",
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
