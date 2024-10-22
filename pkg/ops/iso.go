@@ -55,7 +55,7 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
 		if err != nil {
-			cfg.Logger.Errorf(err.Error())
+			log.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
 		}
 		return err
 	}
