@@ -81,10 +81,7 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 
 	// Pull locak docker daemon if container image starts with docker://
 	containerImage := artifact.ContainerImage
-	local := false
-
 	if strings.HasPrefix(containerImage, "docker://") {
-		local = true
 		containerImage = strings.ReplaceAll(containerImage, "docker://", "")
 	}
 
@@ -115,7 +112,7 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 	// Ops to generate from container image
 	g.Add(opContainerPull,
 		herd.EnableIf(fromImageOption),
-		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(containerImage, tmpRootfs, local)))
+		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(containerImage, tmpRootfs)))
 	g.Add(opGenISO,
 		herd.EnableIf(func() bool { return fromImage && !rawDiskIsSet && c.Disk.ARM == nil }),
 		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, tmpRootfs, dst, c.ISO)))
