@@ -12,12 +12,17 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+var (
+	// https://goreleaser.com/cookbooks/using-main.version/
+	version = "dev"
+)
+
 func main() {
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	app := &cli.App{
 		Name:    "AuroraBoot",
-		Version: "0.1",
+		Version: version,
 		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:   "auroraboot",
 		Flags: []cli.Flag{

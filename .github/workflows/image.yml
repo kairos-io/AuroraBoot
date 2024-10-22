@@ -35,6 +35,7 @@ jobs:
             TAGS="$TAGS,${DOCKER_IMAGE}:latest"
           fi
           # Set output parameters.
+          echo ::set-output name=binary_version::${VERSION}
           echo ::set-output name=tags::${TAGS}
           echo ::set-output name=docker_image::${DOCKER_IMAGE}
       - name: Set up QEMU
@@ -58,6 +59,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           builder: ${{ steps.buildx.outputs.name }}
+          build-args: |
+            BINARY_VERSION=${{ steps.prep.outputs.binary_version }}
           context: ./
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
