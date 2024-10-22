@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"os"
 
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/rs/zerolog/log"
@@ -16,7 +17,12 @@ func PullContainerImage(image, dst string) func(ctx context.Context) error {
 			return err
 		}
 		log.Info().Msgf("Pulling container image '%s' to '%s')", image, dst)
+
 		// This method already first tries the local registry and then moves to remote, so no need to pass local
+		err = os.MkdirAll(dst, os.ModeDir|os.ModePerm)
+		if err != nil {
+			log.Error().Err(err).Str("image", image).Msg("failed to create directory")
+		}
 		err = sdkUtils.ExtractOCIImage(img, dst)
 		if err != nil {
 			log.Error().Err(err).Str("image", image).Msg("failed to extract OCI image")
