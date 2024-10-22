@@ -9,8 +9,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
-
-	"github.com/urfave/cli"
+	"github.com/urfave/cli/v2"
 )
 
 func main() {
@@ -19,16 +18,16 @@ func main() {
 	app := &cli.App{
 		Name:    "AuroraBoot",
 		Version: "0.1",
-		Author:  "Kairos authors",
+		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:   "auroraboot",
 		Flags: []cli.Flag{
-			cli.StringSliceFlag{
+			&cli.StringSliceFlag{
 				Name: "set",
 			},
-			cli.StringFlag{
+			&cli.StringFlag{
 				Name: "cloud-config",
 			},
-			cli.BoolFlag{
+			&cli.BoolFlag{
 				Name: "debug",
 			},
 		},

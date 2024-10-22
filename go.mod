@@ -10,12 +10,13 @@ require (
 	github.com/kairos-io/enki v0.2.1
 	github.com/kairos-io/kairos v1.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.15.1
+	github.com/kairos-io/kairos-sdk v0.6.0
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.14.0
 	github.com/rs/zerolog v1.33.0
 	github.com/spectrocloud-labs/herd v0.4.2
-	github.com/urfave/cli v1.22.15
+	github.com/urfave/cli/v2 v2.27.4
 	go.universe.tf/netboot v0.0.0-20230916172012-64f6de6d0e3b
 	golang.org/x/mod v0.21.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
@@ -95,7 +96,6 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kairos-io/go-ukify v0.2.3 // indirect
-	github.com/kairos-io/kairos-sdk v0.6.0 // indirect
 	github.com/kendru/darwin/go/depgraph v0.0.0-20221105232959-877d6a81060c // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
@@ -165,6 +165,7 @@ require (
 	github.com/wayneashleyberry/terminal-dimensions v1.1.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
+	github.com/xrash/smetrics v0.0.0-20240521201337-686a1a2994c1 // indirect
 	github.com/zcalusic/sysinfo v1.1.2 // indirect
 	go.opencensus.io v0.24.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.49.0 // indirect
