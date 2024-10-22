@@ -10,12 +10,14 @@ require (
 	github.com/kairos-io/enki v0.2.1
 	github.com/kairos-io/kairos v1.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.15.1
+	github.com/kairos-io/kairos-sdk v0.6.0
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.14.0
 	github.com/rs/zerolog v1.33.0
 	github.com/spectrocloud-labs/herd v0.4.2
-	github.com/urfave/cli v1.22.15
+	github.com/urfave/cli v1.22.12
+	github.com/urfave/cli/v2 v2.27.5
 	go.universe.tf/netboot v0.0.0-20230916172012-64f6de6d0e3b
 	golang.org/x/mod v0.21.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
@@ -46,7 +48,7 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
-	github.com/cpuguy83/go-md2man/v2 v2.0.4 // indirect
+	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/diskfs/go-diskfs v1.4.1 // indirect
@@ -95,7 +97,6 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kairos-io/go-ukify v0.2.3 // indirect
-	github.com/kairos-io/kairos-sdk v0.6.0 // indirect
 	github.com/kendru/darwin/go/depgraph v0.0.0-20221105232959-877d6a81060c // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
