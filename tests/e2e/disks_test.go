@@ -140,6 +140,8 @@ install:
 ## Login
 users:
 - name: "kairos"
+  groups:
+    - "admin"
   lock_passwd: true
   ssh_authorized_keys:
   - github:mudler
