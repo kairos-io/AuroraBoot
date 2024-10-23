@@ -14,7 +14,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 
 		tempDir := ""
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			t, err := os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t

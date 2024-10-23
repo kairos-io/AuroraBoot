@@ -16,7 +16,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 		tempDir := ""
 
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			t, err := os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t
@@ -158,7 +158,7 @@ stages:
          [[ "$(echo "$(df -h | grep COS_PERSISTENT)" | awk '{print $5}' | tr -d '%')" -ne 100 ]] && resize2fs /dev/disk/by-label/COS_PERSISTENT`
 
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			t, err := os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t

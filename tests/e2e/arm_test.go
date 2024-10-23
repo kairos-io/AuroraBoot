@@ -15,7 +15,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 		tempDir := ""
 
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			t, err := os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
 			tempDir = t
