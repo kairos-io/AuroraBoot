@@ -11,15 +11,14 @@ import (
 
 var _ = Describe("ISO image generation", Label("iso"), func() {
 	Context("build", func() {
+		var tempDir string
+		var err error
 
-		tempDir := ""
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			tempDir, err = os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
-			tempDir = t
-
-			err = WriteConfig("test", t)
+			err = WriteConfig("test", tempDir)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -44,6 +43,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 			_, err = os.Stat(filepath.Join(tempDir, "build/build/kairos.iso"))
 			Expect(err).ToNot(HaveOccurred())
 		})
+
 		It("fails if cloud config is empty", func() {
 			err := WriteConfig("", tempDir)
 			Expect(err).ToNot(HaveOccurred())
@@ -54,6 +54,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 			--cloud-config /config.yaml \
 			--set "state_dir=/tmp/auroraboot"`), tempDir)
 			Expect(err).To(HaveOccurred(), out)
+			Expect(out).To(MatchRegexp("cloud config set but contents are empty"))
 		})
 
 		It("generate an iso image from a release", func() {

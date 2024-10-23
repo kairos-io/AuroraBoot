@@ -12,16 +12,14 @@ import (
 var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 	Context("build from an ISO", func() {
-
-		tempDir := ""
+		var tempDir string
+		var err error
 
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			tempDir, err = os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
-			tempDir = t
-
-			err = WriteConfig("test", t)
+			err = WriteConfig("test", tempDir)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -119,10 +117,12 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 	})
 
 	Context("build from a container image", func() {
+		var tempDir string
+		var err error
+		var config string
 
-		tempDir := ""
-
-		config := `#cloud-config
+		BeforeEach(func() {
+			config = `#cloud-config
 
 hostname: kairos-{{ trunc 4 .MachineID }}
 
@@ -157,13 +157,10 @@ stages:
       - |
          [[ "$(echo "$(df -h | grep COS_PERSISTENT)" | awk '{print $5}' | tr -d '%')" -ne 100 ]] && resize2fs /dev/disk/by-label/COS_PERSISTENT`
 
-		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "")
+			tempDir, err = os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
-			tempDir = t
-
-			err = WriteConfig(config, t)
+			err = WriteConfig(config, tempDir)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
