@@ -8,7 +8,7 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.2
-	github.com/kairos-io/kairos v1.5.0
+	github.com/kairos-io/kairos v1.22.2
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.0
 	github.com/onsi/ginkgo/v2 v2.20.2
