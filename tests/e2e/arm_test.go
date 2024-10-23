@@ -11,16 +11,14 @@ import (
 
 var _ = Describe("ARM image generation", Label("arm"), func() {
 	Context("build", func() {
-
-		tempDir := ""
+		var tempDir string
+		var err error
 
 		BeforeEach(func() {
-			t, err := os.MkdirTemp("", "auroraboot-test-")
+			tempDir, err = os.MkdirTemp("", "auroraboot-test-")
 			Expect(err).ToNot(HaveOccurred())
 
-			tempDir = t
-
-			err = WriteConfig("test", t)
+			err = WriteConfig("test", tempDir)
 			Expect(err).ToNot(HaveOccurred())
 		})
 
