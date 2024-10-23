@@ -9,7 +9,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.1
 	github.com/kairos-io/kairos v1.5.0
-	github.com/kairos-io/kairos-agent/v2 v2.15.1
+	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.0
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
