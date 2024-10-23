@@ -54,6 +54,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 			--cloud-config /config.yaml \
 			--set "state_dir=/tmp/auroraboot"`), tempDir)
 			Expect(err).To(HaveOccurred(), out)
+			Expect(out).To(MatchRegexp("cloud config set but contents are empty"))
 		})
 
 		It("generate an iso image from a release", func() {
