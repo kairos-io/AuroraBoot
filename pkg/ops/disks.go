@@ -157,8 +157,8 @@ mkisofs -output ci.iso -volid cidata -joliet -rock user-data meta-data
 truncate -s "+$((20000*1024*1024))" %s
 
 %s -m %s -smp cores=%s \
+		-chardev stdio,mux=on,id=char0,logfile=/tmp/serial.log,signal=off -serial chardev:char0	-mon chardev=char0 \
         -nographic \
-        -serial mon:stdio \
         -rtc base=utc,clock=rt \
         -chardev socket,path=qga.sock,server,nowait,id=qga0 \
         -device virtio-serial \
