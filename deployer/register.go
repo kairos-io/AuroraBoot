@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 
@@ -46,6 +47,32 @@ const (
 const (
 	kairosDefaultArtifactName = "kairos"
 )
+
+type Deployer struct {
+	*herd.Graph
+	config   schema.Config
+	artifact schema.ReleaseArtifact
+}
+
+func NewDeployer(c schema.Config, a schema.ReleaseArtifact) *Deployer {
+	d := &Deployer{config: c, artifact: a}
+	d.Graph = herd.DAG(herd.EnableInit)
+
+	return d
+}
+
+func (d *Deployer) CollectErrors() error {
+	var err error
+	for _, layer := range d.Analyze() {
+		for _, op := range layer {
+			if op.Error != nil {
+				err = multierror.Append(err, op.Error)
+			}
+		}
+	}
+
+	return err
+}
 
 // Register register the op dag based on the configuration and the artifact wanted.
 func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, cloudConfigFile string) {
@@ -216,6 +243,31 @@ func Register(g *herd.Graph, artifact schema.ReleaseArtifact, c schema.Config, c
 			ops.StartPixiecore(cloudConfigFile, squashFSfile, address, netbootPort, initrdFile, kernelFile, c.NetBoot),
 		),
 	)
+}
+
+func (d *Deployer) AddStepPrepDirs() {
+	dstNetboot := d.config.StateDir("netboot")
+	dst := d.config.StateDir("build")
+
+	// Preparation steps
+	d.Add(opPreparetmproot, herd.WithCallback(
+		func(ctx context.Context) error {
+			fmt.Println("creating a dir")
+			return os.MkdirAll(dstNetboot, 0700)
+		},
+	))
+
+	d.Add(opPrepareNetboot, herd.WithCallback(
+		func(ctx context.Context) error {
+			fmt.Println("creating another dir")
+			return os.MkdirAll(dstNetboot, 0700)
+		},
+	))
+
+	d.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
+		fmt.Println("creating yet another dir")
+		return os.MkdirAll(dst, 0700)
+	}))
 }
 
 func copy(src, dst string) (int64, error) {
