@@ -37,7 +37,6 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		}
 
 		log.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
-
 		cfg := enkiconfig.NewBuildConfig(
 			enkiconfig.WithLogger(sdkTypes.NewKairosLogger("enki", "debug", false)),
 		)

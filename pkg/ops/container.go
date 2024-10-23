@@ -2,24 +2,30 @@ package ops
 
 import (
 	"context"
-	"fmt"
+	"os"
 
-	"github.com/kairos-io/kairos/pkg/utils"
+	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/rs/zerolog/log"
 )
 
 // PullContainerImage pulls a container image either remotely or locally from a docker daemon.
-func PullContainerImage(image, dst string, local bool) func(ctx context.Context) error {
+func PullContainerImage(image, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		log.Info().Msgf("Pulling container image '%s' to '%s' (local: %t)", image, dst, local)
-		l := ""
-		if local {
-			l = "--local"
-		}
-		out, err := utils.SH(fmt.Sprintf("luet util unpack %s %s %s", l, image, dst))
-		log.Printf("Output '%s'", out)
+		img, err := sdkUtils.GetImage(image, "", nil, nil)
 		if err != nil {
-			log.Error().Msgf("Failed pulling container image '%s' to '%s' (local: %t): %s", image, dst, local, err.Error())
+			log.Error().Err(err).Str("image", image).Msg("failed to pull image")
+			return err
+		}
+		log.Info().Msgf("Pulling container image '%s' to '%s')", image, dst)
+
+		// This method already first tries the local registry and then moves to remote, so no need to pass local
+		err = os.MkdirAll(dst, os.ModeDir|os.ModePerm)
+		if err != nil {
+			log.Error().Err(err).Str("image", image).Msg("failed to create directory")
+		}
+		err = sdkUtils.ExtractOCIImage(img, dst)
+		if err != nil {
+			log.Error().Err(err).Str("image", image).Msg("failed to extract OCI image")
 		}
 		return err
 	}
