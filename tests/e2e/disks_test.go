@@ -31,8 +31,8 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 		It("generate a raw file", func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
-			--set "artifact_version=v2.4.2" \
-			--set "release_version=v2.4.2" \
+			--set "artifact_version=v3.2.1" \
+			--set "release_version=v3.2.1" \
 			--set "flavor=rockylinux" \
 			--set "flavor_release=9" \
 			--set "disable_netboot=true" \
@@ -55,9 +55,9 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
-			--set "artifact_version=v2.4.2" \
+			--set "artifact_version=v3.2.1" \
 			--set repository="kairos-io/kairos" \
-			--set "release_version=v2.4.2" \
+			--set "release_version=v3.2.1" \
 			--set "flavor=rockylinux" \
 			--set "flavor_release=9" \
 			--set "disk.gce=true" \
@@ -75,8 +75,8 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 
 		It("generates a vhd image", func() {
 			out, err := RunAurora(`--set "disable_http_server=true" \
-			--set "artifact_version=v2.4.2" \
-			--set "release_version=v2.4.2" \
+			--set "artifact_version=v3.2.1" \
+			--set "release_version=v3.2.1" \
 			--set "flavor=rockylinux" \
 			--set "flavor_release=9" \
 			--set repository="kairos-io/kairos" \
@@ -174,7 +174,7 @@ stages:
 		})
 
 		It("generate a raw build/build/disk.raw (EFI) file", Label("efi"), func() {
-			image := "quay.io/kairos/core-rockylinux:latest"
+			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -194,7 +194,7 @@ stages:
 		})
 
 		It("generates a gce image (EFI)", Label("efi"), func() {
-			image := "quay.io/kairos/core-opensuse-leap-arm-rpi:latest"
+			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -215,7 +215,7 @@ stages:
 		})
 
 		It("generates a vhd image", Label("efi"), func() {
-			image := "quay.io/kairos/core-opensuse-leap-arm-rpi:latest"
+			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -236,7 +236,7 @@ stages:
 		})
 
 		It("generates a raw MBR image", Label("mbr"), func() {
-			image := "quay.io/kairos/core-opensuse-leap:latest"
+			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 			// _, err := PullImage(image)
 			// Expect(err).ToNot(HaveOccurred())
 
