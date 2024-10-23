@@ -7,9 +7,9 @@ toolchain go1.23.2
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/hashicorp/go-multierror v1.1.1
-	github.com/kairos-io/enki v0.2.1
+	github.com/kairos-io/enki v0.2.2
 	github.com/kairos-io/kairos v1.5.0
-	github.com/kairos-io/kairos-agent/v2 v2.15.1
+	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.0
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
@@ -41,9 +41,9 @@ require (
 	github.com/cloudflare/circl v1.3.9 // indirect
 	github.com/containerd/cgroups v1.1.0 // indirect
 	github.com/containerd/console v1.0.4-0.20230706203907-8f6c4e4faef5 // indirect
-	github.com/containerd/containerd v1.7.22 // indirect
+	github.com/containerd/containerd v1.7.23 // indirect
 	github.com/containerd/continuity v0.4.2 // indirect
-	github.com/containerd/errdefs v0.1.0 // indirect
+	github.com/containerd/errdefs v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
@@ -64,7 +64,7 @@ require (
 	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/foxboron/go-uefi v0.0.0-20240805124652-e2076f0e58ca // indirect
+	github.com/foxboron/go-uefi v0.0.0-20241017190036-fab4fdf2f2f3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.5.0 // indirect
@@ -95,7 +95,7 @@ require (
 	github.com/jaypipes/pcidb v1.0.1 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/joho/godotenv v1.5.1 // indirect
-	github.com/kairos-io/go-ukify v0.2.3 // indirect
+	github.com/kairos-io/go-ukify v0.2.4 // indirect
 	github.com/kendru/darwin/go/depgraph v0.0.0-20221105232959-877d6a81060c // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.17.11 // indirect
@@ -175,7 +175,7 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.9.0 // indirect
 	golang.org/x/crypto v0.28.0 // indirect
-	golang.org/x/exp v0.0.0-20241004190924-225e2abe05e6 // indirect
+	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c // indirect
 	golang.org/x/net v0.30.0 // indirect
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/sys v0.26.0 // indirect
