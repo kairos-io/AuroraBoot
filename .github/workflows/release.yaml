@@ -20,7 +20,7 @@ jobs:
           # Set output parameters.
           echo ::set-output name=binary_version::${VERSION}
       - name: Set up Go
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v5
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v5
         with:
