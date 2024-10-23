@@ -22,6 +22,7 @@ jobs:
         run: |
           DOCKER_IMAGE=quay.io/kairos/auroraboot
           VERSION=latest
+          BINARY_VERSION=$(git describe --always --tags --dirty)
           SHORTREF=${GITHUB_SHA::8}
           # If this is git tag, use the tag name as a docker tag
           if [[ $GITHUB_REF == refs/tags/* ]]; then
@@ -35,6 +36,7 @@ jobs:
             TAGS="$TAGS,${DOCKER_IMAGE}:latest"
           fi
           # Set output parameters.
+          echo ::set-output name=binary_version::${BINARY_VERSION}
           echo ::set-output name=tags::${TAGS}
           echo ::set-output name=docker_image::${DOCKER_IMAGE}
       - name: Set up QEMU
@@ -58,6 +60,8 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           builder: ${{ steps.buildx.outputs.name }}
+          build-args: |
+            BINARY_VERSION=${{ steps.prep.outputs.binary_version }}
           context: ./
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64
