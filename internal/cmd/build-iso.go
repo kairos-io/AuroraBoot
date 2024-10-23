@@ -69,6 +69,7 @@ var BuildISOCmd = cli.Command{
 			d.StepPrepNetbootDir,
 			d.StepPrepTmpRootDir,
 			d.StepPrepDestDir,
+			d.StepCopyCloudConfig,
 		} {
 			if err := step(); err != nil {
 				return err

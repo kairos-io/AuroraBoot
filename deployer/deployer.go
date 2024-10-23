@@ -2,7 +2,6 @@ package deployer
 
 import (
 	"context"
-	"io/ioutil"
 	"os"
 
 	"github.com/hashicorp/go-multierror"
@@ -69,7 +68,7 @@ func LoadFile(file string) (*schema.Config, *schema.ReleaseArtifact, error) {
 // Start starts the auroraboot deployer
 func Start(config *schema.Config, release *schema.ReleaseArtifact) error {
 
-	f, err := ioutil.TempFile("", "auroraboot-dat")
+	f, err := os.CreateTemp("", "auroraboot-dat")
 	if err != nil {
 		return err
 	}
