@@ -2,7 +2,7 @@
 project_name: AuroraBoot
 builds:
   - ldflags:
-      - -w -s
+      - -w -s -X main.version={{.Env.BINARY_VERSION}}
     env:
       - CGO_ENABLED=0
     goos:

@@ -9,8 +9,11 @@ import (
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/rs/zerolog"
 	"github.com/rs/zerolog/log"
+	"github.com/urfave/cli/v2"
+)
 
-	"github.com/urfave/cli"
+var (
+	version = "v0.0.0"
 )
 
 func main() {
@@ -18,24 +21,23 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 	app := &cli.App{
 		Name:    "AuroraBoot",
-		Version: "0.1",
-		Author:  "Kairos authors",
+		Version: version,
+		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:   "auroraboot",
 		Flags: []cli.Flag{
-			cli.StringSliceFlag{
+			&cli.StringSliceFlag{
 				Name: "set",
 			},
-			cli.StringFlag{
+			&cli.StringFlag{
 				Name: "cloud-config",
 			},
-			cli.BoolFlag{
+			&cli.BoolFlag{
 				Name: "debug",
 			},
 		},
-		Description: `
-`,
-		UsageText: ``,
-		Copyright: "kairos authors",
+		Description: "Auroraboot is a tool that builds various Kairos artifacts suitable to run Kairos on Vms, bare metal, public cloud or single board computers (SBCs).\nIt also provides functionality like network booting to install Kairos. Read more in the docs: https://kairos.io/docs/reference/auroraboot/",
+		UsageText:   ``,
+		Copyright:   "Kairos authors",
 		Action: func(ctx *cli.Context) error {
 			zerolog.SetGlobalLevel(zerolog.InfoLevel)
 			if ctx.Bool("debug") {
