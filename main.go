@@ -31,12 +31,18 @@ func main() {
 				return err
 			}
 
+			// TODO: Move to a RegisterBuildIso function
 			d := deployer.NewDeployer(*c, *r)
-			d.AddStepPrepDirs()
-			// TODO: Add more steps
-
-			//fmt.Printf("d = %+v\n", d.Graph)
-			//fmt.Printf("d.Analyze() = %+v\n", d.Analyze())
+			for _, step := range []func() error{
+				// TODO: Add more steps
+				d.StepPrepNetbootDir,
+				d.StepPrepTmpRootDir,
+				d.StepPrepDestDir,
+			} {
+				if err := step(); err != nil {
+					return err
+				}
+			}
 
 			if err := d.Run(ctx.Context); err != nil {
 				return err

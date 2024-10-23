@@ -13,6 +13,32 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type Deployer struct {
+	*herd.Graph
+	config   schema.Config
+	artifact schema.ReleaseArtifact
+}
+
+func NewDeployer(c schema.Config, a schema.ReleaseArtifact) *Deployer {
+	d := &Deployer{config: c, artifact: a}
+	d.Graph = herd.DAG(herd.EnableInit)
+
+	return d
+}
+
+func (d *Deployer) CollectErrors() error {
+	var err error
+	for _, layer := range d.Analyze() {
+		for _, op := range layer {
+			if op.Error != nil {
+				err = multierror.Append(err, op.Error)
+			}
+		}
+	}
+
+	return err
+}
+
 func LoadByte(b []byte) (*schema.Config, *schema.ReleaseArtifact, error) {
 	config := &schema.Config{}
 	release := &schema.ReleaseArtifact{}
