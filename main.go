@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"os"
 
@@ -56,7 +55,7 @@ func main() {
 			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
 			deployer.RegisterAll(d)
 			d.WriteDag()
-			if err := d.Run(context.Background()); err != nil {
+			if err := d.Run(ctx.Context); err != nil {
 				return err
 			}
 
