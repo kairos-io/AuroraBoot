@@ -5,7 +5,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 
@@ -70,7 +69,6 @@ func RegisterAll(d *Deployer) {
 	kernelFile := filepath.Join(dstNetboot, "kairos-kernel")
 	initrdFile := filepath.Join(dstNetboot, "kairos-initrd")
 	isoFile := filepath.Join(dst, "kairos.iso")
-	tmpRootfs := d.Config.StateDir("temp-rootfs")
 	fromImage := d.Artifact.ContainerImage != ""
 	fromImageOption := func() bool { return fromImage }
 	isoOption := func() bool { return !fromImage }
@@ -78,26 +76,17 @@ func RegisterAll(d *Deployer) {
 	netbootReleaseOption := func() bool { return !d.Config.DisableNetboot && !fromImage }
 	rawDiskIsSet := d.Config.Disk.VHD || d.Config.Disk.RAW || d.Config.Disk.GCE
 
-	// Pull locak docker daemon if container image starts with docker://
-	containerImage := d.Artifact.ContainerImage
-	if strings.HasPrefix(containerImage, "docker://") {
-		containerImage = strings.ReplaceAll(containerImage, "docker://", "")
-	}
-
 	// Preparation steps
 	// TODO: Handle errors?
 	d.StepPrepTmpRootDir()
 	d.StepPrepNetbootDir()
 	d.StepPrepISODir()
 	d.StepCopyCloudConfig()
+	d.StepPullContainer(fromImageOption)
 
-	// Ops to generate from container image
-	d.Add(opContainerPull,
-		herd.EnableIf(fromImageOption),
-		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(containerImage, tmpRootfs)))
 	d.Add(opGenISO,
 		herd.EnableIf(func() bool { return fromImage && !rawDiskIsSet && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, tmpRootfs, dst, d.Config.ISO)))
+		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, d.tmpRootFs(), dst, d.Config.ISO)))
 	d.Add(opExtractNetboot,
 		herd.EnableIf(func() bool { return fromImage && !d.Config.DisableNetboot }),
 		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
@@ -124,14 +113,14 @@ func RegisterAll(d *Deployer) {
 	// Extract SquashFS from released asset to build the raw disk image if needed
 	d.Add(opExtractSquashFS,
 		herd.EnableIf(func() bool { return rawDiskIsSet && !fromImage }),
-		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(squashFSfile, tmpRootfs)))
+		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(squashFSfile, d.tmpRootFs())))
 
 	imageOrSquashFS := herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS))
 
 	d.Add(opGenRawDisk,
 		herd.EnableIf(func() bool { return rawDiskIsSet && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
 		imageOrSquashFS,
-		herd.WithCallback(ops.GenEFIRawDisk(tmpRootfs, filepath.Join(dst, "disk.raw"))))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), filepath.Join(dst, "disk.raw"))))
 
 	d.Add(opGenMBRRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.MBR }),
@@ -161,12 +150,12 @@ func RegisterAll(d *Deployer) {
 	d.Add(opGenARMImages,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && !d.Config.Disk.ARM.PrepareOnly }),
 		imageOrSquashFS,
-		herd.WithCallback(ops.GenArmDisk(tmpRootfs, filepath.Join(dst, "disk.img"), d.Config)))
+		herd.WithCallback(ops.GenArmDisk(d.tmpRootFs(), filepath.Join(dst, "disk.img"), d.Config)))
 
 	d.Add(opPrepareARMImages,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && d.Config.Disk.ARM.PrepareOnly }),
 		imageOrSquashFS,
-		herd.WithCallback(ops.PrepareArmPartitions(tmpRootfs, dst, d.Config)))
+		herd.WithCallback(ops.PrepareArmPartitions(d.tmpRootFs(), dst, d.Config)))
 
 	// Inject the data into the ISO
 	d.Add(opInjectCC,
