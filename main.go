@@ -22,11 +22,10 @@ func main() {
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
 
 	app := &cli.App{
-		Name:     "AuroraBoot",
-		Version:  version,
-		Authors:  []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
-		Usage:    "auroraboot",
-		Commands: []*cli.Command{&cmd.BuildISOCmd},
+		Name:    "AuroraBoot",
+		Version: version,
+		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
+		Usage:   "auroraboot",
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "set",
