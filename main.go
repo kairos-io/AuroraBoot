@@ -47,13 +47,16 @@ func main() {
 				zerolog.SetGlobalLevel(zerolog.DebugLevel)
 			}
 			c, r, err := cmd.ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
-
 			if err != nil {
 				return err
 			}
 
 			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
-			deployer.RegisterAll(d)
+			err = deployer.RegisterAll(d)
+			if err != nil {
+				return err
+			}
+
 			d.WriteDag()
 			if err := d.Run(ctx.Context); err != nil {
 				return err

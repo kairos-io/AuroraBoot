@@ -4,11 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-
-	"github.com/kairos-io/AuroraBoot/pkg/ops"
-
-	"github.com/spectrocloud-labs/herd"
 )
 
 const (
@@ -44,150 +39,43 @@ const (
 	kairosDefaultArtifactName = "kairos"
 )
 
-// RegisterAll register the op dag based on the configuration and the artifact wanted.
+// RegisterAll registers the op dag based on the configuration and the artifact wanted.
 // This registers all steps for the top level Auroraboot command.
-func RegisterAll(d *Deployer) {
-	dst := d.Config.StateDir("build")
-	dstNetboot := d.Config.StateDir("netboot")
-
-	listenAddr := ":8080"
-	if d.Config.ListenAddr != "" {
-		listenAddr = d.Config.ListenAddr
+func RegisterAll(d *Deployer) error {
+	for _, step := range []func() error{
+		d.StepPrepTmpRootDir,
+		d.StepPrepNetbootDir,
+		d.StepPrepISODir,
+		d.StepCopyCloudConfig,
+		d.StepPullContainer,
+		d.StepGenISO,
+		d.StepExtractNetboot,
+		//TODO: add Validate step
+		// Ops to download from releases
+		d.StepDownloadInitrd,
+		d.StepDownloadKernel,
+		d.StepDownloadSquashFS,
+		d.StepDownloadISO,
+		// Ops to generate disk images
+		d.StepExtractSquashFS,
+		d.StepGenRawDisk,
+		d.StepGenMBRRawDisk,
+		d.StepConvertGCE,
+		d.StepConvertVHD,
+		// ARM
+		d.StepGenARMImages,
+		d.StepPrepareARMImages,
+		// Inject the data into the ISO
+		d.StepInjectCC,
+		// Start servers
+		d.StepStartHTTPServer,
+		d.StepStartNetboot,
+	} {
+		if err := step(); err != nil {
+			return err
+		}
 	}
-
-	netbootPort := "8090"
-	if d.Config.NetBootHTTPPort != "" {
-		netbootPort = d.Config.NetBootHTTPPort
-	}
-	address := "0.0.0.0"
-	if d.Config.NetBootListenAddr != "" {
-		netbootPort = d.Config.NetBootListenAddr
-	}
-
-	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
-	squashFSfile := filepath.Join(dstNetboot, "kairos.squashfs")
-	kernelFile := filepath.Join(dstNetboot, "kairos-kernel")
-	initrdFile := filepath.Join(dstNetboot, "kairos-initrd")
-	isoFile := filepath.Join(dst, "kairos.iso")
-	fromImage := d.Artifact.ContainerImage != ""
-	fromImageOption := func() bool { return fromImage }
-	isoOption := func() bool { return !fromImage }
-	netbootOption := func() bool { return !d.Config.DisableNetboot }
-	netbootReleaseOption := func() bool { return !d.Config.DisableNetboot && !fromImage }
-	rawDiskIsSet := d.Config.Disk.VHD || d.Config.Disk.RAW || d.Config.Disk.GCE
-
-	// Preparation steps
-	// TODO: Handle errors?
-	d.StepPrepTmpRootDir()
-	d.StepPrepNetbootDir()
-	d.StepPrepISODir()
-	d.StepCopyCloudConfig()
-	d.StepPullContainer(fromImageOption)
-
-	d.Add(opGenISO,
-		herd.EnableIf(func() bool { return fromImage && !rawDiskIsSet && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, d.tmpRootFs(), dst, d.Config.ISO)))
-	d.Add(opExtractNetboot,
-		herd.EnableIf(func() bool { return fromImage && !d.Config.DisableNetboot }),
-		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(isoFile, dstNetboot, kairosDefaultArtifactName)))
-
-	//TODO: add Validate step
-	// Ops to download from releases
-	d.Add(opDownloadInitrd,
-		herd.EnableIf(netbootReleaseOption),
-		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.InitrdURL(), initrdFile)))
-	d.Add(opDownloadKernel,
-		herd.EnableIf(netbootReleaseOption),
-		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.KernelURL(), kernelFile)))
-	d.Add(opDownloadSquashFS,
-		herd.EnableIf(func() bool {
-			return !d.Config.DisableNetboot && !fromImage || rawDiskIsSet && !fromImage || !fromImage && d.Config.Disk.ARM != nil
-		}),
-		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.SquashFSURL(), squashFSfile)))
-	d.Add(opDownloadISO,
-		herd.EnableIf(isoOption),
-		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), isoFile)))
-
-	// Ops to generate disk images
-
-	// Extract SquashFS from released asset to build the raw disk image if needed
-	d.Add(opExtractSquashFS,
-		herd.EnableIf(func() bool { return rawDiskIsSet && !fromImage }),
-		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(squashFSfile, d.tmpRootFs())))
-
-	imageOrSquashFS := herd.IfElse(fromImage, herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS))
-
-	d.Add(opGenRawDisk,
-		herd.EnableIf(func() bool { return rawDiskIsSet && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
-		imageOrSquashFS,
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), filepath.Join(dst, "disk.raw"))))
-
-	d.Add(opGenMBRRawDisk,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.MBR }),
-		herd.IfElse(isoOption(),
-			herd.WithDeps(opDownloadISO), herd.WithDeps(opGenISO),
-		),
-		herd.IfElse(isoOption(),
-			herd.WithCallback(
-				ops.GenBIOSRawDisk(d.Config, isoFile, filepath.Join(dst, "disk.raw"))),
-			herd.WithCallback(
-				ops.GenBIOSRawDisk(d.Config, isoFile, filepath.Join(dst, "disk.raw"))),
-		),
-	)
-
-	d.Add(opConvertGCE,
-		herd.EnableIf(func() bool { return d.Config.Disk.GCE }),
-		herd.WithDeps(opGenRawDisk),
-		herd.WithCallback(ops.ConvertRawDiskToGCE(filepath.Join(dst, "disk.raw"), filepath.Join(dst, "disk.raw.gce"))))
-
-	d.Add(opConvertVHD,
-		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
-		herd.WithDeps(opGenRawDisk),
-		herd.WithCallback(ops.ConvertRawDiskToVHD(filepath.Join(dst, "disk.raw"), filepath.Join(dst, "disk.raw.vhd"))))
-
-	// ARM
-
-	d.Add(opGenARMImages,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && !d.Config.Disk.ARM.PrepareOnly }),
-		imageOrSquashFS,
-		herd.WithCallback(ops.GenArmDisk(d.tmpRootFs(), filepath.Join(dst, "disk.img"), d.Config)))
-
-	d.Add(opPrepareARMImages,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && d.Config.Disk.ARM.PrepareOnly }),
-		imageOrSquashFS,
-		herd.WithCallback(ops.PrepareArmPartitions(d.tmpRootFs(), dst, d.Config)))
-
-	// Inject the data into the ISO
-	d.Add(opInjectCC,
-		herd.EnableIf(isoOption),
-		herd.WithDeps(opCopyCloudConfig),
-		herd.ConditionalOption(isoOption, herd.WithDeps(opDownloadISO)),
-		herd.WithCallback(ops.InjectISO(dst, isoFile, d.Config.ISO)))
-
-	// Start servers
-	d.Add(
-		opStartHTTPServer,
-		herd.Background,
-		herd.EnableIf(func() bool { return !d.Config.DisableISOboot && !d.Config.DisableHTTPServer }),
-		herd.IfElse(
-			fromImage,
-			herd.WithDeps(opGenISO, opCopyCloudConfig),
-			herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC),
-		),
-		herd.WithCallback(ops.ServeArtifacts(listenAddr, dst)),
-	)
-
-	d.Add(
-		opStartNetboot,
-		herd.EnableIf(netbootOption),
-		herd.ConditionalOption(isoOption, herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS)),
-		herd.ConditionalOption(fromImageOption, herd.WithDeps(opExtractNetboot)),
-		herd.Background,
-		herd.WithDeps(opCopyCloudConfig),
-		herd.WithCallback(
-			ops.StartPixiecore(filepath.Join(dst, "config.yaml"), squashFSfile, address, netbootPort, initrdFile, kernelFile, d.Config.NetBoot),
-		),
-	)
+	return nil
 }
 
 func copy(src, dst string) (int64, error) {
