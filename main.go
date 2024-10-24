@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 
 	cmd "github.com/kairos-io/AuroraBoot/internal/cmd"
+	"github.com/spectrocloud-labs/herd"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/rs/zerolog"
@@ -51,10 +53,14 @@ func main() {
 				return err
 			}
 
-			if err := deployer.Start(c, r); err != nil {
+			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
+			deployer.RegisterAll(d)
+			d.WriteDag()
+			if err := d.Run(context.Background()); err != nil {
 				return err
 			}
-			return nil
+
+			return d.CollectErrors()
 		},
 	}
 

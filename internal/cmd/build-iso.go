@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
 )
 
@@ -63,12 +64,12 @@ var BuildISOCmd = cli.Command{
 		}
 
 		// TODO: Move to a RegisterBuildIso function
-		d := deployer.NewDeployer(*c, *r)
+		d := deployer.NewDeployer(*c, *r, herd.EnableInit)
 		for _, step := range []func() error{
 			// TODO: Add more steps
 			d.StepPrepNetbootDir,
 			d.StepPrepTmpRootDir,
-			d.StepPrepDestDir,
+			d.StepPrepISODir,
 			d.StepCopyCloudConfig,
 		} {
 			if err := step(); err != nil {

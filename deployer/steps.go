@@ -9,7 +9,7 @@ import (
 )
 
 func (d *Deployer) StepPrepNetbootDir() error {
-	dstNetboot := d.config.StateDir("netboot")
+	dstNetboot := d.Config.StateDir("netboot")
 
 	return d.Add(opPrepareNetboot, herd.WithCallback(
 		func(ctx context.Context) error {
@@ -19,7 +19,7 @@ func (d *Deployer) StepPrepNetbootDir() error {
 }
 
 func (d *Deployer) StepPrepTmpRootDir() error {
-	dstNetboot := d.config.StateDir("netboot")
+	dstNetboot := d.Config.StateDir("netboot")
 
 	return d.Add(opPreparetmproot, herd.WithCallback(
 		func(ctx context.Context) error {
@@ -28,8 +28,8 @@ func (d *Deployer) StepPrepTmpRootDir() error {
 	))
 }
 
-func (d *Deployer) StepPrepDestDir() error {
-	dst := d.config.StateDir("build")
+func (d *Deployer) StepPrepISODir() error {
+	dst := d.Config.StateDir("build")
 
 	return d.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
 		return os.MkdirAll(dst, 0700)
@@ -37,11 +37,11 @@ func (d *Deployer) StepPrepDestDir() error {
 }
 
 func (d *Deployer) StepCopyCloudConfig() error {
-	dst := d.config.StateDir("build")
+	dst := d.Config.StateDir("build")
 
 	return d.Add(opCopyCloudConfig,
 		herd.WithDeps(opPrepareISO),
 		herd.WithCallback(func(ctx context.Context) error {
-			return os.WriteFile(filepath.Join(dst, "config.yaml"), []byte(d.config.CloudConfig), 0600)
+			return os.WriteFile(filepath.Join(dst, "config.yaml"), []byte(d.Config.CloudConfig), 0600)
 		}))
 }
