@@ -132,7 +132,7 @@ func (d *Deployer) StepGenARMImages() error {
 	return d.Add(opGenARMImages,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && !d.Config.Disk.ARM.PrepareOnly }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenArmDisk(d.tmpRootFs(), d.rawDiskPath(), d.Config)))
+		herd.WithCallback(ops.GenArmDisk(d.tmpRootFs(), d.diskImgPath(), d.Config)))
 }
 
 func (d *Deployer) StepPrepareARMImages() error {
@@ -242,6 +242,10 @@ func (d *Deployer) cloudConfiPath() string {
 
 func (d *Deployer) rawDiskPath() string {
 	return filepath.Join(d.destination(), "disk.raw")
+}
+
+func (d *Deployer) diskImgPath() string {
+	return filepath.Join(d.destination(), "disk.img")
 }
 
 func (d *Deployer) listenAddr() string {
