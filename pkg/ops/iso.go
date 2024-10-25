@@ -47,6 +47,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		cfg.Name = i.Name
 		cfg.OutDir = dst
 		cfg.Date = i.IncludeDate
+		cfg.Arch = i.Arch
 		isoLabel := enkiconstants.ISOLabel
 		if i.Label != "" {
 			isoLabel = i.Label

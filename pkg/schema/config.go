@@ -66,6 +66,7 @@ type ISO struct {
 	OverlayISO    string `yaml:"overlay_iso"`
 	OverlayRootfs string `yaml:"overlay_rootfs"`
 	OverlayUEFI   string `yaml:"overlay_uefi"`
+	Arch          string `yaml:"arch"`
 }
 
 func (c Config) StateDir(s ...string) string {

@@ -61,6 +61,7 @@ var BuildISOCmd = cli.Command{
 		},
 		// TODO: Validate that only one of the allowed values is used
 		// archType := newEnumFlag([]string{"x86_64", "arm64"}, "x86_64")
+		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L263
 		&cli.StringFlag{
 			Name:    "arch",
 			Aliases: []string{"a"},
@@ -102,6 +103,7 @@ var BuildISOCmd = cli.Command{
 				OverlayISO:    ctx.String("overlay-iso"),
 				OverlayRootfs: ctx.String("overlay-rootfs"),
 				OverlayUEFI:   ctx.String("overlay-uefi"),
+				Arch:          ctx.String("arch"),
 			},
 			State:       ctx.String("output"),
 			CloudConfig: cloudConfig,
