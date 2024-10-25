@@ -36,7 +36,7 @@ func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(opCopyCloudConfig,
 		herd.WithDeps(opPrepareISO),
 		herd.WithCallback(func(ctx context.Context) error {
-			return os.WriteFile(d.cloudConfiPath(), []byte(d.Config.CloudConfig), 0600)
+			return os.WriteFile(d.cloudConfigPath(), []byte(d.Config.CloudConfig), 0600)
 		}))
 }
 
@@ -173,7 +173,7 @@ func (d *Deployer) StepStartNetboot() error {
 		herd.Background,
 		herd.WithDeps(opCopyCloudConfig),
 		herd.WithCallback(
-			ops.StartPixiecore(d.cloudConfiPath(), d.squashFSfile(), d.netBootListenAddr(), d.netbootPort(), d.initrdFile(), d.kernelFile(), d.Config.NetBoot),
+			ops.StartPixiecore(d.cloudConfigPath(), d.squashFSfile(), d.netBootListenAddr(), d.netbootPort(), d.initrdFile(), d.kernelFile(), d.Config.NetBoot),
 		),
 	)
 }
@@ -236,7 +236,7 @@ func (d *Deployer) imageOrSquashFS() herd.OpOption {
 	return herd.IfElse(d.fromImage(), herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS))
 }
 
-func (d *Deployer) cloudConfiPath() string {
+func (d *Deployer) cloudConfigPath() string {
 	return filepath.Join(d.destination(), "config.yaml")
 }
 

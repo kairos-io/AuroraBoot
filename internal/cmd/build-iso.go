@@ -14,6 +14,11 @@ var BuildISOCmd = cli.Command{
 	Usage:   "Builds an ISO from a container image or github release",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
+			Name:    "cloud-config",
+			Aliases: []string{"c"},
+			Usage:   "The cloud config to embed in the ISO",
+		},
+		&cli.StringFlag{
 			Name:    "name",
 			Aliases: []string{"n"},
 			Usage:   "Basename of the generated ISO file",
@@ -62,18 +67,21 @@ var BuildISOCmd = cli.Command{
 		source := ctx.Args().Get(0)
 		if source == "" {
 			fmt.Println("\nNo source defined\n")
-			// hack to prevent ShowAppHelpAndExit from checking only subcommands
-			// (in this case 'help')
+			// Hack to prevent ShowAppHelpAndExit from checking only subcommands.
+			// (in this case there is only the 'help' subcommand). We are exiting
+			// anyway, so no harm from setting it to nil.
 			ctx.Command.Subcommands = nil
 			cli.ShowCommandHelpAndExit(ctx, ctx.Command.Name, 1)
 		}
 
 		// TODO: Read these from command line args and build one config to by used
 		// by all actions
-		c, r, err := ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
+		// TODO: Don't parse the first arg as a config, it's the source
+		c, r, err := ReadConfig("", ctx.String("cloud-config"), nil)
 		if err != nil {
 			return err
 		}
+		r.ContainerImage = source
 
 		// TODO: Move to a RegisterBuildIso function
 		d := deployer.NewDeployer(*c, *r, herd.EnableInit)
