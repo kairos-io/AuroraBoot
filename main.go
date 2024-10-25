@@ -5,6 +5,7 @@ import (
 	"os"
 
 	cmd "github.com/kairos-io/AuroraBoot/internal/cmd"
+	"github.com/spectrocloud-labs/herd"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/rs/zerolog"
@@ -19,6 +20,7 @@ var (
 func main() {
 
 	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
+
 	app := &cli.App{
 		Name:    "AuroraBoot",
 		Version: version,
@@ -44,15 +46,22 @@ func main() {
 				zerolog.SetGlobalLevel(zerolog.DebugLevel)
 			}
 			c, r, err := cmd.ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
-
 			if err != nil {
 				return err
 			}
 
-			if err := deployer.Start(c, r); err != nil {
+			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
+			err = deployer.RegisterAll(d)
+			if err != nil {
 				return err
 			}
-			return nil
+
+			d.WriteDag()
+			if err := d.Run(ctx.Context); err != nil {
+				return err
+			}
+
+			return d.CollectErrors()
 		},
 	}
 
