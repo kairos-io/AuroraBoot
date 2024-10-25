@@ -18,8 +18,6 @@ type ReleaseArtifact struct {
 	Variant         string `yaml:"variant"`
 
 	ContainerImage string `yaml:"container_image"`
-	Name           string `yaml:"name"` // Final artifact base name
-	IncludeDate    bool   `yaml:"include_date"`
 }
 
 func (a ReleaseArtifact) FileName() string {

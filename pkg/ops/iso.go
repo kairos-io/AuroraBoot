@@ -19,7 +19,7 @@ import (
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(name, src, dst string, date bool, i schema.ISO) func(ctx context.Context) error {
+func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "geniso")
 		if err != nil {
@@ -39,13 +39,13 @@ func GenISO(name, src, dst string, date bool, i schema.ISO) func(ctx context.Con
 			return err
 		}
 
-		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
+		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
 		cfg := enkiconfig.NewBuildConfig(
 			enkiconfig.WithLogger(sdkTypes.NewKairosLogger("enki", "debug", false)),
 		)
-		cfg.Name = name
+		cfg.Name = i.Name
 		cfg.OutDir = dst
-		cfg.Date = date
+		cfg.Date = i.IncludeDate
 		// Live grub artifacts:
 		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
 		// but /efi is not needed because we handle it here:
@@ -61,7 +61,7 @@ func GenISO(name, src, dst string, date bool, i schema.ISO) func(ctx context.Con
 		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
 		}
 		return err
 	}

@@ -9,6 +9,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+const (
+	kairosDefaultArtifactName = "kairos"
+)
+
 var BuildISOCmd = cli.Command{
 	Name:    "build-iso",
 	Aliases: []string{"b"},
@@ -89,10 +93,15 @@ var BuildISOCmd = cli.Command{
 		}
 		r := schema.ReleaseArtifact{
 			ContainerImage: source,
-			Name:           ctx.String("name"),
-			IncludeDate:    ctx.Bool("date"),
 		}
-		c := schema.Config{State: ctx.String("output"), CloudConfig: cloudConfig}
+		c := schema.Config{
+			ISO: schema.ISO{
+				Name:        artifactBaseName(ctx),
+				IncludeDate: ctx.Bool("date"),
+			},
+			State:       ctx.String("output"),
+			CloudConfig: cloudConfig,
+		}
 
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
@@ -114,4 +123,12 @@ var BuildISOCmd = cli.Command{
 
 		return d.CollectErrors()
 	},
+}
+
+func artifactBaseName(ctx *cli.Context) string {
+	if setName := ctx.String("name"); setName != "" {
+		return setName
+	}
+
+	return kairosDefaultArtifactName
 }

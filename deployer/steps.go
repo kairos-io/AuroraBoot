@@ -50,13 +50,13 @@ func (d *Deployer) StepPullContainer() error {
 func (d *Deployer) StepGenISO() error {
 	return d.Add(opGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.artifactBaseName(), d.tmpRootFs(), d.destination(), d.Artifact.IncludeDate, d.Config.ISO)))
+		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
 }
 
 func (d *Deployer) StepExtractNetboot() error {
 	return d.Add(opExtractNetboot,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.Config.DisableNetboot }),
-		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.artifactBaseName())))
+		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.Config.ISO.Name)))
 }
 
 func (d *Deployer) StepDownloadInitrd() error {
@@ -278,13 +278,4 @@ func (d *Deployer) netBootListenAddr() string {
 func (d *Deployer) netbootOption() bool {
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	return !d.Config.DisableNetboot
-}
-
-func (d *Deployer) artifactBaseName() string {
-	result := kairosDefaultArtifactName
-	if d.Artifact.Name != "" {
-		result = d.Artifact.Name
-	}
-
-	return result
 }
