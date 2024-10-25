@@ -87,7 +87,11 @@ var BuildISOCmd = cli.Command{
 				return fmt.Errorf("reading cloud config: %w", err)
 			}
 		}
-		r := schema.ReleaseArtifact{ContainerImage: source, Name: ctx.String("name")}
+		r := schema.ReleaseArtifact{
+			ContainerImage: source,
+			Name:           ctx.String("name"),
+			IncludeDate:    ctx.Bool("date"),
+		}
 		c := schema.Config{State: ctx.String("output"), CloudConfig: cloudConfig}
 
 		d := deployer.NewDeployer(c, r, herd.EnableInit)

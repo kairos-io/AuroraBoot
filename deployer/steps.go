@@ -50,7 +50,7 @@ func (d *Deployer) StepPullContainer() error {
 func (d *Deployer) StepGenISO() error {
 	return d.Add(opGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.artifactBaseName(), d.tmpRootFs(), d.destination(), d.Config.ISO)))
+		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.artifactBaseName(), d.tmpRootFs(), d.destination(), d.Artifact.IncludeDate, d.Config.ISO)))
 }
 
 func (d *Deployer) StepExtractNetboot() error {

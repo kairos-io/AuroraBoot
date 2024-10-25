@@ -19,7 +19,7 @@ import (
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error {
+func GenISO(name, src, dst string, date bool, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "geniso")
 		if err != nil {
@@ -45,6 +45,7 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 		)
 		cfg.Name = name
 		cfg.OutDir = dst
+		cfg.Date = date
 		// Live grub artifacts:
 		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
 		// but /efi is not needed because we handle it here:
