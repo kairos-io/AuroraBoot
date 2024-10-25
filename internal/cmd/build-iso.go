@@ -77,11 +77,6 @@ var BuildISOCmd = cli.Command{
 
 		// TODO: Read these from command line args and build one config to by used
 		// by all actions
-		// TODO: Don't parse the first arg as a config, it's the source
-		// c, _, err := ReadConfig("", ctx.String("cloud-config"), nil)
-		// if err != nil {
-		// 	return err
-		// }
 		cloudConfig := ""
 		var err error
 		if ctx.String("cloud-config") != "" {
@@ -92,13 +87,11 @@ var BuildISOCmd = cli.Command{
 				return fmt.Errorf("reading cloud config: %w", err)
 			}
 		}
-		r := schema.ReleaseArtifact{ContainerImage: source}
+		r := schema.ReleaseArtifact{ContainerImage: source, Name: ctx.String("name")}
 		c := schema.Config{State: ctx.String("output"), CloudConfig: cloudConfig}
 
-		// TODO: Move to a RegisterBuildIso function
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
-			// TODO: Add more steps
 			d.StepPrepNetbootDir,
 			d.StepPrepTmpRootDir,
 			d.StepPrepISODir,

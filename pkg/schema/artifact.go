@@ -2,8 +2,9 @@ package schema
 
 import (
 	"fmt"
-	"golang.org/x/mod/semver"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 type ReleaseArtifact struct {
@@ -17,6 +18,7 @@ type ReleaseArtifact struct {
 	Variant         string `yaml:"variant"`
 
 	ContainerImage string `yaml:"container_image"`
+	Name           string `yaml:"name"` // Final artifact base name
 }
 
 func (a ReleaseArtifact) FileName() string {
