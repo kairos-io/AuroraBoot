@@ -14,7 +14,6 @@ require (
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.14.0
-	github.com/rs/zerolog v1.33.0
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli/v2 v2.27.5
 	go.universe.tf/netboot v0.0.0-20230916172012-64f6de6d0e3b
@@ -131,6 +130,7 @@ require (
 	github.com/qeesung/image2ascii v1.0.1 // indirect
 	github.com/rancher-sandbox/linuxkit v1.0.2 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
+	github.com/rs/zerolog v1.33.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/saferwall/pe v1.5.4 // indirect
 	github.com/sagikazarmark/locafero v0.4.0 // indirect

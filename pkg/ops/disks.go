@@ -7,9 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos/pkg/utils"
-	"github.com/rs/zerolog/log"
 )
 
 func PrepareArmPartitions(src, dstPath string, do schema.Config) func(ctx context.Context) error {
@@ -22,17 +22,17 @@ func PrepareArmPartitions(src, dstPath string, do schema.Config) func(ctx contex
 
 		env := genPrepareImageEnv(src, *do.Disk.ARM)
 		os.Mkdir("bootloader", 0650)
-		log.Info().Msgf("Preparing ARM raw disks from '%s' to '%s'", src, dstPath)
+		internal.Log.Logger.Info().Msgf("Preparing ARM raw disks from '%s' to '%s'", src, dstPath)
 		out, err := utils.SH(fmt.Sprintf("%s /prepare_arm_images.sh", strings.Join(env, " ")))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
+			internal.Log.Logger.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
 		}
 
 		out, err = utils.SH(fmt.Sprintf("mv bootloader/*.img %s", dstPath))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
+			internal.Log.Logger.Error().Msgf("Preparing raw disks from '%s' to '%s' failed: %s", src, dstPath, err.Error())
 		}
 		return err
 	}
@@ -106,12 +106,12 @@ func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) err
 
 		args := genARMBuildArgs(src, filepath.Join(filepath.Dir(dst), "config.yaml"), *do.Disk.ARM)
 
-		log.Info().Msgf("Generating ARM disk '%s' from '%s'", dst, src)
-		log.Printf("Running 'build-arm-image.sh %s %s'", strings.Join(args, " "), dst)
+		internal.Log.Logger.Info().Msgf("Generating ARM disk '%s' from '%s'", dst, src)
+		internal.Log.Logger.Printf("Running 'build-arm-image.sh %s %s'", strings.Join(args, " "), dst)
 		out, err := utils.SH(fmt.Sprintf("/build-arm-image.sh %s %s", strings.Join(args, " "), dst))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating ARM disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating ARM disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
@@ -141,7 +141,7 @@ func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.C
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
+		internal.Log.Logger.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
 
 		extra := ""
 		if config.System.KVM {
@@ -170,9 +170,9 @@ truncate -s "+$((20000*1024*1024))" %s
         
 `, cloudConfigFile, dst, qemuBin, ram, cores, dst, srcISO, extra),
 		)
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, extra, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, extra, err.Error())
 		}
 		return err
 	}
@@ -186,11 +186,11 @@ func GenEFIRawDisk(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
 		out, err := utils.SH(fmt.Sprintf("/raw-images.sh %s %s %s", src, dst, filepath.Join(filepath.Dir(dst), "config.yaml")))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
@@ -204,11 +204,11 @@ func ExtractSquashFS(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("unpacking to '%s' the squashfs file: '%s'", dst, src)
+		internal.Log.Logger.Info().Msgf("unpacking to '%s' the squashfs file: '%s'", dst, src)
 		out, err := utils.SH(fmt.Sprintf("unsquashfs -f -d %s %s", dst, src))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("unpacking to '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("unpacking to '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
@@ -222,11 +222,11 @@ func ConvertRawDiskToVHD(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
 		out, err := utils.SH(fmt.Sprintf("/azure.sh %s %s", src, dst))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
@@ -240,11 +240,11 @@ func ConvertRawDiskToGCE(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		log.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
 		out, err := utils.SH(fmt.Sprintf("/gce.sh %s %s", src, dst))
-		log.Printf("Output '%s'", out)
+		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			log.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}

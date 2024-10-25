@@ -3,7 +3,7 @@ package netboot
 import (
 	"strconv"
 
-	"github.com/rs/zerolog/log"
+	"github.com/kairos-io/AuroraBoot/internal"
 	"go.universe.tf/netboot/out/ipxe"
 	"go.universe.tf/netboot/pixiecore"
 )
@@ -29,11 +29,11 @@ func Server(kernel, cmdline string, address, httpPort, initrd string, nobind boo
 	}
 
 	logger := func(subsystem, msg string) {
-		log.Info().Str("subsystem", subsystem).Msg(msg)
+		internal.Log.Logger.Info().Str("subsystem", subsystem).Msg(msg)
 	}
 
 	loggerDebug := func(subsystem, msg string) {
-		log.Debug().Str("subsystem", subsystem).Msg(msg)
+		internal.Log.Logger.Debug().Str("subsystem", subsystem).Msg(msg)
 	}
 
 	ipxeFw := map[pixiecore.Firmware][]byte{}

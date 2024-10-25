@@ -11,10 +11,9 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/rs/zerolog/log"
-
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos/sdk/unstructured"
 	"gopkg.in/yaml.v1"
 )
@@ -54,8 +53,8 @@ func downloadFile(url string) (content string, err error) {
 func render(data string, foo any) (string, error) {
 	t, err := template.New("cloudConfig template").Delims(delimLeft, delimright).Option("missingkey=zero").Parse(data)
 	if err != nil {
-		log.Logger.Error().Err(err).Msg("Parsing data")
-		log.Logger.Debug().Err(err).Str("data", data).Str("Left delimiter", delimLeft).Str("Right delimiter", delimright).Msg("Parsing data")
+		internal.Log.Logger.Error().Err(err).Msg("Parsing data")
+		internal.Log.Logger.Debug().Err(err).Str("data", data).Str("Left delimiter", delimLeft).Str("Right delimiter", delimright).Msg("Parsing data")
 		return "", err
 	}
 	b := bytes.NewBuffer([]byte{})
@@ -148,7 +147,7 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 		if c.CloudConfig == "" {
 			return nil, nil, fmt.Errorf("cloud config set but contents are empty. Check that the content of the file is correct or the path is the proper one")
 		}
-		log.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
+		internal.Log.Logger.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
 	}
 
 	return c, r, nil
