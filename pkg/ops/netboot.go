@@ -35,6 +35,6 @@ func StartPixiecore(cloudConfigFile, squashFSfile, address, netbootPort, initrdF
 			cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
 		}
 
-		return netboot.Server(kernelFile, "AuroraBoot", fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, []string{initrdFile}, true)
+		return netboot.Server(kernelFile, fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, initrdFile, true)
 	}
 }

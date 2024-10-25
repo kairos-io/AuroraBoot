@@ -1,24 +1,21 @@
 package netboot
 
 import (
-	"log"
 	"strconv"
 
+	"github.com/rs/zerolog/log"
 	"go.universe.tf/netboot/out/ipxe"
 	"go.universe.tf/netboot/pixiecore"
 )
 
 // Server starts a netboot server which takes over and start to serve off booting in the same network
 // It doesn't need any special configuration, however, requires binding to low ports.
-func Server(kernel, bootmsg, cmdline string, address, httpPort string, initrds []string, nobind bool) error {
+func Server(kernel, cmdline string, address, httpPort, initrd string, nobind bool) error {
 
 	spec := &pixiecore.Spec{
 		Kernel:  pixiecore.ID(kernel),
 		Cmdline: cmdline,
-		Message: bootmsg,
-	}
-	for _, initrd := range initrds {
-		spec.Initrd = append(spec.Initrd, pixiecore.ID(initrd))
+		Initrd:  []pixiecore.ID{pixiecore.ID(initrd)},
 	}
 
 	booter, err := pixiecore.StaticBooter(spec)
@@ -31,7 +28,13 @@ func Server(kernel, bootmsg, cmdline string, address, httpPort string, initrds [
 		return err
 	}
 
-	logger := func(subsystem, msg string) { log.Printf("%s: %s\n", subsystem, msg) }
+	logger := func(subsystem, msg string) {
+		log.Info().Str("subsystem", subsystem).Msg(msg)
+	}
+
+	loggerDebug := func(subsystem, msg string) {
+		log.Debug().Str("subsystem", subsystem).Msg(msg)
+	}
 
 	ipxeFw := map[pixiecore.Firmware][]byte{}
 	ipxeFw[pixiecore.FirmwareX86PC] = ipxe.MustAsset("third_party/ipxe/src/bin/undionly.kpxe")
@@ -42,7 +45,7 @@ func Server(kernel, bootmsg, cmdline string, address, httpPort string, initrds [
 	s := &pixiecore.Server{
 		Ipxe:           ipxeFw,
 		Log:            logger,
-		Debug:          logger,
+		Debug:          loggerDebug,
 		HTTPPort:       port,
 		HTTPStatusPort: 0,
 		DHCPNoBind:     nobind,
