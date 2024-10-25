@@ -4,6 +4,7 @@ import (
 	"fmt"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
 )
@@ -77,14 +78,25 @@ var BuildISOCmd = cli.Command{
 		// TODO: Read these from command line args and build one config to by used
 		// by all actions
 		// TODO: Don't parse the first arg as a config, it's the source
-		c, r, err := ReadConfig("", ctx.String("cloud-config"), nil)
-		if err != nil {
-			return err
+		// c, _, err := ReadConfig("", ctx.String("cloud-config"), nil)
+		// if err != nil {
+		// 	return err
+		// }
+		cloudConfig := ""
+		var err error
+		if ctx.String("cloud-config") != "" {
+			// we don't allow templating in this command (like we do at the top level one)
+			// TODO: Should we allow it?
+			cloudConfig, err = readCloudConfig(ctx.String("cloud-config"), map[string]interface{}{})
+			if err != nil {
+				return fmt.Errorf("reading cloud config: %w", err)
+			}
 		}
-		r.ContainerImage = source
+		r := schema.ReleaseArtifact{ContainerImage: source}
+		c := schema.Config{State: ctx.String("output"), CloudConfig: cloudConfig}
 
 		// TODO: Move to a RegisterBuildIso function
-		d := deployer.NewDeployer(*c, *r, herd.EnableInit)
+		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
 			// TODO: Add more steps
 			d.StepPrepNetbootDir,
