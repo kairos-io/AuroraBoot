@@ -1,6 +1,8 @@
 package cmd
 
 import (
+	"fmt"
+
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
@@ -55,7 +57,17 @@ var BuildISOCmd = cli.Command{
 			Usage:   "Arch to build the image for",
 		},
 	},
+	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
+		source := ctx.Args().Get(0)
+		if source == "" {
+			fmt.Println("\nNo source defined\n")
+			// hack to prevent ShowAppHelpAndExit from checking only subcommands
+			// (in this case 'help')
+			ctx.Command.Subcommands = nil
+			cli.ShowCommandHelpAndExit(ctx, ctx.Command.Name, 1)
+		}
+
 		// TODO: Read these from command line args and build one config to by used
 		// by all actions
 		c, r, err := ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
@@ -71,6 +83,8 @@ var BuildISOCmd = cli.Command{
 			d.StepPrepTmpRootDir,
 			d.StepPrepISODir,
 			d.StepCopyCloudConfig,
+			d.StepPullContainer,
+			d.StepGenISO,
 		} {
 			if err := step(); err != nil {
 				return err
