@@ -48,6 +48,8 @@ func main() {
 			if err != nil {
 				return err
 			}
+			c.ISO.Name = cmd.KairosDefaultArtifactName
+			c.ISO.Label = "COS_LIVE"
 
 			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
 			err = deployer.RegisterAll(d)

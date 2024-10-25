@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	kairosDefaultArtifactName = "kairos"
+	KairosDefaultArtifactName = "kairos"
 )
 
 var BuildISOCmd = cli.Command{
@@ -136,5 +136,5 @@ func artifactBaseName(ctx *cli.Context) string {
 		return setName
 	}
 
-	return kairosDefaultArtifactName
+	return KairosDefaultArtifactName
 }
