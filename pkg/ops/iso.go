@@ -58,6 +58,18 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
 		}
+
+		if i.OverlayRootfs != "" {
+			spec.RootFS = append(spec.RootFS, v1.NewDirSrc(i.OverlayRootfs))
+		}
+		if i.OverlayUEFI != "" {
+			// TODO: Doesn't seem to do anything on enki.
+			spec.UEFI = append(spec.UEFI, v1.NewDirSrc(i.OverlayUEFI))
+		}
+		if i.OverlayISO != "" {
+			spec.Image = append(spec.Image, v1.NewDirSrc(i.OverlayISO))
+		}
+
 		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
 		if err != nil {

@@ -59,9 +59,12 @@ type NetBoot struct {
 }
 
 type ISO struct {
-	DataPath    string `yaml:"data"`
-	Name        string `yaml:"name"` // Final artifact base name
-	IncludeDate bool   `yaml:"include_date"`
+	DataPath      string `yaml:"data"`
+	Name          string `yaml:"name"` // Final artifact base name
+	IncludeDate   bool   `yaml:"include_date"`
+	OverlayISO    string `yaml:"overlay_iso"`
+	OverlayRootfs string `yaml:"overlay_rootfs"`
+	OverlayUEFI   string `yaml:"overlay_uefi"`
 }
 
 func (c Config) StateDir(s ...string) string {
