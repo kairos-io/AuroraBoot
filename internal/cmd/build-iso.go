@@ -97,6 +97,7 @@ var BuildISOCmd = cli.Command{
 		c := schema.Config{
 			ISO: schema.ISO{
 				Name:          artifactBaseName(ctx),
+				Label:         ctx.String("label"),
 				IncludeDate:   ctx.Bool("date"),
 				OverlayISO:    ctx.String("overlay-iso"),
 				OverlayRootfs: ctx.String("overlay-rootfs"),

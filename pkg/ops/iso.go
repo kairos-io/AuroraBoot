@@ -13,6 +13,7 @@ import (
 
 	enkiaction "github.com/kairos-io/enki/pkg/action"
 	enkiconfig "github.com/kairos-io/enki/pkg/config"
+	enkiconstants "github.com/kairos-io/enki/pkg/constants"
 	enkitypes "github.com/kairos-io/enki/pkg/types"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
@@ -46,15 +47,14 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		cfg.Name = i.Name
 		cfg.OutDir = dst
 		cfg.Date = i.IncludeDate
-		// Live grub artifacts:
-		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
-		// but /efi is not needed because we handle it here:
-		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L256
-		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L325
+		isoLabel := enkiconstants.ISOLabel
+		if i.Label != "" {
+			isoLabel = i.Label
+		}
 		spec := &enkitypes.LiveISO{
 			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
 			Image:              []*v1.ImageSource{v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
-			Label:              "COS_LIVE",
+			Label:              isoLabel,
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
 		}

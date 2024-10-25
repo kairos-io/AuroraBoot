@@ -61,6 +61,7 @@ type NetBoot struct {
 type ISO struct {
 	DataPath      string `yaml:"data"`
 	Name          string `yaml:"name"` // Final artifact base name
+	Label         string `yaml:"label"`
 	IncludeDate   bool   `yaml:"include_date"`
 	OverlayISO    string `yaml:"overlay_iso"`
 	OverlayRootfs string `yaml:"overlay_rootfs"`
