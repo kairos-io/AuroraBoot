@@ -19,10 +19,11 @@ var (
 
 func main() {
 	app := &cli.App{
-		Name:    "AuroraBoot",
-		Version: version,
-		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
-		Usage:   "auroraboot",
+		Name:     "AuroraBoot",
+		Version:  version,
+		Authors:  []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
+		Usage:    "auroraboot",
+		Commands: []*cli.Command{&cmd.BuildISOCmd},
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "set",
