@@ -2,14 +2,14 @@ package main
 
 import (
 	"fmt"
+	"github.com/kairos-io/AuroraBoot/internal"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"os"
 
 	cmd "github.com/kairos-io/AuroraBoot/internal/cmd"
 	"github.com/spectrocloud-labs/herd"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
-	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/log"
 	"github.com/urfave/cli/v2"
 )
 
@@ -18,9 +18,6 @@ var (
 )
 
 func main() {
-
-	log.Logger = log.Output(zerolog.ConsoleWriter{Out: os.Stderr})
-
 	app := &cli.App{
 		Name:    "AuroraBoot",
 		Version: version,
@@ -41,9 +38,10 @@ func main() {
 		UsageText:   ``,
 		Copyright:   "Kairos authors",
 		Action: func(ctx *cli.Context) error {
-			zerolog.SetGlobalLevel(zerolog.InfoLevel)
+			internal.Log = sdkTypes.NewKairosLogger("aurora", "info", false)
+
 			if ctx.Bool("debug") {
-				zerolog.SetGlobalLevel(zerolog.DebugLevel)
+				internal.Log.SetLevel("debug")
 			}
 			c, r, err := cmd.ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
 			if err != nil {

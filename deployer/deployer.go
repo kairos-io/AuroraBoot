@@ -4,9 +4,9 @@ import (
 	"os"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 
-	"github.com/rs/zerolog/log"
 	"github.com/spectrocloud-labs/herd"
 	"gopkg.in/yaml.v3"
 )
@@ -40,17 +40,17 @@ func (d *Deployer) CollectErrors() error {
 func (d *Deployer) WriteDag() {
 	graph := d.Analyze()
 	for i, layer := range graph {
-		log.Printf("%d.", (i + 1))
+		internal.Log.Printf("%d.", (i + 1))
 		for _, op := range layer {
 			if !op.Ignored {
 				if op.Error != nil {
-					log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
+					internal.Log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
 				} else {
-					log.Printf(" <%s> (background: %t)", op.Name, op.Background)
+					internal.Log.Printf(" <%s> (background: %t)", op.Name, op.Background)
 				}
 			}
 		}
-		log.Print("")
+		internal.Log.Print("")
 	}
 }
 

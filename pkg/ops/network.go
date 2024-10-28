@@ -9,11 +9,11 @@ import (
 	"time"
 
 	"github.com/cavaliergopher/grab/v3"
-	"github.com/rs/zerolog/log"
+	"github.com/kairos-io/AuroraBoot/internal"
 )
 
 const (
-	UserAgent =  "AuroraBoot"
+	UserAgent = "AuroraBoot"
 )
 
 // ServeArtifacts serve local artifacts as standard http server
@@ -30,7 +30,7 @@ func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
 			<-ctx.Done()
 			serverOne.Shutdown(context.Background())
 		}()
-		log.Info().Msgf("Listening on %v...", listenAddr)
+		internal.Log.Logger.Info().Msgf("Listening on %v...", listenAddr)
 		return serverOne.ListenAndServe()
 	}
 }
@@ -52,9 +52,9 @@ func download(ctx context.Context, url, dst string) (string, error) {
 	req, _ := grab.NewRequest(dst, url)
 
 	// start download
-	log.Info().Msgf("Downloading %v...", req.URL())
+	internal.Log.Logger.Info().Msgf("Downloading %v...", req.URL())
 	resp := client.Do(req)
-	log.Printf("%s:  %v", url, resp.HTTPResponse.Status)
+	internal.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
 
 	// start UI loop
 	t := time.NewTicker(500 * time.Millisecond)
@@ -67,7 +67,7 @@ Loop:
 			defer os.RemoveAll(dstFile)
 			return dst, fmt.Errorf("context canceled")
 		case <-t.C:
-			log.Printf("%s: transferred %v / %v bytes (%.2f%%)",
+			internal.Log.Logger.Printf("%s: transferred %v / %v bytes (%.2f%%)",
 				url,
 				resp.BytesComplete(),
 				resp.Size(),
