@@ -3,22 +3,39 @@ package ops
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/kairos/pkg/utils"
+	"github.com/kairos-io/kairos-sdk/iso"
 )
 
 // ExtractNetboot extracts all the required netbooting artifacts
-func ExtractNetboot(src, dst, name string) func(ctx context.Context) error {
+func ExtractNetboot(src, dst, prefix string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		internal.Log.Logger.Info().Str("artifact", name).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
-		out, err := utils.SH(fmt.Sprintf("cd %s && /netboot.sh %s %s", dst, src, name))
-		internal.Log.Logger.Printf("Output '%s'", out)
+		internal.Log.Logger.Info().Str("prefix", prefix).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
+
+		artifact := filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix))
+		err := iso.ExtractFileFromIso("/rootfs.squashfs", src, artifact, &internal.Log)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", name).Str("source", src).Str("destination", dst).Msg("Failed extracting netboot artfact")
+			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
+			return err
 		}
+		artifact = filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix))
+		err = iso.ExtractFileFromIso("/boot/kernel", src, artifact, &internal.Log)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
+			return err
+		}
+		artifact = filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
+		err = iso.ExtractFileFromIso("/boot/initrd", src, artifact, &internal.Log)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
+			return err
+		}
+		internal.Log.Logger.Info().Msg("Artifacts extracted")
+
 		return err
 	}
 }
