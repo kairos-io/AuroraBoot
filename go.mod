@@ -10,7 +10,7 @@ require (
 	github.com/kairos-io/enki v0.2.2
 	github.com/kairos-io/kairos v1.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
-	github.com/kairos-io/kairos-sdk v0.6.0
+	github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.14.0
@@ -59,7 +59,7 @@ require (
 	github.com/docker/go-connections v0.4.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
-	github.com/edsrzf/mmap-go v1.1.0 // indirect
+	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
@@ -113,7 +113,7 @@ require (
 	github.com/moby/sys/sequential v0.5.0 // indirect
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/mudler/entities v0.8.1 // indirect
-	github.com/mudler/yip v1.11.0 // indirect
+	github.com/mudler/yip v1.12.0 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
