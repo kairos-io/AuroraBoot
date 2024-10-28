@@ -13,11 +13,11 @@ import (
 // ExtractNetboot extracts all the required netbooting artifacts
 func ExtractNetboot(src, dst, name string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		internal.Log.Logger.Info().Msgf("Extracting netboot artifacts '%s' from '%s' to '%s'", name, src, dst)
+		internal.Log.Logger.Info().Str("artifact", name).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
 		out, err := utils.SH(fmt.Sprintf("cd %s && /netboot.sh %s %s", dst, src, name))
 		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Failed extracting netboot artfact '%s' from '%s'. Error: %s", name, src, err.Error())
+			internal.Log.Logger.Error().Err(err).Str("artifact", name).Str("source", src).Str("destination", dst).Msg("Failed extracting netboot artfact")
 		}
 		return err
 	}
