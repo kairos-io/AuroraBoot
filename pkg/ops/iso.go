@@ -32,9 +32,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 			overlay = i.DataPath
 		}
 
-		// TODO: Are the args reveresed here? Copying from destination to source?
-		// Or are we assuming StepCopyCloudConfig has already run, putting it the
-		// config in "dst"? In that case, maybe move copying here, to a step?
+		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst"
 		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
 		if err != nil {
 			return err

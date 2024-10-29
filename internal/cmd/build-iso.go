@@ -80,8 +80,6 @@ var BuildISOCmd = cli.Command{
 			cli.ShowCommandHelpAndExit(ctx, ctx.Command.Name, 1)
 		}
 
-		// TODO: Read these from command line args and build one config to by used
-		// by all actions
 		cloudConfig := ""
 		var err error
 		if ctx.String("cloud-config") != "" {
