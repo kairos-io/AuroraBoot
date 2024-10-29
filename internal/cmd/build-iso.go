@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
@@ -70,12 +72,14 @@ var BuildISOCmd = cli.Command{
 	Action: func(ctx *cli.Context) error {
 		source := ctx.Args().Get(0)
 		if source == "" {
-			fmt.Println("\nNo source defined\n")
 			// Hack to prevent ShowAppHelpAndExit from checking only subcommands.
 			// (in this case there is only the 'help' subcommand). We are exiting
 			// anyway, so no harm from setting it to nil.
 			ctx.Command.Subcommands = nil
-			cli.ShowCommandHelpAndExit(ctx, ctx.Command.Name, 1)
+			cli.ShowCommandHelp(ctx, ctx.Command.Name)
+			fmt.Println("")
+
+			return errors.New("No source defined")
 		}
 
 		cloudConfig := ""
@@ -103,6 +107,10 @@ var BuildISOCmd = cli.Command{
 			},
 			State:       ctx.String("output"),
 			CloudConfig: cloudConfig,
+		}
+
+		if err := validateISOOptions(c.ISO); err != nil {
+			return err
 		}
 
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
@@ -133,4 +141,22 @@ func artifactBaseName(ctx *cli.Context) string {
 	}
 
 	return KairosDefaultArtifactName
+}
+
+func validateISOOptions(i schema.ISO) error {
+	for _, path := range []string{i.OverlayISO, i.OverlayRootfs, i.OverlayUEFI} {
+		if path == "" {
+			continue
+		}
+
+		_, err := os.Stat(path)
+		if err == nil {
+			continue
+		}
+		if os.IsNotExist(err) {
+			return fmt.Errorf("Invalid path '%s'", path)
+		}
+	}
+
+	return nil
 }
