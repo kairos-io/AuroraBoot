@@ -112,7 +112,10 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 	yaml.Unmarshal(y, &templateValues)
 
 	if cloudConfig != "" {
-		readCloudConfig(cloudConfig, templateValues)
+		c.CloudConfig, err = readCloudConfig(cloudConfig, templateValues)
+		if err != nil {
+			return nil, nil, err
+		}
 		internal.Log.Logger.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
 	}
 
