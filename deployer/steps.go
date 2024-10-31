@@ -36,7 +36,7 @@ func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(opCopyCloudConfig,
 		herd.WithDeps(opPrepareISO),
 		herd.WithCallback(func(ctx context.Context) error {
-			return os.WriteFile(d.cloudConfiPath(), []byte(d.Config.CloudConfig), 0600)
+			return os.WriteFile(d.cloudConfigPath(), []byte(d.Config.CloudConfig), 0600)
 		}))
 }
 
@@ -50,13 +50,13 @@ func (d *Deployer) StepPullContainer() error {
 func (d *Deployer) StepGenISO() error {
 	return d.Add(opGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(kairosDefaultArtifactName, d.tmpRootFs(), d.destination(), d.Config.ISO)))
+		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
 }
 
 func (d *Deployer) StepExtractNetboot() error {
 	return d.Add(opExtractNetboot,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.Config.DisableNetboot }),
-		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), kairosDefaultArtifactName)))
+		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.Config.ISO.Name)))
 }
 
 func (d *Deployer) StepDownloadInitrd() error {
@@ -173,7 +173,7 @@ func (d *Deployer) StepStartNetboot() error {
 		herd.Background,
 		herd.WithDeps(opCopyCloudConfig),
 		herd.WithCallback(
-			ops.StartPixiecore(d.cloudConfiPath(), d.squashFSfile(), d.netBootListenAddr(), d.netbootPort(), d.initrdFile(), d.kernelFile(), d.Config.NetBoot),
+			ops.StartPixiecore(d.cloudConfigPath(), d.squashFSfile(), d.netBootListenAddr(), d.netbootPort(), d.initrdFile(), d.kernelFile(), d.Config.NetBoot),
 		),
 	)
 }
@@ -236,7 +236,7 @@ func (d *Deployer) imageOrSquashFS() herd.OpOption {
 	return herd.IfElse(d.fromImage(), herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS))
 }
 
-func (d *Deployer) cloudConfiPath() string {
+func (d *Deployer) cloudConfigPath() string {
 	return filepath.Join(d.destination(), "config.yaml")
 }
 

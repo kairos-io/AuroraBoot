@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -113,42 +112,51 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 	yaml.Unmarshal(y, &templateValues)
 
 	if cloudConfig != "" {
-		if cloudConfig == "-" {
-			d, err := ioutil.ReadAll(os.Stdin)
-			if err != nil {
-				return c, r, fmt.Errorf("error reading from STDIN")
-			}
-			c.CloudConfig, err = render(string(d), templateValues)
-			if err != nil {
-				return nil, nil, err
-			}
-		} else {
-			if _, err := os.Stat(cloudConfig); err == nil {
-				dat, err := os.ReadFile(cloudConfig)
-				if err == nil {
-					c.CloudConfig, err = render(string(dat), templateValues)
-					if err != nil {
-						return nil, nil, err
-					}
-				}
-			} else if isUrl(cloudConfig) {
-				d, err := downloadFile(cloudConfig)
-				if err != nil {
-					return c, r, err
-				}
-				c.CloudConfig, err = render(d, templateValues)
-				if err != nil {
-					return nil, nil, err
-				}
-			} else {
-				return c, r, fmt.Errorf("file '%s' not found", cloudConfig)
-			}
-		}
-		if c.CloudConfig == "" {
-			return nil, nil, fmt.Errorf("cloud config set but contents are empty. Check that the content of the file is correct or the path is the proper one")
+		c.CloudConfig, err = readCloudConfig(cloudConfig, templateValues)
+		if err != nil {
+			return nil, nil, err
 		}
 		internal.Log.Logger.Debug().Str("cc", c.CloudConfig).Msg("Cloud config")
 	}
 
 	return c, r, nil
+}
+
+func readCloudConfig(cloudConfig string, templateValues map[string]interface{}) (string, error) {
+	result := ""
+	if cloudConfig == "-" {
+		d, err := io.ReadAll(os.Stdin)
+		if err != nil {
+			return result, fmt.Errorf("error reading from STDIN")
+		}
+		result, err = render(string(d), templateValues)
+		if err != nil {
+			return result, err
+		}
+	} else if _, err := os.Stat(cloudConfig); err == nil {
+		dat, err := os.ReadFile(cloudConfig)
+		if err == nil {
+			result, err = render(string(dat), templateValues)
+			if err != nil {
+				return result, err
+			}
+		}
+	} else if isUrl(cloudConfig) {
+		d, err := downloadFile(cloudConfig)
+		if err != nil {
+			return result, err
+		}
+		result, err = render(d, templateValues)
+		if err != nil {
+			return result, err
+		}
+	} else {
+		return result, fmt.Errorf("file '%s' not found", cloudConfig)
+	}
+
+	if result == "" {
+		return result, fmt.Errorf("cloud config set but contents are empty. Check that the content of the file is correct or the path is the proper one")
+	}
+
+	return result, nil
 }

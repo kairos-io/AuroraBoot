@@ -13,13 +13,14 @@ import (
 
 	enkiaction "github.com/kairos-io/enki/pkg/action"
 	enkiconfig "github.com/kairos-io/enki/pkg/config"
+	enkiconstants "github.com/kairos-io/enki/pkg/constants"
 	enkitypes "github.com/kairos-io/enki/pkg/types"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error {
+func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "geniso")
 		if err != nil {
@@ -31,33 +32,46 @@ func GenISO(name, src, dst string, i schema.ISO) func(ctx context.Context) error
 			overlay = i.DataPath
 		}
 
-		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
+		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst"
+		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
 		if err != nil {
 			return err
 		}
 
-		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", name, src, dst)
+		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
 		cfg := enkiconfig.NewBuildConfig(
 			enkiconfig.WithLogger(sdkTypes.NewKairosLogger("enki", "debug", false)),
 		)
-		cfg.Name = name
+		cfg.Name = i.Name
 		cfg.OutDir = dst
-		// Live grub artifacts:
-		// https://github.com/kairos-io/osbuilder/blob/95509370f6a87229879f1a381afa5d47225ce12d/tools-image/Dockerfile#L29-L30
-		// but /efi is not needed because we handle it here:
-		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L256
-		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L325
+		cfg.Date = i.IncludeDate
+		if i.Arch != "" {
+			cfg.Arch = i.Arch
+		}
+
 		spec := &enkitypes.LiveISO{
 			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
 			Image:              []*v1.ImageSource{v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
-			Label:              "COS_LIVE",
+			Label:              enkiconstants.ISOLabel,
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
 		}
+
+		if i.OverlayRootfs != "" {
+			spec.RootFS = append(spec.RootFS, v1.NewDirSrc(i.OverlayRootfs))
+		}
+		if i.OverlayUEFI != "" {
+			// TODO: Doesn't seem to do anything on enki.
+			spec.UEFI = append(spec.UEFI, v1.NewDirSrc(i.OverlayUEFI))
+		}
+		if i.OverlayISO != "" {
+			spec.Image = append(spec.Image, v1.NewDirSrc(i.OverlayISO))
+		}
+
 		buildISO := enkiaction.NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", name, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
 		}
 		return err
 	}
@@ -97,4 +111,15 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 		internal.Log.Logger.Info().Msgf("Wrote '%s'", injectedIso)
 		return err
 	}
+}
+
+func copyFileIfExists(src, dst string) error {
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return copy.Copy(src, dst)
 }

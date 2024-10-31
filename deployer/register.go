@@ -35,10 +35,6 @@ const (
 	opPrepareARMImages = "prepare_arm"
 )
 
-const (
-	kairosDefaultArtifactName = "kairos"
-)
-
 // RegisterAll registers the op dag based on the configuration and the artifact wanted.
 // This registers all steps for the top level Auroraboot command.
 func RegisterAll(d *Deployer) error {

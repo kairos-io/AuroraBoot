@@ -2,8 +2,9 @@ package schema
 
 import (
 	"fmt"
-	"golang.org/x/mod/semver"
 	"strings"
+
+	"golang.org/x/mod/semver"
 )
 
 type ReleaseArtifact struct {

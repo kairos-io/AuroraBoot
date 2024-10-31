@@ -2,8 +2,10 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"os"
 
+	"github.com/distribution/reference"
 	"github.com/kairos-io/AuroraBoot/internal"
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 )
@@ -11,6 +13,11 @@ import (
 // PullContainerImage pulls a container image either remotely or locally from a docker daemon.
 func PullContainerImage(image, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		_, err := reference.ParseNormalizedNamed(image)
+		if err != nil {
+			return fmt.Errorf("invalid image reference %s", image)
+		}
+
 		img, err := sdkUtils.GetImage(image, "", nil, nil)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Str("image", image).Msg("failed to pull image")
