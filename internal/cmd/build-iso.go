@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"runtime"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
@@ -28,6 +29,7 @@ var BuildISOCmd = cli.Command{
 		&cli.StringFlag{
 			Name:    "name",
 			Aliases: []string{"n"},
+			Value:   KairosDefaultArtifactName,
 			Usage:   "Basename of the generated ISO file",
 		},
 		&cli.StringFlag{
@@ -52,19 +54,11 @@ var BuildISOCmd = cli.Command{
 			Name:  "overlay-iso",
 			Usage: "Path of the overlayed iso data",
 		},
-		&cli.StringFlag{
-			Name:  "label",
-			Usage: "Label of the ISO volume",
-		},
-		&cli.BoolFlag{
-			Name:  "squash-no-compression",
-			Value: true,
-			Usage: "Disable squashfs compression",
-		},
 		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L263
 		&cli.StringFlag{
 			Name:    "arch",
 			Aliases: []string{"a"},
+			Value:   runtime.GOARCH,
 			Usage:   "Arch to build the image for (amd64, x86_64, arm64, aarch64)",
 		},
 	},
@@ -95,22 +89,22 @@ var BuildISOCmd = cli.Command{
 		r := schema.ReleaseArtifact{
 			ContainerImage: source,
 		}
-		c := schema.Config{
-			ISO: schema.ISO{
-				Name:          artifactBaseName(ctx),
-				Label:         ctx.String("label"),
-				IncludeDate:   ctx.Bool("date"),
-				OverlayISO:    ctx.String("overlay-iso"),
-				OverlayRootfs: ctx.String("overlay-rootfs"),
-				OverlayUEFI:   ctx.String("overlay-uefi"),
-				Arch:          ctx.String("arch"),
-			},
-			State:       ctx.String("output"),
-			CloudConfig: cloudConfig,
+		isoOptions := schema.ISO{
+			Name:          artifactBaseName(ctx),
+			IncludeDate:   ctx.Bool("date"),
+			OverlayISO:    ctx.String("overlay-iso"),
+			OverlayRootfs: ctx.String("overlay-rootfs"),
+			OverlayUEFI:   ctx.String("overlay-uefi"),
+			Arch:          ctx.String("arch"),
+		}
+		if err := validateISOOptions(isoOptions); err != nil {
+			return err
 		}
 
-		if err := validateISOOptions(c.ISO); err != nil {
-			return err
+		c := schema.Config{
+			ISO:         isoOptions,
+			State:       ctx.String("output"),
+			CloudConfig: cloudConfig,
 		}
 
 		d := deployer.NewDeployer(c, r, herd.EnableInit)

@@ -48,14 +48,11 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		if i.Arch != "" {
 			cfg.Arch = i.Arch
 		}
-		isoLabel := enkiconstants.ISOLabel
-		if i.Label != "" {
-			isoLabel = i.Label
-		}
+
 		spec := &enkitypes.LiveISO{
 			RootFS:             []*v1.ImageSource{v1.NewDirSrc(src)},
 			Image:              []*v1.ImageSource{v1.NewDirSrc("/grub2"), v1.NewDirSrc(overlay)},
-			Label:              isoLabel,
+			Label:              enkiconstants.ISOLabel,
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
 		}
