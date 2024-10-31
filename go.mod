@@ -12,7 +12,7 @@ require (
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76
 	github.com/kairos-io/netboot v0.0.0-20241031112005-7d4ec05cea46
-	github.com/onsi/ginkgo/v2 v2.20.2
+	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.14.0
 	github.com/spectrocloud-labs/herd v0.4.2
@@ -81,7 +81,7 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-containerregistry v0.20.2 // indirect
 	github.com/google/go-tpm v0.9.1 // indirect
-	github.com/google/pprof v0.0.0-20240827171923-fa2c70bbbfe5 // indirect
+	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/gookit/color v1.5.4 // indirect
