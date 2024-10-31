@@ -13,7 +13,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/kairos/sdk/unstructured"
+	"github.com/kairos-io/kairos-sdk/unstructured"
 	"gopkg.in/yaml.v1"
 )
 

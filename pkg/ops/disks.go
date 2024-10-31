@@ -9,7 +9,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/kairos/pkg/utils"
+	"github.com/kairos-io/kairos-sdk/utils"
 )
 
 func PrepareArmPartitions(src, dstPath string, do schema.Config) func(ctx context.Context) error {

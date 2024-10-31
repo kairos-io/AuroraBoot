@@ -8,7 +8,6 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/kairos/pkg/utils"
 	"github.com/otiai10/copy"
 
 	enkiaction "github.com/kairos-io/enki/pkg/action"
@@ -17,6 +16,7 @@ import (
 	enkitypes "github.com/kairos-io/enki/pkg/types"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/utils"
 )
 
 // GenISO generates an ISO from a rootfs, and stores results in dst

@@ -6,9 +6,9 @@ toolchain go1.23.2
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
+	github.com/distribution/reference v0.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.2
-	github.com/kairos-io/kairos v1.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76
 	github.com/onsi/ginkgo/v2 v2.20.2
@@ -50,7 +50,6 @@ require (
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/diskfs/go-diskfs v1.4.1 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/djherbis/times v1.6.0 // indirect
 	github.com/docker/cli v27.1.1+incompatible // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
