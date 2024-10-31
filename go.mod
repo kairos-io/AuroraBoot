@@ -6,17 +6,18 @@ toolchain go1.23.2
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
+	github.com/distribution/reference v0.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.2
 	github.com/kairos-io/kairos v1.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76
+	github.com/kairos-io/netboot v0.0.0-20241031112005-7d4ec05cea46
 	github.com/onsi/ginkgo/v2 v2.20.2
 	github.com/onsi/gomega v1.34.2
 	github.com/otiai10/copy v1.14.0
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli/v2 v2.27.5
-	go.universe.tf/netboot v0.0.0-20230916172012-64f6de6d0e3b
 	golang.org/x/mod v0.21.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1
@@ -50,7 +51,6 @@ require (
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/diskfs/go-diskfs v1.4.1 // indirect
-	github.com/distribution/reference v0.6.0 // indirect
 	github.com/djherbis/times v1.6.0 // indirect
 	github.com/docker/cli v27.1.1+incompatible // indirect
 	github.com/docker/distribution v2.8.2+incompatible // indirect
@@ -65,6 +65,7 @@ require (
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/foxboron/go-uefi v0.0.0-20241017190036-fab4fdf2f2f3 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
+	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.5.0 // indirect
 	github.com/go-git/go-git/v5 v5.12.0 // indirect
