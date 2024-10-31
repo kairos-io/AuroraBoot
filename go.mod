@@ -9,7 +9,6 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.2
-	github.com/kairos-io/kairos v1.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76
 	github.com/kairos-io/netboot v0.0.0-20241031112005-7d4ec05cea46
