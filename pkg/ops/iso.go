@@ -33,7 +33,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		}
 
 		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst"
-		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
+		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
 		if err != nil {
 			return err
 		}
@@ -111,4 +111,15 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 		internal.Log.Logger.Info().Msgf("Wrote '%s'", injectedIso)
 		return err
 	}
+}
+
+func copyFileIfExists(src, dst string) error {
+	if _, err := os.Stat(src); err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		} else {
+			return err
+		}
+	}
+	return copy.Copy(src, dst)
 }
