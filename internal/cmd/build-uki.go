@@ -33,6 +33,92 @@ var BuildUKICmd = cli.Command{
 		"    - PK.der\n" +
 		"    - PK.auth\n" +
 		"    - tpm2-pcr-private.pem\n",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:    "name",
+			Aliases: []string{"n"},
+			Usage:   "Basename of the generated artifact (ignored for uki output type)",
+		},
+		&cli.StringFlag{
+			Name:    "output-dir",
+			Aliases: []string{"d"},
+			Value:   ".",
+			Usage:   "Output dir for artifact",
+		},
+		&cli.StringFlag{
+			Name:    "output-type",
+			Aliases: []string{"t"},
+			Value:   string(enkiconstants.DefaultOutput),
+			Usage:   fmt.Sprintf("Artifact output type [%s]", strings.Join(enkiconstants.OutPutTypes(), ", ")),
+		},
+		&cli.StringFlag{
+			Name:    "overlay-rootfs",
+			Aliases: []string{"o"},
+			Usage:   "Dir with files to be applied to the system rootfs. All the files under this dir will be copied into the rootfs of the uki respecting the directory structure under the dir.",
+		},
+		&cli.StringFlag{
+			Name:    "overlay-iso",
+			Aliases: []string{"i"},
+			Usage:   "Dir with files to be copied to the ISO rootfs.",
+		},
+		&cli.StringFlag{
+			Name:  "boot-branding",
+			Value: "Kairos",
+			Usage: "Boot title branding",
+		},
+		&cli.BoolFlag{
+			Name:  "include-version-in-config",
+			Value: false,
+			Usage: "Include the OS version in the .config file",
+		},
+		&cli.BoolFlag{
+			Name:  "include-cmdline-in-config",
+			Value: false,
+			Usage: "Include the cmdline in the .config file. Only the extra values are included.",
+		},
+		&cli.StringSliceFlag{
+			Name:    "extra-cmdline",
+			Aliases: []string{"c"},
+			Usage:   "Add extra efi files with this cmdline for the default 'norole' artifacts. This creates efi files with the default cmdline and extra efi files with the default+provided cmdline.",
+		},
+		&cli.StringFlag{
+			Name:    "extend-cmdline",
+			Aliases: []string{"x"},
+			Usage:   "Extend the default cmdline for the default 'norole' artifacts. This creates efi files with the default+provided cmdline.",
+		},
+		&cli.StringSliceFlag{
+			Name:    "single-efi-cmdline",
+			Aliases: []string{"s"},
+			Usage:   "Add one extra efi file with the default+provided cmdline. The syntax is '--single-efi-cmdline \"My Entry: cmdline,options,here\"'. The boot entry name is the text under which it appears in systemd-boot menu.",
+		},
+		&cli.StringFlag{
+			Name:     "keys",
+			Aliases:  []string{"k"},
+			Usage:    "Directory with the signing keys",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:    "default-entry",
+			Aliases: []string{"e"},
+			Usage:   "Default entry selected in the boot menu. Supported glob wildcard patterns are \"?\", \"*\", and \"[...]\". If not selected, the default entry with install-mode is selected.",
+		},
+		&cli.Int64Flag{
+			Name:  "efi-size-warn",
+			Value: 1024,
+			Usage: "EFI file size warning threshold in megabytes",
+		},
+		&cli.StringFlag{
+			Name:  "secure-boot-enroll",
+			Value: "if-safe",
+			Usage: "The value of secure-boot-enroll option of systemd-boot. Possible values: off|manual|if-safe|force. Minimum systemd version: 253. Docs: https://manpages.debian.org/experimental/systemd-boot/loader.conf.5.en.html. !! Danger: this feature might soft-brick your device if used improperly !!",
+		},
+		&cli.StringFlag{
+			Name:  "splash",
+			Usage: "Path to the custom logo splash BMP file.",
+		},
+		// // Mark some flags as mutually exclusive
+		// c.MarkFlagsMutuallyExclusive([]string{"extra-cmdline", "extend-cmdline"}...)
+	},
 	Before: func(ctx *cli.Context) error {
 		artifact := ctx.String("output-type")
 		if artifact != string(constants.DefaultOutput) && artifact != string(constants.IsoOutput) && artifact != string(constants.ContainerOutput) {
@@ -96,62 +182,5 @@ var BuildUKICmd = cli.Command{
 			}
 		}
 		return CheckRoot()
-	},
-	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:    "name",
-			Aliases: []string{"n"},
-			Usage:   "Basename of the generated artifact (ignored for uki output type)",
-		},
-		&cli.StringFlag{
-			Name:    "output-dir",
-			Aliases: []string{"d"},
-			Value:   ".",
-			Usage:   "Output dir for artifact",
-		},
-		&cli.StringFlag{
-			Name:    "output-type",
-			Aliases: []string{"t"},
-			Value:   string(enkiconstants.DefaultOutput),
-			Usage:   fmt.Sprintf("Artifact output type [%s]", strings.Join(enkiconstants.OutPutTypes(), ", ")),
-		},
-		&cli.StringFlag{
-			Name:    "overlay-rootfs",
-			Aliases: []string{"o"},
-			Usage:   "Dir with files to be applied to the system rootfs.\nAll the files under this dir will be copied into the rootfs of the uki respecting the directory structure under the dir.",
-		},
-		&cli.StringFlag{
-			Name:    "overlay-iso",
-			Aliases: []string{"i"},
-			Usage:   "Dir with files to be copied to the ISO rootfs.",
-		},
-		&cli.StringFlag{
-			Name:  "boot-branding",
-			Value: "Kairos",
-			Usage: "Boot title branding",
-		},
-		&cli.BoolFlag{
-			Name:  "include-version-in-config",
-			Value: false,
-			Usage: "Include the OS version in the .config file",
-		},
-		&cli.BoolFlag{
-			Name:  "include-cmdline-in-config",
-			Value: false,
-			Usage: "Include the cmdline in the .config file. Only the extra values are included.",
-		},
-		// c.Flags().StringSliceP("extra-cmdline", "c", []string{}, "Add extra efi files with this cmdline for the default 'norole' artifacts. This creates efi files with the default cmdline and extra efi files with the default+provided cmdline.")
-		// c.Flags().StringP("extend-cmdline", "x", "", "Extend the default cmdline for the default 'norole' artifacts. This creates efi files with the default+provided cmdline.")
-		// c.Flags().StringSliceP("single-efi-cmdline", "s", []string{}, "Add one extra efi file with the default+provided cmdline. The syntax is '--single-efi-cmdline \"My Entry: cmdline,options,here\"'. The boot entry name is the text under which it appears in systemd-boot menu.")
-		// c.Flags().StringP("keys", "k", "", "Directory with the signing keys")
-		// c.Flags().StringP("default-entry", "e", "", "Default entry selected in the boot menu.\nSupported glob wildcard patterns are \"?\", \"*\", and \"[...]\".\nIf not selected, the default entry with install-mode is selected.")
-		// c.Flags().Int64P("efi-size-warn", "", 1024, "EFI file size warning threshold in megabytes. Default is 1024.")
-		// c.Flags().String("secure-boot-enroll", "if-safe", "The value of secure-boot-enroll option of systemd-boot. Possible values: off|manual|if-safe|force. Minimum systemd version: 253. Docs: https://manpages.debian.org/experimental/systemd-boot/loader.conf.5.en.html. !! Danger: this feature might soft-brick your device if used improperly !!")
-		// c.Flags().StringP("splash", "", "", "Path to the custom logo splash BMP file.")
-
-		// c.MarkFlagRequired("keys")
-		// // Mark some flags as mutually exclusive
-		// c.MarkFlagsMutuallyExclusive([]string{"extra-cmdline", "extend-cmdline"}...)
-
 	},
 }
