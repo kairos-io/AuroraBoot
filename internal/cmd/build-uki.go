@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kairos-io/enki/pkg/constants"
+	enkiaction "github.com/kairos-io/enki/pkg/action"
+	enkiconfig "github.com/kairos-io/enki/pkg/config"
 	enkiconstants "github.com/kairos-io/enki/pkg/constants"
-	"github.com/spf13/viper"
+	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/urfave/cli/v2"
 )
 
@@ -38,6 +40,7 @@ var BuildUKICmd = cli.Command{
 		&cli.StringFlag{
 			Name:    "name",
 			Aliases: []string{"n"},
+			Value:   KairosDefaultArtifactName,
 			Usage:   "Basename of the generated artifact (ignored for uki output type)",
 		},
 		&cli.StringFlag{
@@ -127,51 +130,53 @@ var BuildUKICmd = cli.Command{
 		}
 
 		artifact := ctx.String("output-type")
-		if artifact != string(constants.DefaultOutput) && artifact != string(constants.IsoOutput) && artifact != string(constants.ContainerOutput) {
+		if artifact != string(enkiconstants.DefaultOutput) && artifact != string(enkiconstants.IsoOutput) && artifact != string(enkiconstants.ContainerOutput) {
 			return fmt.Errorf("invalid output type: %s", artifact)
 		}
 
-		overlayRootfs := ctx.String("overlay-rootfs")
-		if overlayRootfs != "" {
-			// Check if overlay dir exists by doing an os.stat
-			// If it does not exist, return an error
-			ol, err := os.Stat(overlayRootfs)
-			if err != nil {
-				return fmt.Errorf("overlay-rootfs directory does not exist: %s", overlayRootfs)
-			}
-			if !ol.IsDir() {
-				return fmt.Errorf("overlay-rootfs is not a directory: %s", overlayRootfs)
-			}
+		// TODO: Not used anywhere in enki?
+		//
+		// overlayRootfs := ctx.String("overlay-rootfs")
+		// if overlayRootfs != "" {
+		// 	// Check if overlay dir exists by doing an os.stat
+		// 	// If it does not exist, return an error
+		// 	ol, err := os.Stat(overlayRootfs)
+		// 	if err != nil {
+		// 		return fmt.Errorf("overlay-rootfs directory does not exist: %s", overlayRootfs)
+		// 	}
+		// 	if !ol.IsDir() {
+		// 		return fmt.Errorf("overlay-rootfs is not a directory: %s", overlayRootfs)
+		// 	}
 
-			// Transform it into absolute path
-			absolutePath, err := filepath.Abs(overlayRootfs)
-			if err != nil {
-				viper.Set("overlay-rootfs", absolutePath)
-			}
-		}
-		overlayIso := ctx.String("overlay-iso")
-		if overlayIso != "" {
-			// Check if overlay dir exists by doing an os.stat
-			// If it does not exist, return an error
-			ol, err := os.Stat(overlayIso)
-			if err != nil {
-				return fmt.Errorf("overlay directory does not exist: %s", overlayIso)
-			}
-			if !ol.IsDir() {
-				return fmt.Errorf("overlay is not a directory: %s", overlayIso)
-			}
+		// 	// Transform it into absolute path
+		// 	absolutePath, err := filepath.Abs(overlayRootfs)
+		// 	if err != nil {
+		// 		viper.Set("overlay-rootfs", absolutePath)
+		// 	}
+		// }
+		// overlayIso := ctx.String("overlay-iso")
+		// if overlayIso != "" {
+		// 	// Check if overlay dir exists by doing an os.stat
+		// 	// If it does not exist, return an error
+		// 	ol, err := os.Stat(overlayIso)
+		// 	if err != nil {
+		// 		return fmt.Errorf("overlay directory does not exist: %s", overlayIso)
+		// 	}
+		// 	if !ol.IsDir() {
+		// 		return fmt.Errorf("overlay is not a directory: %s", overlayIso)
+		// 	}
 
-			// Check if we are setting a different artifact and overlay-iso is set
-			if artifact != string(constants.IsoOutput) {
-				return fmt.Errorf("overlay-iso is only supported for iso artifacts")
-			}
+		// 	// Check if we are setting a different artifact and overlay-iso is set
+		// 	if artifact != string(enkiconstants.IsoOutput) {
+		// 		return fmt.Errorf("overlay-iso is only supported for iso artifacts")
+		// 	}
 
-			// Transform it into absolute path
-			absolutePath, err := filepath.Abs(overlayIso)
-			if err != nil {
-				viper.Set("overlay-iso", absolutePath)
-			}
-		}
+		// 	// Transform it into absolute path
+		// 	absolutePath, err := filepath.Abs(overlayIso)
+		// 	if err != nil {
+		// 		viper.Set("overlay-iso", absolutePath)
+		// 	}
+		// }
 
 		// Check if the keys directory exists
 		keysDir := ctx.String("keys")
@@ -188,5 +193,43 @@ var BuildUKICmd = cli.Command{
 			}
 		}
 		return CheckRoot()
+	},
+	Action: func(ctx *cli.Context) error {
+		// TODO: Implement log-level flag
+		logLevel := "debug"
+		if ctx.String("log-level") != "" {
+			logLevel = ctx.String("log-level")
+		}
+		logger := sdkTypes.NewKairosLogger("enki", logLevel, false)
+
+		cfg := enkiconfig.NewBuildConfig(
+			enkiconfig.WithImageExtractor(v1.OCIImageExtractor{}),
+			enkiconfig.WithLogger(logger),
+		)
+		cfg.Name = ctx.String("name")
+		cfg.OutDir = ctx.String("output-dir")
+
+		args := ctx.Args()
+		if args.Len() < 1 {
+			return errors.New("no image provided")
+		}
+
+		imgSource, err := v1.NewSrcFromURI(args.Get(0))
+		if err != nil {
+			return fmt.Errorf("not a valid rootfs source image argument: %s", args.Get(0))
+		}
+
+		outputDir := ctx.String("output-dir")
+		keysDir := ctx.String("keys")
+		outputType := ctx.String("output-type")
+		// TODO: outputDir is redundant. It's also stored in the cfg object.
+		a := enkiaction.NewBuildUKIAction(cfg, imgSource, outputDir, keysDir, outputType)
+		err = a.Run()
+		if err != nil {
+			cfg.Logger.Errorf(err.Error())
+			return err
+		}
+
+		return nil
 	},
 }
