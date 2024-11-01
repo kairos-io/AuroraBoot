@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -116,10 +117,15 @@ var BuildUKICmd = cli.Command{
 			Name:  "splash",
 			Usage: "Path to the custom logo splash BMP file.",
 		},
-		// // Mark some flags as mutually exclusive
-		// c.MarkFlagsMutuallyExclusive([]string{"extra-cmdline", "extend-cmdline"}...)
 	},
 	Before: func(ctx *cli.Context) error {
+		// // Mark flags as mutually exclusive
+		// TODO: Use MutuallyExclusiveFlags when urfave/cli v3 is stable:
+		// https://github.com/urfave/cli/blob/7ec374fe2abd3e9c75369f6bb4191fe7866bd89c/command.go#L128
+		if ctx.String("extra-cmdline") != "" && ctx.String("extend-cmdline") != "" {
+			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
+		}
+
 		artifact := ctx.String("output-type")
 		if artifact != string(constants.DefaultOutput) && artifact != string(constants.IsoOutput) && artifact != string(constants.ContainerOutput) {
 			return fmt.Errorf("invalid output type: %s", artifact)
