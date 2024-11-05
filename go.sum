@@ -267,6 +267,8 @@ github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76 h1:w+QVS0w8
 github.com/kairos-io/kairos-sdk v0.6.1-0.20241028080948-24873605ca76/go.mod h1:QqJUalZhsWmNimic4knXJpjKFn9PyAukKPW/N/xFoeY=
 github.com/kairos-io/kairos-sdk v0.6.1-0.20241029233151-c49fbedde56f h1:4ZCgfdhgg7lic6ytfSqZJPp6JsAMbQUrtf3Lsgwrg7E=
 github.com/kairos-io/kairos-sdk v0.6.1-0.20241029233151-c49fbedde56f/go.mod h1:pUlofWDFqMFSA0wVOfLdt+ayrI/9Y2S3tVDDKG0ljrc=
+github.com/kairos-io/kairos-sdk v0.6.1-0.20241101221032-259f6af97fa9 h1:m+CTZ5gpf5Cof4Grp8n5hdya8npmU7FyWC5EpaVT2cs=
+github.com/kairos-io/kairos-sdk v0.6.1-0.20241101221032-259f6af97fa9/go.mod h1:I3zlDc7IqT7eKYe692Q99RmVZvnL11+LjSkIXj88Yx8=
 github.com/kairos-io/netboot v0.0.0-20241031112005-7d4ec05cea46 h1:kswSEuEpv5TZaImImrbtS4M8iyQDcDufD3x2b9+zEWQ=
 github.com/kairos-io/netboot v0.0.0-20241031112005-7d4ec05cea46/go.mod h1:U4lqaTXa8WtvTqi+aGBkfBKROYJxh3OSdGBtt8l0uFU=
 github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07 h1:cE0KsjMDuEkOMSOpRgkfGw7rT4Yk6io0V/3f/W1m2sY=
@@ -344,6 +346,8 @@ github.com/onsi/gomega v1.34.2 h1:pNCwDkzrsv7MS9kpaQvVb1aVLahQXyJ/Tv5oAZMI3i8=
 github.com/onsi/gomega v1.34.2/go.mod h1:v1xfxRgk0KIsG+QOdm7p8UosrOzPYRo60fd3B/1Dukc=
 github.com/onsi/gomega v1.35.0 h1:xuM1M/UvMp9BCdS4hojhS9/4jEuVqS9Er3bqupeaoPM=
 github.com/onsi/gomega v1.35.0/go.mod h1:PvZbdDc8J6XJEpDK4HCuRBm8a6Fzp9/DmhC9C7yFlog=
+github.com/onsi/gomega v1.35.1 h1:Cwbd75ZBPxFSuZ6T+rN/WCb/gOc6YgFBXLlZLhC7Ds4=
+github.com/onsi/gomega v1.35.1/go.mod h1:PvZbdDc8J6XJEpDK4HCuRBm8a6Fzp9/DmhC9C7yFlog=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.0 h1:8SG7/vwALn54lVB/0yZ/MMwhFrPYtpEHQb2IpWsCzug=
