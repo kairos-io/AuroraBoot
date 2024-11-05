@@ -11,7 +11,7 @@ require (
 	github.com/kairos-io/enki v0.2.2
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
 	github.com/kairos-io/kairos-sdk v0.6.1-0.20241029233151-c49fbedde56f
-	github.com/kairos-io/netboot v0.0.0-20241031112005-7d4ec05cea46
+	github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.0
 	github.com/otiai10/copy v1.14.0
