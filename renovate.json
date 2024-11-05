@@ -9,6 +9,8 @@
     "every weekend"
   ],
   "timezone": "Europe/Brussels",
+  "reviewers": [ "team:maintainers" ],
+  "rebaseWhen": "behind-base-branch",
   "packageRules": [
     {
       "matchUpdateTypes": [
