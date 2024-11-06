@@ -51,7 +51,7 @@ var BuildUKICmd = cli.Command{
 		&cli.StringFlag{
 			Name:    "name",
 			Aliases: []string{"n"},
-			Value:   KairosDefaultArtifactName,
+			Value:   "",
 			Usage:   "Basename of the generated artifact (ignored for uki output type)",
 		},
 		&cli.StringFlag{
@@ -145,8 +145,6 @@ var BuildUKICmd = cli.Command{
 			return fmt.Errorf("invalid output type: %s", artifact)
 		}
 
-		// TODO: Not used anywhere in enki?
-		//
 		// overlayRootfs := ctx.String("overlay-rootfs")
 		// if overlayRootfs != "" {
 		// 	// Check if overlay dir exists by doing an os.stat
@@ -747,7 +745,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		}
 	}
 
-	isoName := fmt.Sprintf("kairos_%s.iso", kairosVersion)
+	isoName := fmt.Sprintf("%s_%s.iso", KairosDefaultArtifactName, kairosVersion)
 	if artifactName != "" {
 		isoName = fmt.Sprintf("%s.iso", artifactName)
 	}
