@@ -55,14 +55,12 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 	Describe("single-efi-cmdline", func() {
 		BeforeEach(func() {
 			By("building the iso with single-efi-cmdline flags set")
-			out := buildISO(auroraboot, image, keysDir, resultDir, resultFile,
+			buildISO(auroraboot, image, keysDir, resultDir, resultFile,
 				"--single-efi-cmdline", "My Entry: someoption=somevalue",
 				"--single-efi-cmdline", "My Other Entry: someoption2=somevalue2")
-
-			fmt.Printf("out = %+v\n", out)
 		})
 
-		FIt("creates additional .efi and .conf files", func() {
+		It("creates additional .efi and .conf files", func() {
 			By("checking if the default value for secure-boot-enroll is set")
 			content := listEfiFiles(auroraboot, resultFile)
 			Expect(string(content)).To(MatchRegexp("My_Entry.efi"))
@@ -104,8 +102,10 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 })
 
 func buildISO(auroraboot *Auroraboot, image, keysDir, resultDir, resultFile string, additionalArgs ...string) string {
-	out, err := auroraboot.Run(append([]string{"build-uki", "--output-dir", resultDir,
-		"-k", keysDir, "--output-type", "iso", image}, additionalArgs...)...)
+	args := []string{"build-uki", "--output-dir", resultDir, "-k", keysDir, "--output-type", "iso"}
+	args = append(args, additionalArgs...)
+	args = append(args, image)
+	out, err := auroraboot.Run(args...)
 	Expect(err).ToNot(HaveOccurred(), out)
 
 	By("building the iso")
