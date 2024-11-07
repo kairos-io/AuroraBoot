@@ -136,7 +136,7 @@ var BuildUKICmd = cli.Command{
 		// // Mark flags as mutually exclusive
 		// TODO: Use MutuallyExclusiveFlags when urfave/cli v3 is stable:
 		// https://github.com/urfave/cli/blob/7ec374fe2abd3e9c75369f6bb4191fe7866bd89c/command.go#L128
-		if ctx.String("extra-cmdline") != "" && ctx.String("extend-cmdline") != "" {
+		if len(ctx.StringSlice("extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
 			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
 		}
 

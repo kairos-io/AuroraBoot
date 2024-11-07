@@ -30,6 +30,7 @@ var _ = Describe("bootable artifacts", Label("bootable"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		vm.EventuallyConnects(1200)
 	})
+
 	AfterEach(func() {
 		if CurrentSpecReport().Failed() {
 			gatherLogs(vm)
