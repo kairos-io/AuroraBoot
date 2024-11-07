@@ -63,12 +63,12 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 		It("creates additional .efi and .conf files", func() {
 			By("checking if the default value for secure-boot-enroll is set")
 			content := listEfiFiles(auroraboot, resultFile)
-			Expect(string(content)).To(MatchRegexp("My_Entry.efi"))
-			Expect(string(content)).To(MatchRegexp("My_Other_Entry.efi"))
+			Expect(string(content)).To(MatchRegexp("my_entry.efi"))
+			Expect(string(content)).To(MatchRegexp("my_other_entry.efi"))
 
 			content = listConfFiles(auroraboot, resultFile)
-			Expect(string(content)).To(MatchRegexp("My_Entry.conf"))
-			Expect(string(content)).To(MatchRegexp("My_Other_Entry.conf"))
+			Expect(string(content)).To(MatchRegexp("my_entry.conf"))
+			Expect(string(content)).To(MatchRegexp("my_other_entry.conf"))
 		})
 	})
 
