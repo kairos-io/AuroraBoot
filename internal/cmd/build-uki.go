@@ -823,16 +823,17 @@ func createImgWithSize(imgFile string, size int64) error {
 		return fmt.Errorf("creating the img file: %w\n%s", err, out)
 	}
 
+	cmd = exec.Command("mformat", "-i", imgFile, "-F", "::")
+
+	out, err = cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("formating the img file: %w\n%s", err, out)
+	}
+
 	return nil
 }
 
 func createImgDirs(imgFile string, filesMap map[string][]string) error {
-	cmd := exec.Command("mkfs.msdos", "-F", "32", imgFile)
-	out, err := cmd.CombinedOutput()
-	if err != nil {
-		return fmt.Errorf("formating the img file to fat: %w\n%s", err, string(out))
-	}
-
 	dirs := maps.Keys(filesMap)
 	sort.Strings(dirs) // Make sure we create outer dirs first
 	for _, dir := range dirs {
