@@ -295,9 +295,14 @@ var BuildUKICmd = cli.Command{
 			return err
 		}
 
+		extendCmdline := ctx.String("extend-cmdline")
+		boodBranding := ctx.String("boot-branding")
+		extraCmdlines := ctx.StringSlice("extra-cmdline")
+		singleEfiCmdlines := ctx.StringSlice("single-efi-cmdline")
+
 		entries := append(
-			GetUkiCmdline(ctx.String("extend-cmdline"), ctx.String("boot-branding"), ctx.StringSlice("extra-cmdline")),
-			GetUkiSingleCmdlines(ctx.String("boot-branding"), ctx.StringSlice("single-efi-cmdline"), logger)...)
+			GetUkiCmdline(extendCmdline, boodBranding, extraCmdlines),
+			GetUkiSingleCmdlines(boodBranding, singleEfiCmdlines, logger)...)
 
 		for _, entry := range entries {
 			logger.Info(fmt.Sprintf("Running ukify for cmdline: %s: %s", entry.Title, entry.Cmdline))
@@ -357,35 +362,36 @@ var BuildUKICmd = cli.Command{
 			}
 		}
 
-		if err = createSystemdConf(sourceDir, ctx.String("default-entry"), ctx.String("secure-boot-enroll")); err != nil {
+		if err := createSystemdConf(sourceDir, ctx.String("default-entry"), ctx.String("secure-boot-enroll")); err != nil {
 			return err
 		}
 
 		switch ctx.String("output-type") {
 		case string(enkiconstants.IsoOutput):
-			err = createISO(e, sourceDir, ctx.String("output-dir"), ctx.String("overlay-iso"), ctx.String("keys"), kairosVersion, ctx.String("name"), entries, logger)
-			logger.Infof("Done building %s at: %s", ctx.String("output-type"), ctx.String("output-dir"))
+			if err := createISO(e, sourceDir, ctx.String("output-dir"), ctx.String("overlay-iso"), ctx.String("keys"), kairosVersion, ctx.String("name"), entries, logger); err != nil {
+				return err
+			}
 		case string(enkiconstants.ContainerOutput):
 			// First create the files
-			if err = createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
 				return err
 			}
 			// Then build the image
-			if err = createContainer(sourceDir, ctx.String("output-dir"), ctx.String("name"), kairosVersion, logger); err != nil {
+			if err := createContainer(sourceDir, ctx.String("output-dir"), ctx.String("name"), kairosVersion, logger); err != nil {
 				return err
 			}
-			logger.Infof("Done building %s", ctx.String("output-type"))
 
 			//Then remove the output dir files as we dont need them, the container has been loaded
-			if err = removeUkiFiles(ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
+			if err := removeUkiFiles(ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
 				return err
 			}
 		case string(enkiconstants.DefaultOutput):
-			if err = createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
 				return err
 			}
-			logger.Infof("Done building %s at: %s", ctx.String("output-type"), ctx.String("output-dir"))
 		}
+
+		logger.Infof("Done building %s at: %s", ctx.String("output-type"), ctx.String("output-dir"))
 
 		return nil
 	},
@@ -678,7 +684,7 @@ func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
 	} else {
 		// Get the generic efi file that we produce from the default cmdline
 		// This is the one name that has nothing added, just the version
-		finalEfiConf = enkiutils.NameFromCmdline(enkiconstants.ArtifactBaseName, enkiconstants.UkiCmdline+" "+enkiconstants.UkiCmdlineInstall) + ".conf"
+		finalEfiConf = NameFromCmdline(enkiconstants.ArtifactBaseName, enkiconstants.UkiCmdline+" "+enkiconstants.UkiCmdlineInstall) + ".conf"
 	}
 
 	// Set that as default selection for booting
@@ -968,7 +974,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 		return []enkiutils.BootEntry{{
 			Cmdline:  cmdline,
 			Title:    bootBranding,
-			FileName: enkiutils.NameFromCmdline(enkiconstants.ArtifactBaseName, cmdline),
+			FileName: NameFromCmdline(enkiconstants.ArtifactBaseName, cmdline),
 		}}
 	}
 
@@ -976,7 +982,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 	result := []enkiutils.BootEntry{{
 		Cmdline:  defaultCmdLine,
 		Title:    bootBranding,
-		FileName: enkiutils.NameFromCmdline(enkiconstants.ArtifactBaseName, defaultCmdLine),
+		FileName: NameFromCmdline(enkiconstants.ArtifactBaseName, defaultCmdLine),
 	}}
 
 	// extra
@@ -985,7 +991,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 		result = append(result, enkiutils.BootEntry{
 			Cmdline:  cmdline,
 			Title:    bootBranding,
-			FileName: enkiutils.NameFromCmdline(enkiconstants.ArtifactBaseName, cmdline),
+			FileName: NameFromCmdline(enkiconstants.ArtifactBaseName, cmdline),
 		})
 	}
 
@@ -1005,14 +1011,47 @@ func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, logger sdkType
 		if hasTitle {
 			bootEntry.Title = fmt.Sprintf("%s (%s)", bootBranding, before)
 			bootEntry.Cmdline = defaultCmdLine + " " + after
-			bootEntry.FileName = strings.ReplaceAll(before, " ", "_")
+			bootEntry.FileName = strings.ToLower(strings.ReplaceAll(before, " ", "_"))
 		} else {
 			bootEntry.Title = bootBranding
 			bootEntry.Cmdline = defaultCmdLine + " " + before
-			bootEntry.FileName = enkiutils.NameFromCmdline("single_entry", before)
+			bootEntry.FileName = NameFromCmdline("single_entry", before)
 		}
 		result = append(result, bootEntry)
 	}
 
 	return result
+}
+
+// NameFromCmdline returns the name of the efi/conf file based on the cmdline
+// we want to have at least 1 efi file that its the default, that is the one we ship with the iso/media/whatever install medium
+// that one has the default cmdline + the install cmdline
+// For that one, we use it as the BASE one, configs will only trigger for that install stanza if we are on install media
+// so we dont have to worry about it, but we want to provide a clean name for it
+// so in that case we dont add anything to the efi name/conf name/cmdline inside the config
+// For the other ones, we add the cmdline to the efi name and the cmdline to the conf file
+// so you get
+// - norole.efi
+// - norole.conf
+// - norole_interactive-install.efi
+// - norole_interactive-install.conf
+// This is mostly for convenience in generating the names as the real data is stored in the config file
+// but it can easily be used to identify the efi file and the conf file.
+// All names are returns in lowercase because FAT doesn't handle case in a predictable way.
+func NameFromCmdline(basename, cmdline string) string {
+	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, enkiconstants.UkiCmdline))
+	// For the default install entry, do not add anything on the efi name
+	if cmdlineForEfi == enkiconstants.UkiCmdlineInstall {
+		cmdlineForEfi = ""
+	}
+	// Although only slashes are truly forbidden, we also replace other characters,
+	// as they can be problematic when interpreted by the shell (e.g. &, |, etc.)
+	allowedChars := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
+	cleanCmdline := allowedChars.ReplaceAllString(cmdlineForEfi, "_")
+	name := basename + "_" + cleanCmdline
+
+	// If the cmdline is empty, we remove the underscore as to not get a dangling one.
+	finalName := strings.ToLower(strings.TrimSuffix(name, "_"))
+
+	return finalName
 }
