@@ -43,7 +43,7 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 		})
 
 		It("returns an error about missing deps", func() {
-			out, err := auroraboot.Run("build-uki", image, "--output-dir", resultDir, "-k", keysDir, "--output-type", "iso")
+			out, err := auroraboot.Run("build-uki", "--output-dir", resultDir, "-k", keysDir, "--output-type", "iso", image)
 			Expect(err).To(HaveOccurred(), out)
 			Expect(out).To(Or(
 				MatchRegexp("executable file not found in \\$PATH"),
@@ -61,7 +61,6 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 		})
 
 		It("creates additional .efi and .conf files", func() {
-			By("checking if the default value for secure-boot-enroll is set")
 			content := listEfiFiles(auroraboot, resultFile)
 			Expect(string(content)).To(MatchRegexp("my_entry.efi"))
 			Expect(string(content)).To(MatchRegexp("my_other_entry.efi"))
