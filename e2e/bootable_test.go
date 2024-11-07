@@ -54,9 +54,9 @@ var _ = Describe("bootable artifacts", Label("bootable"), func() {
 			output, err := vm.Sudo("kairos-agent state get \"kairos.eficerts|tojson\"")
 			Expect(err).ToNot(HaveOccurred(), output)
 			// Check the test keys we created for this
-			Expect(output).To(ContainSubstring("CIKEYS-db"))
-			Expect(output).To(ContainSubstring("CIKEYS-KEK"))
-			Expect(output).To(ContainSubstring("CIKEYS-PK"))
+			Expect(output).To(ContainSubstring("Kairos DB"))
+			Expect(output).To(ContainSubstring("Kairos KEK"))
+			Expect(output).To(ContainSubstring("Kairos PK"))
 		})
 	})
 })
