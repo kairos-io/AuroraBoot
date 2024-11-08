@@ -21,7 +21,7 @@ jobs:
           go-version-file: go.mod
       - name: Run tests
         run: |
-          docker build -t auroraboot:latest .
+          docker build -t auroraboot:latest --build-arg TARGETARCH=$(uname -m) .
           sudo go run github.com/onsi/ginkgo/v2/ginkgo -r -p --fail-fast --timeout=2h --skipPackage ./e2e ./...
   test-e2e:
     runs-on: kvm
