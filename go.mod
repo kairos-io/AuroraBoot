@@ -10,14 +10,14 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.2
 	github.com/kairos-io/kairos-agent/v2 v2.15.3
-	github.com/kairos-io/kairos-sdk v0.6.1-0.20241106010919-cc70acb730da
+	github.com/kairos-io/kairos-sdk v0.6.1-0.20241107220431-617f4be9ab81
 	github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07
 	github.com/onsi/ginkgo/v2 v2.21.0
 	github.com/onsi/gomega v1.35.1
 	github.com/otiai10/copy v1.14.0
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/urfave/cli/v2 v2.27.5
-	golang.org/x/mod v0.21.0
+	golang.org/x/mod v0.22.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1
 )
