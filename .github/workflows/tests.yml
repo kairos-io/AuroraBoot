@@ -28,6 +28,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           push: false
+          load: true
           builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: ./Dockerfile
