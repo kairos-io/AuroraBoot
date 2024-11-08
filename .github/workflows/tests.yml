@@ -8,7 +8,7 @@ concurrency:
   group: ci-tests-${{ github.head_ref || github.ref }}-${{ github.repository }}
   cancel-in-progress: true
 jobs:
-  tests:
+  test:
     runs-on: kvm
     steps:
       - name: Checkout code
@@ -23,7 +23,7 @@ jobs:
         run: |
           docker build -t auroraboot:latest .
           sudo go run github.com/onsi/ginkgo/v2/ginkgo -r -p --fail-fast --timeout=2h --skipPackage ./e2e ./...
-  tests-e2e:
+  test-e2e:
     runs-on: kvm
     steps:
       - name: Checkout code
