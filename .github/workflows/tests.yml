@@ -19,9 +19,12 @@ jobs:
         uses: actions/setup-go@v5
         with:
           go-version-file: go.mod
+      - name: Install buildx
+        run: |
+          sudo apt install -y docker-buildx
+          docker --version
       - name: Run tests
         run: |
-          docker --version
           docker build -t auroraboot:latest .
           sudo go run github.com/onsi/ginkgo/v2/ginkgo -r -p --fail-fast --timeout=2h --skipPackage ./e2e ./...
   test-e2e:
