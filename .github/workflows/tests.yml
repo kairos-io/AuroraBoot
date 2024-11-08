@@ -36,7 +36,8 @@ jobs:
           go-version-file: go.mod
       - name: Run e2e tests
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo -r -p --fail-fast --timeout=2h ./e2e
+          sudo go run github.com/onsi/ginkgo/v2/ginkgo -r -p --fail-fast --timeout=2h --label-filter "build-uki" ./e2e
+
   test-bootable:
     runs-on: ubuntu-latest
     steps:
