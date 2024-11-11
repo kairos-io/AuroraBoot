@@ -14,7 +14,7 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = FDescribe("genkey", Label("genkey", "e2e"), func() {
+var _ = Describe("genkey", Label("genkey", "e2e"), func() {
 	var resultDir string
 	var err error
 	var auroraboot *Auroraboot
