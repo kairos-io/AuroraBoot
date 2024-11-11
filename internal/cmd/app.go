@@ -1,6 +1,9 @@
 package cmd
 
 import (
+	"errors"
+	"os"
+
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
@@ -14,7 +17,7 @@ func GetApp(version string) *cli.App {
 		Version:  version,
 		Authors:  []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:    "auroraboot",
-		Commands: []*cli.Command{&BuildISOCmd},
+		Commands: []*cli.Command{&BuildISOCmd, &BuildUKICmd},
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "set",
@@ -55,4 +58,12 @@ func GetApp(version string) *cli.App {
 			return d.CollectErrors()
 		},
 	}
+}
+
+// CheckRoot is a helper which can add it to commands that require root
+func CheckRoot() error {
+	if os.Geteuid() != 0 {
+		return errors.New("this command requires root privileges")
+	}
+	return nil
 }

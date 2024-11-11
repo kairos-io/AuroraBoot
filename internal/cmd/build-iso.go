@@ -18,7 +18,7 @@ const (
 
 var BuildISOCmd = cli.Command{
 	Name:    "build-iso",
-	Aliases: []string{"b"},
+	Aliases: []string{"bi"},
 	Usage:   "Builds an ISO from a container image or github release",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
