@@ -17,7 +17,6 @@ import (
 	"github.com/foxboron/sbctl/certs"
 	"github.com/foxboron/sbctl/fs"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
-	"github.com/spf13/viper"
 	"github.com/urfave/cli/v2"
 )
 
@@ -39,9 +38,10 @@ var GenKeyCmd = cli.Command{
 			Usage:   "Output directory for the keys",
 		},
 		&cli.StringFlag{
-			Name:  "expiration-in-days",
-			Value: "365",
-			Usage: "In how many days from today should the certificates expire",
+			Name:    "expiration-in-days",
+			Aliases: []string{"e"},
+			Value:   "365",
+			Usage:   "In how many days from today should the certificates expire",
 		},
 		&cli.BoolFlag{
 			Name:  skipMicrosoftCertsFlag,
@@ -57,6 +57,8 @@ var GenKeyCmd = cli.Command{
 		// TODO: Implement log level
 		logger := sdkTypes.NewKairosLogger("auroraboot", "debug", false)
 
+		skipMicrosoftCerts := ctx.Bool(skipMicrosoftCertsFlag)
+
 		name := ctx.Args().Get(0)
 		uuid := sbctl.CreateUUID()
 		guid := efiutil.StringToGUID(string(uuid))
@@ -70,8 +72,8 @@ var GenKeyCmd = cli.Command{
 
 		customDerDir := ""
 		var err error
-		if ctx.String(customCertDirFlag) != "" {
-			customDerDir, err = prepareCustomDerDir(logger)
+		if customCertDir := ctx.String(customCertDirFlag); customCertDir != "" {
+			customDerDir, err = prepareCustomDerDir(logger, customCertDir)
 			if err != nil {
 				return fmt.Errorf("Error preparing custom certs directory: %w", err)
 			}
@@ -108,7 +110,7 @@ var GenKeyCmd = cli.Command{
 			}
 			logger.Infof("%s generated at %s", keyType, der)
 
-			if err = generateAuthKeys(*guid, output, keyType, customDerDir); err != nil {
+			if err = generateAuthKeys(*guid, output, keyType, customDerDir, skipMicrosoftCerts); err != nil {
 				return fmt.Errorf("Error generating auth keys: %w", err)
 			}
 
@@ -135,7 +137,7 @@ var GenKeyCmd = cli.Command{
 	},
 }
 
-func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir string) error {
+func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir string, skipMicrosoftCerts bool) error {
 	// Prepare all the keys we need
 	var err error
 	var key []byte
@@ -161,7 +163,7 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 		return fmt.Errorf("appending signature %w", err)
 	}
 
-	if keyType != "PK" && !viper.GetBool(skipMicrosoftCertsFlag) {
+	if keyType != "PK" && !skipMicrosoftCerts {
 		// Load microsoft certs
 		oemSigDb, err := certs.GetOEMCerts("microsoft", keyType)
 		if err != nil {
@@ -215,8 +217,7 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 // - KEK
 // It returns the prepared temporary directory where the keys are stored in
 // "der" format in the expected directories.
-func prepareCustomDerDir(l sdkTypes.KairosLogger) (string, error) {
-	customCertDir := viper.GetString(customCertDirFlag)
+func prepareCustomDerDir(l sdkTypes.KairosLogger, customCertDir string) (string, error) {
 	if customCertDir != "" {
 		if _, err := os.Stat(customCertDir); os.IsNotExist(err) {
 			return "", fmt.Errorf("custom cert directory does not exist: %s", customCertDir)
