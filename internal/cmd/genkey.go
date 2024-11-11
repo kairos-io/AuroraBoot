@@ -247,8 +247,11 @@ func prepareCustomDerDir(l sdkTypes.KairosLogger, customCertDir string) (string,
 				l.Infof("	Signature Owner: %s\n", sigEntry.Owner.Format())
 				switch sig.SignatureType {
 				case signature.CERT_X509_GUID, signature.CERT_SHA256_GUID:
-					cert, _ := x509.ParseCertificate(sigEntry.Data)
-					if cert != nil {
+					cert, err := x509.ParseCertificate(sigEntry.Data)
+					if err != nil {
+						l.Errorf("cert error: %s", err)
+						continue
+					} else {
 						keyDir := filepath.Join(tmpDir, "custom", keyType)
 						err := os.MkdirAll(keyDir, 0755)
 						if err != nil {
