@@ -8,6 +8,7 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/distribution/reference v0.6.0
 	github.com/foxboron/go-uefi v0.0.0-20241017190036-fab4fdf2f2f3
+	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/enki v0.2.2
@@ -22,6 +23,7 @@ require (
 	github.com/otiai10/copy v1.14.0
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
+	github.com/spf13/viper v1.19.0
 	github.com/u-root/u-root v0.14.0
 	github.com/urfave/cli/v2 v2.27.5
 	golang.org/x/exp v0.0.0-20241009180824-f66d83c29e7c
@@ -73,6 +75,7 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
+	github.com/fatih/color v1.14.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
@@ -88,9 +91,12 @@ require (
 	github.com/gofrs/uuid v4.4.0+incompatible // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
+	github.com/google/certificate-transparency-go v1.1.2 // indirect
+	github.com/google/go-attestation v0.5.1 // indirect
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-containerregistry v0.20.2 // indirect
 	github.com/google/go-tpm v0.9.1 // indirect
+	github.com/google/go-tspi v0.3.0 // indirect
 	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
 	github.com/gookit/color v1.5.4 // indirect
@@ -163,7 +169,6 @@ require (
 	github.com/spf13/afero v1.11.0 // indirect
 	github.com/spf13/cast v1.7.0 // indirect
 	github.com/spf13/pflag v1.0.5 // indirect
-	github.com/spf13/viper v1.19.0 // indirect
 	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/swaggest/jsonschema-go v0.3.62 // indirect
 	github.com/swaggest/refl v1.3.0 // indirect
