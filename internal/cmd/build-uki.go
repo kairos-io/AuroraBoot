@@ -145,47 +145,30 @@ var BuildUKICmd = cli.Command{
 			return fmt.Errorf("invalid output type: %s", artifact)
 		}
 
-		// overlayRootfs := ctx.String("overlay-rootfs")
-		// if overlayRootfs != "" {
-		// 	// Check if overlay dir exists by doing an os.stat
-		// 	// If it does not exist, return an error
-		// 	ol, err := os.Stat(overlayRootfs)
-		// 	if err != nil {
-		// 		return fmt.Errorf("overlay-rootfs directory does not exist: %s", overlayRootfs)
-		// 	}
-		// 	if !ol.IsDir() {
-		// 		return fmt.Errorf("overlay-rootfs is not a directory: %s", overlayRootfs)
-		// 	}
+		if overlayRootfs := ctx.String("overlay-rootfs"); overlayRootfs != "" {
+			ol, err := os.Stat(overlayRootfs)
+			if err != nil {
+				return fmt.Errorf("overlay-rootfs directory does not exist: %s", overlayRootfs)
+			}
+			if !ol.IsDir() {
+				return fmt.Errorf("overlay-rootfs is not a directory: %s", overlayRootfs)
+			}
+		}
 
-		// 	// Transform it into absolute path
-		// 	absolutePath, err := filepath.Abs(overlayRootfs)
-		// 	if err != nil {
-		// 		viper.Set("overlay-rootfs", absolutePath)
-		// 	}
-		// }
-		// overlayIso := ctx.String("overlay-iso")
-		// if overlayIso != "" {
-		// 	// Check if overlay dir exists by doing an os.stat
-		// 	// If it does not exist, return an error
-		// 	ol, err := os.Stat(overlayIso)
-		// 	if err != nil {
-		// 		return fmt.Errorf("overlay directory does not exist: %s", overlayIso)
-		// 	}
-		// 	if !ol.IsDir() {
-		// 		return fmt.Errorf("overlay is not a directory: %s", overlayIso)
-		// 	}
+		if overlayIso := ctx.String("overlay-iso"); overlayIso != "" {
+			ol, err := os.Stat(overlayIso)
+			if err != nil {
+				return fmt.Errorf("overlay directory does not exist: %s", overlayIso)
+			}
+			if !ol.IsDir() {
+				return fmt.Errorf("overlay is not a directory: %s", overlayIso)
+			}
 
-		// 	// Check if we are setting a different artifact and overlay-iso is set
-		// 	if artifact != string(enkiconstants.IsoOutput) {
-		// 		return fmt.Errorf("overlay-iso is only supported for iso artifacts")
-		// 	}
-
-		// 	// Transform it into absolute path
-		// 	absolutePath, err := filepath.Abs(overlayIso)
-		// 	if err != nil {
-		// 		viper.Set("overlay-iso", absolutePath)
-		// 	}
-		// }
+			// Check if we are setting a different artifact and overlay-iso is set
+			if artifact != string(enkiconstants.IsoOutput) {
+				return fmt.Errorf("overlay-iso is only supported for iso artifacts")
+			}
+		}
 
 		// Check if the keys directory exists
 		keysDir := ctx.String("keys")
@@ -258,9 +241,14 @@ var BuildUKICmd = cli.Command{
 		_, err = e.DumpSource(sourceDir, imgSource)
 		defer os.RemoveAll(sourceDir)
 
-		if ctx.String("overlay-rootfs") != "" {
-			logger.Infof("Adding files from %s to rootfs", ctx.String("overlay-rootfs"))
-			overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", ctx.String("overlay-rootfs")))
+		if overlayRootfs := ctx.String("overlay-rootfs"); overlayRootfs != "" {
+			// Transform it into absolute path
+			absolutePath, err := filepath.Abs(overlayRootfs)
+			if err != nil {
+				return fmt.Errorf("converting overlay-rootfs to absolute path: %w", err)
+			}
+			logger.Infof("Adding files from %s to rootfs", absolutePath)
+			overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", absolutePath))
 			if err != nil {
 				return fmt.Errorf("error creating overlay image: %s", err)
 			}
@@ -368,7 +356,11 @@ var BuildUKICmd = cli.Command{
 
 		switch ctx.String("output-type") {
 		case string(enkiconstants.IsoOutput):
-			if err := createISO(e, sourceDir, ctx.String("output-dir"), ctx.String("overlay-iso"), ctx.String("keys"), kairosVersion, ctx.String("name"), entries, logger); err != nil {
+			absolutePath, err := filepath.Abs(ctx.String("overlay-iso"))
+			if err != nil {
+				return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
+			}
+			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePath, ctx.String("keys"), kairosVersion, ctx.String("name"), entries, logger); err != nil {
 				return err
 			}
 		case string(enkiconstants.ContainerOutput):
