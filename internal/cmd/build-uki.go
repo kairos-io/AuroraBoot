@@ -192,10 +192,9 @@ var BuildUKICmd = cli.Command{
 			return errors.New("no image provided")
 		}
 
-		// TODO: Implement log-level flag
-		logLevel := "debug"
-		if ctx.String("log-level") != "" {
-			logLevel = ctx.String("log-level")
+		logLevel := "warn"
+		if ctx.Bool("debug") {
+			logLevel = "debug"
 		}
 		logger := sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
 
@@ -374,7 +373,7 @@ var BuildUKICmd = cli.Command{
 			}
 
 			//Then remove the output dir files as we dont need them, the container has been loaded
-			if err := removeUkiFiles(ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
+			if err := removeUkiFiles(ctx.String("output-dir"), ctx.String("keys"), entries); err != nil {
 				return err
 			}
 		case string(enkiconstants.DefaultOutput):
@@ -696,7 +695,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	}
 	defer os.RemoveAll(isoDir)
 
-	filesMap, err := imageFiles(sourceDir, keysDir, entries, logger)
+	filesMap, err := imageFiles(sourceDir, keysDir, entries)
 	if err != nil {
 		return err
 	}
@@ -759,7 +758,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	return nil
 }
 
-func imageFiles(sourceDir, keysDir string, entries []enkiutils.BootEntry, logger sdkTypes.KairosLogger) (map[string][]string, error) {
+func imageFiles(sourceDir, keysDir string, entries []enkiutils.BootEntry) (map[string][]string, error) {
 	// the keys are the target dirs
 	// the values are the source files that should be copied into the target dir
 	data := map[string][]string{
@@ -857,7 +856,7 @@ func copyFilesToImg(imgFile string, filesMap map[string][]string) error {
 // Create artifact just outputs the files from the sourceDir to the outputDir
 // Maintains the same structure as the sourceDir which is the final structure we want
 func createArtifact(sourceDir, outputDir, keysDir string, entries []enkiutils.BootEntry, logger sdkTypes.KairosLogger) error {
-	filesMap, err := imageFiles(sourceDir, keysDir, entries, logger)
+	filesMap, err := imageFiles(sourceDir, keysDir, entries)
 	if err != nil {
 		return err
 	}
@@ -934,8 +933,8 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 
 // removeUkiFiles removes all the files and directories inside the output directory that match our filesMap
 // so this should only remove the generated intermediate artifacts that we use to build the container
-func removeUkiFiles(outputDir, keysDir string, entries []enkiutils.BootEntry, logger sdkTypes.KairosLogger) error {
-	filesMap, _ := imageFiles(outputDir, keysDir, entries, logger)
+func removeUkiFiles(outputDir, keysDir string, entries []enkiutils.BootEntry) error {
+	filesMap, _ := imageFiles(outputDir, keysDir, entries)
 	for dir, files := range filesMap {
 		for _, f := range files {
 			err := os.Remove(filepath.Join(outputDir, dir, filepath.Base(f)))
