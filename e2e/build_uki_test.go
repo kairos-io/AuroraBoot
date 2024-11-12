@@ -133,9 +133,11 @@ func runCommandInIso(auroraboot *Auroraboot, isoFile, command string) string {
 set -e
 mkdir -p /tmp/iso /tmp/efi
 mount -v -o loop %[1]s /tmp/iso 2>&1 > /dev/null
+sleep 2
 mount -v -o loop /tmp/iso/efiboot.img /tmp/efi 2>&1 > /dev/null
 %[2]s
 umount /tmp/efi 2>&1 > /dev/null
+sleep 2
 umount /tmp/iso 2>&1 > /dev/null
 `, isoFile, command))
 	Expect(err).ToNot(HaveOccurred(), out)
