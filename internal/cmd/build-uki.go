@@ -13,9 +13,9 @@ import (
 	"sort"
 	"strings"
 
-	enkiconfig "github.com/kairos-io/enki/pkg/config"
-	enkiconstants "github.com/kairos-io/enki/pkg/constants"
-	enkiutils "github.com/kairos-io/enki/pkg/utils"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/ops"
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/kairos-io/go-ukify/pkg/uki"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
@@ -63,8 +63,8 @@ var BuildUKICmd = cli.Command{
 		&cli.StringFlag{
 			Name:    "output-type",
 			Aliases: []string{"t"},
-			Value:   string(enkiconstants.DefaultOutput),
-			Usage:   fmt.Sprintf("Artifact output type [%s]", strings.Join(enkiconstants.OutPutTypes(), ", ")),
+			Value:   string(constants.DefaultOutput),
+			Usage:   fmt.Sprintf("Artifact output type [%s]", strings.Join(constants.OutPutTypes(), ", ")),
 		},
 		&cli.StringFlag{
 			Name:    "overlay-rootfs",
@@ -141,7 +141,7 @@ var BuildUKICmd = cli.Command{
 		}
 
 		artifact := ctx.String("output-type")
-		if artifact != string(enkiconstants.DefaultOutput) && artifact != string(enkiconstants.IsoOutput) && artifact != string(enkiconstants.ContainerOutput) {
+		if artifact != string(constants.DefaultOutput) && artifact != string(constants.IsoOutput) && artifact != string(constants.ContainerOutput) {
 			return fmt.Errorf("invalid output type: %s", artifact)
 		}
 
@@ -165,7 +165,7 @@ var BuildUKICmd = cli.Command{
 			}
 
 			// Check if we are setting a different artifact and overlay-iso is set
-			if artifact != string(enkiconstants.IsoOutput) {
+			if artifact != string(constants.IsoOutput) {
 				return fmt.Errorf("overlay-iso is only supported for iso artifacts")
 			}
 		}
@@ -199,9 +199,9 @@ var BuildUKICmd = cli.Command{
 		logger := sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
 
 		// TODO: Get rid of "configs".
-		config := enkiconfig.NewConfig(
-			enkiconfig.WithImageExtractor(v1.OCIImageExtractor{}),
-			enkiconfig.WithLogger(logger),
+		config := ops.NewConfig(
+			ops.WithImageExtractor(v1.OCIImageExtractor{}),
+			ops.WithLogger(logger),
 		)
 
 		if err := checkBuildUKIDeps(config.Arch); err != nil {
@@ -210,7 +210,7 @@ var BuildUKICmd = cli.Command{
 
 		// artifactsTempDir Is where we copy the kernel and initramfs files
 		// So only artifacts that are needed to build the efi, so we dont pollute the sourceDir
-		artifactsTempDir, err := os.MkdirTemp("", "enki-build-uki-artifacts-")
+		artifactsTempDir, err := os.MkdirTemp("", "auroraboot-build-uki-artifacts-")
 		if err != nil {
 			return err
 		}
@@ -222,7 +222,7 @@ var BuildUKICmd = cli.Command{
 		// lets not pollute it
 
 		// TODO: if img is a dir, we should not copy or rsync anything and just use that dir as source?
-		sourceDir, err := os.MkdirTemp("", "enki-build-uki-")
+		sourceDir, err := os.MkdirTemp("", "auroraboot-build-uki-")
 		if err != nil {
 			return err
 		}
@@ -305,12 +305,12 @@ var BuildUKICmd = cli.Command{
 			// Get systemd-boot info (we can sign it at the same time)
 			var systemdBoot string
 			var outputSystemdBootEfi string
-			if enkiutils.IsAmd64(config.Arch) {
-				systemdBoot = enkiconstants.UkiSystemdBootx86
-				outputSystemdBootEfi = enkiconstants.EfiFallbackNamex86
-			} else if enkiutils.IsArm64(config.Arch) {
-				systemdBoot = enkiconstants.UkiSystemdBootArm
-				outputSystemdBootEfi = enkiconstants.EfiFallbackNameArm
+			if utils.IsAmd64(config.Arch) {
+				systemdBoot = constants.UkiSystemdBootx86
+				outputSystemdBootEfi = constants.EfiFallbackNamex86
+			} else if utils.IsArm64(config.Arch) {
+				systemdBoot = constants.UkiSystemdBootArm
+				outputSystemdBootEfi = constants.EfiFallbackNameArm
 			} else {
 				return fmt.Errorf("unsupported arch: %s", config.Arch)
 			}
@@ -354,7 +354,7 @@ var BuildUKICmd = cli.Command{
 		}
 
 		switch ctx.String("output-type") {
-		case string(enkiconstants.IsoOutput):
+		case string(constants.IsoOutput):
 			absolutePath, err := filepath.Abs(ctx.String("overlay-iso"))
 			if err != nil {
 				return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
@@ -362,7 +362,7 @@ var BuildUKICmd = cli.Command{
 			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePath, ctx.String("keys"), kairosVersion, ctx.String("name"), entries, logger); err != nil {
 				return err
 			}
-		case string(enkiconstants.ContainerOutput):
+		case string(constants.ContainerOutput):
 			// First create the files
 			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
 				return err
@@ -376,7 +376,7 @@ var BuildUKICmd = cli.Command{
 			if err := removeUkiFiles(ctx.String("output-dir"), ctx.String("keys"), entries); err != nil {
 				return err
 			}
-		case string(enkiconstants.DefaultOutput):
+		case string(constants.DefaultOutput):
 			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
 				return err
 			}
@@ -420,15 +420,15 @@ func checkBuildUKIDeps(arch string) error {
 }
 
 func getEfiNeededFiles(arch string) ([]string, error) {
-	if enkiutils.IsAmd64(arch) {
+	if utils.IsAmd64(arch) {
 		return []string{
-			enkiconstants.UkiSystemdBootStubx86,
-			enkiconstants.UkiSystemdBootx86,
+			constants.UkiSystemdBootStubx86,
+			constants.UkiSystemdBootx86,
 		}, nil
-	} else if enkiutils.IsArm64(arch) {
+	} else if utils.IsArm64(arch) {
 		return []string{
-			enkiconstants.UkiSystemdBootStubArm,
-			enkiconstants.UkiSystemdBootArm,
+			constants.UkiSystemdBootStubArm,
+			constants.UkiSystemdBootArm,
 		}, nil
 	} else {
 		return nil, fmt.Errorf("unsupported arch: %s", arch)
@@ -622,10 +622,10 @@ func ZstdFile(sourcePath, targetPath string) error {
 }
 
 func getEfiStub(arch string) (string, error) {
-	if enkiutils.IsAmd64(arch) {
-		return enkiconstants.UkiSystemdBootStubx86, nil
-	} else if enkiutils.IsArm64(arch) {
-		return enkiconstants.UkiSystemdBootStubArm, nil
+	if utils.IsAmd64(arch) {
+		return constants.UkiSystemdBootStubx86, nil
+	} else if utils.IsArm64(arch) {
+		return constants.UkiSystemdBootStubArm, nil
 	} else {
 		return "", nil
 	}
@@ -635,9 +635,9 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version string, in
 	// This is stored in the config
 	var extraCmdline string
 	// For the config title we get only the extra cmdline we added, no replacement of spaces with underscores needed
-	extraCmdline = strings.TrimSpace(strings.TrimPrefix(cmdline, enkiconstants.UkiCmdline))
+	extraCmdline = strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
 	// For the default install entry, do not add anything on the config
-	if extraCmdline == enkiconstants.UkiCmdlineInstall {
+	if extraCmdline == constants.UkiCmdlineInstall {
 		extraCmdline = ""
 	}
 
@@ -675,7 +675,7 @@ func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
 	} else {
 		// Get the generic efi file that we produce from the default cmdline
 		// This is the one name that has nothing added, just the version
-		finalEfiConf = NameFromCmdline(enkiconstants.ArtifactBaseName, enkiconstants.UkiCmdline+" "+enkiconstants.UkiCmdlineInstall) + ".conf"
+		finalEfiConf = NameFromCmdline(constants.ArtifactBaseName, constants.UkiCmdline+" "+constants.UkiCmdlineInstall) + ".conf"
 	}
 
 	// Set that as default selection for booting
@@ -687,9 +687,9 @@ func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, kairosVersion, artifactName string, entries []enkiutils.BootEntry, logger sdkTypes.KairosLogger) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, kairosVersion, artifactName string, entries []utils.BootEntry, logger sdkTypes.KairosLogger) error {
 	// isoDir is where we generate the img file. We pass this dir to xorriso.
-	isoDir, err := os.MkdirTemp("", "enki-iso-dir-")
+	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
 		return err
 	}
@@ -758,7 +758,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	return nil
 }
 
-func imageFiles(sourceDir, keysDir string, entries []enkiutils.BootEntry) (map[string][]string, error) {
+func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry) (map[string][]string, error) {
 	// the keys are the target dirs
 	// the values are the source files that should be copied into the target dir
 	data := map[string][]string{
@@ -855,7 +855,7 @@ func copyFilesToImg(imgFile string, filesMap map[string][]string) error {
 
 // Create artifact just outputs the files from the sourceDir to the outputDir
 // Maintains the same structure as the sourceDir which is the final structure we want
-func createArtifact(sourceDir, outputDir, keysDir string, entries []enkiutils.BootEntry, logger sdkTypes.KairosLogger) error {
+func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEntry, logger sdkTypes.KairosLogger) error {
 	filesMap, err := imageFiles(sourceDir, keysDir, entries)
 	if err != nil {
 		return err
@@ -908,7 +908,7 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 		return err
 	}
 	// Create tarball from sourceDir
-	err = enkiutils.Tar(sourceDir, temp)
+	err = utils.Tar(sourceDir, temp)
 	if err != nil {
 		return err
 	}
@@ -923,7 +923,7 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 	if artifactName != "" {
 		tarName = fmt.Sprintf("%s.tar", artifactName)
 	}
-	err = enkiutils.CreateTar(logger, temp.Name(), finalImage, tarName, arch, os)
+	err = utils.CreateTar(logger, temp.Name(), finalImage, tarName, arch, os)
 	if err != nil {
 		return err
 	}
@@ -933,7 +933,7 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 
 // removeUkiFiles removes all the files and directories inside the output directory that match our filesMap
 // so this should only remove the generated intermediate artifacts that we use to build the container
-func removeUkiFiles(outputDir, keysDir string, entries []enkiutils.BootEntry) error {
+func removeUkiFiles(outputDir, keysDir string, entries []utils.BootEntry) error {
 	filesMap, _ := imageFiles(outputDir, keysDir, entries)
 	for dir, files := range filesMap {
 		for _, f := range files {
@@ -957,33 +957,33 @@ func removeUkiFiles(outputDir, keysDir string, entries []enkiutils.BootEntry) er
 // For each cmdline passed, we generate a uki file with that cmdline
 // extend-cmdline will just extend the default cmdline so we only create one efi file
 // extra-cmdline will create a new efi file for each cmdline passed
-func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) []enkiutils.BootEntry {
-	defaultCmdLine := enkiconstants.UkiCmdline + " " + enkiconstants.UkiCmdlineInstall
+func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) []utils.BootEntry {
+	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
 
 	// Extend only
 	if cmdlineExtend != "" {
 		cmdline := defaultCmdLine + " " + cmdlineExtend
-		return []enkiutils.BootEntry{{
+		return []utils.BootEntry{{
 			Cmdline:  cmdline,
 			Title:    bootBranding,
-			FileName: NameFromCmdline(enkiconstants.ArtifactBaseName, cmdline),
+			FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
 		}}
 	}
 
 	// default entry
-	result := []enkiutils.BootEntry{{
+	result := []utils.BootEntry{{
 		Cmdline:  defaultCmdLine,
 		Title:    bootBranding,
-		FileName: NameFromCmdline(enkiconstants.ArtifactBaseName, defaultCmdLine),
+		FileName: NameFromCmdline(constants.ArtifactBaseName, defaultCmdLine),
 	}}
 
 	// extra
 	for _, extra := range extraCmdlines {
 		cmdline := defaultCmdLine + " " + extra
-		result = append(result, enkiutils.BootEntry{
+		result = append(result, utils.BootEntry{
 			Cmdline:  cmdline,
 			Title:    bootBranding,
-			FileName: NameFromCmdline(enkiconstants.ArtifactBaseName, cmdline),
+			FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
 		})
 	}
 
@@ -991,13 +991,13 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 }
 
 // GetUkiSingleCmdlines returns the single-efi-cmdline as passed by the user.
-func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, logger sdkTypes.KairosLogger) []enkiutils.BootEntry {
-	result := []enkiutils.BootEntry{}
+func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, logger sdkTypes.KairosLogger) []utils.BootEntry {
+	result := []utils.BootEntry{}
 	// extra
-	defaultCmdLine := enkiconstants.UkiCmdline + " " + enkiconstants.UkiCmdlineInstall
+	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
 
 	for _, userValue := range cmdlines {
-		bootEntry := enkiutils.BootEntry{}
+		bootEntry := utils.BootEntry{}
 
 		before, after, hasTitle := strings.Cut(userValue, ":")
 		if hasTitle {
@@ -1031,9 +1031,9 @@ func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, logger sdkType
 // but it can easily be used to identify the efi file and the conf file.
 // All names are returns in lowercase because FAT doesn't handle case in a predictable way.
 func NameFromCmdline(basename, cmdline string) string {
-	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, enkiconstants.UkiCmdline))
+	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
 	// For the default install entry, do not add anything on the efi name
-	if cmdlineForEfi == enkiconstants.UkiCmdlineInstall {
+	if cmdlineForEfi == constants.UkiCmdlineInstall {
 		cmdlineForEfi = ""
 	}
 	// Although only slashes are truly forbidden, we also replace other characters,

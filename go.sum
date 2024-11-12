@@ -649,10 +649,6 @@ github.com/jtolds/gls v4.20.0+incompatible/go.mod h1:QJZ7F/aHp+rZTRtaJ1ow/lLfFfV
 github.com/juju/ratelimit v1.0.1/go.mod h1:qapgC/Gy+xNh9UxzV13HGGl/6UXNN+ct+vwSgWNm/qk=
 github.com/julienschmidt/httprouter v1.2.0/go.mod h1:SYymIcj16QtmaHHD7aYtjjsJG7VTCxuUUipMqKk8s4w=
 github.com/julienschmidt/httprouter v1.3.0/go.mod h1:JR6WtHb+2LUe8TCKY3cZOxFyyO8IZAc4RVcycCCAKdM=
-github.com/kairos-io/enki v0.2.2 h1:p2KtQtyE7v9wHwrACNUs1l+uiOjhY9MNYLQWuQppg/0=
-github.com/kairos-io/enki v0.2.2/go.mod h1:IwIUxCd91CLpJLjlpAK9o8X5Ftubfr2yTBd8rL+72kA=
-github.com/kairos-io/go-ukify v0.2.4 h1:1rYfPl9ODChePL3g/TC3SYG66mI45RWQGd3GYlzx9Nk=
-github.com/kairos-io/go-ukify v0.2.4/go.mod h1:xGAR9EDOo459L7g8AixVaZQHi9ctGy6/Qk44nXJ1TVw=
 github.com/kairos-io/go-ukify v0.2.5 h1:3ohFO1FhYKbeB/NSsgaq/05CHv1F+/SX1PGDNexL7is=
 github.com/kairos-io/go-ukify v0.2.5/go.mod h1:xGAR9EDOo459L7g8AixVaZQHi9ctGy6/Qk44nXJ1TVw=
 github.com/kairos-io/kairos-agent/v2 v2.15.4 h1:hAsFEamXuoV8IYg5MSX3PE0wK4OHmlb94daF1Mrjwhc=
