@@ -57,7 +57,11 @@ var SysextCmd = cli.Command{
 		return nil
 	},
 	Action: func(ctx *cli.Context) error {
-		logger := sdkTypes.NewKairosLogger("auroraboot", "debug", false)
+		level := "warn"
+		if ctx.Bool("debug") {
+			level = "debug"
+		}
+		logger := sdkTypes.NewKairosLogger("auroraboot", level, false)
 		args := ctx.Args()
 
 		name := args.Get(0)
@@ -143,7 +147,10 @@ var SysextCmd = cli.Command{
 		out, err := command.CombinedOutput()
 		logger.Logger.Debug().Str("output", string(out)).Msg("building sysext")
 		if err != nil {
-			logger.Logger.Error().Err(err).Str("command", strings.Join(command.Args, " ")).Msg("⛔ building sysext")
+			logger.Logger.Error().Err(err).
+				Str("command", strings.Join(command.Args, " ")).
+				Str("output", string(out)).
+				Msg("⛔ building sysext")
 			return err
 		}
 
