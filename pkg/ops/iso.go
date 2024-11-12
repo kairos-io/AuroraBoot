@@ -674,3 +674,10 @@ func WithLogger(logger sdkTypes.KairosLogger) func(r *agentconfig.Config) error 
 		return nil
 	}
 }
+
+func WithImageExtractor(extractor v1types.ImageExtractor) func(r *agentconfig.Config) error {
+	return func(r *agentconfig.Config) error {
+		r.ImageExtractor = extractor
+		return nil
+	}
+}

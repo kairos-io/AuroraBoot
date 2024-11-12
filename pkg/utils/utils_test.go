@@ -22,8 +22,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/kairos-io/enki/pkg/constants"
-	"github.com/kairos-io/enki/pkg/utils"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	v1mock "github.com/kairos-io/kairos-agent/v2/tests/mocks"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	. "github.com/onsi/ginkgo/v2"

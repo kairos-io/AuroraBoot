@@ -37,6 +37,8 @@ var BootHybrid []byte
 //go:embed grub_live_bios.cfg
 var GrubLiveBiosCfg []byte
 
+type UkiOutput string
+
 const (
 	IsoEFIPath     = "/boot/uefi.img"
 	EfiBootPath    = "/EFI/BOOT"
@@ -62,13 +64,36 @@ const (
 	IsoInitrdPath = "/boot/initrd"
 
 	// Default directory and file fileModes
-	DirPerm  = os.ModeDir | os.ModePerm
-	FilePerm = 0666
+	DirPerm        = os.ModeDir | os.ModePerm
+	FilePerm       = 0666
+	NoWriteDirPerm = 0555 | os.ModeDir
+	TempDirPerm    = os.ModePerm | os.ModeSticky | os.ModeDir
 
-	ArchArm64 = "arm64"
-	Archx86   = "x86_64"
-	ArchAmd64 = "amd64"
+	ArchArm64   = "arm64"
+	Archx86     = "x86_64"
+	ArchAmd64   = "amd64"
+	Archaarch64 = "aarch64"
+
+	UkiCmdline            = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
+	UkiCmdlineInstall     = "install-mode"
+	UkiSystemdBootx86     = "/usr/kairos/systemd-bootx64.efi"
+	UkiSystemdBootArm     = "/usr/kairos/systemd-bootaa64.efi"
+	UkiSystemdBootStubx86 = "/usr/kairos/linuxx64.efi.stub"
+	UkiSystemdBootStubArm = "/usr/kairos/linuxaa64.efi.stub"
+
+	EfiFallbackNamex86 = "BOOTX64.EFI"
+	EfiFallbackNameArm = "BOOTAA64.EFI"
+
+	ArtifactBaseName = "norole"
 )
+
+const IsoOutput UkiOutput = "iso"
+const ContainerOutput UkiOutput = "container"
+const DefaultOutput UkiOutput = "uki"
+
+func OutPutTypes() []string {
+	return []string{string(IsoOutput), string(ContainerOutput), string(DefaultOutput)}
+}
 
 func GetXorrisoBooloaderArgs(root string) []string {
 	args := []string{
