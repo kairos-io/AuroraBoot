@@ -12,7 +12,6 @@ import (
 	"github.com/kairos-io/kairos-sdk/sysext"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/kairos-io/kairos-sdk/utils"
-	"github.com/spf13/viper"
 	"github.com/urfave/cli/v2"
 )
 
@@ -138,8 +137,8 @@ var SysextCmd = cli.Command{
 			fmt.Sprintf("--seed=%s", uuid.NewV5(uuid.NamespaceDNS, "kairos-sysext")),
 			fmt.Sprintf("--copy-source=%s", dir),
 			outputFile, // output sysext image
-			fmt.Sprintf("--private-key=%s", viper.Get("private-key")),
-			fmt.Sprintf("--certificate=%s", viper.Get("certificate")),
+			fmt.Sprintf("--private-key=%s", ctx.String("private-key")),
+			fmt.Sprintf("--certificate=%s", ctx.String("certificate")),
 		)
 		out, err := command.CombinedOutput()
 		logger.Logger.Debug().Str("output", string(out)).Msg("building sysext")
