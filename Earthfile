@@ -5,10 +5,22 @@ ARG --global GO_VERSION=1.23-bookworm
 ARG IMAGE_VERSION=v3.2.1
 ARG --global BASE_IMAGE=quay.io/kairos/ubuntu:24.04-core-amd64-generic-${IMAGE_VERSION}-uki
 
-image:
-    FROM DOCKERFILE -f Dockerfile .
 
-    SAVE IMAGE quay.io/kairos/auroraboot
+version:
+  FROM alpine
+  RUN apk update && apk add git
+
+  COPY . .
+  RUN --no-cache git describe --always --tags --dirty > VERSION
+  SAVE ARTIFACT VERSION VERSION
+
+image:
+  FROM +version
+  ARG VERSION=$(cat VERSION)
+
+  FROM DOCKERFILE --build-arg VERSION=$VERSION -f Dockerfile .
+
+  SAVE IMAGE quay.io/kairos/auroraboot:$VERSION
 
 test-label:
     FROM alpine

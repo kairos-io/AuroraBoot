@@ -1,18 +1,16 @@
-# TODO: How should we version the image? auroraboot version + a build version?
-ARG VERSION=v0.3.2 
+ARG VERSION=v0.0.0
 ARG LUET_VERSION=0.35.5
 ARG LEAP_VERSION=15.5
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM golang AS builder
-ARG BINARY_VERSION=v0.0.0
 WORKDIR /work
 ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${BINARY_VERSION}" -o auroraboot
+RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 FROM opensuse/leap:$LEAP_VERSION as default
 RUN zypper ref && zypper dup -y
