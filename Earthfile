@@ -1,5 +1,4 @@
 VERSION 0.7
-ARG --global OSBUILDER_VERSION=v0.9.0
 ARG --global GO_VERSION=1.23-bookworm
 
 # renovate: datasource=github-releases depName=kairos-io/kairos
@@ -7,8 +6,9 @@ ARG IMAGE_VERSION=v3.2.1
 ARG --global BASE_IMAGE=quay.io/kairos/ubuntu:24.04-core-amd64-generic-${IMAGE_VERSION}-uki
 
 image:
-    FROM DOCKERFILE --build-arg VERSION=$OSBUILDER_VERSION -f Dockerfile .
-    RUN zypper in -y qemu
+    FROM DOCKERFILE -f Dockerfile .
+
+    SAVE IMAGE quay.io/kairos/auroraboot
 
 test-label:
     FROM alpine
