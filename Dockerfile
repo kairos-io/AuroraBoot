@@ -23,11 +23,6 @@ COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
 ENV TMPDIR=/tmp
 ARG TARGETARCH
-
-COPY --from=luet /usr/bin/luet /usr/bin/luet
-ENV LUET_NOLOCK=true
-ENV TMPDIR=/tmp
-ARG TARGETARCH
 # copy both arches
 COPY luet-arm64.yaml /tmp/luet-arm64.yaml
 COPY luet-amd64.yaml /tmp/luet-amd64.yaml

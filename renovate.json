@@ -9,7 +9,9 @@
     "every weekend"
   ],
   "timezone": "Europe/Brussels",
-  "reviewers": [ "team:maintainers" ],
+  "reviewers": [
+    "team:maintainers"
+  ],
   "rebaseWhen": "behind-base-branch",
   "packageRules": [
     {
@@ -17,6 +19,17 @@
         "patch"
       ],
       "automerge": true
+    }
+  ],
+  "regexManagers": [
+    {
+      "fileMatch": [
+        "image-assets/luet-amd64.yaml$",
+        "image-assets/luet-arm64.yaml$"
+      ],
+      "matchStrings": [
+        "#\\s*renovate:\\s*datasource=(?<datasource>.*?) depName=(?<depName>.*?)?\\s+reference:\\s(?<currentValue>.*?)\\s"
+      ]
     }
   ]
 }
