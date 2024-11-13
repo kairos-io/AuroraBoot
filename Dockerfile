@@ -1,18 +1,20 @@
-ARG VERSION=v0.0.0
 ARG LUET_VERSION=0.35.5
 ARG LEAP_VERSION=15.5
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM golang AS builder
+ARG VERSION=v0.0.0
 WORKDIR /work
 ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-RUN CGO_ENABLED=0 go build -ldflags "-X main.version=${VERSION}" -o auroraboot
+ENV CGO_ENABLED=0
+ENV VERSION=$VERSION
+RUN go build -buildvcs=false -ldflags "-X main.version=${VERSION}" -o auroraboot
 
-FROM opensuse/leap:$LEAP_VERSION as default
+FROM opensuse/leap:$LEAP_VERSION AS default
 RUN zypper ref && zypper dup -y
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 RUN zypper ref && zypper in -y bc qemu-tools jq cdrtools docker git curl gptfdisk kpartx sudo xfsprogs parted binutils \

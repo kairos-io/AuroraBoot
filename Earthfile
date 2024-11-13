@@ -5,7 +5,6 @@ ARG --global GO_VERSION=1.23-bookworm
 ARG IMAGE_VERSION=v3.2.1
 ARG --global BASE_IMAGE=quay.io/kairos/ubuntu:24.04-core-amd64-generic-${IMAGE_VERSION}-uki
 
-
 version:
   FROM alpine
   RUN apk update && apk add git
