@@ -19,7 +19,7 @@ const (
 	opPrepareNetboot   = "prepare-netboot"
 	opStartNetboot     = "start-netboot"
 
-	opContainerPull  = "container-pull"
+	opDumpSource     = "dump-source"
 	opGenISO         = "gen-iso"
 	opPreparetmproot = "prepare-temp"
 	opExtractNetboot = "extract-netboot"
@@ -43,7 +43,7 @@ func RegisterAll(d *Deployer) error {
 		d.StepPrepNetbootDir,
 		d.StepPrepISODir,
 		d.StepCopyCloudConfig,
-		d.StepPullContainer,
+		d.StepDumpSource,
 		d.StepGenISO,
 		d.StepExtractNetboot,
 		//TODO: add Validate step
