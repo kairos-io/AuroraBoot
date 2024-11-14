@@ -26,7 +26,7 @@ func DumpSource(image, dst string) func(ctx context.Context) error {
 			return err
 		}
 		if _, err := e.DumpSource(dst, imgSource); err != nil {
-			return fmt.Errorf("dumping the source image %s: %w", image, err)
+			return fmt.Errorf("dumping the source image %s to %s: %w", image, dst, err)
 		}
 
 		return nil

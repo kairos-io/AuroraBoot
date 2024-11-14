@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/spectrocloud-labs/herd"
@@ -21,7 +20,7 @@ func (d *Deployer) StepPrepNetbootDir() error {
 func (d *Deployer) StepPrepTmpRootDir() error {
 	return d.Add(opPreparetmproot, herd.WithCallback(
 		func(ctx context.Context) error {
-			return os.MkdirAll(d.dstNetboot(), 0700)
+			return os.MkdirAll(d.tmpRootFs(), 0700)
 		},
 	))
 }
@@ -44,7 +43,7 @@ func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
 	return d.Add(opDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.DumpSource(d.containerImage(), d.tmpRootFs())))
+		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs())))
 }
 
 func (d *Deployer) StepGenISO() error {
@@ -176,16 +175,6 @@ func (d *Deployer) StepStartNetboot() error {
 			ops.StartPixiecore(d.cloudConfigPath(), d.squashFSfile(), d.netBootListenAddr(), d.netbootPort(), d.initrdFile(), d.kernelFile(), d.Config.NetBoot),
 		),
 	)
-}
-
-func (d *Deployer) containerImage() string {
-	// Pull local docker daemon if container image starts with docker://
-	containerImage := d.Artifact.ContainerImage
-	if strings.HasPrefix(containerImage, "docker://") {
-		containerImage = strings.ReplaceAll(containerImage, "docker://", "")
-	}
-
-	return containerImage
 }
 
 func (d *Deployer) fromImage() bool {
