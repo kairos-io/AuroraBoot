@@ -12,7 +12,7 @@ RUN go mod download
 ADD . .
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
-RUN go build -buildvcs=false -ldflags "-X main.version=${VERSION}" -o auroraboot
+RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 FROM opensuse/leap:$LEAP_VERSION AS default
 RUN zypper ref && zypper dup -y
