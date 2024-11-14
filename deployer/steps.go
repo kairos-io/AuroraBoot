@@ -4,7 +4,6 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/spectrocloud-labs/herd"
@@ -21,7 +20,7 @@ func (d *Deployer) StepPrepNetbootDir() error {
 func (d *Deployer) StepPrepTmpRootDir() error {
 	return d.Add(opPreparetmproot, herd.WithCallback(
 		func(ctx context.Context) error {
-			return os.MkdirAll(d.dstNetboot(), 0700)
+			return os.MkdirAll(d.tmpRootFs(), 0700)
 		},
 	))
 }
@@ -40,17 +39,17 @@ func (d *Deployer) StepCopyCloudConfig() error {
 		}))
 }
 
-func (d *Deployer) StepPullContainer() error {
+func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
-	return d.Add(opContainerPull,
+	return d.Add(opDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.PullContainerImage(d.containerImage(), d.tmpRootFs())))
+		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs())))
 }
 
 func (d *Deployer) StepGenISO() error {
 	return d.Add(opGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opContainerPull, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
+		herd.WithDeps(opDumpSource, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
 }
 
 func (d *Deployer) StepExtractNetboot() error {
@@ -178,16 +177,6 @@ func (d *Deployer) StepStartNetboot() error {
 	)
 }
 
-func (d *Deployer) containerImage() string {
-	// Pull local docker daemon if container image starts with docker://
-	containerImage := d.Artifact.ContainerImage
-	if strings.HasPrefix(containerImage, "docker://") {
-		containerImage = strings.ReplaceAll(containerImage, "docker://", "")
-	}
-
-	return containerImage
-}
-
 func (d *Deployer) fromImage() bool {
 	return d.Artifact.ContainerImage != ""
 }
@@ -233,7 +222,7 @@ func (d *Deployer) isoOption() bool {
 }
 
 func (d *Deployer) imageOrSquashFS() herd.OpOption {
-	return herd.IfElse(d.fromImage(), herd.WithDeps(opContainerPull), herd.WithDeps(opExtractSquashFS))
+	return herd.IfElse(d.fromImage(), herd.WithDeps(opDumpSource), herd.WithDeps(opExtractSquashFS))
 }
 
 func (d *Deployer) cloudConfigPath() string {

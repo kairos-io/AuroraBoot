@@ -61,7 +61,7 @@ jobs:
         with:
           builder: ${{ steps.buildx.outputs.name }}
           build-args: |
-            BINARY_VERSION=${{ steps.prep.outputs.binary_version }}
+            VERSION=${{ steps.prep.outputs.binary_version }}
           context: ./
           file: ./Dockerfile
           platforms: linux/amd64,linux/arm64

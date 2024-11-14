@@ -45,14 +45,16 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 		})
 
 		It("fails if cloud config is empty", func() {
+			image := "quay.io/kairos/core-rockylinux:latest"
+
 			err := WriteConfig("", tempDir)
 			Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set container_image=quay.io/kairos/core-rockylinux:latest \
+			out, err := RunAurora(fmt.Sprintf(`--set container_image=oci://%s \
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
-			--set "state_dir=/tmp/auroraboot"`), tempDir)
+			--set "state_dir=/tmp/auroraboot"`, image), tempDir)
 			Expect(err).To(HaveOccurred(), out)
 			Expect(out).To(MatchRegexp("cloud config set but contents are empty"))
 		})

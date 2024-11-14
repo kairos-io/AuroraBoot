@@ -3,37 +3,32 @@ package ops
 import (
 	"context"
 	"fmt"
-	"os"
 
-	"github.com/distribution/reference"
-	"github.com/kairos-io/AuroraBoot/internal"
-	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
+	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
+	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 )
 
-// PullContainerImage pulls a container image either remotely or locally from a docker daemon.
-func PullContainerImage(image, dst string) func(ctx context.Context) error {
+// DumpSource pulls a container image either remotely or locally from a docker daemon
+// or simply copies the directory to the destination.
+// Supports these prefixes:
+// https://github.com/kairos-io/kairos-agent/blob/1e81cdef38677c8a36cae50d3334559976f66481/pkg/types/v1/common.go#L30-L33
+func DumpSource(image, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		_, err := reference.ParseNormalizedNamed(image)
-		if err != nil {
-			return fmt.Errorf("invalid image reference %s", image)
-		}
+		cfg := NewConfig(
+			WithImageExtractor(v1.OCIImageExtractor{}),
+			WithLogger(sdkTypes.NewKairosLogger("auroraboot-dump-source", "debug", false)),
+		)
+		e := elemental.NewElemental(cfg)
 
-		img, err := sdkUtils.GetImage(image, "", nil, nil)
+		imgSource, err := v1.NewSrcFromURI(image)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("image", image).Msg("failed to pull image")
 			return err
 		}
-		internal.Log.Logger.Info().Msgf("Pulling container image '%s' to '%s')", image, dst)
+		if _, err := e.DumpSource(dst, imgSource); err != nil {
+			return fmt.Errorf("dumping the source image %s to %s: %w", image, dst, err)
+		}
 
-		// This method already first tries the local registry and then moves to remote, so no need to pass local
-		err = os.MkdirAll(dst, os.ModeDir|os.ModePerm)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("image", image).Msg("failed to create directory")
-		}
-		err = sdkUtils.ExtractOCIImage(img, dst)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("image", image).Msg("failed to extract OCI image")
-		}
-		return err
+		return nil
 	}
 }

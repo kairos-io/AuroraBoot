@@ -113,7 +113,7 @@ var BuildISOCmd = cli.Command{
 			d.StepPrepTmpRootDir,
 			d.StepPrepISODir,
 			d.StepCopyCloudConfig,
-			d.StepPullContainer,
+			d.StepDumpSource,
 			d.StepGenISO,
 		} {
 			if err := step(); err != nil {
