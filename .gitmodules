@@ -1,0 +1,6 @@
+[submodule "third_party/systemd"]
+	path = third_party/systemd
+	url = https://github.com/systemd/systemd.git
+[submodule "third_party/grub"]
+	path = third_party/grub
+	url = https://git.savannah.gnu.org/git/grub.git
