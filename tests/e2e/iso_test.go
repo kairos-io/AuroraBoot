@@ -40,7 +40,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 			Expect(out).To(ContainSubstring("gen-iso"), out)
 			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/build/kairos.iso"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/kairos.iso"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -75,7 +75,7 @@ var _ = Describe("ISO image generation", Label("iso"), func() {
 			Expect(out).To(ContainSubstring("inject-cloud-config"), out)
 			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/build/kairos.iso.custom.iso"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/kairos.iso.custom.iso"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})

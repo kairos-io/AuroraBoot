@@ -186,7 +186,7 @@ func (d *Deployer) tmpRootFs() string {
 }
 
 func (d *Deployer) destination() string {
-	return d.Config.StateDir("build")
+	return d.Config.State
 }
 
 func (d *Deployer) isoFile() string {

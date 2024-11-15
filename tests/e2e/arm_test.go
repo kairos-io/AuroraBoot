@@ -40,7 +40,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 			Expect(out).To(ContainSubstring("done"), out)
 			Expect(out).To(ContainSubstring("build-arm-image"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/build/disk.img"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/disk.img"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
@@ -60,7 +60,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 			Expect(out).To(ContainSubstring("prepare_arm"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "build/build/efi.img"))
+			_, err = os.Stat(filepath.Join(tempDir, "build/efi.img"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 	})
