@@ -27,4 +27,4 @@ docker run -v $PWD/config.yaml:/config.yaml \
              --set "flavor=fedora" \
              --set "repository=kairos-io/provider-kairos"
 
-echo "Custom ISO ready at $PWD/build/build/kairos.iso.custom.iso"
+echo "Custom ISO ready at $PWD/build/kairos.iso.custom.iso"
