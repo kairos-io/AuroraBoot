@@ -59,9 +59,7 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 
 	dockerArgs = append(dockerArgs, e.ContainerImage)
 	dockerArgs = append(dockerArgs, args...)
-
-	_, _ = GinkgoWriter.Write([]byte(fmt.Sprintf("Running: docker %v\n", dockerArgs)))
-
+	
 	cmd := exec.Command("docker", dockerArgs...)
 	out, err := cmd.CombinedOutput()
 

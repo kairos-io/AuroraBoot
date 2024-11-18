@@ -2,3 +2,5 @@ examples/airgap/build
 examples/airgap/data
 dist/
 build/
+coverage.out
+coverage.out.*
