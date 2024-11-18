@@ -2,6 +2,7 @@ package e2e_test
 
 import (
 	"fmt"
+	"github.com/kairos-io/kairos-sdk/utils"
 	"os"
 	"os/exec"
 	"path"
@@ -15,7 +16,8 @@ import (
 type Auroraboot struct {
 	Path           string
 	ContainerImage string
-	Dirs           []string // directories to mount from host
+	Dirs           []string          // directories to mount from host
+	ManualDirs     map[string]string // directories to mount from host to an specific path in the container
 }
 
 func TestAurorabootE2E(t *testing.T) {
@@ -42,6 +44,7 @@ func (e *Auroraboot) Run(aurorabootArgs ...string) (string, error) {
 func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, error) {
 	dockerArgs := []string{
 		"run", "--rm", "--privileged",
+		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"--entrypoint", entrypoint,
 		"-v", fmt.Sprintf("%s:/bin/auroraboot", e.Path),
 	}
@@ -50,11 +53,16 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 		dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%[1]s:%[1]s", d))
 	}
 
+	for k, v := range e.ManualDirs {
+		dockerArgs = append(dockerArgs, "-v", fmt.Sprintf("%s:%s", k, v))
+	}
+
 	dockerArgs = append(dockerArgs, e.ContainerImage)
 	dockerArgs = append(dockerArgs, args...)
 
-	cmd := exec.Command("docker", dockerArgs...)
+	_, _ = GinkgoWriter.Write([]byte(fmt.Sprintf("Running: docker %v\n", dockerArgs)))
 
+	cmd := exec.Command("docker", dockerArgs...)
 	out, err := cmd.CombinedOutput()
 
 	return string(out), err
@@ -79,4 +87,20 @@ func compileAuroraboot(targetPath string) {
 
 	out, err := cmd.CombinedOutput()
 	Expect(err).ToNot(HaveOccurred(), string(out))
+}
+
+func PullImage(image string) (string, error) {
+	runCmd := fmt.Sprintf(`docker pull %s`, image)
+	return utils.SH(runCmd)
+}
+
+func WriteConfig(config, dir string) error {
+	os.RemoveAll(filepath.Join(dir, "config.yaml"))
+	f, err := os.Create(filepath.Join(dir, "config.yaml"))
+	if err != nil {
+		return err
+	}
+
+	_, err = f.WriteString(config)
+	return err
 }

@@ -1,4 +1,4 @@
-package auroraboot_test
+package e2e_test
 
 import (
 	"fmt"
@@ -13,6 +13,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 	Context("build", func() {
 		var tempDir string
 		var err error
+		var aurora *Auroraboot
 
 		BeforeEach(func() {
 			tempDir, err = os.MkdirTemp("", "auroraboot-test-")
@@ -20,6 +21,8 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 
 			err = WriteConfig("test", tempDir)
 			Expect(err).ToNot(HaveOccurred())
+
+			aurora = NewAuroraboot("auroraboot", fmt.Sprintf("%s/config.yaml", tempDir))
 		})
 
 		AfterEach(func() {
@@ -31,7 +34,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set container_image=docker://%s \
+			out, err := aurora.Run(fmt.Sprintf(`--set container_image=docker://%s \
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
@@ -50,7 +53,7 @@ var _ = Describe("ARM image generation", Label("arm"), func() {
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set container_image=docker://%s \
+			out, err := aurora.Run(fmt.Sprintf(`--set container_image=docker://%s \
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \

@@ -1,4 +1,4 @@
-package auroraboot_test
+package e2e_test
 
 import (
 	"fmt"
@@ -10,25 +10,27 @@ import (
 )
 
 var _ = Describe("Disk image generation", Label("raw-disks"), func() {
+	var tempDir string
+	var err error
+	var aurora *Auroraboot
+
+	BeforeEach(func() {
+		tempDir, err = os.MkdirTemp("", "auroraboot-test-")
+		Expect(err).ToNot(HaveOccurred())
+
+		err = WriteConfig("test", tempDir)
+		Expect(err).ToNot(HaveOccurred())
+
+		aurora = NewAuroraboot("auroraboot", fmt.Sprintf("%s/config.yaml", tempDir))
+	})
+
+	AfterEach(func() {
+		os.RemoveAll(tempDir)
+	})
 
 	Context("build from an ISO", func() {
-		var tempDir string
-		var err error
-
-		BeforeEach(func() {
-			tempDir, err = os.MkdirTemp("", "auroraboot-test-")
-			Expect(err).ToNot(HaveOccurred())
-
-			err = WriteConfig("test", tempDir)
-			Expect(err).ToNot(HaveOccurred())
-		})
-
-		AfterEach(func() {
-			os.RemoveAll(tempDir)
-		})
-
 		It("generate a raw file", func() {
-			out, err := RunAurora(`--set "disable_http_server=true" \
+			out, err := aurora.Run(`--set "disable_http_server=true" \
 			--set "artifact_version=v3.2.1" \
 			--set "release_version=v3.2.1" \
 			--set "flavor=rockylinux" \
@@ -50,7 +52,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 		})
 
 		It("generates a gce image", func() {
-			out, err := RunAurora(`--set "disable_http_server=true" \
+			out, err := aurora.Run(`--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
 			--set "artifact_version=v3.2.1" \
@@ -72,7 +74,7 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 		})
 
 		It("generates a vhd image", func() {
-			out, err := RunAurora(`--set "disable_http_server=true" \
+			out, err := aurora.Run(`--set "disable_http_server=true" \
 			--set "artifact_version=v3.2.1" \
 			--set "release_version=v3.2.1" \
 			--set "flavor=rockylinux" \
@@ -117,8 +119,6 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 	})
 
 	Context("build from a container image", func() {
-		var tempDir string
-		var err error
 		var config string
 
 		BeforeEach(func() {
@@ -175,7 +175,7 @@ stages:
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set container_image=docker://%s \
+			out, err := aurora.Run(fmt.Sprintf(`--set container_image=docker://%s \
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
@@ -195,7 +195,7 @@ stages:
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set container_image=docker://%s \
+			out, err := aurora.Run(fmt.Sprintf(`--set container_image=docker://%s \
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
@@ -216,7 +216,7 @@ stages:
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set container_image=docker://%s \
+			out, err := aurora.Run(fmt.Sprintf(`--set container_image=docker://%s \
 			--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
@@ -237,7 +237,7 @@ stages:
 			// _, err := PullImage(image)
 			// Expect(err).ToNot(HaveOccurred())
 
-			out, err := RunAurora(fmt.Sprintf(`--set "disable_http_server=true" \
+			out, err := aurora.Run(fmt.Sprintf(`--set "disable_http_server=true" \
 			--set "disable_netboot=true" \
 			--cloud-config /config.yaml \
 			--set "container_image=%s" \
