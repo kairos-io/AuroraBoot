@@ -28,7 +28,7 @@ jobs:
         run: |
           sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skipPackage ./e2e ./...
       - name: Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
@@ -63,7 +63,7 @@ jobs:
         run: |
           sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "!bootable" ./e2e
       - name: Codecov
-        uses: codecov/codecov-action@v4
+        uses: codecov/codecov-action@v5
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
