@@ -363,17 +363,18 @@ var BuildUKICmd = cli.Command{
 				return err
 			}
 		case string(constants.ContainerOutput):
+			// create a temp dir to store the intermediate files
+			temp, err := os.MkdirTemp("", "uki-transient-*")
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(temp)
 			// First create the files
-			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, temp, ctx.String("keys"), entries, logger); err != nil {
 				return err
 			}
 			// Then build the image
-			if err := createContainer(sourceDir, ctx.String("output-dir"), ctx.String("name"), kairosVersion, logger); err != nil {
-				return err
-			}
-
-			//Then remove the output dir files as we dont need them, the container has been loaded
-			if err := removeUkiFiles(ctx.String("output-dir"), ctx.String("keys"), entries); err != nil {
+			if err := createContainer(temp, ctx.String("output-dir"), ctx.String("name"), kairosVersion, logger); err != nil {
 				return err
 			}
 		case string(constants.DefaultOutput):
@@ -908,6 +909,7 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 		return err
 	}
 	// Create tarball from sourceDir
+	logger.Logger.Info().Str("sourceDir", sourceDir).Str("temp", temp.Name()).Msg("Creating tarball")
 	err = utils.Tar(sourceDir, temp)
 	if err != nil {
 		return err
@@ -929,27 +931,6 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 	}
 
 	return err
-}
-
-// removeUkiFiles removes all the files and directories inside the output directory that match our filesMap
-// so this should only remove the generated intermediate artifacts that we use to build the container
-func removeUkiFiles(outputDir, keysDir string, entries []utils.BootEntry) error {
-	filesMap, _ := imageFiles(outputDir, keysDir, entries)
-	for dir, files := range filesMap {
-		for _, f := range files {
-			err := os.Remove(filepath.Join(outputDir, dir, filepath.Base(f)))
-			if err != nil {
-				return err
-			}
-		}
-	}
-	for dir := range filesMap {
-		err := os.RemoveAll(filepath.Join(outputDir, dir))
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // GetUkiCmdline returns the cmdline to be used for the kernel.
