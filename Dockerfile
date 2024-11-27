@@ -18,7 +18,7 @@ FROM opensuse/leap:$LEAP_VERSION AS default
 RUN zypper ref && zypper dup -y
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 RUN zypper ref && zypper in -y bc qemu qemu-tools jq cdrtools docker git curl gptfdisk kpartx sudo xfsprogs parted binutils \
-    util-linux-systemd e2fsprogs curl util-linux udev rsync grub2 dosfstools grub2-x86_64-efi squashfs mtools xorriso lvm2 zstd
+    util-linux-systemd systemd-experimental e2fsprogs curl util-linux udev rsync grub2 dosfstools grub2-x86_64-efi squashfs mtools xorriso lvm2 zstd
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
 ENV TMPDIR=/tmp
