@@ -17,8 +17,9 @@ RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN dnf in -y bc qemu-tools jq genisoimage docker git curl gdisk kpartx sudo xfsprogs parted e2fsprogs erofs-utils curl  \
-    util-linux udev rsync grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
+RUN dnf in -y bc qemu-tools jq genisoimage docker git curl gdisk kpartx sudo \
+    xfsprogs parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
+    grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
     python3-cryptography python3-pefile # ukify deps
 # systemd-ukify systemd-boot
 # Install grub2-efi-x64 only on x86 arches
