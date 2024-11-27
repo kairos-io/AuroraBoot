@@ -936,18 +936,17 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 // GetUkiCmdline returns the cmdline to be used for the kernel.
 // The cmdline can be overridden by the user using the cmdline flag.
 // For each cmdline passed, we generate a uki file with that cmdline
-// extend-cmdline will just extend the default cmdline so we only create one efi file
-// extra-cmdline will create a new efi file for each cmdline passed
+// extend-cmdline will just extend the default cmdline so we only create one efi file. Artifact name is the default one
+// extra-cmdline will create a new efi file for each cmdline passed. artifact name is generated from the cmdline
 func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) []utils.BootEntry {
 	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
 
-	// Extend only
+	// Override the default cmdline if the user passed one
 	if cmdlineExtend != "" {
-		cmdline := defaultCmdLine + " " + cmdlineExtend
 		return []utils.BootEntry{{
-			Cmdline:  cmdline,
+			Cmdline:  defaultCmdLine + " " + cmdlineExtend,
 			Title:    bootBranding,
-			FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
+			FileName: constants.ArtifactBaseName,
 		}}
 	}
 
@@ -955,7 +954,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 	result := []utils.BootEntry{{
 		Cmdline:  defaultCmdLine,
 		Title:    bootBranding,
-		FileName: NameFromCmdline(constants.ArtifactBaseName, defaultCmdLine),
+		FileName: constants.ArtifactBaseName,
 	}}
 
 	// extra
