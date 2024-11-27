@@ -1,5 +1,5 @@
+ARG FEDORA_VERSION=40
 ARG LUET_VERSION=0.35.5
-ARG LEAP_VERSION=15.5
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
@@ -14,11 +14,18 @@ ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
-FROM opensuse/leap:$LEAP_VERSION AS default
-RUN zypper ref && zypper dup -y
+FROM fedora:$FEDORA_VERSION AS default
+RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN zypper ref && zypper in -y bc qemu qemu-tools jq cdrtools docker git curl gptfdisk kpartx sudo xfsprogs parted binutils \
-    util-linux-systemd systemd-experimental e2fsprogs curl util-linux udev rsync grub2 dosfstools grub2-x86_64-efi squashfs mtools xorriso lvm2 zstd
+RUN dnf in -y bc qemu-tools jq genisoimage docker git curl gdisk kpartx sudo xfsprogs parted e2fsprogs erofs-utils curl  \
+    util-linux udev rsync grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
+    python3-cryptography python3-pefile # ukify deps
+# systemd-ukify systemd-boot
+# Install grub2-efi-x64 only on x86 arches
+RUN if [ "$(uname -m)" == "x86_64" ]; then dnf install -y grub2-efi-x64; fi
+# Install grub2-efi-arm64 only on arm64 arches
+RUN if [ "$(uname -m)" == "aarch64" ]; then dnf install -y grub2-efi-aa64; fi
+
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
 ENV TMPDIR=/tmp
