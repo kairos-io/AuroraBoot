@@ -17,7 +17,7 @@ RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN dnf in -y bc qemu-tools qemu-img qemu-system-x86.x86_64 jq genisoimage docker git curl gdisk kpartx \
+RUN dnf in -y bc qemu-tools qemu-img qemu-system-x86 jq genisoimage docker git curl gdisk kpartx \
     sudo xfsprogs parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
     grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
     python3-cryptography python3-pefile # ukify deps
@@ -38,6 +38,10 @@ COPY luet-amd64.yaml /tmp/luet-amd64.yaml
 RUN mkdir -p /etc/luet/
 RUN cp /tmp/luet-${TARGETARCH}.yaml /etc/luet/luet.yaml
 ## Uki artifacts, will be set under the /usr/kairos directory
+# `luet repo update` fails with `/usr/bin/unpigz: invalid argument` on arm for some reason without this option:
+# https://github.com/containerd/containerd/blob/7c3aca7a610df76212171d200ca3811ff6096eb8/archive/compression/compression.go#L50
+ENV CONTAINERD_DISABLE_PIGZ=1
+RUN luet repo update
 RUN luet install -y system/systemd-boot
 
 ## Live CD artifacts
