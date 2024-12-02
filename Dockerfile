@@ -38,6 +38,10 @@ COPY luet-amd64.yaml /tmp/luet-amd64.yaml
 RUN mkdir -p /etc/luet/
 RUN cp /tmp/luet-${TARGETARCH}.yaml /etc/luet/luet.yaml
 ## Uki artifacts, will be set under the /usr/kairos directory
+# `luet repo update` fails with `/usr/bin/unpigz: invalid argument` on arm for some reason without this option:
+# https://github.com/containerd/containerd/blob/7c3aca7a610df76212171d200ca3811ff6096eb8/archive/compression/compression.go#L50
+ENV CONTAINERD_DISABLE_PIGZ=1
+RUN luet repo update
 RUN luet install -y system/systemd-boot
 
 ## Live CD artifacts
