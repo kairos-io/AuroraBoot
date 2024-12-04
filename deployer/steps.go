@@ -12,7 +12,7 @@ import (
 func (d *Deployer) StepPrepNetbootDir() error {
 	return d.Add(opPrepareNetboot, herd.WithCallback(
 		func(ctx context.Context) error {
-			return os.MkdirAll(d.dstNetboot(), 0700)
+			return os.MkdirAll(d.dstNetboot(), 0755)
 		},
 	))
 }
@@ -20,14 +20,14 @@ func (d *Deployer) StepPrepNetbootDir() error {
 func (d *Deployer) StepPrepTmpRootDir() error {
 	return d.Add(opPreparetmproot, herd.WithCallback(
 		func(ctx context.Context) error {
-			return os.MkdirAll(d.tmpRootFs(), 0700)
+			return os.MkdirAll(d.tmpRootFs(), 0755)
 		},
 	))
 }
 
 func (d *Deployer) StepPrepISODir() error {
 	return d.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
-		return os.MkdirAll(d.destination(), 0700)
+		return os.MkdirAll(d.destination(), 0755)
 	}))
 }
 
