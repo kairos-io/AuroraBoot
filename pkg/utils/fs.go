@@ -72,7 +72,7 @@ func TempDir(fs v1.FS, dir, prefix string) (name string, err error) {
 	}
 	// This skips adding random stuff to the created temp dir so the temp dir created is predictable for testing
 	if _, isTestFs := fs.(*vfst.TestFS); isTestFs {
-		err = MkdirAll(fs, filepath.Join(dir, prefix), 0700)
+		err = MkdirAll(fs, filepath.Join(dir, prefix), 0755)
 		if err != nil {
 			return "", err
 		}
@@ -82,7 +82,7 @@ func TempDir(fs v1.FS, dir, prefix string) (name string, err error) {
 	nconflict := 0
 	for i := 0; i < 10000; i++ {
 		try := filepath.Join(dir, prefix+nextRandom())
-		err = MkdirAll(fs, try, 0700)
+		err = MkdirAll(fs, try, 0755)
 		if os.IsExist(err) {
 			if nconflict++; nconflict > 10 {
 				randmu.Lock()
