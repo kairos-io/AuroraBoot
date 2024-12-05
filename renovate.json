@@ -19,6 +19,27 @@
         "patch"
       ],
       "automerge": true
+    },
+    {
+      "groupName": "repositories",
+      "matchPackageNames": [
+        "/^quay.io/kairos/packages*/"
+      ]
+    },
+    {
+      "versioning": "regex:^(?<major>\\d{12})-git(?<patch>[a-f0-9]{8})-repository\\.yaml$",
+      "matchPackageNames": [
+        "/^quay.io/kairos/packages*/"
+      ]
+    },
+    {
+      "enabled": true,
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchUpdateTypes": [
+        "major"
+      ]
     }
   ],
   "customManagers": [
