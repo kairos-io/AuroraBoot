@@ -21,8 +21,9 @@
       "automerge": true
     }
   ],
-  "regexManagers": [
+  "customManagers": [
     {
+      "customType": "regex",
       "fileMatch": [
         "image-assets/luet-amd64.yaml$",
         "image-assets/luet-arm64.yaml$"
