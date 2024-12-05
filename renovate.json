@@ -28,7 +28,7 @@
         "image-assets/luet-arm64.yaml$"
       ],
       "matchStrings": [
-        "#\\s*renovate:\\s*datasource=(?<datasource>.*?) depName=(?<depName>.*?)?\\s+reference:\\s(?<currentValue>.*?)\\s"
+        "\\s*#\\s*renovate:\\s*datasource=(?<datasource>.*?) depName=(?<depName>.*?)?\\s+reference:\\s(?<currentValue>.*?)\\s"
       ]
     }
   ]
