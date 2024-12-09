@@ -368,6 +368,7 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 
 	// rootfs /efi dir
 	img := filepath.Join(isoDir, constants.IsoEFIPath)
+	// Temp dir is where we will build the EFI image from
 	temp, _ := utils.TempDir(b.cfg.Fs, "", "auroraboot-iso")
 	err = utils.MkdirAll(b.cfg.Fs, filepath.Join(temp, constants.EfiBootPath), constants.DirPerm)
 	if err != nil {
