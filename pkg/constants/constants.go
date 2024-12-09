@@ -112,6 +112,7 @@ func GetXorrisoBooloaderArgs(root string) []string {
 		"-boot_image", "any", "efi_path=--interval:appended_partition_2:all::",
 		"-boot_image", "any", "platform_id=0xef",
 		"-boot_image", "any", "emul_type=no_emulation",
+		"-boot_image", "grub", "partition_entry=gpt_basdat",
 	}
 	return args
 }
