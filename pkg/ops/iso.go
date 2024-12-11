@@ -399,12 +399,12 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	// So we copy in 2 places, into the livecd and into the img
 	
 	// This is used when booting from usb
-	if err = b.writeDefaultGrubEfiCfg(filepath.Join(temp, constants.EfiBootPath, constants.GrubCfg)); err != nil {
+	if err = b.writeDefaultGrubEfiCfg(temp); err != nil {
 		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
 		return err
 	}
 	// This is used when booting from cdrom
-	if err = b.writeDefaultGrubEfiCfg(filepath.Join(isoDir, constants.EfiBootPath, constants.GrubCfg)); err != nil {
+	if err = b.writeDefaultGrubEfiCfg(isoDir); err != nil {
 		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
 		return err
 	}
@@ -435,11 +435,11 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 			return err
 		}
 
-		if err = b.writeDefaultGrubEfiCfg(filepath.Join(temp, "EFI/ubuntu/", constants.GrubCfg)); err != nil {
+		if err = b.writeUbuntuGrubEfiCfg(temp); err != nil {
 			b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
 			return err
 		}
-		if err = b.writeDefaultGrubEfiCfg(filepath.Join(isoDir, "EFI/ubuntu/", constants.GrubCfg)); err != nil {
+		if err = b.writeUbuntuGrubEfiCfg(isoDir); err != nil {
 			b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
 			return err
 		}
@@ -485,8 +485,15 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 
 // writeDefaultGrubEfiCfg writes the default grub.cfg for the EFI image in teh given path
 func (b *BuildISOAction) writeDefaultGrubEfiCfg(path string) error {
-	return b.cfg.Fs.WriteFile(path, []byte(constants.GrubEfiCfg), constants.FilePerm)
+        calculatedPath := filepath.Join(path, constants.EfiBootPath, constants.GrubCfg)
+	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
 }
+
+func (b *BuildISOAction) writeUbuntuGrubEfiCfg(path string) error {
+        calculatedPath := filepath.Join(path, "EFI/ubuntu/", constants.GrubCfg)
+	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
+}
+
 
 // copyShim copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
