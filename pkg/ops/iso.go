@@ -397,7 +397,7 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	// the uefi.img is loaded into memory and run, but grub only sees the livecd root
 	// WARNING: If we load the image into an usb stick, grub will not use the livecd root as the grub root, so it cannot find the grub.cfg
 	// So we copy in 2 places, into the livecd and into the img
-	
+
 	// This is used when booting from usb
 	if err = b.writeDefaultGrubEfiCfg(temp); err != nil {
 		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
@@ -424,16 +424,6 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	b.cfg.Logger.Infof("Detected Flavor: %s", flavor)
 	if strings.Contains(strings.ToLower(flavor), "ubuntu") {
 		b.cfg.Logger.Infof("Ubuntu based ISO detected, copying grub.cfg to /EFI/ubuntu/grub.cfg")
-		err = utils.MkdirAll(b.cfg.Fs, filepath.Join(temp, "EFI/ubuntu/"), constants.DirPerm)
-		if err != nil {
-			b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
-			return err
-		}
-		err = utils.MkdirAll(b.cfg.Fs, filepath.Join(isoDir, "EFI/ubuntu/"), constants.DirPerm)
-		if err != nil {
-			b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
-			return err
-		}
 
 		if err = b.writeUbuntuGrubEfiCfg(temp); err != nil {
 			b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
@@ -485,15 +475,19 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 
 // writeDefaultGrubEfiCfg writes the default grub.cfg for the EFI image in teh given path
 func (b *BuildISOAction) writeDefaultGrubEfiCfg(path string) error {
-        calculatedPath := filepath.Join(path, constants.EfiBootPath, constants.GrubCfg)
+	calculatedPath := filepath.Join(path, constants.EfiBootPath, constants.GrubCfg)
 	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
 }
 
 func (b *BuildISOAction) writeUbuntuGrubEfiCfg(path string) error {
-        calculatedPath := filepath.Join(path, "EFI/ubuntu/", constants.GrubCfg)
+	calculatedPath := filepath.Join(path, "EFI/ubuntu/", constants.GrubCfg)
+	err := utils.MkdirAll(b.cfg.Fs, calculatedPath, constants.DirPerm)
+	if err != nil {
+		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
+		return err
+	}
 	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
 }
-
 
 // copyShim copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
