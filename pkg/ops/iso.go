@@ -481,9 +481,9 @@ func (b *BuildISOAction) writeDefaultGrubEfiCfg(path string) error {
 
 func (b *BuildISOAction) writeUbuntuGrubEfiCfg(path string) error {
 	calculatedPath := filepath.Join(path, "EFI/ubuntu/", constants.GrubCfg)
-	err := utils.MkdirAll(b.cfg.Fs, calculatedPath, constants.DirPerm)
+	err := utils.MkdirAll(b.cfg.Fs, filepath.Dir(calculatedPath), constants.DirPerm)
 	if err != nil {
-		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
+		b.cfg.Logger.Errorf("Failed creating base dir for grub.cfg: %v", err)
 		return err
 	}
 	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
