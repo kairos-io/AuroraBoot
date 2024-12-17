@@ -229,8 +229,9 @@ func (d *Deployer) cloudConfigPath() string {
 	return filepath.Join(d.destination(), "config.yaml")
 }
 
+// Return only the path to the output dir, the image name is generated based on the rootfs
 func (d *Deployer) rawDiskPath() string {
-	return filepath.Join(d.destination(), "disk.raw")
+	return d.destination()
 }
 
 func (d *Deployer) diskImgPath() string {
