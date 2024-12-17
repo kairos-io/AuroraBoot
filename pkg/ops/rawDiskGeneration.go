@@ -44,7 +44,6 @@ type RawImage struct {
 	Source      string               // Source image to copy the artifacts from, which will be the rootfs in the final image
 	Output      string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
 	FinalSize   uint64               // Final size of the disk image in MB
-	rootfsDir   string               // Rootfs dir which contains the (maybe) extracted rootfs
 	tmpDir      string               // A temp dir to do all work on
 	elemental   *elemental.Elemental // Elemental instance to use for the operations
 	efi         bool                 // If the image should be EFI or BIOS
@@ -214,7 +213,7 @@ func (r *RawImage) CreateRecoveryPartitionImage() (string, error) {
 		File:       filepath.Join(tmpDirRecovery, "cOS", agentConstants.RecoveryImgFile),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.SystemLabel,
-		Source:     v1.NewDirSrc(r.rootfsDir),
+		Source:     v1.NewDirSrc(r.Source),
 		MountPoint: tmpDirRecoveryImage,
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
@@ -231,20 +230,20 @@ func (r *RawImage) CreateRecoveryPartitionImage() (string, error) {
 	// contents come form https://github.com/kairos-io/packages/blob/main/packages/static/grub-config/files/grub.cfg
 
 	// Copy the grub.cfg from the rootfs into the recovery partition
-	internal.Log.Logger.Debug().Str("source", r.rootfsDir).Str("target", filepath.Join(tmpDirRecovery, filepath.Dir(agentConstants.GrubConf))).Msg("Copying grub.cfg")
+	internal.Log.Logger.Debug().Str("source", r.Source).Str("target", filepath.Join(tmpDirRecovery, filepath.Dir(agentConstants.GrubConf))).Msg("Copying grub.cfg")
 	err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirRecovery, filepath.Dir(agentConstants.GrubConf)), 0755)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecovery).Msg("failed to create grub dir")
 		return "", err
 	}
-	_, err = r.config.Fs.Stat(filepath.Join(r.rootfsDir, agentConstants.GrubConf))
+	_, err = r.config.Fs.Stat(filepath.Join(r.Source, agentConstants.GrubConf))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", r.rootfsDir).Msg("failed to stat grub.cfg")
+		internal.Log.Logger.Error().Err(err).Str("target", r.Source).Msg("failed to stat grub.cfg")
 		return "", err
 	}
-	grubCfg, err := r.config.Fs.ReadFile(filepath.Join(r.rootfsDir, agentConstants.GrubConf))
+	grubCfg, err := r.config.Fs.ReadFile(filepath.Join(r.Source, agentConstants.GrubConf))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", r.rootfsDir).Msg("failed to read grub.cfg")
+		internal.Log.Logger.Error().Err(err).Str("target", r.Source).Msg("failed to read grub.cfg")
 		return "", err
 	}
 	err = r.config.Fs.WriteFile(filepath.Join(tmpDirRecovery, agentConstants.GrubConf), grubCfg, 0o644)
@@ -306,13 +305,13 @@ func (r *RawImage) CreateEFIPartitionImage() (string, error) {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create boot dir")
 		return "", err
 	}
-	flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(r.rootfsDir, "etc/kairos-release"))
+	flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
 		return "", err
 	}
 	internal.Log.Logger.Debug().Str("flavor", flavor).Msg("got flavor")
-	model, err := sdkUtils.OSRelease("MODEL", filepath.Join(r.rootfsDir, "etc/kairos-release"))
+	model, err := sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/kairos-release"))
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to get model")
 		return "", err
@@ -388,48 +387,17 @@ func (r *RawImage) Build() error {
 	}
 	//defer r.config.Fs.RemoveAll(r.tmpDir)
 
-	// Prepare source
-	src, err := v1.NewSrcFromURI(r.Source)
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to create source image")
-		return err
-	}
-
-	// dump the source in a temp dir if its an oci artifact
-	// TODO: With the current aurora implementation, this is done in a different step before this, is this needed?
-	if src.IsDocker() {
-		r.rootfsDir = filepath.Join(r.tmpDir, "rootfs")
-		err = fsutils.MkdirAll(r.config.Fs, r.rootfsDir, 0755)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to create temp dir")
-			return err
-		}
-		defer r.config.Fs.RemoveAll(r.rootfsDir)
-
-		e := elemental.NewElemental(r.config)
-		_, err = e.DumpSource(r.rootfsDir, src)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to dump source")
-			return err
-		}
-	} else if src.IsDir() {
-		r.rootfsDir = src.Value()
-	} else {
-		internal.Log.Logger.Error().Err(err).Msg("source is not a valid source")
-		return err
-	}
-
 	// Get the artifact version from the rootfs
 	var label string
-	if _, ok := r.config.Fs.Stat(filepath.Join(r.rootfsDir, "etc/kairos-release")); ok == nil {
-		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.rootfsDir, "etc/kairos-release"))
+	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
+		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.Source, "etc/kairos-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
 			return err
 		}
 	} else {
 		// Before 3.2.x the kairos info was in /etc/os-release
-		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.rootfsDir, "etc/os-release"))
+		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.Source, "etc/os-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
 			return err
@@ -687,9 +655,9 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		return fmt.Errorf("invalid which value: %s", which)
 	}
 	for _, f := range searchFiles {
-		_, err := r.config.Fs.Stat(filepath.Join(r.rootfsDir, f))
+		_, err := r.config.Fs.Stat(filepath.Join(r.Source, f))
 		if err != nil {
-			r.config.Logger.Debugf("skip copying %s: not found", filepath.Join(r.rootfsDir, f))
+			r.config.Logger.Debugf("skip copying %s: not found", filepath.Join(r.Source, f))
 			continue
 		}
 		_, name := filepath.Split(f)
@@ -701,10 +669,10 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		r.config.Logger.Debugf("Copying %s to %s", f, fileWriteName)
 
 		// Try to find the paths give until we succeed
-		fileContent, err := r.config.Fs.ReadFile(filepath.Join(r.rootfsDir, f))
+		fileContent, err := r.config.Fs.ReadFile(filepath.Join(r.Source, f))
 
 		if err != nil {
-			r.config.Logger.Warnf("error reading %s: %s", filepath.Join(r.rootfsDir, f), err)
+			r.config.Logger.Warnf("error reading %s: %s", filepath.Join(r.Source, f), err)
 			continue
 		}
 		err = r.config.Fs.WriteFile(fileWriteName, fileContent, agentConstants.FilePerm)
