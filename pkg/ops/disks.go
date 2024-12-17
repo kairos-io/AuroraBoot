@@ -178,19 +178,13 @@ truncate -s "+$((20000*1024*1024))" %s
 	}
 }
 
-func GenEFIRawDisk(src, dst string) func(ctx context.Context) error {
+func GenEFIRawDisk(src, dst string, size uint64) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		tmp, err := os.MkdirTemp("", "gendisk")
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s' with final size %dMb", dst, src, size)
+		raw := NewEFIRawImage(src, dst, size)
+		err := raw.Build()
 		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(tmp)
-
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
-		out, err := utils.SH(fmt.Sprintf("/raw-images.sh %s %s %s", src, dst, filepath.Join(filepath.Dir(dst), "config.yaml")))
-		internal.Log.Logger.Printf("Output '%s'", out)
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}

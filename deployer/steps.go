@@ -95,7 +95,7 @@ func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(opGenRawDisk,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
@@ -267,4 +267,8 @@ func (d *Deployer) netBootListenAddr() string {
 func (d *Deployer) netbootOption() bool {
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	return !d.Config.DisableNetboot
+}
+
+func (d *Deployer) rawDiskSize() uint64 {
+	return d.Config.Disk.Size
 }
