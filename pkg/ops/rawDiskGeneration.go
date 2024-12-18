@@ -36,8 +36,6 @@ import (
 // The final image is then truncated to the nearest sector size
 // TODO: Add BIOS support
 // TODO: Add testing
-// The methods are public becuase they may be reused in the future for nvidia images which create the partitions separately
-// TODO: Check if they need to be public, otherwise they can be private
 
 type RawImage struct {
 	CloudConfig string               // cloud config to copy to the oem partition, if none provided a default one will be created with the kairos user
@@ -62,19 +60,19 @@ func NewBiosRawImage(source, output string, finalsize uint64) *RawImage {
 	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), FinalSize: finalsize}
 }
 
-// CreateOemPartitionImage creates an OEM partition image with the given cloud config
-func (r *RawImage) CreateOemPartitionImage(recoveryImagePath string) (string, error) {
+// createOemPartitionImage creates an OEM partition image with the given cloud config
+func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, error) {
 	// Create a temp dir for copying the files to
-	tmpDirOem := filepath.Join(r.tmpDir, "oem")
+	tmpDirOem := filepath.Join(r.TempDir(), "oem")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirOem, 0755)
 	defer r.config.Fs.RemoveAll(tmpDirOem)
 
 	// This is where the oem partition will be mounted to copy the files to
-	tmpDirOemMount := filepath.Join(r.tmpDir, "oem-mount")
+	tmpDirOemMount := filepath.Join(r.TempDir(), "oem-mount")
 	err = fsutils.MkdirAll(r.config.Fs, tmpDirOemMount, 0755)
 	defer r.config.Fs.RemoveAll(tmpDirOemMount)
 
-	// Copy the cloud config to the oem partition if htere is any
+	// Copy the cloud config to the oem partition if there is any
 	if r.CloudConfig != "" {
 		err = fsutils.Copy(r.config.Fs, r.CloudConfig, filepath.Join(tmpDirOem, "90_custom.yaml"))
 	} else {
@@ -169,7 +167,7 @@ func (r *RawImage) CreateOemPartitionImage(recoveryImagePath string) (string, er
 	}
 
 	OemPartitionImage := v1.Image{
-		File:       filepath.Join(r.tmpDir, "oem.img"),
+		File:       filepath.Join(r.TempDir(), "oem.img"),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.OEMLabel,
 		Size:       64,
@@ -188,13 +186,13 @@ func (r *RawImage) CreateOemPartitionImage(recoveryImagePath string) (string, er
 	return OemPartitionImage.File, nil
 }
 
-// CreateRecoveryPartitionImage creates a recovery partition image with the given source
+// createRecoveryPartitionImage creates a recovery partition image with the given source
 // The source expects to be a directory with the rootfs to generate a squashfs from
 // This generates a recovery.img with the rootfs on in under /cOS/
 // It also contains the final grub.cfg and grubenv_first
-func (r *RawImage) CreateRecoveryPartitionImage() (string, error) {
+func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	// Create a temp dir for mounting the image to
-	tmpDirRecoveryImage := filepath.Join(r.tmpDir, "recovery-img")
+	tmpDirRecoveryImage := filepath.Join(r.TempDir(), "recovery-img")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirRecoveryImage, 0755)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecoveryImage).Msg("failed to create temp dir")
@@ -203,7 +201,7 @@ func (r *RawImage) CreateRecoveryPartitionImage() (string, error) {
 	defer r.config.Fs.RemoveAll(tmpDirRecoveryImage)
 
 	// Create a dir to store the recovery partition contents
-	tmpDirRecovery := filepath.Join(r.tmpDir, "recovery")
+	tmpDirRecovery := filepath.Join(r.TempDir(), "recovery")
 	err = fsutils.MkdirAll(r.config.Fs, tmpDirRecovery, 0755)
 	defer r.config.Fs.RemoveAll(tmpDirRecovery)
 
@@ -255,7 +253,7 @@ func (r *RawImage) CreateRecoveryPartitionImage() (string, error) {
 	// Now we create an image for the recovery partition
 	// We use the dir we created with the image above, which contains the recovery.img and the grub.cfg stuff
 	recoverPartitionImage := v1.Image{
-		File:       filepath.Join(r.tmpDir, "recovery.img"),
+		File:       filepath.Join(r.TempDir(), "recovery.img"),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.RecoveryLabel,
 		Size:       uint(size),
@@ -277,10 +275,10 @@ func (r *RawImage) CreateRecoveryPartitionImage() (string, error) {
 
 }
 
-// CreateEFIPartitionImage creates an EFI partition image with the given source
-func (r *RawImage) CreateEFIPartitionImage() (string, error) {
+// createEFIPartitionImage creates an EFI partition image with the given source
+func (r *RawImage) createEFIPartitionImage() (string, error) {
 	// Create a temp dir for copying the files to
-	tmpDirEfi := filepath.Join(r.tmpDir, "efi")
+	tmpDirEfi := filepath.Join(r.TempDir(), "efi")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirEfi, 0755)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create temp dir")
@@ -289,7 +287,7 @@ func (r *RawImage) CreateEFIPartitionImage() (string, error) {
 	//defer r.config.Fs.RemoveAll(tmpDirEfi)
 
 	// This is where the oem partition will be mounted to copy the files to
-	tmpDirEfiMount := filepath.Join(r.tmpDir, "efi-mount")
+	tmpDirEfiMount := filepath.Join(r.TempDir(), "efi-mount")
 	err = fsutils.MkdirAll(r.config.Fs, tmpDirEfiMount, 0755)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfiMount).Msg("failed to create temp dir")
@@ -305,17 +303,40 @@ func (r *RawImage) CreateEFIPartitionImage() (string, error) {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create boot dir")
 		return "", err
 	}
-	flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
-		return "", err
+	var flavor string
+	var model string
+
+	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
+			return "", err
+		}
+		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
+			return "", err
+		}
+	} else {
+		// Fallback to /etc/os-release for older images
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
+			return "", err
+		}
+		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
+			return "", err
+		}
 	}
+
+	if flavor == "" || model == "" {
+		internal.Log.Logger.Error().Msg("failed to get flavor or model")
+		return "", fmt.Errorf("failed to get flavor or model")
+	}
+
 	internal.Log.Logger.Debug().Str("flavor", flavor).Msg("got flavor")
-	model, err := sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/kairos-release"))
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to get model")
-		return "", err
-	}
 	internal.Log.Logger.Debug().Str("model", model).Msg("got model")
 
 	if strings.Contains(flavor, "ubuntu") {
@@ -355,7 +376,7 @@ func (r *RawImage) CreateEFIPartitionImage() (string, error) {
 	}
 
 	efiPartitionImage := v1.Image{
-		File:       filepath.Join(r.tmpDir, "efi.img"),
+		File:       filepath.Join(r.TempDir(), "efi.img"),
 		FS:         agentConstants.EfiFs,
 		Label:      agentConstants.EfiLabel,
 		Size:       20,
@@ -373,19 +394,18 @@ func (r *RawImage) CreateEFIPartitionImage() (string, error) {
 	return efiPartitionImage.File, nil
 }
 
+func (r *RawImage) TempDir() string {
+	if r.tmpDir == "" {
+		r.tmpDir, _ = fsutils.TempDir(r.config.Fs, "", "auroraboot-raw-image-")
+	}
+	return r.tmpDir
+}
+
 func (r *RawImage) Build() error {
 	var bootImagePath string
 	var err error
 
-	// If we dont have a tempdir, create one
-	if r.tmpDir == "" {
-		r.tmpDir, err = fsutils.TempDir(r.config.Fs, "", "auroraboot-raw-image-")
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to create temp dir")
-			return err
-		}
-	}
-	//defer r.config.Fs.RemoveAll(r.tmpDir)
+	defer r.config.Fs.RemoveAll(r.TempDir())
 
 	// Get the artifact version from the rootfs
 	var label string
@@ -411,7 +431,7 @@ func (r *RawImage) Build() error {
 	internal.Log.Logger.Info().Msg("Creating BOOT image")
 	if r.efi {
 		// Create the EFI partition
-		bootImagePath, err = r.CreateEFIPartitionImage()
+		bootImagePath, err = r.createEFIPartitionImage()
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to create efi partition")
 			return err
@@ -419,7 +439,7 @@ func (r *RawImage) Build() error {
 		defer r.config.Fs.Remove(bootImagePath)
 	} else {
 		// Create the BIOS partition
-		bootImagePath, err = r.CreateBiosPartitionImage()
+		bootImagePath, err = r.createBiosPartitionImage()
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to create bios partition")
 			return err
@@ -430,7 +450,7 @@ func (r *RawImage) Build() error {
 	internal.Log.Logger.Info().Msg("Created BOOT image")
 	internal.Log.Logger.Info().Msg("Creating RECOVERY image")
 	// Create the Recovery partition
-	recoveryImagePath, err := r.CreateRecoveryPartitionImage()
+	recoveryImagePath, err := r.createRecoveryPartitionImage()
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to create recovery partition")
 		return err
@@ -441,7 +461,7 @@ func (r *RawImage) Build() error {
 	// Oem after recovery, as it needs the recovery image to calculate the size of the state partition
 	internal.Log.Logger.Info().Msg("Creating OEM image")
 	// Create the OEM partition
-	oemImagePath, err := r.CreateOemPartitionImage(recoveryImagePath)
+	oemImagePath, err := r.createOemPartitionImage(recoveryImagePath)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to create oem partition")
 		return err
@@ -451,7 +471,7 @@ func (r *RawImage) Build() error {
 
 	// Create the final disk image
 	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembling final disk image")
-	err = r.CreateDiskImage(filepath.Join(r.Output, outputName), []string{bootImagePath, oemImagePath, recoveryImagePath})
+	err = r.createDiskImage(filepath.Join(r.Output, outputName), []string{bootImagePath, oemImagePath, recoveryImagePath})
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to create disk image")
 		return err
@@ -476,9 +496,9 @@ func (r *RawImage) Build() error {
 	return nil
 }
 
-// CreateDiskImage creates the final image by truncating the image with the proper size and
+// createDiskImage creates the final image by truncating the image with the proper size and
 // concatenating the contents of the given partitions.
-func (r *RawImage) CreateDiskImage(rawDiskFile string, partImgs []string) error {
+func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error {
 	var initDiskFile, endDiskFile string
 	var err error
 	var partFiles []string
@@ -493,14 +513,14 @@ func (r *RawImage) CreateDiskImage(rawDiskFile string, partImgs []string) error 
 	// Then add 1MB of free space at the end of the disk for gpt backup headers
 
 	// Create the start and end images
-	initDiskFile = filepath.Join(r.tmpDir, "init.raw")
-	endDiskFile = filepath.Join(r.tmpDir, "end.raw")
-	init, err := diskfs.Create(filepath.Join(r.tmpDir, "init.raw"), 3*1024*1024, diskfs.Raw, diskfs.SectorSizeDefault)
+	initDiskFile = filepath.Join(r.TempDir(), "init.raw")
+	endDiskFile = filepath.Join(r.TempDir(), "end.raw")
+	init, err := diskfs.Create(filepath.Join(r.TempDir(), "init.raw"), 3*1024*1024, diskfs.Raw, diskfs.SectorSizeDefault)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to create init disk")
 		return err
 	}
-	end, err := diskfs.Create(filepath.Join(r.tmpDir, "end.raw"), 1*1024*1024, diskfs.Raw, diskfs.SectorSize512)
+	end, err := diskfs.Create(filepath.Join(r.TempDir(), "end.raw"), 1*1024*1024, diskfs.Raw, diskfs.SectorSize512)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", endDiskFile).Msg("failed to create end disk")
 		return err
@@ -634,8 +654,8 @@ func roundToNearestSector(size, sector int64) uint64 {
 	return uint64(size + sector - (size % sector))
 }
 
-// CreateBiosPartitionImage TODO: lol
-func (r *RawImage) CreateBiosPartitionImage() (string, error) {
+// createBiosPartitionImage TODO: lol
+func (r *RawImage) createBiosPartitionImage() (string, error) {
 	// Would need to format it and then copy the grub files to it
 	// Also install grub against it
 	// Remember to use the grub artifacts from the rootfs to support secureboot
