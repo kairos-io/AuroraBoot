@@ -170,7 +170,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 		File:       filepath.Join(r.TempDir(), "oem.img"),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.OEMLabel,
-		Size:       64,
+		Size:       agentConstants.OEMSize,
 		Source:     v1.NewDirSrc(tmpDirOem),
 		MountPoint: tmpDirOemMount,
 	}
@@ -379,7 +379,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		File:       filepath.Join(r.TempDir(), "efi.img"),
 		FS:         agentConstants.EfiFs,
 		Label:      agentConstants.EfiLabel,
-		Size:       20,
+		Size:       agentConstants.EfiSize,
 		Source:     v1.NewDirSrc(tmpDirEfi),
 		MountPoint: tmpDirEfiMount,
 	}
