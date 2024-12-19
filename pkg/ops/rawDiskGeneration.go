@@ -50,9 +50,9 @@ type RawImage struct {
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output string, finalsize uint64) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), FinalSize: finalsize}
+	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
 }
 
 func NewBiosRawImage(source, output string, finalsize uint64) *RawImage {
@@ -74,10 +74,23 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 
 	// Copy the cloud config to the oem partition if there is any
 	if r.CloudConfig != "" {
+		f, err := r.config.Fs.ReadFile(r.CloudConfig)
+		if err != nil {
+			return "", err
+		}
+		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Str("content", string(f)).Interface("s", f).Msg("Copying cloud config to oem partition")
 		err = fsutils.Copy(r.config.Fs, r.CloudConfig, filepath.Join(tmpDirOem, "90_custom.yaml"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to copy cloud config")
+			return "", err
+		}
 	} else {
 		// Create a default cloud config yaml with at least a user
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, "90_custom.yaml"), []byte(constants.DefaultCloudConfig), 0o644)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to write cloud config")
+			return "", err
+		}
 	}
 
 	// Set the grubenv to boot into recovery
@@ -409,14 +422,25 @@ func (r *RawImage) Build() error {
 
 	// Get the artifact version from the rootfs
 	var label string
+	var flavor string
 	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
 		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.Source, "etc/kairos-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
 			return err
 		}
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			return err
+		}
 	} else {
 		// Before 3.2.x the kairos info was in /etc/os-release
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
+			return err
+		}
 		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.Source, "etc/os-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
@@ -426,7 +450,8 @@ func (r *RawImage) Build() error {
 
 	// name of isos for example so we store them equally:
 	// kairos-ubuntu-24.04-core-amd64-generic-v3.2.4.iso
-	outputName := fmt.Sprintf("kairos-%s.raw", label)
+	outputName := fmt.Sprintf("kairos-%s-%s.raw", flavor, label)
+	internal.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
 
 	internal.Log.Logger.Info().Msg("Creating BOOT image")
 	if r.efi {

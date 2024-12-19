@@ -117,14 +117,14 @@ func (d *Deployer) StepConvertGCE() error {
 	return d.Add(opConvertGCE,
 		herd.EnableIf(func() bool { return d.Config.Disk.GCE }),
 		herd.WithDeps(opGenRawDisk),
-		herd.WithCallback(ops.ConvertRawDiskToGCE(d.rawDiskPath(), filepath.Join(d.destination(), "disk.raw.gce"))))
+		herd.WithCallback(ops.ConvertRawDiskToGCE(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepConvertVHD() error {
 	return d.Add(opConvertVHD,
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
 		herd.WithDeps(opGenRawDisk),
-		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath(), filepath.Join(d.destination(), "disk.raw.vhd"))))
+		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepGenARMImages() error {
