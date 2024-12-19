@@ -50,7 +50,7 @@ type Disk struct {
 	GCE  bool   `yaml:"gce"`
 	VHD  bool   `yaml:"vhd"`
 	MBR  bool   `yaml:"mbr"`
-	Size uint64 `yaml:"size"`
+	Size string `yaml:"size"`
 
 	ARM *ARMDiskOptions `yaml:"arm"`
 }

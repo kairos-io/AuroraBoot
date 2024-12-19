@@ -2,8 +2,10 @@ package deployer
 
 import (
 	"context"
+	"github.com/kairos-io/AuroraBoot/internal"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/spectrocloud-labs/herd"
@@ -271,5 +273,13 @@ func (d *Deployer) netbootOption() bool {
 }
 
 func (d *Deployer) rawDiskSize() uint64 {
-	return d.Config.Disk.Size
+	// parse the string into a uint64
+	// the size is in Mb
+
+	sizeInt, err := strconv.ParseUint(d.Config.Disk.Size, 10, 64)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
+		return 0
+	}
+	return sizeInt
 }

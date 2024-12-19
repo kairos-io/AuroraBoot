@@ -73,7 +73,13 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	defer r.config.Fs.RemoveAll(tmpDirOemMount)
 
 	// Copy the cloud config to the oem partition if there is any
-	if r.CloudConfig != "" {
+	ccContent, err := r.config.Fs.ReadFile(r.CloudConfig)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Msg("failed to read cloud config")
+		return "", err
+	}
+	if r.CloudConfig != "" && len(ccContent) > 0 {
+		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Copying cloud config to oem partition")
 		f, err := r.config.Fs.ReadFile(r.CloudConfig)
 		if err != nil {
 			return "", err
@@ -86,6 +92,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 		}
 	} else {
 		// Create a default cloud config yaml with at least a user
+		internal.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Creating default cloud config")
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, "90_custom.yaml"), []byte(constants.DefaultCloudConfig), 0o644)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to write cloud config")
@@ -173,6 +180,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	}
 	yipYAML, err := yaml.Marshal(conf)
 	// Save the cloud config
+	internal.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("Creating reset cloud config")
 	err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, resetCloudInit), yipYAML, 0o644)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("failed to write cloud config")
@@ -515,6 +523,13 @@ func (r *RawImage) Build() error {
 			return err
 		}
 
+	}
+
+	// Set the final image to be used by all
+	err = r.config.Fs.Chmod(filepath.Join(r.Output, outputName), 0777)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to chmod final image")
+		return err
 	}
 	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembled final disk image")
 
