@@ -118,8 +118,15 @@ func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) err
 }
 
 func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.Context) error {
-	cloudConfigFile := filepath.Join(filepath.Dir(dst), "config.yaml")
+	cloudConfigFile := filepath.Join(filepath.Join(dst), "config.yaml")
 	return func(ctx context.Context) error {
+
+		if _, ok := os.Stat(cloudConfigFile); os.IsNotExist(ok) {
+			return fmt.Errorf("cloud config file '%s' not found", cloudConfigFile)
+		}
+		if _, ok := os.Stat(srcISO); os.IsNotExist(ok) {
+			return fmt.Errorf("source ISO file '%s' not found", srcISO)
+		}
 
 		ram := "8096"
 		if config.System.Memory != "" {
@@ -141,7 +148,7 @@ func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.C
 		}
 		defer os.RemoveAll(tmp)
 
-		internal.Log.Logger.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
+		internal.Log.Logger.Info().Msgf("Generating MBR disk '%s' from '%s'", filepath.Join(dst, "disk.raw"), srcISO)
 
 		extra := ""
 		if config.System.KVM {
@@ -168,11 +175,11 @@ truncate -s "+$((20000*1024*1024))" %s
         -drive format=raw,media=cdrom,readonly=on,file=ci.iso \
         -boot d %s
         
-`, cloudConfigFile, dst, qemuBin, ram, cores, dst, srcISO, extra),
+`, cloudConfigFile, filepath.Join(dst, "disk.raw"), qemuBin, ram, cores, filepath.Join(dst, "disk.raw"), srcISO, extra),
 		)
 		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, extra, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst+"disk.raw", srcISO, extra, err.Error())
 		}
 		return err
 	}

@@ -275,7 +275,9 @@ func (d *Deployer) netbootOption() bool {
 func (d *Deployer) rawDiskSize() uint64 {
 	// parse the string into a uint64
 	// the size is in Mb
-
+	if d.Config.Disk.Size == "" {
+		return 0
+	}
 	sizeInt, err := strconv.ParseUint(d.Config.Disk.Size, 10, 64)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
