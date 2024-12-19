@@ -159,7 +159,7 @@ stages:
 		AfterEach(func() {
 			os.RemoveAll(tempDir)
 		})
-		Describe("EFI", Label("efi"), Focus, func() {
+		Describe("EFI", Label("efi"), func() {
 			It("generate a raw disk file", func() {
 				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 				_, err := PullImage(image)
