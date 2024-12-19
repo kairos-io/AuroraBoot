@@ -53,5 +53,6 @@ test-bootable:
     ARG MEMORY=4000
     ARG CPUS=2
     ARG CREATE_VM=true
+    ARG EFIVARS_EMPTY=true
     RUN date
     RUN go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
