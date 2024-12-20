@@ -7,7 +7,6 @@ import (
 	. "github.com/spectrocloud/peg/matcher"
 	"os"
 	"path/filepath"
-	"time"
 )
 
 // NOTE: Once you run a test in 1 raw image, because the image is the installed system, any changes are now permanent
@@ -28,7 +27,6 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 
 	AfterEach(func() {
 		if CurrentSpecReport().Failed() {
-			time.Sleep(5 * time.Minute)
 			gatherLogs(vm)
 			serial, _ := os.ReadFile(filepath.Join(vm.StateDir, "serial.log"))
 			_ = os.MkdirAll("logs", os.ModePerm|os.ModeDir)

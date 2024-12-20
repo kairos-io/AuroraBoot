@@ -111,7 +111,7 @@ jobs:
           docker run --rm --privileged -v $PWD/build/:/output auroraboot:latest --debug --set "disable_http_server=true" --set "disable_netboot=true" --set "disk.raw=true" --set "disk.size=16000" --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3" --set "state_dir=/output"
       - name: Test raw image is bootable
         env:
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE_4M.fd
+          FIRMWARE: /usr/share/OVMF/OVMF_CODE_4M.secboot.fd
           USE_QEMU: true
           MEMORY: 4000
           CPUS: 2
