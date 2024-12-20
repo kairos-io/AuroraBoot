@@ -89,6 +89,7 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
+          find / -name OVMF_CODE.fd
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
