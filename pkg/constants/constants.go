@@ -54,6 +54,11 @@ const (
 		"\nset prefix=($root)" + GrubPrefixDir +
 		"\nconfigfile $prefix/" + GrubCfg
 
+	// GrubEfiRecovery Used for RAW images as we chainload the grub config in the recovery partition
+	GrubEfiRecovery = "search --no-floppy --label --set=root COS_RECOVERY" +
+		"\nset root=($root)" +
+		"\nset prefix=($root)/grub2\n" +
+		"configfile ($root)/etc/cos/grub.cfg"
 	IsoBootCatalog = "/boot/boot.catalog"
 	IsoHybridMBR   = "/boot/boot_hybrid.img"
 	IsoBootFile    = "/boot/eltorito.img"
@@ -83,7 +88,16 @@ const (
 	EfiFallbackNamex86 = "BOOTX64.EFI"
 	EfiFallbackNameArm = "BOOTAA64.EFI"
 
-	ArtifactBaseName = "norole"
+	ArtifactBaseName   = "norole"
+	DefaultCloudConfig = `#cloud-config
+stages:
+  initramfs:
+    - name: "Set user and password"
+      users:
+        kairos:
+          passwd: "kairos"
+          groups:
+            - "admin"`
 )
 
 const IsoOutput UkiOutput = "iso"

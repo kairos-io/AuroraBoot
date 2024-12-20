@@ -118,8 +118,15 @@ func GenArmDisk(src, dst string, do schema.Config) func(ctx context.Context) err
 }
 
 func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.Context) error {
-	cloudConfigFile := filepath.Join(filepath.Dir(dst), "config.yaml")
+	cloudConfigFile := filepath.Join(filepath.Join(dst), "config.yaml")
 	return func(ctx context.Context) error {
+
+		if _, ok := os.Stat(cloudConfigFile); os.IsNotExist(ok) {
+			return fmt.Errorf("cloud config file '%s' not found", cloudConfigFile)
+		}
+		if _, ok := os.Stat(srcISO); os.IsNotExist(ok) {
+			return fmt.Errorf("source ISO file '%s' not found", srcISO)
+		}
 
 		ram := "8096"
 		if config.System.Memory != "" {
@@ -141,7 +148,7 @@ func GenBIOSRawDisk(config schema.Config, srcISO, dst string) func(ctx context.C
 		}
 		defer os.RemoveAll(tmp)
 
-		internal.Log.Logger.Info().Msgf("Generating MBR disk '%s' from '%s'", dst, srcISO)
+		internal.Log.Logger.Info().Msgf("Generating MBR disk '%s' from '%s'", filepath.Join(dst, "disk.raw"), srcISO)
 
 		extra := ""
 		if config.System.KVM {
@@ -168,29 +175,25 @@ truncate -s "+$((20000*1024*1024))" %s
         -drive format=raw,media=cdrom,readonly=on,file=ci.iso \
         -boot d %s
         
-`, cloudConfigFile, dst, qemuBin, ram, cores, dst, srcISO, extra),
+`, cloudConfigFile, filepath.Join(dst, "disk.raw"), qemuBin, ram, cores, filepath.Join(dst, "disk.raw"), srcISO, extra),
 		)
 		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, srcISO, extra, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst+"disk.raw", srcISO, extra, err.Error())
 		}
 		return err
 	}
 }
 
-func GenEFIRawDisk(src, dst string) func(ctx context.Context) error {
+func GenEFIRawDisk(src, dst string, size uint64) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		tmp, err := os.MkdirTemp("", "gendisk")
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s' with final size %dMb", dst, src, size)
+		// TODO: We need to talk about how the config.yaml is magically here no? is done in a previous step but maybe we should have constant that we can check?
+		// Maybe on its own function that returns the tmpdir + config.yaml or something? we need a safe way of accessing it form any step in the DAG.
+		raw := NewEFIRawImage(src, dst, filepath.Join(dst, "config.yaml"), size)
+		err := raw.Build()
 		if err != nil {
-			return err
-		}
-		defer os.RemoveAll(tmp)
-
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
-		out, err := utils.SH(fmt.Sprintf("/raw-images.sh %s %s %s", src, dst, filepath.Join(filepath.Dir(dst), "config.yaml")))
-		internal.Log.Logger.Printf("Output '%s'", out)
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' to '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
 		}
 		return err
 	}
@@ -214,7 +217,7 @@ func ExtractSquashFS(src, dst string) func(ctx context.Context) error {
 	}
 }
 
-func ConvertRawDiskToVHD(src, dst string) func(ctx context.Context) error {
+func ConvertRawDiskToVHD(src string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
@@ -222,29 +225,46 @@ func ConvertRawDiskToVHD(src, dst string) func(ctx context.Context) error {
 		}
 		defer os.RemoveAll(tmp)
 
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
-		out, err := utils.SH(fmt.Sprintf("/azure.sh %s %s", src, dst))
+		glob, err := filepath.Glob(filepath.Join(src, "kairos-*.raw"))
+		if err != nil {
+			return err
+		}
+
+		if len(glob) == 0 || len(glob) > 1 {
+			return fmt.Errorf("expected to find one and only one raw disk file in '%s' but found %d", src, len(glob))
+		}
+
+		internal.Log.Logger.Info().Msgf("Generating raw disk from '%s'", glob[0])
+		out, err := utils.SH(fmt.Sprintf("/azure.sh %s", glob[0]))
 		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk from '%s' failed with error '%s'", glob[0], err.Error())
 		}
 		return err
 	}
 }
 
-func ConvertRawDiskToGCE(src, dst string) func(ctx context.Context) error {
+func ConvertRawDiskToGCE(src string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
 			return err
 		}
 		defer os.RemoveAll(tmp)
+		glob, err := filepath.Glob(filepath.Join(src, "kairos-*.raw"))
+		if err != nil {
+			return err
+		}
 
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s'", dst, src)
-		out, err := utils.SH(fmt.Sprintf("/gce.sh %s %s", src, dst))
+		if len(glob) == 0 || len(glob) > 1 {
+			return fmt.Errorf("expected to find one and only one raw disk file in '%s' but found %d", src, len(glob))
+		}
+
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s'", glob[0])
+		out, err := utils.SH(fmt.Sprintf("/gce.sh %s", glob[0]))
 		internal.Log.Logger.Printf("Output '%s'", out)
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk from '%s' failed with error '%s'", src, err.Error())
 		}
 		return err
 	}

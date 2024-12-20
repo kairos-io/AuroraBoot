@@ -2,8 +2,10 @@ package deployer
 
 import (
 	"context"
+	"github.com/kairos-io/AuroraBoot/internal"
 	"os"
 	"path/filepath"
+	"strconv"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/spectrocloud-labs/herd"
@@ -95,7 +97,7 @@ func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(opGenRawDisk,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
@@ -117,14 +119,14 @@ func (d *Deployer) StepConvertGCE() error {
 	return d.Add(opConvertGCE,
 		herd.EnableIf(func() bool { return d.Config.Disk.GCE }),
 		herd.WithDeps(opGenRawDisk),
-		herd.WithCallback(ops.ConvertRawDiskToGCE(d.rawDiskPath(), filepath.Join(d.destination(), "disk.raw.gce"))))
+		herd.WithCallback(ops.ConvertRawDiskToGCE(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepConvertVHD() error {
 	return d.Add(opConvertVHD,
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
 		herd.WithDeps(opGenRawDisk),
-		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath(), filepath.Join(d.destination(), "disk.raw.vhd"))))
+		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepGenARMImages() error {
@@ -229,8 +231,9 @@ func (d *Deployer) cloudConfigPath() string {
 	return filepath.Join(d.destination(), "config.yaml")
 }
 
+// Return only the path to the output dir, the image name is generated based on the rootfs
 func (d *Deployer) rawDiskPath() string {
-	return filepath.Join(d.destination(), "disk.raw")
+	return d.destination()
 }
 
 func (d *Deployer) diskImgPath() string {
@@ -267,4 +270,18 @@ func (d *Deployer) netBootListenAddr() string {
 func (d *Deployer) netbootOption() bool {
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	return !d.Config.DisableNetboot
+}
+
+func (d *Deployer) rawDiskSize() uint64 {
+	// parse the string into a uint64
+	// the size is in Mb
+	if d.Config.Disk.Size == "" {
+		return 0
+	}
+	sizeInt, err := strconv.ParseUint(d.Config.Disk.Size, 10, 64)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
+		return 0
+	}
+	return sizeInt
 }

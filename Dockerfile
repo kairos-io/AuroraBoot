@@ -57,16 +57,12 @@ RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro
 ## Odroid fw
 RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
 
-## RAW images for current arch
-RUN luet install -y static/grub-efi --system-target /raw/grub
-RUN luet install -y static/grub-config --system-target /raw/grubconfig
-RUN luet install -y static/grub-artifacts --system-target /raw/grubartifacts
-
 ## RAW images for arm64
 # Luet will install this artifacts from the current arch repo, so in x86 it will
 # get them from the x86 repo and we want it to do it from the arm64 repo, even on x86
 # so we use the arm64 luet config and use that to install those on x86
 # This is being used by the prepare_arm_images.sh and build-arch-image.sh scripts
+# TODO: Remove this when raw image is implemented in go as we should get the artifacts from the rootfs
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-efi --system-target /arm/raw/grubefi
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
@@ -86,18 +82,21 @@ RUN rm -Rf /pinebookpro/u-boot/var/tmp
 RUN rm -Rf /pinebookpro/u-boot/var/cache
 RUN rm -Rf /firmware/odroid-c2/var/tmp
 RUN rm -Rf /firmware/odroid-c2/var/cache
-RUN rm -Rf /raw/grub/var/tmp
-RUN rm -Rf /raw/grub/var/cache
-RUN rm -Rf /raw/grubconfig/var/tmp
-RUN rm -Rf /raw/grubconfig/var/cache
-RUN rm -Rf /raw/grubartifacts/var/tmp
-RUN rm -Rf /raw/grubartifacts/var/cache
 RUN rm -Rf /arm/raw/grubefi/var/tmp
 RUN rm -Rf /arm/raw/grubefi/var/cache
 RUN rm -Rf /arm/raw/grubconfig/var/tmp
 RUN rm -Rf /arm/raw/grubconfig/var/cache
 RUN rm -Rf /arm/raw/grubartifacts/var/tmp
 RUN rm -Rf /arm/raw/grubartifacts/var/cache
+# Remove the var dir if empty
+RUN rm -d /grub2/var || true
+RUN rm -d /efi/var || true
+RUN rm -d /rpi/var || true
+RUN rm -d /pinebookpro/u-boot/var || true
+RUN rm -d /firmware/odroid-c2/var || true
+RUN rm -d /arm/raw/grubefi/var || true
+RUN rm -d /arm/raw/grubconfig/var || true
+RUN rm -d /arm/raw/grubartifacts/var || true
 
 # ISO build config
 COPY ./image-assets/add-cloud-init.sh /add-cloud-init.sh
@@ -112,7 +111,6 @@ COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
 
 # RAW images helpers
 COPY ./image-assets/gce.sh /gce.sh
-COPY ./image-assets/raw-images.sh /raw-images.sh
 COPY ./image-assets/azure.sh /azure.sh
 COPY ./image-assets/netboot.sh /netboot.sh
 

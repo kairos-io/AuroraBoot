@@ -61,7 +61,7 @@ jobs:
           tags: auroraboot:latest
       - name: Run e2e tests
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "!bootable" ./e2e
+          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "!bootable && !raw-bootable" ./e2e
       - name: Codecov
         uses: codecov/codecov-action@v5
         env:
@@ -78,3 +78,49 @@ jobs:
           fetch-depth: 0
       - name: Build
         run: earthly +test-bootable
+  test-bootable-raw:
+    runs-on: kvm
+    steps:
+      - uses: earthly/actions-setup@v1.0.13
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@master
+      - name: Build local image
+        uses: docker/build-push-action@v6
+        with:
+          push: false
+          load: true
+          builder: ${{ steps.buildx.outputs.name }}
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          tags: auroraboot:latest
+      - name: Generate raw image
+        run: |
+          docker run --rm --privileged -v $PWD/build/:/output auroraboot:latest --debug --set "disable_http_server=true" --set "disable_netboot=true" --set "disk.raw=true" --set "disk.size=16000" --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3" --set "state_dir=/output"
+      - name: Test raw image is bootable
+        env:
+          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
+          USE_QEMU: true
+          MEMORY: 4000
+          CPUS: 2
+          CREATE_VM: true
+          KVM: true
+        run: |
+          # TODO: permissions stuff should be fixed on aurora side, the output dir should contain only
+          # there required output image/iso and not the leftovers from the build process
+          sudo chmod -R 777 build
+          #earthly +test-bootable-raw
+          export RAW_IMAGE=$(find $PWD/build -name *.raw)
+          go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e

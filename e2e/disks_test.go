@@ -9,7 +9,8 @@ import (
 	. "github.com/onsi/gomega"
 )
 
-var _ = Describe("Disk image generation", Label("raw-disks"), func() {
+// As this tests all use loop devices, they should be run serially so they dont hit each other while acquiring the loop device number
+var _ = Describe("Disk image generation", Label("raw-disks"), Serial, func() {
 	var tempDir string
 	var err error
 	var aurora *Auroraboot
@@ -34,82 +35,84 @@ var _ = Describe("Disk image generation", Label("raw-disks"), func() {
 		aurora.Cleanup()
 	})
 
-	Context("build from an ISO", func() {
-		It("generate a raw file", func() {
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "artifact_version=v3.2.1",
-				"--set", "release_version=v3.2.1",
-				"--set", "flavor=rockylinux",
-				"--set", "flavor_release=9",
-				"--set", "repository=kairos-io/kairos",
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.raw=true",
-				"--cloud-config", "/config.yaml",
-			)
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-			Expect(out).To(ContainSubstring("download-squashfs"), out)
-			Expect(out).To(ContainSubstring("extract-squashfs"), out)
-			Expect(out).ToNot(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw"))
-			Expect(err).ToNot(HaveOccurred(), out)
-		})
-
-		It("generates a gce image", func() {
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "artifact_version=v3.2.1",
-				"--set", "release_version=v3.2.1",
-				"--set", "flavor=rockylinux",
-				"--set", "flavor_release=9",
-				"--set", "repository=kairos-io/kairos",
-				"--set", "disable_netboot=true",
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.gce=true",
-				"--cloud-config", "/config.yaml",
-			)
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-			Expect(out).To(ContainSubstring("download-squashfs"), out)
-			Expect(out).To(ContainSubstring("extract-squashfs"), out)
-			Expect(out).ToNot(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw.gce"))
-			Expect(err).ToNot(HaveOccurred(), out)
-		})
-
-		It("generates a vhd image", func() {
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "artifact_version=v3.2.1",
-				"--set", "release_version=v3.2.1",
-				"--set", "flavor=rockylinux",
-				"--set", "flavor_release=9",
-				"--set", "repository=kairos-io/kairos",
-				"--set", "disable_netboot=true",
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.vhd=true",
-				"--cloud-config", "/config.yaml")
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-			Expect(out).To(ContainSubstring("download-squashfs"), out)
-			Expect(out).To(ContainSubstring("extract-squashfs"), out)
-			Expect(out).ToNot(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw.vhd"))
-			Expect(err).ToNot(HaveOccurred(), out)
+	Context("source is an ISO", func() {
+		Describe("EFI", Label("efi"), func() {
+			It("generate a raw file", func() {
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "artifact_version=v3.2.1",
+					"--set", "release_version=v3.2.1",
+					"--set", "flavor=rockylinux",
+					"--set", "flavor_release=9",
+					"--set", "repository=kairos-io/kairos",
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.raw=true",
+					"--cloud-config", "/config.yaml",
+				)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+				Expect(out).To(ContainSubstring("download-squashfs"), out)
+				Expect(out).To(ContainSubstring("extract-squashfs"), out)
+				Expect(out).ToNot(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				// should be named: kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw based on the source artifact
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw"))
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
+			It("generates a gce image", func() {
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "artifact_version=v3.2.1",
+					"--set", "release_version=v3.2.1",
+					"--set", "flavor=rockylinux",
+					"--set", "flavor_release=9",
+					"--set", "repository=kairos-io/kairos",
+					"--set", "disable_netboot=true",
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.gce=true",
+					"--cloud-config", "/config.yaml",
+				)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+				Expect(out).To(ContainSubstring("download-squashfs"), out)
+				Expect(out).To(ContainSubstring("extract-squashfs"), out)
+				Expect(out).ToNot(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
+				// Open the file and check that there is a disk.raw file inside and check that its rounded to a GB
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
+			It("generates a vhd image", func() {
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "artifact_version=v3.2.1",
+					"--set", "release_version=v3.2.1",
+					"--set", "flavor=rockylinux",
+					"--set", "flavor_release=9",
+					"--set", "repository=kairos-io/kairos",
+					"--set", "disable_netboot=true",
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.vhd=true",
+					"--cloud-config", "/config.yaml")
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+				Expect(out).To(ContainSubstring("download-squashfs"), out)
+				Expect(out).To(ContainSubstring("extract-squashfs"), out)
+				Expect(out).ToNot(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.vhd"))
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
 		})
 	})
 
-	Context("build from a container image", func() {
+	Context("source is a container image", func() {
 		var config string
 
 		BeforeEach(func() {
@@ -157,96 +160,96 @@ stages:
 		AfterEach(func() {
 			os.RemoveAll(tempDir)
 		})
+		Describe("EFI", Label("efi"), func() {
+			It("generate a raw disk file", func() {
+				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
 
-		It("generate a raw build/disk.raw (EFI) file", Label("efi"), func() {
-			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
-			_, err := PullImage(image)
-			Expect(err).ToNot(HaveOccurred())
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "container_image=docker://"+image,
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.raw=true",
+					"--cloud-config", "/config.yaml",
+				)
 
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "container_image=docker://"+image,
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.raw=true",
-				"--cloud-config", "/config.yaml",
-			)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw"))
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
+			It("generates a gce image", func() {
+				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
 
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-			Expect(out).To(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw"))
-			Expect(err).ToNot(HaveOccurred(), out)
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "container_image=docker://"+image,
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.gce=true",
+					"--cloud-config", "/config.yaml",
+				)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+				Expect(out).To(ContainSubstring("convert-gce"), out)
+				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
+			It("generates a vhd image", func() {
+				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
+
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "container_image=docker://"+image,
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.vhd=true",
+					"--cloud-config", "/config.yaml",
+				)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
+				Expect(out).To(ContainSubstring("convert-vhd"), out)
+				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw.vhd"))
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
 		})
+		Describe("MBR", Label("mbr"), func() {
+			It("generates a raw image", func() {
+				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
 
-		It("generates a gce image (EFI)", Label("efi"), func() {
-			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
-			_, err := PullImage(image)
-			Expect(err).ToNot(HaveOccurred())
-
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "container_image=docker://"+image,
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.gce=true",
-				"--cloud-config", "/config.yaml",
-			)
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-			Expect(out).To(ContainSubstring("convert-gce"), out)
-			Expect(out).To(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw.gce"))
-			Expect(err).ToNot(HaveOccurred(), out)
-		})
-
-		It("generates a vhd image", Label("efi"), func() {
-			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
-			_, err := PullImage(image)
-			Expect(err).ToNot(HaveOccurred())
-
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "container_image=docker://"+image,
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.vhd=true",
-				"--cloud-config", "/config.yaml",
-			)
-			Expect(out).To(ContainSubstring("Generating raw disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-			Expect(out).To(ContainSubstring("convert-vhd"), out)
-			Expect(out).To(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw.vhd"))
-			Expect(err).ToNot(HaveOccurred(), out)
-		})
-
-		It("generates a raw MBR image", Label("mbr"), func() {
-			image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
-			_, err := PullImage(image)
-			Expect(err).ToNot(HaveOccurred())
-
-			out, err := aurora.Run("--debug",
-				"--set", "disable_http_server=true",
-				"--set", "disable_netboot=true",
-				"--set", "container_image=docker://"+image,
-				"--set", "state_dir=/tmp/auroraboot",
-				"--set", "disk.mbr=true",
-				"--cloud-config", "/config.yaml",
-			)
-			Expect(out).To(ContainSubstring("Generating MBR disk"), out)
-			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-			Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
-			Expect(out).To(ContainSubstring("dump-source"), out)
-			Expect(err).ToNot(HaveOccurred(), out)
-			_, err = os.Stat(filepath.Join(tempDir, "disk.raw"))
-			Expect(err).ToNot(HaveOccurred(), out)
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "container_image=docker://"+image,
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.mbr=true",
+					"--cloud-config", "/config.yaml",
+				)
+				Expect(out).To(ContainSubstring("Generating MBR disk"), out)
+				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
+				Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
+				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				_, err = os.Stat(filepath.Join(tempDir, "disk.raw"))
+				Expect(err).ToNot(HaveOccurred(), out)
+			})
 		})
 	})
 })

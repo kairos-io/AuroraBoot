@@ -109,8 +109,8 @@ func defaultVMOpts(stateDir string) []types.MachineOption {
 func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 	var err error
 
-	if os.Getenv("ISO") == "" && os.Getenv("CREATE_VM") == "true" {
-		fmt.Println("ISO missing")
+	if (os.Getenv("ISO") == "" && os.Getenv("RAW_IMAGE") == "") && os.Getenv("CREATE_VM") == "true" {
+		fmt.Println("ISO or RAW_IMAGE missing")
 		os.Exit(1)
 	}
 
@@ -135,7 +135,6 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 
 	opts := []types.MachineOption{
 		types.QEMUEngine,
-		types.WithISO(os.Getenv("ISO")),
 		types.WithMemory(memory),
 		types.WithCPU(cpus),
 		types.WithSSHPort(strconv.Itoa(sshPort)),
@@ -186,20 +185,36 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 				m.Args = append(m.Args, "-drive",
 					fmt.Sprintf("file=%s,if=pflash,format=raw,readonly=on", FW),
 				)
+				// Efivars empty is to boot in setup mode, good for testing UKI and auto enrollment
+				if os.Getenv("EFIVARS_EMPTY") == "true" {
+					// Copy the empty efivars to not modify it
+					f, err := os.ReadFile(filepath.Join(getwd, "assets/efivars.empty.fd"))
+					if err != nil {
+						return err
+					}
+					err = os.WriteFile(filepath.Join(stateDir, "efivars.empty.fd"), f, os.ModePerm)
+					if err != nil {
+						return err
+					}
 
-				// Copy the empty efivars to not modify it
-				f, err := os.ReadFile(filepath.Join(getwd, "assets/efivars.empty.fd"))
-				if err != nil {
-					return err
-				}
-				err = os.WriteFile(filepath.Join(stateDir, "efivars.empty.fd"), f, os.ModePerm)
-				if err != nil {
-					return err
-				}
+					m.Args = append(m.Args, "-drive",
+						fmt.Sprintf("file=%s,if=pflash,format=raw", filepath.Join(stateDir, "efivars.empty.fd")),
+					)
+				} else {
+					// This uses the efivars.fd file that has the default keys from Microsoft, useful to test secureboot out of the box
+					f, err := os.ReadFile(filepath.Join(getwd, "assets/efivars.fd"))
+					if err != nil {
+						return err
+					}
+					err = os.WriteFile(filepath.Join(stateDir, "efivars.fd"), f, os.ModePerm)
+					if err != nil {
+						return err
+					}
 
-				m.Args = append(m.Args, "-drive",
-					fmt.Sprintf("file=%s,if=pflash,format=raw", filepath.Join(stateDir, "efivars.empty.fd")),
-				)
+					m.Args = append(m.Args, "-drive",
+						fmt.Sprintf("file=%s,if=pflash,format=raw", filepath.Join(stateDir, "efivars.fd")),
+					)
+				}
 
 				// Needed to be set for secureboot!
 				m.Args = append(m.Args, "-machine", "q35,smm=on")
@@ -208,6 +223,12 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 			return nil
 		},
 		types.WithDataSource(os.Getenv("DATASOURCE")),
+	}
+	if os.Getenv("ISO") != "" {
+		opts = append(opts, types.WithISO(os.Getenv("ISO")))
+	}
+	if os.Getenv("RAW_IMAGE") != "" {
+		opts = append(opts, types.WithDrive(os.Getenv("RAW_IMAGE")))
 	}
 	if os.Getenv("KVM") != "" {
 		opts = append(opts, func(m *types.MachineConfig) error {
