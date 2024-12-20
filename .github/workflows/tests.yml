@@ -122,5 +122,5 @@ jobs:
           # there required output image/iso and not the leftovers from the build process
           sudo chmod -R 777 build
           #earthly +test-bootable-raw
-          export RAW_IMAGE=$(find build/ -name *.raw)
+          export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
