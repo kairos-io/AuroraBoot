@@ -79,7 +79,7 @@ jobs:
       - name: Build
         run: earthly +test-bootable
   test-bootable-raw:
-    runs-on: ubuntu-latest
+    runs-on: kvm
     steps:
       - uses: earthly/actions-setup@v1.0.13
       - name: Checkout code
@@ -88,7 +88,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
@@ -111,12 +111,15 @@ jobs:
           docker run --rm --privileged -v $PWD/build/:/output auroraboot:latest --debug --set "disable_http_server=true" --set "disable_netboot=true" --set "disk.raw=true" --set "disk.size=16000" --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3" --set "state_dir=/output"
       - name: Test raw image is bootable
         env:
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE_4M.secboot.fd
+          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
           USE_QEMU: true
           MEMORY: 4000
           CPUS: 2
           CREATE_VM: true
+          KVM: true
         run: |
-          export RAW_IMAGE=$(find $PWD/build -maxdepth 1 -name *.raw)
-          echo "RAW_IMAGE: $RAW_IMAGE"
+          # TODO: permissions stuff should be fixed on aurora side, the output dir should contain only
+          # there required output image/iso and not the leftovers from the build process
+          sudo chmod -R 777 build
+          #earthly +test-bootable-raw
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
