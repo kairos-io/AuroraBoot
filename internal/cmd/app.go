@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"github.com/hashicorp/go-multierror"
 	"os"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
@@ -55,7 +56,16 @@ func GetApp(version string) *cli.App {
 				return err
 			}
 
-			return d.CollectErrors()
+			err = d.CollectErrors()
+			errCleanup := d.CleanTmpDirs()
+			if err != nil {
+				internal.Log.Logger.Error().Err(err).Msg("Failed to clean up tmp root dir")
+				// Append the cleanup error to the main errors if any
+				err = multierror.Append(err, errCleanup)
+			}
+
+			return err
+
 		},
 	}
 }
