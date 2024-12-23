@@ -102,7 +102,7 @@ func Raw2Azure(source string) (string, error) {
 // The compressed file must be a .tar.gz file that uses gzip compression and the --format=oldgnu option for the tar utility.
 func Raw2Gce(source string) (string, error) {
 	internal.Log.Logger.Info().Msg("Transforming raw image into gce format")
-	name := fmt.Sprintf("%s.tar.gz", source)
+	name := fmt.Sprintf("%s.gce.tar.gz", source)
 	actImg, err := os.OpenFile(source, os.O_CREATE|os.O_APPEND|os.O_WRONLY, constants.FilePerm)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("file", source).Msg("Error opening file")
@@ -210,7 +210,7 @@ func Raw2Gce(source string) (string, error) {
 
 /// VHD utils!
 
-type vhdHeader struct {
+type VHDHeader struct {
 	Cookie             [8]byte   // Cookies are used to uniquely identify the original creator of the hard disk image
 	Features           [4]byte   // This is a bit field used to indicate specific feature support. Can be 0x00000000 (no features), 0x00000001 (Temporary, candidate for deletion on shutdown) or 0x00000002 (Reserved)
 	FileFormatVersion  [4]byte   // Divided into a major/minor version and matches the version of the specification used in creating the file.
@@ -230,8 +230,8 @@ type vhdHeader struct {
 }
 
 // Lots of magic numbers here, but they are all defined in the VHD format spec
-func newVHDFixed(size uint64) vhdHeader {
-	header := vhdHeader{}
+func newVHDFixed(size uint64) VHDHeader {
+	header := VHDHeader{}
 	hexToField("00000002", header.Features[:])
 	hexToField("00010000", header.FileFormatVersion[:])
 	hexToField("ffffffffffffffff", header.DataOffset[:])
@@ -257,7 +257,7 @@ func newVHDFixed(size uint64) vhdHeader {
 
 // generateChecksum generates the checksum of the vhd header
 // Lifted from the official VHD Format Spec
-func generateChecksum(header *vhdHeader) {
+func generateChecksum(header *VHDHeader) {
 	buffer := new(bytes.Buffer)
 	_ = binary.Write(buffer, binary.BigEndian, header)
 	checksum := 0
