@@ -110,8 +110,6 @@ COPY ./image-assets/arm /arm
 COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
 
 # RAW images helpers
-COPY ./image-assets/gce.sh /gce.sh
-COPY ./image-assets/azure.sh /azure.sh
 COPY ./image-assets/netboot.sh /netboot.sh
 
 COPY ./image-assets/defaults.yaml /defaults.yaml
