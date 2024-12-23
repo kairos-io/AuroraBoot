@@ -340,6 +340,8 @@ github.com/fortytw2/leaktest v1.2.0/go.mod h1:jDsjWgpAGjm2CA7WthBh/CdZYEPF31XHqu
 github.com/fortytw2/leaktest v1.3.0/go.mod h1:jDsjWgpAGjm2CA7WthBh/CdZYEPF31XHquHwclZch5g=
 github.com/foxboron/go-uefi v0.0.0-20241017190036-fab4fdf2f2f3 h1:K8ADp66ulnZ0NhjzwVwE4E3g6Id5KMWu86l0vURusA8=
 github.com/foxboron/go-uefi v0.0.0-20241017190036-fab4fdf2f2f3/go.mod h1:ffg/fkDeOYicEQLoO2yFFGt00KUTYVXI+rfnc8il6vQ=
+github.com/foxboron/go-uefi v0.0.0-20241219185318-19dc140271bf h1:eKPYdh9Dq7P/Tc6GRt4HqqsVK8b2vt0IGP+xmZ8dMjo=
+github.com/foxboron/go-uefi v0.0.0-20241219185318-19dc140271bf/go.mod h1:q85c4IRlhhwdRJgGIUWrisDjU8dgcMj8dnXZCXo3hus=
 github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e h1:X92hfbSXen3W6t7Y++Nxjp3S/HUrYZFtwaSZBNeO/uk=
 github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e/go.mod h1:/2VaDO9cJIVwJR5XDQogLQEWbTMnVaFq31OEjt66Ju4=
 github.com/franela/goblin v0.0.0-20200105215937-c9ffbefa60db/go.mod h1:7dvUGVsVBjqR7JHJk0brhHOZYGmfBYOrK0ZhYMEtBr4=
