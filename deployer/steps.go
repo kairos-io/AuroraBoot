@@ -2,6 +2,7 @@ package deployer
 
 import (
 	"context"
+	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"os"
 	"path/filepath"
@@ -14,6 +15,11 @@ import (
 func (d *Deployer) StepPrepNetbootDir() error {
 	return d.Add(opPrepareNetboot, herd.WithCallback(
 		func(ctx context.Context) error {
+			err := os.RemoveAll(d.dstNetboot())
+			if err != nil {
+				internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
+				return err
+			}
 			return os.MkdirAll(d.dstNetboot(), 0755)
 		},
 	))
@@ -22,9 +28,26 @@ func (d *Deployer) StepPrepNetbootDir() error {
 func (d *Deployer) StepPrepTmpRootDir() error {
 	return d.Add(opPreparetmproot, herd.WithCallback(
 		func(ctx context.Context) error {
+			err := os.RemoveAll(d.tmpRootFs())
+			if err != nil {
+				internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+				return err
+			}
 			return os.MkdirAll(d.tmpRootFs(), 0755)
 		},
 	))
+}
+
+// CleanTmpDirs removes the temp rootfs and netboot directories when finished to not leave things around
+func (d *Deployer) CleanTmpDirs() error {
+	var err *multierror.Error
+	err = multierror.Append(err, os.RemoveAll(d.tmpRootFs()))
+	if err.ErrorOrNil() != nil {
+		internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+	}
+
+	err = multierror.Append(err, os.RemoveAll(d.dstNetboot()))
+	return err.ErrorOrNil()
 }
 
 func (d *Deployer) StepPrepISODir() error {
