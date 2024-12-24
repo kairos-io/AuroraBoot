@@ -98,21 +98,10 @@ RUN rm -d /arm/raw/grubefi/var || true
 RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
 
-# ISO build config
-COPY ./image-assets/add-cloud-init.sh /add-cloud-init.sh
-COPY ./image-assets/kairos-release.tmpl /kairos-release.tmpl
-COPY ./image-assets/ipxe.tmpl /ipxe.tmpl
-COPY ./image-assets/update-os-release.sh /update-os-release.sh
-
 # ARM helpers
 COPY ./image-assets/build-arm-image.sh /build-arm-image.sh
 COPY ./image-assets/arm /arm
 COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
-
-# RAW images helpers
-COPY ./image-assets/gce.sh /gce.sh
-COPY ./image-assets/azure.sh /azure.sh
-COPY ./image-assets/netboot.sh /netboot.sh
 
 COPY ./image-assets/defaults.yaml /defaults.yaml
 
