@@ -654,6 +654,8 @@ github.com/kairos-io/go-ukify v0.2.5 h1:3ohFO1FhYKbeB/NSsgaq/05CHv1F+/SX1PGDNexL
 github.com/kairos-io/go-ukify v0.2.5/go.mod h1:xGAR9EDOo459L7g8AixVaZQHi9ctGy6/Qk44nXJ1TVw=
 github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241217140538-a5a55c636dd7 h1:de11gLLSS558NWcX9a0gaVJrRVtL9m4pPJq2kNurmeQ=
 github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241217140538-a5a55c636dd7/go.mod h1:JMK2OD7zXFrvST7PD9kdy8QC4YsTSagdutlqMc5mWTM=
+github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241223225924-d8d75ebd3741 h1:/xm2GwehvVY7lBx2GAa1N5IVl+KbyeSn957TepOLtsQ=
+github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241223225924-d8d75ebd3741/go.mod h1:q7e7Mi5jzy3VNkHcCYAmqcM8wbbAmlXHFGHZFXsrylc=
 github.com/kairos-io/kairos-sdk v0.6.1 h1:DplbiHgWjg7W8zzeB5TQPFBthfF3UQxJlcLZqvQGagE=
 github.com/kairos-io/kairos-sdk v0.6.1/go.mod h1:MT/0k20U1BcN8AzzQUexpfrQ8XCC6jIPDG9ZAmx+I2c=
 github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07 h1:cE0KsjMDuEkOMSOpRgkfGw7rT4Yk6io0V/3f/W1m2sY=

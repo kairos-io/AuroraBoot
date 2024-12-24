@@ -17,7 +17,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/go-ukify v0.2.5
-	github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241217140538-a5a55c636dd7
+	github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241223225924-d8d75ebd3741
 	github.com/kairos-io/kairos-sdk v0.6.1
 	github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07
 	github.com/klauspost/compress v1.17.11
