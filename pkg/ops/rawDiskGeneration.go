@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"bytes"
 	"fmt"
 	"github.com/diskfs/go-diskfs"
 	"github.com/diskfs/go-diskfs/partition"
@@ -18,8 +19,10 @@ import (
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/mudler/yip/pkg/schema"
 	"github.com/twpayne/go-vfs/v5"
+	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -55,9 +58,9 @@ func NewEFIRawImage(source, output, cc string, finalsize uint64) *RawImage {
 	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
 }
 
-func NewBiosRawImage(source, output string, finalsize uint64) *RawImage {
+func NewBiosRawImage(source, output string, cc string, finalsize uint64) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), FinalSize: finalsize}
+	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
 }
 
 // createOemPartitionImage creates an OEM partition image with the given cloud config
@@ -305,7 +308,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create temp dir")
 		return "", err
 	}
-	//defer r.config.Fs.RemoveAll(tmpDirEfi)
+	defer r.config.Fs.RemoveAll(tmpDirEfi)
 
 	// This is where the oem partition will be mounted to copy the files to
 	tmpDirEfiMount := filepath.Join(r.TempDir(), "efi-mount")
@@ -415,6 +418,48 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	return efiPartitionImage.File, nil
 }
 
+// createBiosPartitionImage creates a BIOS partition image with grub artifacts and installs grub to it
+func (r *RawImage) createBiosPartitionImage() (string, error) {
+	// Would need to format it and then copy the grub files to it
+	// Also install grub against it
+	// Remember to use the grub artifacts from the rootfs to support secureboot
+	// Create a temp dir for copying the files to
+	tmpDirBios := filepath.Join(r.TempDir(), "bios")
+	err := fsutils.MkdirAll(r.config.Fs, tmpDirBios, 0755)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("target", tmpDirBios).Msg("failed to create temp dir")
+		return "", err
+	}
+	defer r.config.Fs.RemoveAll(tmpDirBios)
+
+	// This is where the oem partition will be mounted to copy the files to
+	tmpDirRecoveryMount := filepath.Join(r.TempDir(), "recovery-mount")
+	err = fsutils.MkdirAll(r.config.Fs, tmpDirRecoveryMount, 0755)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecoveryMount).Msg("failed to create temp dir")
+		return "", err
+	}
+	defer r.config.Fs.RemoveAll(tmpDirRecoveryMount)
+
+	f, err := r.config.Fs.Create(filepath.Join(r.TempDir(), "bios.img"))
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to create bios image")
+		return "", err
+	}
+	err = f.Truncate(int64(agentConstants.BiosSize * 1024 * 1024))
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to truncate bios image")
+		return "", err
+	}
+	err = f.Close()
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to close bios image")
+		return "", err
+	}
+
+	return filepath.Join(r.TempDir(), "bios.img"), err
+}
+
 func (r *RawImage) TempDir() string {
 	if r.tmpDir == "" {
 		r.tmpDir, _ = fsutils.TempDir(r.config.Fs, "", "auroraboot-raw-image-")
@@ -461,6 +506,16 @@ func (r *RawImage) Build() error {
 	outputName := fmt.Sprintf("kairos-%s-%s.raw", flavor, label)
 	internal.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
 
+	internal.Log.Logger.Info().Msg("Creating RECOVERY image")
+	// Create the Recovery partition
+	recoveryImagePath, err := r.createRecoveryPartitionImage()
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to create recovery partition")
+		return err
+	}
+	defer r.config.Fs.Remove(recoveryImagePath)
+	internal.Log.Logger.Info().Msg("Created RECOVERY image")
+
 	internal.Log.Logger.Info().Msg("Creating BOOT image")
 	if r.efi {
 		// Create the EFI partition
@@ -471,7 +526,7 @@ func (r *RawImage) Build() error {
 		}
 		defer r.config.Fs.Remove(bootImagePath)
 	} else {
-		// Create the BIOS partition
+		// Create the BIOS partition AFTER the recovery partition, as it needs the recovery image to install grub
 		bootImagePath, err = r.createBiosPartitionImage()
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to create bios partition")
@@ -481,15 +536,6 @@ func (r *RawImage) Build() error {
 		defer r.config.Fs.Remove(bootImagePath)
 	}
 	internal.Log.Logger.Info().Msg("Created BOOT image")
-	internal.Log.Logger.Info().Msg("Creating RECOVERY image")
-	// Create the Recovery partition
-	recoveryImagePath, err := r.createRecoveryPartitionImage()
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to create recovery partition")
-		return err
-	}
-	defer r.config.Fs.Remove(recoveryImagePath)
-	internal.Log.Logger.Info().Msg("Created RECOVERY image")
 
 	// Oem after recovery, as it needs the recovery image to calculate the size of the state partition
 	internal.Log.Logger.Info().Msg("Creating OEM image")
@@ -555,7 +601,9 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	// Create the start and end images
 	initDiskFile = filepath.Join(r.TempDir(), "init.raw")
 	endDiskFile = filepath.Join(r.TempDir(), "end.raw")
-	init, err := diskfs.Create(filepath.Join(r.TempDir(), "init.raw"), 3*1024*1024, diskfs.Raw, diskfs.SectorSizeDefault)
+	// THIS SIZE MARKS THE START SECTOR FOR THE PARTITIONS BELOW!
+	// So this mean we have an empty 2048 sectors at the start of the disk, partitions then start at that point
+	init, err := diskfs.Create(filepath.Join(r.TempDir(), "init.raw"), 1*1024*1024, diskfs.Raw, diskfs.SectorSizeDefault)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to create init disk")
 		return err
@@ -605,33 +653,38 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	}
 
 	// Create a GPT partition table
-	// Size needs to be rounded to the nearest 512 bytes as that's the sector size
-	// Leave 1MB at the start for alignment+partition table (so start at sector 2048)
-	// 2MB for the BIOS boot partition in case we want to do hybrid boot
-	// Which would mean installing grub to the BIOS boot partition
-	// BIOS BOOT Legacy, currently does nothing
-	size = roundToNearestSector(2*1024*1024, finalDisk.LogicalBlocksize)
-	parts = append(parts, &gpt.Partition{
-		Start: 2048,
-		End:   getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
-		Type:  gpt.BIOSBoot,
-		Size:  size,
-	})
-	// EFI
-	stat, err = os.Stat(partImgs[0])
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat efi partition")
-		return err
+	// Bit 0: System partition This indicates the system that this is a required partition and to not mess with it.
+	// Bit 2: Legacy BIOS bootable This indicates that this partition is bootable by legacy BIOS.
+	if r.efi {
+		// EFI
+		stat, err = os.Stat(partImgs[0])
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat efi partition")
+			return err
+		}
+		size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
+		parts = append(parts, &gpt.Partition{
+			Start:      2048,
+			End:        getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
+			Type:       gpt.EFISystemPartition,
+			Size:       size,
+			Name:       agentConstants.EfiPartName,
+			GUID:       uuid.NewV5(uuid.NamespaceURL, agentConstants.EfiLabel).String(),
+			Attributes: 1 << 0, // Sets bit 0
+		})
+	} else {
+		size = roundToNearestSector(int64(agentConstants.BiosSize*1024*1024), finalDisk.LogicalBlocksize)
+		parts = append(parts, &gpt.Partition{
+			Start:      2048,
+			End:        getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
+			Type:       gpt.BIOSBoot,
+			Size:       size,
+			Name:       agentConstants.BiosPartName,
+			GUID:       uuid.NewV5(uuid.NamespaceURL, agentConstants.EfiLabel).String(), // Same name as EFI, COS_GRUB usually
+			Attributes: (1 << 0) | (1 << 2),                                             // Sets bits 0 and 2
+		})
 	}
-	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
-	parts = append(parts, &gpt.Partition{
-		Start: parts[len(parts)-1].End + 1,
-		End:   getSectorEndFromSize(parts[len(parts)-1].End+1, size, finalDisk.LogicalBlocksize),
-		Type:  gpt.EFISystemPartition,
-		Size:  size,
-		Name:  agentConstants.EfiPartName,
-		GUID:  uuid.NewV5(uuid.NamespaceURL, agentConstants.EfiLabel).String(),
-	})
+
 	// OEM
 	stat, err = os.Stat(partImgs[1])
 	if err != nil {
@@ -676,6 +729,15 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 		return err
 	}
 
+	// If its not efi, we need to install grub to the disk device directly
+	if !r.efi {
+		err = r.installGrubToDisk(rawDiskFile)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to install grub to final disk")
+			return err
+		}
+	}
+
 	internal.Log.Logger.Info().Str("disk", rawDiskFile).Msg("Created disk image")
 
 	return nil
@@ -692,14 +754,6 @@ func roundToNearestSector(size, sector int64) uint64 {
 		return uint64(size)
 	}
 	return uint64(size + sector - (size % sector))
-}
-
-// createBiosPartitionImage TODO: lol
-func (r *RawImage) createBiosPartitionImage() (string, error) {
-	// Would need to format it and then copy the grub files to it
-	// Also install grub against it
-	// Remember to use the grub artifacts from the rootfs to support secureboot
-	return "", nil
 }
 
 // copyShim copies the shim/grub file to the EFI partition
@@ -756,5 +810,163 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		r.config.Logger.Debugf("List of files searched for: %s", searchFiles)
 		return fmt.Errorf("could not find any shim file to copy")
 	}
+	return nil
+}
+
+func (r *RawImage) installGrubToDisk(image string) error {
+	internal.Log.Logger.Debug().Str("backingFile", image).Msg("Attaching file to loop device")
+	// Create a dir to store the recovery partition contents
+	tmpDirRecovery := filepath.Join(r.TempDir(), "recovery")
+	err := fsutils.MkdirAll(r.config.Fs, tmpDirRecovery, 0755)
+	defer r.config.Fs.RemoveAll(tmpDirRecovery)
+
+	// TODO: move this to a function
+	out, err := exec.Command("losetup", "-D").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to detach loop devices: %w", err)
+	}
+
+	loopDevice, err := exec.Command("losetup", "-f", "--show", image).CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to attach file to loop device: %w", err)
+	}
+
+	// clean loop device, trim spaces and such
+	loopDevice = bytes.TrimSpace(loopDevice)
+
+	// Run kpartx
+	out, err = exec.Command("kpartx", "-av", string(loopDevice)).CombinedOutput()
+	if err != nil {
+		internal.Log.Logger.Error().Str("output", string(out)).Msg("kpartx output")
+		return fmt.Errorf("failed to run kpartx: %w", err)
+	}
+	internal.Log.Logger.Debug().Str("loopDevice", string(loopDevice)).Msg("Attached file to loop device")
+
+	defer func() {
+		// TODO: move this to a function
+		out, err := exec.Command("kpartx", "-dv", string(loopDevice)).CombinedOutput()
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("out", string(out)).Msg("failed to detach loop device")
+			return
+		}
+		out, err = exec.Command("losetup", "-d", string(loopDevice)).CombinedOutput()
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("out", string(out)).Msg("failed to detach loop device")
+			return
+		}
+	}()
+
+	internal.Log.Logger.Debug().Str("device", string(loopDevice)).Str("image", image).Msg("Attached image to loop device")
+
+	// Install grub to the disk /dev/loop0
+	// Store the grub files in the recovery partition
+	// TODO: do the grub files copy during recovery partition creation instead
+	// This will install the grub to the disk, and the disk will be able to boot
+	// TODO: do not hardcode the partition number
+	// Get the partition number associated to COS_RECOVERY
+	// code here
+	err = unix.Mount("/dev/mapper/loop0p3", tmpDirRecovery, "ext2", 0, "")
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to mount recovery partition")
+		return err
+	}
+
+	defer unix.Unmount(tmpDirRecovery, 0)
+
+	// TODO: manually install grub to the disk using the methods below
+	args := []string{
+		"--target=i386-pc",
+		"--force", string(loopDevice),
+		fmt.Sprintf("--boot-directory=%s", tmpDirRecovery),
+	}
+	internal.Log.Logger.Debug().Strs("args", args).Msg("Running grub2-install")
+	out, err = exec.Command("grub2-install", args...).CombinedOutput()
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("output", string(out)).Msg("failed to install grub")
+		return err
+	}
+	// Copy recovery grub.cfg to /mnt/recovery/grub2/grub.cfg so its picked up by the grub which then chainloads the rest
+	err = r.config.Fs.WriteFile(filepath.Join(tmpDirRecovery, "grub2", "grub.cfg"), []byte(constants.GrubEfiRecovery), 0o644)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to write grub.cfg")
+		return err
+	}
+
+	return nil
+}
+
+// TODO: embed the core.img and boot image here directly
+// We dont need to support secureboot, so we should be able to even build them ourselves
+// and embed them here
+
+// writeMBR writes GRUB's boot.img to the first 440 bytes of the disk
+func writeMBR(disk string, bootImgPath string) error {
+	fmt.Printf("Writing GRUB boot.img to MBR of %s\n", disk)
+
+	// Open the target disk
+	diskFile, err := os.OpenFile(disk, os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open disk %s: %w", disk, err)
+	}
+	defer diskFile.Close()
+
+	// Open the boot.img
+	bootImg, err := os.Open(bootImgPath)
+	if err != nil {
+		return fmt.Errorf("failed to open boot.img %s: %w", bootImgPath, err)
+	}
+	defer bootImg.Close()
+
+	// Copy the first 440 bytes of boot.img to the disk
+	buf := make([]byte, 440)
+	if _, err := bootImg.Read(buf); err != nil {
+		return fmt.Errorf("failed to read boot.img: %w", err)
+	}
+	if _, err := diskFile.WriteAt(buf, 0); err != nil {
+		return fmt.Errorf("failed to write boot.img to MBR: %w", err)
+	}
+
+	fmt.Println("MBR written successfully")
+	return nil
+}
+
+// embedCoreImg writes GRUB's core.img to the BIOS Boot Partition
+func embedCoreImg(disk string, coreImgPath string, startSector int) error {
+	fmt.Printf("Embedding GRUB core.img into BIOS Boot Partition at sector %d\n", startSector)
+
+	// Open the target disk
+	diskFile, err := os.OpenFile(disk, os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open disk %s: %w", disk, err)
+	}
+	defer diskFile.Close()
+
+	// Open the core.img
+	coreImg, err := os.Open(coreImgPath)
+	if err != nil {
+		return fmt.Errorf("failed to open core.img %s: %w", coreImgPath, err)
+	}
+	defer coreImg.Close()
+
+	// Calculate the byte offset for the BIOS Boot Partition
+	offset := int64(startSector) * 512
+
+	// Copy core.img to the calculated offset
+	buf := make([]byte, 512)
+	for {
+		n, err := coreImg.Read(buf)
+		if err != nil && err.Error() != "EOF" {
+			return fmt.Errorf("failed to read core.img: %w", err)
+		}
+		if n == 0 {
+			break
+		}
+		if _, err := diskFile.WriteAt(buf[:n], offset); err != nil {
+			return fmt.Errorf("failed to write core.img to BIOS Boot Partition: %w", err)
+		}
+		offset += int64(n)
+	}
+
+	fmt.Println("core.img embedded successfully")
 	return nil
 }
