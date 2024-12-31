@@ -821,6 +821,14 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	defer r.config.Fs.RemoveAll(tmpDirRecovery)
 
 	// TODO: move this to a function
+	// TODO hardcore edition: Make this working pure golang
+	// doable but complex:
+	// mount device into a loop device via syscalls
+	// refresh the partition table
+	// create the disk nodes to map to the partitions
+	// then do it in reverse to cleanup
+	// I tried but the devices didnt appear properly dur to it being in a container
+	// so I went with the easy way
 	out, err := exec.Command("losetup", "-D").CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to detach loop devices: %w", err)
@@ -858,13 +866,10 @@ func (r *RawImage) installGrubToDisk(image string) error {
 
 	internal.Log.Logger.Debug().Str("device", string(loopDevice)).Str("image", image).Msg("Attached image to loop device")
 
-	// Install grub to the disk /dev/loop0
-	// Store the grub files in the recovery partition
-	// TODO: do the grub files copy during recovery partition creation instead
-	// This will install the grub to the disk, and the disk will be able to boot
+	// While grub is installed to disk + bios_boot partition, it still needs to have the config and mod files available
+	// so, the grub files are stored in the recovery partition
 	// TODO: do not hardcode the partition number
 	// Get the partition number associated to COS_RECOVERY
-	// code here
 	err = unix.Mount("/dev/mapper/loop0p3", tmpDirRecovery, "ext2", 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to mount recovery partition")
@@ -873,7 +878,14 @@ func (r *RawImage) installGrubToDisk(image string) error {
 
 	defer unix.Unmount(tmpDirRecovery, 0)
 
-	// TODO: manually install grub to the disk using the methods below
+	// Unfortunately this is the only way to install grub to a disk
+	// I tried to manually do it but grub does way too much stuff
+	// If someone is braver than me, here are some tips.
+	// boot.img goes to the first sector of the disk, sector 0 (512 bytes)
+	// core.img goes to the partition identified by bios_grub flag
+	// boot.img needs to have the LBA where core.img is located
+	// No idea where is that hardcoded
+	// core.img is not provided by grub packages, it has to be generated beforehand
 	args := []string{
 		"--target=i386-pc",
 		"--force", string(loopDevice),
@@ -892,81 +904,5 @@ func (r *RawImage) installGrubToDisk(image string) error {
 		return err
 	}
 
-	return nil
-}
-
-// TODO: embed the core.img and boot image here directly
-// We dont need to support secureboot, so we should be able to even build them ourselves
-// and embed them here
-
-// writeMBR writes GRUB's boot.img to the first 440 bytes of the disk
-func writeMBR(disk string, bootImgPath string) error {
-	fmt.Printf("Writing GRUB boot.img to MBR of %s\n", disk)
-
-	// Open the target disk
-	diskFile, err := os.OpenFile(disk, os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open disk %s: %w", disk, err)
-	}
-	defer diskFile.Close()
-
-	// Open the boot.img
-	bootImg, err := os.Open(bootImgPath)
-	if err != nil {
-		return fmt.Errorf("failed to open boot.img %s: %w", bootImgPath, err)
-	}
-	defer bootImg.Close()
-
-	// Copy the first 440 bytes of boot.img to the disk
-	buf := make([]byte, 440)
-	if _, err := bootImg.Read(buf); err != nil {
-		return fmt.Errorf("failed to read boot.img: %w", err)
-	}
-	if _, err := diskFile.WriteAt(buf, 0); err != nil {
-		return fmt.Errorf("failed to write boot.img to MBR: %w", err)
-	}
-
-	fmt.Println("MBR written successfully")
-	return nil
-}
-
-// embedCoreImg writes GRUB's core.img to the BIOS Boot Partition
-func embedCoreImg(disk string, coreImgPath string, startSector int) error {
-	fmt.Printf("Embedding GRUB core.img into BIOS Boot Partition at sector %d\n", startSector)
-
-	// Open the target disk
-	diskFile, err := os.OpenFile(disk, os.O_WRONLY, 0644)
-	if err != nil {
-		return fmt.Errorf("failed to open disk %s: %w", disk, err)
-	}
-	defer diskFile.Close()
-
-	// Open the core.img
-	coreImg, err := os.Open(coreImgPath)
-	if err != nil {
-		return fmt.Errorf("failed to open core.img %s: %w", coreImgPath, err)
-	}
-	defer coreImg.Close()
-
-	// Calculate the byte offset for the BIOS Boot Partition
-	offset := int64(startSector) * 512
-
-	// Copy core.img to the calculated offset
-	buf := make([]byte, 512)
-	for {
-		n, err := coreImg.Read(buf)
-		if err != nil && err.Error() != "EOF" {
-			return fmt.Errorf("failed to read core.img: %w", err)
-		}
-		if n == 0 {
-			break
-		}
-		if _, err := diskFile.WriteAt(buf[:n], offset); err != nil {
-			return fmt.Errorf("failed to write core.img to BIOS Boot Partition: %w", err)
-		}
-		offset += int64(n)
-	}
-
-	fmt.Println("core.img embedded successfully")
 	return nil
 }
