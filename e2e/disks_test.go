@@ -228,7 +228,7 @@ stages:
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 		})
-		Describe("MBR", Label("mbr"), Focus, func() {
+		Describe("MBR", Label("mbr"), func() {
 			It("generates a raw image", func() {
 				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 				_, err := PullImage(image)
