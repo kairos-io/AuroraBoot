@@ -1,7 +1,14 @@
 package e2e_test
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
+	"encoding/binary"
+	"encoding/hex"
 	"fmt"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"os"
 	"path/filepath"
 
@@ -83,7 +90,29 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, func() {
 				Expect(out).ToNot(ContainSubstring("dump-source"), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
+				Expect(err).ToNot(HaveOccurred(), out)
 				// Open the file and check that there is a disk.raw file inside and check that its rounded to a GB
+				file, err := os.Open(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
+				Expect(err).ToNot(HaveOccurred(), out)
+				defer file.Close()
+				// Create a gzip reader
+				gzr, err := gzip.NewReader(file)
+				Expect(err).ToNot(HaveOccurred(), out)
+				defer gzr.Close()
+
+				tr := tar.NewReader(gzr)
+				found := false
+				for {
+					hdr, err := tr.Next()
+					if err != nil {
+						break
+					}
+					if hdr.Name == "disk.raw" {
+						found = true
+						Expect(hdr.Size).To(BeNumerically(">", 1<<30), out)
+					}
+				}
+				Expect(found).To(BeTrue(), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 			It("generates a vhd image", func() {
@@ -108,6 +137,28 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, func() {
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.vhd"))
 				Expect(err).ToNot(HaveOccurred(), out)
+				// Check a few fields in the header to confirm its a VHD
+				f, _ := os.Open(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.vhd"))
+				defer f.Close()
+				info, _ := f.Stat()
+				// Should be divisible by 1024*1024
+				Expect(info.Size() % constants.MB).To(BeNumerically("==", 0))
+				// Dump the header from the file into our VHDHeader
+				buff := make([]byte, 512)
+				_, _ = f.ReadAt(buff, info.Size()-512)
+				_ = f.Close()
+
+				header := ops.VHDHeader{}
+				err = binary.Read(bytes.NewBuffer(buff[:]), binary.BigEndian, &header)
+				Expect(err).ToNot(HaveOccurred())
+				// Just check the fields that we know the value of, that should indicate that the header is valid
+				Expect(hex.EncodeToString(header.DiskType[:])).To(Equal("00000002"))
+				Expect(hex.EncodeToString(header.Features[:])).To(Equal("00000002"))
+				Expect(hex.EncodeToString(header.DataOffset[:])).To(Equal("ffffffffffffffff"))
+				Expect(hex.EncodeToString(header.CreatorApplication[:])).To(Equal("656c656d"))
+				Expect(hex.EncodeToString(header.CreatorHostOS[:])).To(Equal("73757365"))
+				Expect(hex.EncodeToString(header.DiskType[:])).To(Equal("00000002"))
+				fmt.Println(out)
 			})
 		})
 	})
@@ -203,6 +254,30 @@ stages:
 				Expect(out).To(ContainSubstring("dump-source"), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
+				Expect(err).ToNot(HaveOccurred(), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+				// Open the file and check that there is a disk.raw file inside and check that its rounded to a GB
+				file, err := os.Open(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
+				Expect(err).ToNot(HaveOccurred(), out)
+				defer file.Close()
+				// Create a gzip reader
+				gzr, err := gzip.NewReader(file)
+				Expect(err).ToNot(HaveOccurred(), out)
+				defer gzr.Close()
+
+				tr := tar.NewReader(gzr)
+				found := false
+				for {
+					hdr, err := tr.Next()
+					if err != nil {
+						break
+					}
+					if hdr.Name == "disk.raw" {
+						found = true
+						Expect(hdr.Size).To(BeNumerically(">", 1<<30), out)
+					}
+				}
+				Expect(found).To(BeTrue(), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 			It("generates a vhd image", func() {
