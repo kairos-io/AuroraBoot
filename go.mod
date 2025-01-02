@@ -8,29 +8,28 @@ godebug x509negativeserial=1
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/containerd/containerd v1.7.24
+	github.com/containerd/containerd v1.7.23
+	github.com/containerd/containerd/v2 v2.0.1
 	github.com/diskfs/go-diskfs v1.4.2
-	github.com/foxboron/go-uefi v0.0.0-20241017190036-fab4fdf2f2f3
+	github.com/foxboron/go-uefi v0.0.0-20241219185318-19dc140271bf
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.20.2
-	github.com/google/uuid v1.6.0
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/go-ukify v0.2.5
-	github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241217140538-a5a55c636dd7
+	github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20241223225924-d8d75ebd3741
 	github.com/kairos-io/kairos-sdk v0.6.1
 	github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07
 	github.com/klauspost/compress v1.17.11
 	github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82
 	github.com/mudler/yip v1.13.0
-	github.com/onsi/ginkgo/v2 v2.22.0
-	github.com/onsi/gomega v1.36.1
+	github.com/onsi/ginkgo/v2 v2.22.2
+	github.com/onsi/gomega v1.36.2
 	github.com/otiai10/copy v1.14.0
 	github.com/sanity-io/litter v1.5.5
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
 	github.com/spf13/viper v1.19.0
-	github.com/twpayne/go-vfs/v4 v4.3.0
 	github.com/twpayne/go-vfs/v5 v5.0.4
 	github.com/u-root/u-root v0.14.0
 	github.com/urfave/cli/v2 v2.27.5
@@ -66,7 +65,7 @@ require (
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.14.3 // indirect
-	github.com/containerd/typeurl/v2 v2.2.2 // indirect
+	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.5 // indirect
 	github.com/cyphar/filepath-securejoin v0.2.4 // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
@@ -101,8 +100,9 @@ require (
 	github.com/google/go-cmp v0.6.0 // indirect
 	github.com/google/go-tpm v0.9.1 // indirect
 	github.com/google/go-tspi v0.3.0 // indirect
-	github.com/google/pprof v0.0.0-20241029153458-d1b30febd7db // indirect
+	github.com/google/pprof v0.0.0-20241210010833-40e02aabc2ad // indirect
 	github.com/google/shlex v0.0.0-20191202100458-e7afc7fbc510 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gookit/color v1.5.4 // indirect
 	github.com/hashicorp/errwrap v1.1.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
@@ -138,7 +138,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/packethost/packngo v0.29.0 // indirect
-	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
+	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect
 	github.com/phayes/permbits v0.0.0-20190612203442-39d7c581d2ee // indirect
 	github.com/pierrec/lz4/v4 v4.1.17 // indirect
@@ -175,6 +175,7 @@ require (
 	github.com/tklauser/go-sysconf v0.3.12 // indirect
 	github.com/tklauser/numcpus v0.6.1 // indirect
 	github.com/tredoe/osutil v1.5.0 // indirect
+	github.com/twpayne/go-vfs/v4 v4.3.0 // indirect
 	github.com/u-root/uio v0.0.0-20240209044354-b3d14b93376a // indirect
 	github.com/ulikunitz/xz v0.5.11 // indirect
 	github.com/vbatts/tar-split v0.11.3 // indirect
@@ -204,7 +205,7 @@ require (
 	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20241021214115-324edc3d5d38 // indirect
 	google.golang.org/grpc v1.67.1 // indirect
-	google.golang.org/protobuf v1.35.1 // indirect
+	google.golang.org/protobuf v1.36.1 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
