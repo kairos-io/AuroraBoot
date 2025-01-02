@@ -14,7 +14,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/otiai10/copy"
-	"github.com/twpayne/go-vfs/v4"
+	"github.com/twpayne/go-vfs/v5"
 
 	"github.com/kairos-io/kairos-agent/v2/pkg/cloudinit"
 	agentconfig "github.com/kairos-io/kairos-agent/v2/pkg/config"
