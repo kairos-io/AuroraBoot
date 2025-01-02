@@ -228,7 +228,7 @@ stages:
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 		})
-		Describe("MBR", Label("mbr"), func() {
+		Describe("MBR", Label("mbr"), Focus, func() {
 			It("generates a raw image", func() {
 				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
 				_, err := PullImage(image)
@@ -242,12 +242,12 @@ stages:
 					"--set", "disk.mbr=true",
 					"--cloud-config", "/config.yaml",
 				)
-				Expect(out).To(ContainSubstring("Generating MBR disk"), out)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
 				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 				Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
 				Expect(out).To(ContainSubstring("dump-source"), out)
 				Expect(err).ToNot(HaveOccurred(), out)
-				_, err = os.Stat(filepath.Join(tempDir, "disk.raw"))
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw"))
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 		})
