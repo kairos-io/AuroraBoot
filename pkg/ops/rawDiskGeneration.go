@@ -418,29 +418,9 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	return efiPartitionImage.File, nil
 }
 
-// createBiosPartitionImage creates a BIOS partition image with grub artifacts and installs grub to it
+// createBiosPartitionImage creates a BIOS partition image
+// This is an empty image as grub-install will then write the core.img contents to it directly so nothing special.
 func (r *RawImage) createBiosPartitionImage() (string, error) {
-	// Would need to format it and then copy the grub files to it
-	// Also install grub against it
-	// Remember to use the grub artifacts from the rootfs to support secureboot
-	// Create a temp dir for copying the files to
-	tmpDirBios := filepath.Join(r.TempDir(), "bios")
-	err := fsutils.MkdirAll(r.config.Fs, tmpDirBios, 0755)
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirBios).Msg("failed to create temp dir")
-		return "", err
-	}
-	defer r.config.Fs.RemoveAll(tmpDirBios)
-
-	// This is where the oem partition will be mounted to copy the files to
-	tmpDirRecoveryMount := filepath.Join(r.TempDir(), "recovery-mount")
-	err = fsutils.MkdirAll(r.config.Fs, tmpDirRecoveryMount, 0755)
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecoveryMount).Msg("failed to create temp dir")
-		return "", err
-	}
-	defer r.config.Fs.RemoveAll(tmpDirRecoveryMount)
-
 	f, err := r.config.Fs.Create(filepath.Join(r.TempDir(), "bios.img"))
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to create bios image")
