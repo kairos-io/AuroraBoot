@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 
-	"github.com/google/uuid"
+	"github.com/gofrs/uuid"
 	process "github.com/mudler/go-processmanager"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -116,7 +116,8 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 
 	var sshPort, spicePort int
 
-	vmName := uuid.New().String()
+	uid, _ := uuid.NewV4()
+	vmName := uid.String()
 
 	emulateTPM(stateDir)
 

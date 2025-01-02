@@ -104,6 +104,9 @@ const IsoOutput UkiOutput = "iso"
 const ContainerOutput UkiOutput = "container"
 const DefaultOutput UkiOutput = "uki"
 
+const MB = int64(1024 * 1024)
+const GB = 1024 * MB
+
 func OutPutTypes() []string {
 	return []string{string(IsoOutput), string(ContainerOutput), string(DefaultOutput)}
 }

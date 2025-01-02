@@ -249,10 +249,11 @@ func ConvertRawDiskToVHD(src string) func(ctx context.Context) error {
 		}
 
 		internal.Log.Logger.Info().Msgf("Generating raw disk from '%s'", glob[0])
-		out, err := utils.SH(fmt.Sprintf("/azure.sh %s", glob[0]))
-		internal.Log.Logger.Printf("Output '%s'", out)
+		output, err := Raw2Azure(glob[0])
 		if err != nil {
 			internal.Log.Logger.Error().Msgf("Generating raw disk from '%s' failed with error '%s'", glob[0], err.Error())
+		} else {
+			internal.Log.Logger.Info().Msgf("Generated VHD disk '%s'", output)
 		}
 		return err
 	}
@@ -275,10 +276,11 @@ func ConvertRawDiskToGCE(src string) func(ctx context.Context) error {
 		}
 
 		internal.Log.Logger.Info().Msgf("Generating raw disk '%s'", glob[0])
-		out, err := utils.SH(fmt.Sprintf("/gce.sh %s", glob[0]))
-		internal.Log.Logger.Printf("Output '%s'", out)
+		output, err := Raw2Gce(glob[0])
 		if err != nil {
 			internal.Log.Logger.Error().Msgf("Generating raw disk from '%s' failed with error '%s'", src, err.Error())
+		} else {
+			internal.Log.Logger.Info().Msgf("Generated GCE disk '%s'", output)
 		}
 		return err
 	}
