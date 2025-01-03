@@ -828,7 +828,6 @@ func (r *RawImage) installGrubToDisk(image string) error {
 		internal.Log.Logger.Error().Str("output", string(out)).Msg("kpartx output")
 		return fmt.Errorf("failed to run kpartx: %w", err)
 	}
-	internal.Log.Logger.Debug().Str("loopDevice", string(loopDevice)).Msg("Attached file to loop device")
 
 	defer func() {
 		// TODO: move this to a function
@@ -850,7 +849,9 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// so, the grub files are stored in the recovery partition
 	// TODO: do not hardcode the partition number
 	// Get the partition number associated to COS_RECOVERY
-	err = unix.Mount("/dev/mapper/loop0p3", tmpDirRecovery, "ext2", 0, "")
+	// partition 3 is the recovery partition of the loop device
+	recoveryLoop := fmt.Sprintf("%s%s", string(loopDevice), "p3")
+	err = unix.Mount(recoveryLoop, tmpDirRecovery, "ext2", 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to mount recovery partition")
 		return err
