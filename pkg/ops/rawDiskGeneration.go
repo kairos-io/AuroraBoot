@@ -850,7 +850,9 @@ func (r *RawImage) installGrubToDisk(image string) error {
 
 	// While grub is installed to disk + bios_boot partition, it still needs to have the config and mod files available
 	// so, the grub files are stored in the recovery partition
-	recoveryLoop := fmt.Sprintf("%s%s", string(loopDevice), "p3")
+	// Get only the loop device without the /dev/ prefix
+	cleanLoopDevice := string(loopDevice)[5:]
+	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
 	err = unix.Mount(recoveryLoop, tmpDirRecovery, "ext2", 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
