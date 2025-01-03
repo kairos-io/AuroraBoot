@@ -126,16 +126,8 @@ func (d *Deployer) StepGenRawDisk() error {
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(opGenMBRRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.MBR }),
-		herd.IfElse(d.isoOption(),
-			herd.WithDeps(opDownloadISO), herd.WithDeps(opGenISO),
-		),
-		herd.IfElse(d.isoOption(),
-			herd.WithCallback(
-				ops.GenBIOSRawDisk(d.Config, d.isoFile(), d.rawDiskPath())),
-			herd.WithCallback(
-				ops.GenBIOSRawDisk(d.Config, d.isoFile(), d.rawDiskPath())),
-		),
-	)
+		d.imageOrSquashFS(),
+		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -222,8 +214,9 @@ func (d *Deployer) dstNetboot() string {
 	return d.Config.StateDir("netboot")
 }
 
+// Returns true if any of the options for raw disk is set
 func (d *Deployer) rawDiskIsSet() bool {
-	return d.Config.Disk.VHD || d.Config.Disk.RAW || d.Config.Disk.GCE
+	return d.Config.Disk.VHD || d.Config.Disk.RAW || d.Config.Disk.GCE || d.Config.Disk.MBR
 }
 
 func (d *Deployer) netbootReleaseOption() bool {
