@@ -810,11 +810,13 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// I tried but the devices didnt appear properly dur to it being in a container
 	// so I went with the easy way
 	out, err := exec.Command("losetup", "-D").CombinedOutput()
+	internal.Log.Logger.Debug().Str("output", string(out)).Msg("Detaching loop devices")
 	if err != nil {
 		return fmt.Errorf("failed to detach loop devices: %w", err)
 	}
 
 	loopDevice, err := exec.Command("losetup", "-f", "--show", image).CombinedOutput()
+	internal.Log.Logger.Debug().Str("output", string(loopDevice)).Msg("Attaching image to loop device")
 	if err != nil {
 		return fmt.Errorf("failed to attach file to loop device: %w", err)
 	}
@@ -824,6 +826,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 
 	// Run kpartx
 	out, err = exec.Command("kpartx", "-av", string(loopDevice)).CombinedOutput()
+	internal.Log.Logger.Debug().Str("output", string(out)).Msg("Running kpartx")
 	if err != nil {
 		internal.Log.Logger.Error().Str("output", string(out)).Msg("kpartx output")
 		return fmt.Errorf("failed to run kpartx: %w", err)
@@ -847,13 +850,10 @@ func (r *RawImage) installGrubToDisk(image string) error {
 
 	// While grub is installed to disk + bios_boot partition, it still needs to have the config and mod files available
 	// so, the grub files are stored in the recovery partition
-	// TODO: do not hardcode the partition number
-	// Get the partition number associated to COS_RECOVERY
-	// partition 3 is the recovery partition of the loop device
 	recoveryLoop := fmt.Sprintf("%s%s", string(loopDevice), "p3")
 	err = unix.Mount(recoveryLoop, tmpDirRecovery, "ext2", 0, "")
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to mount recovery partition")
+		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err
 	}
 
