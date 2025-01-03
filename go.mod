@@ -32,7 +32,7 @@ require (
 	github.com/twpayne/go-vfs/v5 v5.0.4
 	github.com/u-root/u-root v0.14.0
 	github.com/urfave/cli/v2 v2.27.5
-	golang.org/x/exp v0.0.0-20241217172543-b2144cdd0a67
+	golang.org/x/exp v0.0.0-20250103183323-7d7fa50e5329
 	golang.org/x/mod v0.22.0
 	golang.org/x/sys v0.28.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
