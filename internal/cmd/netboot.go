@@ -12,7 +12,7 @@ var NetBootCmd = cli.Command{
 	Name:      "netboot",
 	Aliases:   []string{"nb"},
 	Usage:     "Extract artifacts for netboot from a given ISO",
-	ArgsUsage: "<iso> <output> <name>",
+	ArgsUsage: "<iso-file> <output-dir> <output-artifact-prefix>",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "debug",
@@ -22,16 +22,25 @@ var NetBootCmd = cli.Command{
 	Action: func(c *cli.Context) error {
 		iso := c.Args().Get(0)
 		if iso == "" {
-			return fmt.Errorf("iso is required")
+			c.Command.Subcommands = nil
+			cli.ShowCommandHelp(c, c.Command.Name)
+			fmt.Println("")
+			return fmt.Errorf("iso-file is required")
 		}
 		output := c.Args().Get(1)
 		if output == "" {
-			return fmt.Errorf("output is required")
+			c.Command.Subcommands = nil
+			cli.ShowCommandHelp(c, c.Command.Name)
+			fmt.Println("")
+			return fmt.Errorf("output-dir is required")
 		}
 
 		name := c.Args().Get(2)
 		if name == "" {
-			return fmt.Errorf("name is required")
+			c.Command.Subcommands = nil
+			cli.ShowCommandHelp(c, c.Command.Name)
+			fmt.Println("")
+			return fmt.Errorf("output-artifact-prefix is required")
 		}
 		loglevel := "info"
 		if c.Bool("debug") {
