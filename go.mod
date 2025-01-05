@@ -24,7 +24,7 @@ require (
 	github.com/mudler/yip v1.13.0
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
-	github.com/otiai10/copy v1.14.0
+	github.com/otiai10/copy v1.14.1
 	github.com/sanity-io/litter v1.5.5
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
@@ -138,6 +138,7 @@ require (
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.0 // indirect
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
+	github.com/otiai10/mint v1.6.3 // indirect
 	github.com/packethost/packngo v0.29.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect
