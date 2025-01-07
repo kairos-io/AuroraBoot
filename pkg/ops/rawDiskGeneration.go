@@ -233,7 +233,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	recoveryImage := v1.Image{
 		File:       filepath.Join(tmpDirRecovery, "cOS", agentConstants.RecoveryImgFile),
-		FS:         agentConstants.LinuxFs,
+		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.SystemLabel,
 		Source:     v1.NewDirSrc(r.Source),
 		MountPoint: tmpDirRecoveryImage,
