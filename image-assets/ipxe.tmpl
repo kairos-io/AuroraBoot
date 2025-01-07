@@ -1,7 +1,0 @@
-#!ipxe
-
-set dns 8.8.8.8
-ifconf
-kernel ${RELEASE_URL}/${VERSION}/${ISO_NAME}-kernel root=live:${RELEASE_URL}/${VERSION}/${ISO_NAME}.squashfs initrd=${ISO_NAME}-initrd rd.neednet=1 ip=dhcp rd.cos.disable netboot install-mode config_url=${config} console=tty1 console=ttyS0 rd.live.overlay.overlayfs ${cmdline}
-initrd ${RELEASE_URL}/${VERSION}/${ISO_NAME}-initrd
-boot
