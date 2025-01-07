@@ -741,13 +741,25 @@ func roundToNearestSector(size, sector int64) uint64 {
 func (r *RawImage) copyShimOrGrub(target, which string) error {
 	var searchFiles []string
 	var copyDone bool
+	var arch string
+
+	// Try to get the arch from the source rootfs
+	arch = runtime.GOARCH
+	parsedArch, err := sdkUtils.OSRelease("KAIROS_TARGETARCH", filepath.Join(r.Source, "etc/kairos-release"))
+	if err == nil && parsedArch != "" {
+		arch = parsedArch
+	} else {
+		internal.Log.Logger.Warn().Err(err).Str("arch", runtime.GOARCH).Msg("failed to geta arch from source rootfs, defaulting to use artifacts from runtime arch")
+	}
+
 	if which == "shim" {
-		searchFiles = sdkUtils.GetEfiShimFiles(runtime.GOARCH)
+		searchFiles = sdkUtils.GetEfiShimFiles(arch)
 	} else if which == "grub" {
-		searchFiles = sdkUtils.GetEfiGrubFiles(runtime.GOARCH)
+		searchFiles = sdkUtils.GetEfiGrubFiles(arch)
 	} else {
 		return fmt.Errorf("invalid which value: %s", which)
 	}
+
 	for _, f := range searchFiles {
 		_, err := r.config.Fs.Stat(filepath.Join(r.Source, f))
 		if err != nil {
@@ -778,7 +790,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		// Copy the shim content to the fallback name so the system boots from fallback. This means that we do not create
 		// any bootloader entries, so our recent installation has the lower priority if something else is on the bootloader
 		if which == "shim" {
-			writeShim := agentConstants.GetFallBackEfi(runtime.GOARCH)
+			writeShim := agentConstants.GetFallBackEfi(arch)
 			err = r.config.Fs.WriteFile(filepath.Join(target, "EFI/BOOT/", writeShim), fileContent, agentConstants.FilePerm)
 			if err != nil {
 				return fmt.Errorf("could not write file %s at dir %s", writeShim, target)
@@ -853,7 +865,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// Get only the loop device without the /dev/ prefix
 	cleanLoopDevice := string(loopDevice)[5:]
 	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
-	err = unix.Mount(recoveryLoop, tmpDirRecovery, "ext4", 0, "")
+	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxFs, 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err
