@@ -10,6 +10,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"os"
+	"os/exec"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -17,12 +18,15 @@ import (
 )
 
 // As this tests all use loop devices, they should be run serially so they dont hit each other while acquiring the loop device number
-var _ = Describe("Disk image generation", Label("raw-disks"), Serial, func() {
+var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, func() {
 	var tempDir string
 	var err error
 	var aurora *Auroraboot
 
 	BeforeEach(func() {
+		out, err := exec.Command("losetup").CombinedOutput()
+		Expect(err).ToNot(HaveOccurred(), string(out))
+		fmt.Println("losetup output: ", string(out))
 		tempDir, err = os.MkdirTemp("", "auroraboot-test-")
 		Expect(err).ToNot(HaveOccurred())
 
@@ -158,7 +162,6 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, func() {
 				Expect(hex.EncodeToString(header.CreatorApplication[:])).To(Equal("656c656d"))
 				Expect(hex.EncodeToString(header.CreatorHostOS[:])).To(Equal("73757365"))
 				Expect(hex.EncodeToString(header.DiskType[:])).To(Equal("00000002"))
-				fmt.Println(out)
 			})
 		})
 	})
@@ -317,12 +320,12 @@ stages:
 					"--set", "disk.mbr=true",
 					"--cloud-config", "/config.yaml",
 				)
-				Expect(out).To(ContainSubstring("Generating MBR disk"), out)
+				Expect(out).To(ContainSubstring("Generating raw disk"), out)
 				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 				Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
 				Expect(out).To(ContainSubstring("dump-source"), out)
 				Expect(err).ToNot(HaveOccurred(), out)
-				_, err = os.Stat(filepath.Join(tempDir, "disk.raw"))
+				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw"))
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 		})

@@ -45,7 +45,12 @@ RUN luet repo update
 RUN luet install -y system/systemd-boot
 
 ## Live CD artifacts
+# TODO: This seems like we can skip if we use the artifacts from the rootfs?
 RUN luet install -y livecd/grub2 --system-target /grub2
+# This we can definitely skip if we use the artifacts from the rootfs
+# The only thing we need is the grub.cfg to be on our constants the rest is provided by the rootfs
+# We only need this packages for the systems that do not provide signed artifacts (archlinux) so should we skip the shim in that case
+# and just use the grub.efi directly unsigned? Arch wont support secureboto in any case so....
 RUN luet install -y livecd/grub2-efi-image --system-target /efi
 
 ## RPI64
