@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // NOTE: Once you run a test in 1 raw image, because the image is the installed system, any changes are now permanent
@@ -39,6 +40,19 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 	It("Should boot as expected", func() {
+		// At first raw images boot on recovery and they reset the system and creates the partitions
+		// so it can take a while to boot in the active partition
+		// lets wait a bit checking
+		By("Waiting for recovery reset to finish", func() {
+			Eventually(func() string {
+				output, _ := vm.Sudo("kairos-agent state")
+				return output
+			}, 5*time.Minute, 1*time.Second).Should(
+				Or(
+					ContainSubstring("active_boot"),
+				))
+		})
+
 		// This checks both that the disk is bootable and with secureboot enabled
 		if os.Getenv("SECUREBOOT") == "true" {
 			By("Have secureboot enabled", func() {
@@ -47,12 +61,6 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 				Expect(output).To(ContainSubstring("Secure boot enabled"))
 			})
 		}
-
-		By("Making sure we booted on active partition", func() {
-			output, err := vm.Sudo("kairos-agent state")
-			Expect(err).ToNot(HaveOccurred(), output)
-			Expect(output).To(ContainSubstring("active_boot"))
-		})
 
 		By("checking corresponding state", func() {
 			currentVersion, err := vm.Sudo(getVersionCmd)
