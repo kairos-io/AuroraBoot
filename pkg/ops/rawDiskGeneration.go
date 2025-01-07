@@ -49,18 +49,19 @@ type RawImage struct {
 	elemental   *elemental.Elemental // Elemental instance to use for the operations
 	efi         bool                 // If the image should be EFI or BIOS
 	config      *config.Config       // config to use for the operations
+	model       string
 }
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output, cc string, finalsize uint64) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64, model string) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
+	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, model: model}
 }
 
-func NewBiosRawImage(source, output string, cc string, finalsize uint64) *RawImage {
+func NewBiosRawImage(source, output string, cc string, finalsize uint64, model string) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
+	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, model: model}
 }
 
 // createOemPartitionImage creates an OEM partition image with the given cloud config
@@ -395,6 +396,15 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		err = r.copyShimOrGrub(tmpDirEfi, "grub")
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
+			return "", err
+		}
+	}
+
+	// Do board specific stuff
+	if r.model == "rpi4" {
+		err = copyFirmwareRpi4(tmpDirEfi)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi4 firmware")
 			return "", err
 		}
 	}

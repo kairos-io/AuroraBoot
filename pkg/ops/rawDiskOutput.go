@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"io"
 	"io/fs"
 	"math"
@@ -324,4 +325,13 @@ func chsCalculation(sectors uint64) chs {
 		heads:           uint(heads),
 		sectorsPerTrack: uint(sectorsPerTrack),
 	}
+}
+
+// Model specific funtions
+
+// copyFirmwareRpi4 will copy the proper firmware files for a Raspberry Pi 4 into the EFI partition
+func copyFirmwareRpi4(target string) error {
+	internal.Log.Logger.Info().Str("target", target).Msg("Copying Raspberry Pi 4 firmware")
+	// Copy the firmware files from /rpi/ into target
+	return utils.CopyDir("/rpi/", target)
 }
