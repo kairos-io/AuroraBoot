@@ -853,7 +853,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// Get only the loop device without the /dev/ prefix
 	cleanLoopDevice := string(loopDevice)[5:]
 	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
-	err = unix.Mount(recoveryLoop, tmpDirRecovery, "ext4", 0, "")
+	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxFs, 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err
