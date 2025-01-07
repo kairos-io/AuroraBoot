@@ -46,10 +46,10 @@ type System struct {
 }
 
 type Disk struct {
-	RAW  bool   `yaml:"raw"`
+	EFI  bool   `yaml:"efi"`
 	GCE  bool   `yaml:"gce"`
 	VHD  bool   `yaml:"vhd"`
-	MBR  bool   `yaml:"mbr"`
+	BIOS bool   `yaml:"bios"`
 	Size string `yaml:"size"`
 
 	ARM *ARMDiskOptions `yaml:"arm"`

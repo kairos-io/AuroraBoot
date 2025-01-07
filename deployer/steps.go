@@ -118,14 +118,14 @@ func (d *Deployer) StepExtractSquashFS() error {
 
 func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(opGenRawDisk,
-		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
+		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && d.Config.Disk.EFI }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(opGenMBRRawDisk,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.MBR }),
+		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && d.Config.Disk.BIOS }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
@@ -216,7 +216,7 @@ func (d *Deployer) dstNetboot() string {
 
 // Returns true if any of the options for raw disk is set
 func (d *Deployer) rawDiskIsSet() bool {
-	return d.Config.Disk.VHD || d.Config.Disk.RAW || d.Config.Disk.GCE || d.Config.Disk.MBR
+	return d.Config.Disk.VHD || d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.BIOS
 }
 
 func (d *Deployer) netbootReleaseOption() bool {
