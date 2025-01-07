@@ -46,14 +46,12 @@ type System struct {
 }
 
 type Disk struct {
-	RAW   bool   `yaml:"raw"`
-	GCE   bool   `yaml:"gce"`
-	VHD   bool   `yaml:"vhd"`
-	MBR   bool   `yaml:"mbr"`
-	Size  string `yaml:"size"`
-	Model string `yaml:"model"`
-
-	ARM *ARMDiskOptions `yaml:"arm"`
+	RAW  bool            `yaml:"raw"`
+	GCE  bool            `yaml:"gce"`
+	VHD  bool            `yaml:"vhd"`
+	MBR  bool            `yaml:"mbr"`
+	Size string          `yaml:"size"`
+	ARM  *ARMDiskOptions `yaml:"arm"`
 }
 
 type NetBoot struct {

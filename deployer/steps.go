@@ -109,7 +109,7 @@ func (d *Deployer) StepDownloadISO() error {
 		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.isoFile())))
 }
 
-// Extract SquashFS from released asset to build the raw disk image if needed
+// StepExtractSquashFS Extract SquashFS from released asset to build the raw disk image if needed
 func (d *Deployer) StepExtractSquashFS() error {
 	return d.Add(opExtractSquashFS,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
@@ -120,14 +120,14 @@ func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(opGenRawDisk,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskModel())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(opGenMBRRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.MBR }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskModel())))
+		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -300,12 +300,4 @@ func (d *Deployer) rawDiskSize() uint64 {
 		return 0
 	}
 	return sizeInt
-}
-
-func (d *Deployer) rawDiskModel() string {
-	if d.Config.Disk.Model == "" {
-		return "generic"
-	} else {
-		return d.Config.Disk.Model
-	}
 }
