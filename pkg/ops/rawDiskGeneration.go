@@ -231,7 +231,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirRecovery, "cOS"), 0755)
 
-	recoveryImage := v1.Image{
+	recoveryImage := &v1.Image{
 		File:       filepath.Join(tmpDirRecovery, "cOS", agentConstants.RecoveryImgFile),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.SystemLabel,
@@ -239,9 +239,9 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 		MountPoint: tmpDirRecoveryImage,
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
-	recoveryImage.Size = uint(size)
+	recoveryImage.Size = uint(size + 100)
 
-	_, err = r.elemental.DeployImage(&recoveryImage, false)
+	_, err = r.elemental.DeployImage(recoveryImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", recoveryImage).Msg("failed to create recovery image")
@@ -276,7 +276,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	// Now we create an image for the recovery partition
 	// We use the dir we created with the image above, which contains the recovery.img and the grub.cfg stuff
-	recoverPartitionImage := v1.Image{
+	recoverPartitionImage := &v1.Image{
 		File:       filepath.Join(r.TempDir(), "recovery.img"),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.RecoveryLabel,
@@ -286,9 +286,9 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	}
 
 	size, _ = config.GetSourceSize(r.config, recoveryImage.Source)
-	recoverPartitionImage.Size = uint(size + 100)
+	recoverPartitionImage.Size = uint(size + 150)
 
-	_, err = r.elemental.DeployImageNodirs(&recoverPartitionImage, false)
+	_, err = r.elemental.DeployImageNodirs(recoverPartitionImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", recoverPartitionImage).Msg("failed to create recovery image")
