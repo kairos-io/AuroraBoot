@@ -25,7 +25,7 @@ require (
 	github.com/onsi/ginkgo/v2 v2.22.2
 	github.com/onsi/gomega v1.36.2
 	github.com/otiai10/copy v1.14.1
-	github.com/sanity-io/litter v1.5.5
+	github.com/sanity-io/litter v1.5.6
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
 	github.com/spf13/viper v1.19.0
