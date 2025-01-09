@@ -4,6 +4,7 @@ import (
 	_ "embed"
 	"fmt"
 	"os"
+	"path/filepath"
 )
 
 // Eltorito image is basically a grub cdboot.img + grub core image
@@ -126,8 +127,8 @@ func GetXorrisoBooloaderArgs(root string) []string {
 		"-boot_image", "any", "next",
 		"-boot_image", "any", "platform_id=0xef",
 		"-boot_image", "any", "emul_type=no_emulation",
-		"-boot_image", "any", "efi_path=" + IsoEFIPath, // Tell where the efi path is
-		"-boot_image", "any", "efi_boot_part=--efi-boot-image", // Tell where the efi path is for booting
+		"-append_partition", "2", "0xef", filepath.Join(root, IsoEFIPath),
+		"-boot_image", "any", "efi_path=--interval:appended_partition_2:all::",
 	}
 	return args
 }
