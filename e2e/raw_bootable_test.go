@@ -7,6 +7,8 @@ import (
 	. "github.com/spectrocloud/peg/matcher"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
 
 // NOTE: Once you run a test in 1 raw image, because the image is the installed system, any changes are now permanent
@@ -38,11 +40,50 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 	It("Should boot as expected", func() {
+		// At first raw images boot on recovery and they reset the system and creates the partitions
+		// so it can take a while to boot in the active partition
+		// lets wait a bit checking
+		By("Waiting for recovery reset to finish", func() {
+			Eventually(func() string {
+				output, _ := vm.Sudo("kairos-agent state")
+				return output
+			}, 5*time.Minute, 1*time.Second).Should(
+				Or(
+					ContainSubstring("active_boot"),
+				))
+		})
+
 		// This checks both that the disk is bootable and with secureboot enabled
-		By("Have secureboot enabled", func() {
-			output, err := vm.Sudo("dmesg | grep -i secure")
-			Expect(err).ToNot(HaveOccurred(), output)
-			Expect(output).To(ContainSubstring("Secure boot enabled"))
+		if os.Getenv("SECUREBOOT") == "true" {
+			By("Have secureboot enabled", func() {
+				output, err := vm.Sudo("dmesg | grep -i secure")
+				Expect(err).ToNot(HaveOccurred(), output)
+				Expect(output).To(ContainSubstring("Secure boot enabled"))
+			})
+		}
+
+		By("checking corresponding state", func() {
+			currentVersion, err := vm.Sudo(getVersionCmd)
+			Expect(err).ToNot(HaveOccurred(), currentVersion)
+
+			stateAssertVM(vm, "boot", "active_boot")
+			stateAssertVM(vm, "oem.mounted", "true")
+			stateAssertVM(vm, "oem.found", "true")
+			stateAssertVM(vm, "persistent.mounted", "true")
+			stateAssertVM(vm, "state.mounted", "true")
+			stateAssertVM(vm, "oem.type", "ext4")
+			stateAssertVM(vm, "persistent.type", "ext4")
+			stateAssertVM(vm, "state.type", "ext4")
+			stateAssertVM(vm, "oem.mount_point", "/oem")
+			stateAssertVM(vm, "persistent.mount_point", "/usr/local")
+			stateAssertVM(vm, "persistent.name", "/dev/vda")
+			stateAssertVM(vm, "state.mount_point", "/run/initramfs/cos-state")
+			stateAssertVM(vm, "oem.read_only", "false")
+			stateAssertVM(vm, "persistent.read_only", "false")
+			stateAssertVM(vm, "state.read_only", "true")
+			stateAssertVM(vm, "kairos.version", strings.ReplaceAll(strings.ReplaceAll(currentVersion, "\r", ""), "\n", ""))
+			stateContains(vm, "system.os.name", "alpine", "opensuse", "ubuntu", "debian")
+			stateContains(vm, "kairos.flavor", "alpine", "opensuse", "ubuntu", "debian")
 		})
 	})
 })
