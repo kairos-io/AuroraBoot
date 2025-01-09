@@ -239,6 +239,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 		MountPoint: tmpDirRecoveryImage,
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
+	// Add some extra space to the image in case the calculation is a bit off
 	recoveryImage.Size = uint(size + 100)
 
 	_, err = r.elemental.DeployImage(recoveryImage, false)
@@ -286,7 +287,10 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	}
 
 	size, _ = config.GetSourceSize(r.config, recoveryImage.Source)
-	recoverPartitionImage.Size = uint(size + 150)
+	// Add some extra space to the image in case the calculation is a bit off
+	// we add an extra 50Mb of top as the recovery.img has to fit in there plus any artifacts we copy
+	// Double the size as the partition needs to account for recovery and transition image during recovery upgrade
+	recoverPartitionImage.Size = uint(size*2 + 150)
 
 	_, err = r.elemental.DeployImageNodirs(recoverPartitionImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
