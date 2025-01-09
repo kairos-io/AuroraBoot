@@ -6,35 +6,6 @@ import (
 	"os"
 )
 
-const (
-	opDownloadISO     = "download-iso"
-	opCopyCloudConfig = "copy-cloud-config"
-	opPrepareISO      = "prepare-iso"
-	opStartHTTPServer = "start-httpserver"
-	opInjectCC        = "inject-cloud-config"
-
-	opDownloadInitrd   = "download-initrd"
-	opDownloadKernel   = "download-kernel"
-	opDownloadSquashFS = "download-squashfs"
-	opPrepareNetboot   = "prepare-netboot"
-	opStartNetboot     = "start-netboot"
-
-	opDumpSource     = "dump-source"
-	opGenISO         = "gen-iso"
-	opPreparetmproot = "prepare-temp"
-	opExtractNetboot = "extract-netboot"
-
-	opGenRawDisk    = "gen-raw-disk"
-	opGenMBRRawDisk = "gen-raw-mbr-disk"
-
-	opExtractSquashFS = "extract-squashfs"
-
-	opConvertGCE       = "convert-gce"
-	opConvertVHD       = "convert-vhd"
-	opGenARMImages     = "build-arm-image"
-	opPrepareARMImages = "prepare_arm"
-)
-
 // RegisterAll registers the op dag based on the configuration and the artifact wanted.
 // This registers all steps for the top level Auroraboot command.
 func RegisterAll(d *Deployer) error {
