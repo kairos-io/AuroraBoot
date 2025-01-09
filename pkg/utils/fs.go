@@ -222,3 +222,123 @@ func CalcFileChecksum(fs v1.FS, fileName string) (string, error) {
 
 	return fmt.Sprintf("%x", h.Sum(nil)), nil
 }
+
+// CopyDir copies the contents of the source directory to the destination directory.
+func CopyDir(src string, dst string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+
+		relPath, err := filepath.Rel(src, path)
+		if err != nil {
+			return err
+		}
+
+		dstPath := filepath.Join(dst, relPath)
+
+		if info.IsDir() {
+			// Keep same mode as the source directory
+			err = os.MkdirAll(dstPath, info.Mode())
+			if err != nil {
+				return err
+			}
+			// Keep the same ownership as the source file
+			sourceUid := info.Sys().(*syscall.Stat_t).Uid
+			sourceGid := info.Sys().(*syscall.Stat_t).Gid
+			return os.Chown(dstPath, int(sourceUid), int(sourceGid))
+		}
+
+		return copyFile(path, dstPath)
+	})
+}
+
+// copyFile copies a file from src to dst.
+func copyFile(src string, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	if err != nil {
+		return err
+	}
+	sourceStat, err := sourceFile.Stat()
+	if err != nil {
+		return err
+	}
+	// Keep the same mode as the source file
+	err = os.Chmod(dst, sourceStat.Mode())
+	if err != nil {
+		return err
+	}
+	// Keep the same ownership as the source file
+	sourceUid := sourceStat.Sys().(*syscall.Stat_t).Uid
+	sourceGid := sourceStat.Sys().(*syscall.Stat_t).Gid
+	return os.Chown(dst, int(sourceUid), int(sourceGid))
+}
+
+// DD copies a file from input file to output file with the given block size, count, skip and seek.
+// Mimics the dd utility
+func DD(inputFile, outputFile string, bs, count, skip, seek int64) error {
+	in, err := os.Open(inputFile)
+	if err != nil {
+		return fmt.Errorf("failed to open input file: %w", err)
+	}
+	defer in.Close()
+
+	out, err := os.OpenFile(outputFile, os.O_WRONLY, 0644)
+	if err != nil {
+		return fmt.Errorf("failed to open output file: %w", err)
+	}
+	defer out.Close()
+
+	if skip > 0 {
+		_, err = in.Seek(skip*bs, io.SeekStart)
+		if err != nil {
+			return fmt.Errorf("failed to seek input file: %w", err)
+		}
+	}
+
+	if seek > 0 {
+		_, err = out.Seek(seek*bs, io.SeekStart)
+		if err != nil {
+			return fmt.Errorf("failed to seek output file: %w", err)
+		}
+	}
+
+	buf := make([]byte, bs)
+	for i := int64(0); i < count || count == 0; i++ {
+		n, err := in.Read(buf)
+		if err != nil && err != io.EOF {
+			return fmt.Errorf("failed to read input file: %w", err)
+		}
+		if n == 0 {
+			break
+		}
+
+		_, err = out.Write(buf[:n])
+		if err != nil {
+			return fmt.Errorf("failed to write to output file: %w", err)
+		}
+
+		if count > 0 && i+1 == count {
+			break
+		}
+	}
+
+	err = out.Sync()
+	if err != nil {
+		return fmt.Errorf("failed to sync output file: %w", err)
+	}
+
+	return nil
+}

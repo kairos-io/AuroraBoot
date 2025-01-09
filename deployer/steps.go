@@ -110,7 +110,7 @@ func (d *Deployer) StepDownloadISO() error {
 		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.isoFile())))
 }
 
-// Extract SquashFS from released asset to build the raw disk image if needed
+// StepExtractSquashFS Extract SquashFS from released asset to build the raw disk image if needed
 func (d *Deployer) StepExtractSquashFS() error {
 	return d.Add(constants.OpExtractSquashFS,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
