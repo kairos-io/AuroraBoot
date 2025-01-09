@@ -327,41 +327,13 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create boot dir")
 		return "", err
 	}
-	var flavor string
-	var model string
 
-	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
-		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
-			return "", err
-		}
-		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/kairos-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
-			return "", err
-		}
-	} else {
-		// Fallback to /etc/os-release for older images
-		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/os-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
-			return "", err
-		}
-		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/os-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
-			return "", err
-		}
+	model, flavor, err := r.GetModelAndFlavor()
+
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
+		return "", err
 	}
-
-	if flavor == "" || model == "" {
-		internal.Log.Logger.Error().Msg("failed to get flavor or model")
-		return "", fmt.Errorf("failed to get flavor or model")
-	}
-
-	internal.Log.Logger.Debug().Str("flavor", flavor).Msg("got flavor")
-	internal.Log.Logger.Debug().Str("model", model).Msg("got model")
 
 	if strings.Contains(flavor, "ubuntu") {
 		err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirEfi, "EFI", "ubuntu"), 0755)
@@ -560,12 +532,8 @@ func (r *RawImage) Build() error {
 
 	}
 
-	// Set the final image to be used by all
-	err = r.config.Fs.Chmod(filepath.Join(r.Output, outputName), 0777)
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to chmod final image")
-		return err
-	}
+	// Do some final adjustments for boards
+	err = r.FinalizeImage(filepath.Join(r.Output, outputName))
 	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembled final disk image")
 
 	return nil
@@ -908,5 +876,102 @@ func (r *RawImage) installGrubToDisk(image string) error {
 		return err
 	}
 
+	return nil
+}
+
+// GetModelAndFlavor returns the model and flavor of the source rootfs
+func (r *RawImage) GetModelAndFlavor() (string, string, error) {
+	var flavor string
+	var model string
+	var err error
+
+	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
+			return "", "", err
+		}
+		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
+			return "", "", err
+		}
+	} else {
+		// Fallback to /etc/os-release for older images
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
+			return "", "", err
+		}
+		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
+			return "", "", err
+		}
+	}
+
+	if flavor == "" || model == "" {
+		internal.Log.Logger.Error().Msg("failed to get flavor or model")
+		return "", "", fmt.Errorf("failed to get flavor or model")
+	}
+
+	internal.Log.Logger.Debug().Str("flavor", flavor).Msg("got flavor")
+	internal.Log.Logger.Debug().Str("model", model).Msg("got model")
+
+	return model, flavor, nil
+}
+
+// FinalizeImage does some final adjustments to the image
+func (r *RawImage) FinalizeImage(image string) error {
+	var err error
+
+	// Get the model
+	model, _, err := r.GetModelAndFlavor()
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
+		return err
+	}
+
+	// Do board specific stuff
+	switch model {
+	case "rpi4", "rpi3":
+		internal.Log.Logger.Debug().Str("model", model).Msg("Running on RPI.")
+	case "odroid-c2":
+		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Odroid-C2.")
+		err = utils.DD("/firmware/odroid-c2/bl1.bin.hardkernel", image, 1, 442, 0, 0)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
+			return err
+		}
+		err = utils.DD("/firmware/odroid-c2/bl1.bin.hardkernel", image, 512, 0, 1, 1)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
+			return err
+		}
+		err = utils.DD("/firmware/odroid-c2/u-boot.odroidc2", image, 512, 0, 0, 97)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.odroidc2")
+			return err
+		}
+	case "pinebookpro":
+		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Pinebook Pro.")
+		err = utils.DD("/pinebookpro/u-boot/usr/lib/u-boot/pinebook-pro-rk3399/idbloader.img", image, 64, 0, 0, 0)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to dd idbloader.img")
+			return err
+		}
+		err = utils.DD("/pinebookpro/u-boot/usr/lib/u-boot/pinebook-pro-rk3399/u-boot.itb", image, 16384, 0, 0, 0)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.itb")
+			return err
+		}
+	}
+
+	// Set the final image to be used by all as we run inside a container and the image is owned by root otherwise
+	err = r.config.Fs.Chmod(image, 0777)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to chmod final image")
+		return err
+	}
 	return nil
 }
