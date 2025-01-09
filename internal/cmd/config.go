@@ -95,6 +95,13 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 		i := strings.Index(c, "=")
 		if i != -1 {
 			k := c[:i]
+			// Old values to new, clear values
+			if strings.ToLower(k) == "disk.raw" {
+				k = "disk.efi"
+			}
+			if strings.ToLower(k) == "disk.mbr" {
+				k = "disk.bios"
+			}
 			v := c[i+1:]
 			m[k] = v
 		} else {

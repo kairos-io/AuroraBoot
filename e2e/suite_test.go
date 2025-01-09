@@ -3,15 +3,37 @@ package e2e_test
 import (
 	"fmt"
 	"github.com/kairos-io/kairos-sdk/utils"
+	"github.com/onsi/gomega/types"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	. "github.com/spectrocloud/peg/matcher"
 )
+
+var getVersionCmd = ". /etc/kairos-release; [ ! -z \"$KAIROS_VERSION\" ] && echo $KAIROS_VERSION"
+
+var stateAssertVM = func(vm VM, query, expected string) {
+	By(fmt.Sprintf("Expecting state %s to be %s", query, expected))
+	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
+	ExpectWithOffset(1, out).To(ContainSubstring(expected))
+}
+
+var stateContains = func(vm VM, query string, expected ...string) {
+	var or []types.GomegaMatcher
+	for _, e := range expected {
+		or = append(or, ContainSubstring(e))
+	}
+	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
+	ExpectWithOffset(1, strings.ToLower(out)).To(Or(or...))
+}
 
 type Auroraboot struct {
 	Path           string
@@ -59,7 +81,7 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 
 	dockerArgs = append(dockerArgs, e.ContainerImage)
 	dockerArgs = append(dockerArgs, args...)
-	
+
 	cmd := exec.Command("docker", dockerArgs...)
 	out, err := cmd.CombinedOutput()
 

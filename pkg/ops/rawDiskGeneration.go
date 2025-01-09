@@ -142,7 +142,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 								FSLabel:    agentConstants.StateLabel,
 								Size:       uint(size),
 								PLabel:     agentConstants.StatePartName,
-								FileSystem: agentConstants.LinuxImgFs,
+								FileSystem: agentConstants.LinuxFs,
 							},
 						},
 					},
@@ -157,7 +157,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 								FSLabel:    agentConstants.PersistentLabel,
 								Size:       0, // It will get expanded to the end of the disk
 								PLabel:     agentConstants.PersistentPartName,
-								FileSystem: agentConstants.LinuxImgFs,
+								FileSystem: agentConstants.LinuxFs,
 							},
 						},
 					},
@@ -192,7 +192,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 
 	OemPartitionImage := v1.Image{
 		File:       filepath.Join(r.TempDir(), "oem.img"),
-		FS:         agentConstants.LinuxImgFs,
+		FS:         agentConstants.LinuxFs,
 		Label:      agentConstants.OEMLabel,
 		Size:       agentConstants.OEMSize,
 		Source:     v1.NewDirSrc(tmpDirOem),
@@ -278,7 +278,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	// We use the dir we created with the image above, which contains the recovery.img and the grub.cfg stuff
 	recoverPartitionImage := v1.Image{
 		File:       filepath.Join(r.TempDir(), "recovery.img"),
-		FS:         agentConstants.LinuxImgFs,
+		FS:         agentConstants.LinuxFs,
 		Label:      agentConstants.RecoveryLabel,
 		Size:       uint(size),
 		Source:     v1.NewDirSrc(tmpDirRecovery),
@@ -865,7 +865,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// Get only the loop device without the /dev/ prefix
 	cleanLoopDevice := string(loopDevice)[5:]
 	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
-	err = unix.Mount(recoveryLoop, tmpDirRecovery, "ext2", 0, "")
+	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxFs, 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err

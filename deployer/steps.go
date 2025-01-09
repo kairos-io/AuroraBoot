@@ -4,6 +4,7 @@ import (
 	"context"
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,7 +14,7 @@ import (
 )
 
 func (d *Deployer) StepPrepNetbootDir() error {
-	return d.Add(opPrepareNetboot, herd.WithCallback(
+	return d.Add(constants.OpPrepareNetboot, herd.WithCallback(
 		func(ctx context.Context) error {
 			err := os.RemoveAll(d.dstNetboot())
 			if err != nil {
@@ -26,7 +27,7 @@ func (d *Deployer) StepPrepNetbootDir() error {
 }
 
 func (d *Deployer) StepPrepTmpRootDir() error {
-	return d.Add(opPreparetmproot, herd.WithCallback(
+	return d.Add(constants.OpPreparetmproot, herd.WithCallback(
 		func(ctx context.Context) error {
 			err := os.RemoveAll(d.tmpRootFs())
 			if err != nil {
@@ -51,14 +52,14 @@ func (d *Deployer) CleanTmpDirs() error {
 }
 
 func (d *Deployer) StepPrepISODir() error {
-	return d.Add(opPrepareISO, herd.WithCallback(func(ctx context.Context) error {
+	return d.Add(constants.OpPrepareISO, herd.WithCallback(func(ctx context.Context) error {
 		return os.MkdirAll(d.destination(), 0755)
 	}))
 }
 
 func (d *Deployer) StepCopyCloudConfig() error {
-	return d.Add(opCopyCloudConfig,
-		herd.WithDeps(opPrepareISO),
+	return d.Add(constants.OpCopyCloudConfig,
+		herd.WithDeps(constants.OpPrepareISO),
 		herd.WithCallback(func(ctx context.Context) error {
 			return os.WriteFile(d.cloudConfigPath(), []byte(d.Config.CloudConfig), 0600)
 		}))
@@ -66,128 +67,126 @@ func (d *Deployer) StepCopyCloudConfig() error {
 
 func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
-	return d.Add(opDumpSource,
+	return d.Add(constants.OpDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(opPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs())))
+		herd.WithDeps(constants.OpPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs())))
 }
 
 func (d *Deployer) StepGenISO() error {
-	return d.Add(opGenISO,
+	return d.Add(constants.OpGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() && d.Config.Disk.ARM == nil }),
-		herd.WithDeps(opDumpSource, opCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
 }
 
 func (d *Deployer) StepExtractNetboot() error {
-	return d.Add(opExtractNetboot,
+	return d.Add(constants.OpExtractNetboot,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.Config.DisableNetboot }),
-		herd.WithDeps(opGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.Config.ISO.Name)))
+		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.Config.ISO.Name)))
 }
 
 func (d *Deployer) StepDownloadInitrd() error {
-	return d.Add(opDownloadInitrd,
+	return d.Add(constants.OpDownloadInitrd,
 		herd.EnableIf(d.netbootReleaseOption),
-		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.InitrdURL(), d.initrdFile())))
+		herd.WithDeps(constants.OpPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.InitrdURL(), d.initrdFile())))
 }
 
 func (d *Deployer) StepDownloadKernel() error {
-	return d.Add(opDownloadKernel,
+	return d.Add(constants.OpDownloadKernel,
 		herd.EnableIf(d.netbootReleaseOption),
-		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.KernelURL(), d.kernelFile())))
+		herd.WithDeps(constants.OpPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.KernelURL(), d.kernelFile())))
 }
 
 func (d *Deployer) StepDownloadSquashFS() error {
-	return d.Add(opDownloadSquashFS,
+	return d.Add(constants.OpDownloadSquashFS,
 		herd.EnableIf(func() bool {
 			return !d.Config.DisableNetboot && !d.fromImage() || d.rawDiskIsSet() && !d.fromImage() || !d.fromImage() && d.Config.Disk.ARM != nil
 		}),
-		herd.WithDeps(opPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.SquashFSURL(), d.squashFSfile())))
+		herd.WithDeps(constants.OpPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.SquashFSURL(), d.squashFSfile())))
 }
 
 func (d *Deployer) StepDownloadISO() error {
-	return d.Add(opDownloadISO,
+	return d.Add(constants.OpDownloadISO,
 		herd.EnableIf(d.isoOption),
 		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.isoFile())))
 }
 
 // Extract SquashFS from released asset to build the raw disk image if needed
 func (d *Deployer) StepExtractSquashFS() error {
-	return d.Add(opExtractSquashFS,
+	return d.Add(constants.OpExtractSquashFS,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
-		herd.WithDeps(opDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile(), d.tmpRootFs())))
+		herd.WithDeps(constants.OpDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile(), d.tmpRootFs())))
 }
 
 func (d *Deployer) StepGenRawDisk() error {
-	return d.Add(opGenRawDisk,
-		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.MBR }),
+	return d.Add(constants.OpGenEFIRawDisk,
+		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.BIOS }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
-	return d.Add(opGenMBRRawDisk,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.MBR }),
+	return d.Add(constants.OpGenBIOSRawDisk,
+		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.BIOS }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepConvertGCE() error {
-	return d.Add(opConvertGCE,
+	return d.Add(constants.OpConvertGCE,
 		herd.EnableIf(func() bool { return d.Config.Disk.GCE }),
-		herd.WithDeps(opGenRawDisk),
+		herd.WithDeps(constants.OpGenEFIRawDisk),
 		herd.WithCallback(ops.ConvertRawDiskToGCE(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepConvertVHD() error {
-	return d.Add(opConvertVHD,
+	return d.Add(constants.OpConvertVHD,
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
-		herd.WithDeps(opGenRawDisk),
+		herd.WithDeps(constants.OpGenEFIRawDisk),
 		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepGenARMImages() error {
-	return d.Add(opGenARMImages,
+	return d.Add(constants.OpGenARMImages,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && !d.Config.Disk.ARM.PrepareOnly }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenArmDisk(d.tmpRootFs(), d.diskImgPath(), d.Config)))
 }
 
 func (d *Deployer) StepPrepareARMImages() error {
-	return d.Add(opPrepareARMImages,
+	return d.Add(constants.OpPrepareARMImages,
 		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && d.Config.Disk.ARM.PrepareOnly }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.PrepareArmPartitions(d.tmpRootFs(), d.destination(), d.Config)))
 }
 
 func (d *Deployer) StepInjectCC() error {
-	return d.Add(opInjectCC,
+	return d.Add(constants.OpInjectCC,
 		herd.EnableIf(d.isoOption),
-		herd.WithDeps(opCopyCloudConfig),
-		herd.ConditionalOption(d.isoOption, herd.WithDeps(opDownloadISO)),
+		herd.WithDeps(constants.OpCopyCloudConfig),
+		herd.ConditionalOption(d.isoOption, herd.WithDeps(constants.OpDownloadISO)),
 		herd.WithCallback(ops.InjectISO(d.destination(), d.isoFile(), d.Config.ISO)))
 }
 
 func (d *Deployer) StepStartHTTPServer() error {
-	return d.Add(
-		opStartHTTPServer,
+	return d.Add(constants.OpStartHTTPServer,
 		herd.Background,
 		herd.EnableIf(func() bool { return !d.Config.DisableISOboot && !d.Config.DisableHTTPServer }),
 		herd.IfElse(
 			d.fromImage(),
-			herd.WithDeps(opGenISO, opCopyCloudConfig),
-			herd.WithDeps(opDownloadISO, opCopyCloudConfig, opInjectCC),
+			herd.WithDeps(constants.OpGenISO, constants.OpCopyCloudConfig),
+			herd.WithDeps(constants.OpDownloadISO, constants.OpCopyCloudConfig, constants.OpInjectCC),
 		),
 		herd.WithCallback(ops.ServeArtifacts(d.listenAddr(), d.destination())),
 	)
 }
 
 func (d *Deployer) StepStartNetboot() error {
-	return d.Add(
-		opStartNetboot,
+	return d.Add(constants.OpStartNetboot,
 		herd.EnableIf(d.netbootOption),
-		herd.ConditionalOption(d.isoOption, herd.WithDeps(opDownloadInitrd, opDownloadKernel, opDownloadSquashFS)),
-		herd.ConditionalOption(d.fromImage, herd.WithDeps(opExtractNetboot)),
+		herd.ConditionalOption(d.isoOption, herd.WithDeps(constants.OpDownloadInitrd, constants.OpDownloadKernel, constants.OpDownloadSquashFS)),
+		herd.ConditionalOption(d.fromImage, herd.WithDeps(constants.OpExtractNetboot)),
 		herd.Background,
-		herd.WithDeps(opCopyCloudConfig),
+		herd.WithDeps(constants.OpCopyCloudConfig),
 		herd.WithCallback(
 			ops.StartPixiecore(d.cloudConfigPath(), d.squashFSfile(), d.netBootListenAddr(), d.netbootPort(), d.initrdFile(), d.kernelFile(), d.Config.NetBoot),
 		),
@@ -216,7 +215,7 @@ func (d *Deployer) dstNetboot() string {
 
 // Returns true if any of the options for raw disk is set
 func (d *Deployer) rawDiskIsSet() bool {
-	return d.Config.Disk.VHD || d.Config.Disk.RAW || d.Config.Disk.GCE || d.Config.Disk.MBR
+	return d.Config.Disk.VHD || d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.BIOS
 }
 
 func (d *Deployer) netbootReleaseOption() bool {
@@ -240,7 +239,7 @@ func (d *Deployer) isoOption() bool {
 }
 
 func (d *Deployer) imageOrSquashFS() herd.OpOption {
-	return herd.IfElse(d.fromImage(), herd.WithDeps(opDumpSource), herd.WithDeps(opExtractSquashFS))
+	return herd.IfElse(d.fromImage(), herd.WithDeps(constants.OpDumpSource), herd.WithDeps(constants.OpExtractSquashFS))
 }
 
 func (d *Deployer) cloudConfigPath() string {

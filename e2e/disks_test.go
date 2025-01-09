@@ -58,15 +58,15 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, f
 					"--set", "flavor_release=9",
 					"--set", "repository=kairos-io/kairos",
 					"--set", "state_dir=/tmp/auroraboot",
-					"--set", "disk.raw=true",
+					"--set", "disk.efi=true",
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-				Expect(out).To(ContainSubstring("download-squashfs"), out)
-				Expect(out).To(ContainSubstring("extract-squashfs"), out)
-				Expect(out).ToNot(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpDownloadSquashFS), out)
+				Expect(out).To(ContainSubstring(constants.OpExtractSquashFS), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				// should be named: kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw based on the source artifact
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw"))
@@ -87,11 +87,11 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, f
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-				Expect(out).To(ContainSubstring("download-squashfs"), out)
-				Expect(out).To(ContainSubstring("extract-squashfs"), out)
-				Expect(out).ToNot(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpDownloadSquashFS), out)
+				Expect(out).To(ContainSubstring(constants.OpExtractSquashFS), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
 				Expect(err).ToNot(HaveOccurred(), out)
@@ -133,11 +133,11 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, f
 					"--set", "disk.vhd=true",
 					"--cloud-config", "/config.yaml")
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-				Expect(out).To(ContainSubstring("download-squashfs"), out)
-				Expect(out).To(ContainSubstring("extract-squashfs"), out)
-				Expect(out).ToNot(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpDownloadSquashFS), out)
+				Expect(out).To(ContainSubstring(constants.OpExtractSquashFS), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.vhd"))
 				Expect(err).ToNot(HaveOccurred(), out)
@@ -225,14 +225,14 @@ stages:
 					"--set", "disable_netboot=true",
 					"--set", "container_image=docker://"+image,
 					"--set", "state_dir=/tmp/auroraboot",
-					"--set", "disk.raw=true",
+					"--set", "disk.efi=true",
 					"--cloud-config", "/config.yaml",
 				)
 
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw"))
 				Expect(err).ToNot(HaveOccurred(), out)
@@ -251,10 +251,10 @@ stages:
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-				Expect(out).To(ContainSubstring("convert-gce"), out)
-				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpConvertGCE), out)
+				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw.gce.tar.gz"))
 				Expect(err).ToNot(HaveOccurred(), out)
@@ -297,10 +297,10 @@ stages:
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-disk"), out)
-				Expect(out).To(ContainSubstring("convert-vhd"), out)
-				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpConvertVHD), out)
+				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw.vhd"))
 				Expect(err).ToNot(HaveOccurred(), out)
@@ -317,13 +317,13 @@ stages:
 					"--set", "disable_netboot=true",
 					"--set", "container_image=docker://"+image,
 					"--set", "state_dir=/tmp/auroraboot",
-					"--set", "disk.mbr=true",
+					"--set", "disk.bios=true",
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
-				Expect(out).To(ContainSubstring("gen-raw-mbr-disk"), out)
-				Expect(out).To(ContainSubstring("dump-source"), out)
+				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
+				Expect(out).To(ContainSubstring(constants.OpGenBIOSRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
 				_, err = os.Stat(filepath.Join(tempDir, "kairos-opensuse-tumbleweed-core-amd64-generic-v3.2.1.raw"))
 				Expect(err).ToNot(HaveOccurred(), out)
