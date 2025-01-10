@@ -16,7 +16,7 @@ require (
 	github.com/google/go-containerregistry v0.20.2
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/kairos-io/go-ukify v0.2.5
-	github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20250102145133-6ad942294b65
+	github.com/kairos-io/kairos-agent/v2 v2.16.2-0.20250110141429-347a30b261d0
 	github.com/kairos-io/kairos-sdk v0.6.1
 	github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07
 	github.com/klauspost/compress v1.17.11
@@ -201,10 +201,10 @@ require (
 	go.uber.org/atomic v1.10.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.23.0 // indirect
-	golang.org/x/crypto v0.31.0 // indirect
-	golang.org/x/net v0.33.0 // indirect
+	golang.org/x/crypto v0.32.0 // indirect
+	golang.org/x/net v0.34.0 // indirect
 	golang.org/x/sync v0.10.0 // indirect
-	golang.org/x/term v0.27.0 // indirect
+	golang.org/x/term v0.28.0 // indirect
 	golang.org/x/text v0.21.0 // indirect
 	golang.org/x/tools v0.28.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20241007155032-5fefd90f89a9 // indirect
