@@ -1,6 +1,21 @@
 ARG FEDORA_VERSION=40
 ARG LUET_VERSION=0.36.0
 
+# ----------- end of rpi5
+
+FROM ubuntu AS rpi5extractor
+
+RUN apt update && apt install -y wget 7zip xz-utils
+
+RUN wget https://downloads.raspberrypi.com/raspios_lite_armhf/images/raspios_lite_armhf-2024-11-19/2024-11-19-raspios-bookworm-armhf-lite.img.xz
+RUN xz -d 2024-11-19-raspios-bookworm-armhf-lite.img.xz
+RUN 7z x 2024-11-19-raspios-bookworm-armhf-lite.img
+RUN mkdir dtbs rootfs
+RUN 7z x 0.fat -o./dtbs
+RUN 7z x 1.img -o./rootfs || true
+
+# ----------- end of rpi5
+
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM golang AS builder
@@ -55,6 +70,9 @@ RUN luet install -y livecd/grub2-efi-image --system-target /efi
 
 ## RPI64
 RUN luet install -y firmware/u-boot-rpi64 firmware/raspberrypi-firmware firmware/raspberrypi-firmware-config firmware/raspberrypi-firmware-dt --system-target /rpi/
+
+## RPI5
+COPY --from=rpi5extractor /dtbs /rpi5
 
 ## PineBook64 Pro
 RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro/u-boot

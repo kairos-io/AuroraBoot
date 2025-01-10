@@ -7,12 +7,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"io"
 	"io/fs"
 	"math"
 	"os"
 	"time"
+
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 
 	uuidPkg "github.com/gofrs/uuid"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -333,5 +334,5 @@ func chsCalculation(sectors uint64) chs {
 func copyFirmwareRpi4(target string) error {
 	internal.Log.Logger.Info().Str("target", target).Msg("Copying Raspberry Pi 4 firmware")
 	// Copy the firmware files from /rpi/ into target
-	return utils.CopyDir("/rpi/", target)
+	return utils.CopyDir("/rpi5/", target)
 }
