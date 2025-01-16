@@ -207,6 +207,22 @@ checkImageExistsOrCreate() {
   fi
 }
 
+makeAMIpublic() {
+  local imageName="$1"
+  local imageID
+
+  imageID=$(AWS ec2 describe-images --filters "Name=name,Values=$imageName" --query 'Images[0].ImageId' --output text)
+
+  if [ "$imageID" == "None" ]; then
+    echo "Error: Image '$imageName' does not exist."
+    exit 1
+  fi
+
+  echo "Making image '$imageName' public..."
+  AWS ec2 modify-image-attribute --image-id $imageID --launch-permission "{\"Add\":[{\"Group\":\"all\"}]}"
+  echo "Image '$imageName' is now public."
+}
+
 # ----- Main script -----
 baseName=$(basename "$1")
 checkEnvVars
@@ -216,6 +232,4 @@ uploadImageToS3 $1
 output=$(importAsSnapshot $baseName | tee /dev/tty)
 snapshotID=$(echo "$output" | tail -1)
 checkImageExistsOrCreate $baseName $snapshotID
-
-# TODO
-# - make AMI public
+makeAMIpublic $baseName
