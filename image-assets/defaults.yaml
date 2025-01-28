@@ -1,8 +1,7 @@
 #cloud-config
-name: "Default user"
-stages:
-  initramfs:
-    - name: "Set default user/pass"
-      users:
-        kairos:
-          passwd: "kairos"
+
+# Additional system users
+users:
+- name: "kairos"
+  passwd: "kairos"
+  groups: [ "admin" ]
