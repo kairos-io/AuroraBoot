@@ -107,6 +107,7 @@ RUN rm -d /arm/raw/grubartifacts/var || true
 COPY ./image-assets/build-arm-image.sh /build-arm-image.sh
 COPY ./image-assets/arm /arm
 COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
+COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
 
 COPY ./image-assets/defaults.yaml /defaults.yaml
 
