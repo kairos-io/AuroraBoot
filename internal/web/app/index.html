@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Background Process Interface</title>
+  <title>Kairos image builder</title>
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
 <body class="bg-gray-100 min-h-screen flex items-center justify-center">
@@ -70,18 +70,18 @@
           // Open a WebSocket to receive the background process output
           const socket = new WebSocket("ws://" + window.location.host + "/ws");
           const outputElement = document.getElementById('output');
-          outputElement.textContent = ""; // Clear previous output
+          outputElement.innerHTML = ""; // Clear previous output
 
           socket.onmessage = function(event) {
             // Append new data
-            outputElement.textContent += event.data + "\n";
+            outputElement.innerHTML += event.data + "\n";
 
             // Automatically scroll to the bottom
             outputElement.scrollTop = outputElement.scrollHeight;
           };
 
           socket.onclose = function() {
-            outputElement.textContent += "Process complete. Check the links above for downloads.\n";
+            outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";
             outputElement.scrollTop = outputElement.scrollHeight;
           };
         });

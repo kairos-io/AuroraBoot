@@ -14,6 +14,7 @@ import (
 
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
+	"github.com/robert-nix/ansihtml"
 	"golang.org/x/net/websocket"
 )
 
@@ -155,7 +156,7 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	}
 
 	// Stream process output to writer
-	reader := io.TeeReader(out, ws)
+	reader := io.TeeReader(ansiToHTML(out), ws)
 	if _, err := io.Copy(io.Discard, reader); err != nil {
 		return err
 	}
@@ -165,4 +166,28 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	}
 
 	return nil
+}
+
+func ansiToHTML(r io.Reader) io.Reader {
+
+	pr, pw := io.Pipe()
+
+	go func() {
+		defer pw.Close()
+
+		// Read from the reader and write to the pipe
+		buf := make([]byte, 1024)
+		for {
+			n, err := r.Read(buf)
+			if err != nil {
+				if err != io.EOF {
+					pw.CloseWithError(err)
+				}
+				break
+			}
+			pw.Write(ansihtml.ConvertToHTML(buf[:n]))
+		}
+	}()
+
+	return pr
 }
