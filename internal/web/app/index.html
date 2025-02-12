@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kairos image builder</title>
+</head>
+<body>
+  <h1>Kairos image builder</h1>
+  <form id="process-form">
+
+    <label for="variant">Base Image:</label>
+    <input type="text" id="image" name="image" required><br>
+
+    <label for="variant">Variant:</label>
+    <input type="text" id="variant" name="variant" required><br>
+
+    <label for="model">Model:</label>
+    <input type="text" id="model" name="model" required><br>
+
+    <label for="trusted_boot">Trusted Boot:</label>
+    <input type="checkbox" id="trusted_boot" name="trusted_boot"><br>
+
+    <label for="kubernetes_provider">Kubernetes Provider:</label>
+    <input type="text" id="kubernetes_provider" name="kubernetes_provider" required><br>
+
+    <label for="kubernetes_version">Kubernetes Version:</label>
+    <input type="text" id="kubernetes_version" name="kubernetes_version" required><br>
+
+    <button type="submit">Start Process</button>
+  </form>
+
+  <h2>Process Output</h2>
+  <pre id="output"></pre>
+
+  <script>
+    document.getElementById('process-form').addEventListener('submit', function(event) {
+      event.preventDefault(); // Prevent form from refreshing the page
+
+      // Collect form data
+      const formData = new FormData(event.target);
+
+      // Submit the form to the server
+      fetch('/start', {
+        method: 'POST',
+        body: formData
+      }).then(response => response.text())
+        .then(() => {
+          // Open a WebSocket to receive the background process output
+          const socket = new WebSocket("ws://" + window.location.host + "/ws");
+          const outputElement = document.getElementById('output');
+
+          socket.onmessage = function(event) {
+            outputElement.textContent += event.data + "\n";
+          };
+
+          socket.onclose = function() {
+            outputElement.textContent += "Process complete. Check the links above for downloads.\n";
+          };
+        });
+    });
+  </script>
+</body>
+</html>
