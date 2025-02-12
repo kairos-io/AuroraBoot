@@ -3,35 +3,56 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Kairos image builder</title>
+  <title>Background Process Interface</title>
+  <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
 </head>
-<body>
-  <h1>Kairos image builder</h1>
-  <form id="process-form">
+<body class="bg-gray-100 min-h-screen flex items-center justify-center">
+  <div class="bg-white shadow-lg rounded-lg p-6 max-w-4xl w-full">
+    <h1 class="text-2xl font-bold mb-4 text-gray-800">Start Background Process</h1>
+    <form id="process-form" class="space-y-4">
+        <div>
+            <label for="image" class="block text-gray-700 font-medium">Image</label>
+            <input type="text" id="image" name="image" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+          </div>
+    
+          <div>
+            <label for="variant" class="block text-gray-700 font-medium">Variant</label>
+            <!-- <input type="text" id="variant" name="variant" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required> -->
+            <!-- Select box -->
+            <select id="variant" name="variant" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+              <option value="core">Normal</option>
+              <option value="standard">For Kubernetes</option>
+            </select>
+          </div>
+      <div>
+        <label for="model" class="block text-gray-700 font-medium">Model</label>
+        <input type="text" id="model" name="model" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+      </div>
 
-    <label for="variant">Base Image:</label>
-    <input type="text" id="image" name="image" required><br>
+      <div>
+        <label for="trusted_boot" class="block text-gray-700 font-medium">Trusted Boot</label>
+        <input type="checkbox" id="trusted_boot" name="trusted_boot" class="h-5 w-5 text-blue-600">
+      </div>
 
-    <label for="variant">Variant:</label>
-    <input type="text" id="variant" name="variant" required><br>
+      <div>
+        <label for="kubernetes_provider" class="block text-gray-700 font-medium">Kubernetes Provider</label>
+        <input type="text" id="kubernetes_provider" name="kubernetes_provider" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+      </div>
 
-    <label for="model">Model:</label>
-    <input type="text" id="model" name="model" required><br>
+      <div>
+        <label for="kubernetes_version" class="block text-gray-700 font-medium">Kubernetes Version</label>
+        <input type="text" id="kubernetes_version" name="kubernetes_version" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+      </div>
 
-    <label for="trusted_boot">Trusted Boot:</label>
-    <input type="checkbox" id="trusted_boot" name="trusted_boot"><br>
+      <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">Start Process</button>
+    </form>
 
-    <label for="kubernetes_provider">Kubernetes Provider:</label>
-    <input type="text" id="kubernetes_provider" name="kubernetes_provider" required><br>
+    <h2 class="text-xl font-semibold mt-6 mb-2 text-gray-800">Process Output</h2>
+    <div id="output" class="bg-gray-900 text-green-400 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
+      <!-- Output will be appended here -->
+    </div>
+  </div>
 
-    <label for="kubernetes_version">Kubernetes Version:</label>
-    <input type="text" id="kubernetes_version" name="kubernetes_version" required><br>
-
-    <button type="submit">Start Process</button>
-  </form>
-
-  <h2>Process Output</h2>
-  <pre id="output"></pre>
 
   <script>
     document.getElementById('process-form').addEventListener('submit', function(event) {
@@ -49,13 +70,19 @@
           // Open a WebSocket to receive the background process output
           const socket = new WebSocket("ws://" + window.location.host + "/ws");
           const outputElement = document.getElementById('output');
+          outputElement.textContent = ""; // Clear previous output
 
           socket.onmessage = function(event) {
+            // Append new data
             outputElement.textContent += event.data + "\n";
+
+            // Automatically scroll to the bottom
+            outputElement.scrollTop = outputElement.scrollHeight;
           };
 
           socket.onclose = function() {
             outputElement.textContent += "Process complete. Check the links above for downloads.\n";
+            outputElement.scrollTop = outputElement.scrollHeight;
           };
         });
     });
