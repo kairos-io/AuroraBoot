@@ -2,8 +2,9 @@ package cmd
 
 import (
 	"errors"
-	"github.com/hashicorp/go-multierror"
 	"os"
+
+	"github.com/hashicorp/go-multierror"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -18,7 +19,7 @@ func GetApp(version string) *cli.App {
 		Version:  version,
 		Authors:  []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:    "auroraboot",
-		Commands: []*cli.Command{&BuildISOCmd, &BuildUKICmd, &GenKeyCmd, &SysextCmd, &NetBootCmd},
+		Commands: []*cli.Command{&BuildISOCmd, &BuildUKICmd, &GenKeyCmd, &SysextCmd, &NetBootCmd, &WebCMD},
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "set",
