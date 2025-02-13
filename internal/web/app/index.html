@@ -29,11 +29,12 @@
         <input type="text" id="model" name="model" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
       </div>
 
-      <div>
-        <label for="trusted_boot" class="block text-gray-700 font-medium">Trusted Boot</label>
+      <div class="flex items-center">
         <input type="checkbox" id="trusted_boot" name="trusted_boot" class="h-5 w-5 text-blue-600">
+        <label for="trusted_boot" class="block text-gray-700 font-medium ml-2">Trusted Boot</label>
       </div>
 
+      <div id="kubernetes-fields" style="display: none;">
       <div>
         <label for="kubernetes_provider" class="block text-gray-700 font-medium">Kubernetes Provider</label>
         <input type="text" id="kubernetes_provider" name="kubernetes_provider" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
@@ -42,6 +43,7 @@
       <div>
         <label for="kubernetes_version" class="block text-gray-700 font-medium">Kubernetes Version</label>
         <input type="text" id="kubernetes_version" name="kubernetes_version" class="w-full px-4 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400" required>
+      </div>
       </div>
 
       <button type="submit" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600 transition">Start Process</button>
@@ -55,6 +57,25 @@
 
 
   <script>
+    document.getElementById('variant').addEventListener('change', function() {
+      const kubernetesFields = document.getElementById('kubernetes-fields');
+      const kubernetesProvider = document.getElementById('kubernetes_provider');
+      const kubernetesVersion = document.getElementById('kubernetes_version');
+
+      if (this.value === 'standard') {
+        kubernetesFields.style.display = 'block';
+        kubernetesProvider.setAttribute('required', 'required');
+        kubernetesVersion.setAttribute('required', 'required');
+      } else {
+        kubernetesFields.style.display = 'none';
+        kubernetesProvider.removeAttribute('required');
+        kubernetesVersion.removeAttribute('required');
+      }
+    });
+
+    // Trigger change event on page load to set initial visibility and required attributes
+    document.getElementById('variant').dispatchEvent(new Event('change'));
+
     document.getElementById('process-form').addEventListener('submit', function(event) {
       event.preventDefault(); // Prevent form from refreshing the page
 
