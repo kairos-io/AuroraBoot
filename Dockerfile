@@ -111,6 +111,9 @@ COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
 
 COPY ./image-assets/defaults.yaml /defaults.yaml
 
+ENV BUILDKIT_PROGRESS=plain
+RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo && dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
+
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
 ENTRYPOINT ["/usr/bin/auroraboot"]

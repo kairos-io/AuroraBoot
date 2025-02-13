@@ -100,10 +100,13 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Building container image...")
+
 			err = runBashProcessWithOutput(ws,
 				dockerCommand(
 					tempdir,
 					"my-image",
+					"v0.2.3",
 					lastFormData["image"],
 					lastFormData["variant"],
 					lastFormData["model"],
@@ -116,10 +119,16 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Saving container image...")
+
 			err = runBashProcessWithOutput(
 				ws,
-				"docker save --quiet -o "+filepath.Join(artifactDir, "image.tar")+" my-image",
+				"docker save -o "+filepath.Join(artifactDir, "image.tar")+" my-image",
 			)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
+				return
+			}
 
 			// Send download links
 			artifactLinks := []string{
