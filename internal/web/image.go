@@ -7,8 +7,10 @@ import (
 )
 
 func dockerCommand(
-	contextDir, image string,
+	contextDir,
+	image string,
 	karosInitVersion string,
+	baseImage string,
 	variant string,
 	model string,
 	trustedBoot bool,
@@ -21,8 +23,9 @@ func dockerCommand(
 	--build-arg TRUSTED_BOOT=%t \
 	--build-arg KUBERNETES_PROVIDER=%s \
 	--build-arg KUBERNETES_VERSION=%s \
-	--build-arg KAIROS_INIT=%s \
-	-t %s`, contextDir, variant, model, trustedBoot, kubernetesProvider, kubernetesVersion, karosInitVersion, image)
+	--build-arg KAIROS_INIT_VERSION=%s \
+	--build-arg BASE_IMAGE=%s \
+	-t %s`, contextDir, variant, model, trustedBoot, kubernetesProvider, kubernetesVersion, karosInitVersion, baseImage, image)
 }
 
 func prepareImage(tempdir string) error {
