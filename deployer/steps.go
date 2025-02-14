@@ -106,20 +106,22 @@ func (d *Deployer) StepDownloadSquashFS() error {
 
 func (d *Deployer) StepDownloadISO() error {
 	return d.Add(constants.OpDownloadISO,
-		herd.EnableIf(d.isoOption),
+		herd.EnableIf(func() bool { return !d.rawDiskIsSet() && d.isoOption() }),
 		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.isoFile())))
 }
 
 // StepExtractSquashFS Extract SquashFS from released asset to build the raw disk image if needed
 func (d *Deployer) StepExtractSquashFS() error {
 	return d.Add(constants.OpExtractSquashFS,
-		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
+		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.isoOption() }),
 		herd.WithDeps(constants.OpDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile(), d.tmpRootFs())))
 }
 
+// StepGenRawDisk Generate the raw disk image.
+// Enabled if is explicitly set the disk.efi or disk.vhd or disk.gce as they depend on the efi disk
 func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(constants.OpGenEFIRawDisk,
-		herd.EnableIf(func() bool { return d.Config.Disk.EFI }),
+		herd.EnableIf(func() bool { return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
