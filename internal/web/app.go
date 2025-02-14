@@ -2,6 +2,7 @@ package web
 
 import (
 	"embed"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
@@ -9,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"strings"
 	"sync"
 
 	"github.com/labstack/echo/v4"
@@ -100,10 +100,13 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Building container image...")
+
 			err = runBashProcessWithOutput(ws,
 				dockerCommand(
 					tempdir,
 					"my-image",
+					"v0.2.3",
 					lastFormData["image"],
 					lastFormData["variant"],
 					lastFormData["model"],
@@ -116,17 +119,28 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Saving container image...")
+
 			err = runBashProcessWithOutput(
 				ws,
-				"docker save --quiet -o "+filepath.Join(artifactDir, "image.tar")+" my-image",
+				"docker save -o "+filepath.Join(artifactDir, "image.tar")+" my-image",
 			)
-
-			// Send download links
-			artifactLinks := []string{
-				genLink("image.tar", "Download container image"),
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
+				return
 			}
 
-			websocket.Message.Send(ws, strings.Join(artifactLinks, "\n"))
+			// Send download links
+
+			links := []Link{{Name: "Container image", URL: "/artifacts/image.tar"}}
+
+			dat, err := json.Marshal(links)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Failed to marshal links: %v", err))
+				return
+			}
+
+			websocket.Message.Send(ws, string(dat))
 		}).ServeHTTP(c.Response(), c.Request())
 		return nil
 	})
@@ -139,8 +153,9 @@ func App(listenAddr, artifactDir string) error {
 	return nil
 }
 
-func genLink(artifactName, message string) string {
-	return fmt.Sprintf("<a href=\"/artifacts/%s\" download>%s</a>", artifactName, message)
+type Link struct {
+	Name string `json:"name"`
+	URL  string `json:"url"`
 }
 
 func runBashProcessWithOutput(ws io.Writer, command string) error {

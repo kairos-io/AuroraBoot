@@ -17,7 +17,7 @@ RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN dnf in -y bc qemu-tools qemu-img qemu-system-x86 jq genisoimage docker git curl gdisk kpartx \
+RUN dnf in -y bc qemu-tools qemu-img qemu-system-x86 jq genisoimage git curl gdisk kpartx \
     sudo xfsprogs parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
     grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
     python3-cryptography python3-pefile # ukify deps
@@ -110,6 +110,9 @@ COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
 
 COPY ./image-assets/defaults.yaml /defaults.yaml
+
+ENV BUILDKIT_PROGRESS=plain
+RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo && dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
 
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 

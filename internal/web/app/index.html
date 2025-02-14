@@ -53,6 +53,14 @@
     <div id="output" class="bg-gray-900 text-green-400 p-4 rounded-lg h-64 overflow-y-auto font-mono text-sm whitespace-pre-wrap">
       <!-- Output will be appended here -->
     </div>
+
+    <div class="mt-6" style="display: none;" id="links-container">
+        <h2 class="text-xl font-semibold mt-6 mb-2 text-gray-800">Download Links</h2>
+        <div id="links" class="rounded-lg h-64 overflow-y-auto">
+            <!-- Links will be appended here -->
+        </div> 
+    </div>
+
   </div>
 
 
@@ -91,9 +99,25 @@
           // Open a WebSocket to receive the background process output
           const socket = new WebSocket("ws://" + window.location.host + "/ws");
           const outputElement = document.getElementById('output');
+          const linkElement = document.getElementById('links');
+
           outputElement.innerHTML = ""; // Clear previous output
 
           socket.onmessage = function(event) {
+            // if the message is json, we parse it and extract the download links
+            try {
+              const data = JSON.parse(event.data);
+              if (length in data) {
+                for (const link of data) {
+                  // link is an object with keys: name, url
+                  linkElement.innerHTML +=  "<a href='" + link.url + "' target=_blank>"+link.name +"</a><br>";
+                }
+                document.getElementById('links-container').style.display = 'block';
+              }
+            } catch (e) {
+              // ignore
+            }
+
             // Append new data
             outputElement.innerHTML += event.data + "\n";
 
