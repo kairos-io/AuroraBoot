@@ -74,7 +74,7 @@ func (d *Deployer) StepDumpSource() error {
 
 func (d *Deployer) StepGenISO() error {
 	return d.Add(constants.OpGenISO,
-		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() && d.Config.Disk.ARM == nil }),
+		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() }),
 		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
 }
 
@@ -99,7 +99,7 @@ func (d *Deployer) StepDownloadKernel() error {
 func (d *Deployer) StepDownloadSquashFS() error {
 	return d.Add(constants.OpDownloadSquashFS,
 		herd.EnableIf(func() bool {
-			return !d.Config.DisableNetboot && !d.fromImage() || d.rawDiskIsSet() && !d.fromImage() || !d.fromImage() && d.Config.Disk.ARM != nil
+			return !d.Config.DisableNetboot && !d.fromImage() || d.rawDiskIsSet() && !d.fromImage()
 		}),
 		herd.WithDeps(constants.OpPrepareNetboot), herd.WithCallback(ops.DownloadArtifact(d.Artifact.SquashFSURL(), d.squashFSfile())))
 }
@@ -119,14 +119,14 @@ func (d *Deployer) StepExtractSquashFS() error {
 
 func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(constants.OpGenEFIRawDisk,
-		herd.EnableIf(func() bool { return d.rawDiskIsSet() && d.Config.Disk.ARM == nil && !d.Config.Disk.BIOS }),
+		herd.EnableIf(func() bool { return d.Config.Disk.EFI }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM == nil && d.Config.Disk.BIOS }),
+		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		d.imageOrSquashFS(),
 		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
 }
@@ -143,20 +143,6 @@ func (d *Deployer) StepConvertVHD() error {
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
 		herd.WithDeps(constants.OpGenEFIRawDisk),
 		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
-}
-
-func (d *Deployer) StepGenARMImages() error {
-	return d.Add(constants.OpGenARMImages,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && !d.Config.Disk.ARM.PrepareOnly }),
-		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenArmDisk(d.tmpRootFs(), d.diskImgPath(), d.Config)))
-}
-
-func (d *Deployer) StepPrepareARMImages() error {
-	return d.Add(constants.OpPrepareARMImages,
-		herd.EnableIf(func() bool { return d.Config.Disk.ARM != nil && d.Config.Disk.ARM.PrepareOnly }),
-		d.imageOrSquashFS(),
-		herd.WithCallback(ops.PrepareArmPartitions(d.tmpRootFs(), d.destination(), d.Config)))
 }
 
 func (d *Deployer) StepInjectCC() error {

@@ -23,15 +23,12 @@ func RegisterAll(d *Deployer) error {
 		d.StepDownloadKernel,
 		d.StepDownloadSquashFS,
 		d.StepDownloadISO,
-		// Ops to generate disk images
+		// Ops to generate RAW disk images
 		d.StepExtractSquashFS,
 		d.StepGenRawDisk,
 		d.StepGenMBRRawDisk,
 		d.StepConvertGCE,
 		d.StepConvertVHD,
-		// ARM
-		d.StepGenARMImages,
-		d.StepPrepareARMImages,
 		// Inject the data into the ISO
 		d.StepInjectCC,
 		// Start servers

@@ -162,8 +162,6 @@ const (
 
 	OpExtractSquashFS = "extract-squashfs"
 
-	OpConvertGCE       = "convert-gce"
-	OpConvertVHD       = "convert-vhd"
-	OpGenARMImages     = "build-arm-image"
-	OpPrepareARMImages = "prepare_arm"
+	OpConvertGCE = "convert-gce"
+	OpConvertVHD = "convert-vhd"
 )

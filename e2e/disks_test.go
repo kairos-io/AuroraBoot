@@ -62,7 +62,6 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, f
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpDownloadSquashFS), out)
 				Expect(out).To(ContainSubstring(constants.OpExtractSquashFS), out)
@@ -87,7 +86,6 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, f
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpDownloadSquashFS), out)
 				Expect(out).To(ContainSubstring(constants.OpExtractSquashFS), out)
@@ -133,7 +131,6 @@ var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, f
 					"--set", "disk.vhd=true",
 					"--cloud-config", "/config.yaml")
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpDownloadSquashFS), out)
 				Expect(out).To(ContainSubstring(constants.OpExtractSquashFS), out)
@@ -230,7 +227,6 @@ stages:
 				)
 
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)
@@ -251,7 +247,6 @@ stages:
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpConvertGCE), out)
 				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
@@ -297,7 +292,6 @@ stages:
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpConvertVHD), out)
 				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
@@ -321,7 +315,6 @@ stages:
 					"--cloud-config", "/config.yaml",
 				)
 				Expect(out).To(ContainSubstring("Generating raw disk"), out)
-				Expect(out).ToNot(ContainSubstring(constants.OpGenARMImages), out)
 				Expect(out).To(ContainSubstring(constants.OpGenBIOSRawDisk), out)
 				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
 				Expect(err).ToNot(HaveOccurred(), out)

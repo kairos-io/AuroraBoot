@@ -17,15 +17,8 @@ RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN dnf in -y bc qemu-tools qemu-img qemu-system-x86 jq genisoimage docker git curl gdisk kpartx \
-    sudo xfsprogs parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
-    grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
-    python3-cryptography python3-pefile # ukify deps
-# systemd-ukify systemd-boot
-# Install grub2-efi-x64 only on x86 arches
-RUN if [ "$(uname -m)" == "x86_64" ]; then dnf install -y grub2-efi-x64; fi
-# Install grub2-efi-arm64 only on arm64 arches
-RUN if [ "$(uname -m)" == "aarch64" ]; then dnf install -y grub2-efi-aa64; fi
+RUN dnf in -y bc jq genisoimage docker sudo parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
+    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
@@ -104,12 +97,7 @@ RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
 
 # ARM helpers
-COPY ./image-assets/build-arm-image.sh /build-arm-image.sh
-COPY ./image-assets/arm /arm
-COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
-
-COPY ./image-assets/defaults.yaml /defaults.yaml
 
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
