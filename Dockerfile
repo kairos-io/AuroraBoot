@@ -18,7 +18,7 @@ FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 RUN dnf in -y bc jq genisoimage docker sudo parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
-    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx
+    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
