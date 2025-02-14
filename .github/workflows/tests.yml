@@ -121,7 +121,7 @@ jobs:
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
           --debug \
           build-uki \
-          --output-dir /build \
+          --output-dir /output \
           -k /keys \
           --output-type iso \
           -x "console=ttyS0" \
