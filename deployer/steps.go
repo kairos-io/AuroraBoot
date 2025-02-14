@@ -2,11 +2,9 @@ package deployer
 
 import (
 	"context"
-	"fmt"
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	"github.com/sanity-io/litter"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -115,7 +113,7 @@ func (d *Deployer) StepDownloadISO() error {
 // StepExtractSquashFS Extract SquashFS from released asset to build the raw disk image if needed
 func (d *Deployer) StepExtractSquashFS() error {
 	return d.Add(constants.OpExtractSquashFS,
-		herd.EnableIf(func() bool { fmt.Println(litter.Sdump(d)); return d.rawDiskIsSet() && !d.fromImage() }),
+		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
 		herd.WithDeps(constants.OpDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile(), d.tmpRootFs())))
 }
 
@@ -192,6 +190,9 @@ func (d *Deployer) tmpRootFs() string {
 }
 
 func (d *Deployer) destination() string {
+	if d.Config.State == "" {
+		return d.Config.StateDir("auroraboot")
+	}
 	return d.Config.State
 }
 

@@ -38,7 +38,7 @@ RUN luet repo update
 RUN luet install -y system/systemd-boot
 
 # Install the grub2-efi-image package to get the unsigned shim and the unsigned grub.efi
-# TODO: Remove this. Only used by arch. It should fallback to not install the shim if on alpine and install the usigned grub.efi
+# TODO: Remove this. Only used by alpine+arch. It should fallback to not install the shim if on alpine and install the usigned grub.efi
 # Alpine doesnt ship a shim so we can skip it directly and install the grub in the shim place.
 RUN luet install -y livecd/grub2-efi-image --system-target /efi
 

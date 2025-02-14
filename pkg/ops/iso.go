@@ -141,7 +141,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 
 		spec := &LiveISO{
 			RootFS:             []*v1types.ImageSource{v1types.NewDirSrc(src)},
-			Image:              []*v1types.ImageSource{v1types.NewDirSrc("/grub2"), v1types.NewDirSrc(overlay)},
+			Image:              []*v1types.ImageSource{v1types.NewDirSrc(overlay)},
 			Label:              constants.ISOLabel,
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
