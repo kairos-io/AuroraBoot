@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"sync"
 
@@ -95,7 +94,7 @@ func App(listenAddr, artifactDir string) error {
 
 			defer os.RemoveAll(tempdir)
 
-			if err := prepareImage(tempdir); err != nil {
+			if err := prepareDockerfile(tempdir); err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to prepare image: %v", err))
 				return
 			}
@@ -103,7 +102,7 @@ func App(listenAddr, artifactDir string) error {
 			websocket.Message.Send(ws, "Building container image...")
 
 			err = runBashProcessWithOutput(ws,
-				dockerCommand(
+				buildOCI(
 					tempdir,
 					"my-image",
 					"v0.2.3",
@@ -123,16 +122,47 @@ func App(listenAddr, artifactDir string) error {
 
 			err = runBashProcessWithOutput(
 				ws,
-				"docker save -o "+filepath.Join(artifactDir, "image.tar")+" my-image",
+				saveOCI(filepath.Join(artifactDir, "image.tar"), "my-image"),
 			)
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
 				return
 			}
 
-			// Send download links
+			err = runBashProcessWithOutput(
+				ws,
+				buildRawDisk("my-image", artifactDir),
+			)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
+				return
+			}
 
-			links := []Link{{Name: "Container image", URL: "/artifacts/image.tar"}}
+			err = runBashProcessWithOutput(
+				ws,
+				buildISO("my-image", artifactDir, "custom-kairos"),
+			)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
+				return
+			}
+
+			type Link struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			}
+
+			rawImage, err := searchFileByExtensionInDirectory(artifactDir, ".raw")
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Failed to find raw disk image: %v", err))
+				return
+			}
+
+			links := []Link{
+				{Name: "Container image", URL: "/artifacts/image.tar"},
+				{Name: "Raw disk image", URL: "/artifacts/" + filepath.Base(rawImage)},
+				{Name: "ISO image", URL: "/artifacts/custom-kairos.iso"},
+			}
 
 			dat, err := json.Marshal(links)
 			if err != nil {
@@ -153,34 +183,34 @@ func App(listenAddr, artifactDir string) error {
 	return nil
 }
 
-type Link struct {
-	Name string `json:"name"`
-	URL  string `json:"url"`
-}
-
-func runBashProcessWithOutput(ws io.Writer, command string) error {
-	// Simulate a background process
-	cmd := exec.Command("bash", "-c", command)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
-	out := io.MultiReader(stdout, stderr)
-
-	if err := cmd.Start(); err != nil {
-		return err
+func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
+	// list all files in the artifact directory, search for one ending in .raw
+	// and one ending in .iso
+	filesInArtifactDir := []string{}
+	err := filepath.Walk(artifactDir, func(path string, info fs.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		filesInArtifactDir = append(filesInArtifactDir, path)
+		return nil
+	})
+	if err != nil {
+		return "", err
 	}
 
-	// Stream process output to writer
-	reader := io.TeeReader(ansiToHTML(out), ws)
-	if _, err := io.Copy(io.Discard, reader); err != nil {
-		return err
+	file := ""
+	for _, f := range filesInArtifactDir {
+		if filepath.Ext(f) == ext {
+			file = f
+			break
+		}
 	}
 
-	if err := cmd.Wait(); err != nil {
-		return err
+	if file == "" {
+		return "", fmt.Errorf("no file found with extension %s", ext)
 	}
 
-	return nil
+	return file, nil
 }
 
 func ansiToHTML(r io.Reader) io.Reader {
