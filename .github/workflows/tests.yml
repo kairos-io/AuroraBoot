@@ -96,6 +96,7 @@ jobs:
           files: ./coverage.out
   test-bootable-iso-uki:
     runs-on: kvm
+    needs: build-image
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -134,6 +135,7 @@ jobs:
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi:
     runs-on: kvm
+    needs: build-image
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -168,6 +170,7 @@ jobs:
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-bios:
     runs-on: kvm
+    needs: build-image
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
