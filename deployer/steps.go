@@ -151,7 +151,7 @@ func (d *Deployer) StepConvertVHD() error {
 
 func (d *Deployer) StepInjectCC() error {
 	return d.Add(constants.OpInjectCC,
-		herd.EnableIf(d.isoOption),
+		herd.EnableIf(func() bool { return !d.rawDiskIsSet() && d.isoOption() }),
 		herd.WithDeps(constants.OpCopyCloudConfig),
 		herd.ConditionalOption(d.isoOption, herd.WithDeps(constants.OpDownloadISO)),
 		herd.WithCallback(ops.InjectISO(d.destination(), d.isoFile(), d.Config.ISO)))
