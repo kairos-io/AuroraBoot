@@ -94,22 +94,13 @@ func startVM() (VM, error) {
 }
 
 func defaultVMOpts(stateDir string) []types.MachineOption {
-	opts := defaultVMOptsNoDrives(stateDir)
-
-	driveSize := os.Getenv("DRIVE_SIZE")
-	if driveSize == "" {
-		driveSize = "25000"
-	}
-
-	opts = append(opts, types.WithDriveSize(driveSize))
-
-	return opts
+	return append(defaultVMOptsNoDrives(stateDir), types.WithDriveSize("25000"))
 }
 
 func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 	var err error
 
-	if (os.Getenv("ISO") == "" && os.Getenv("RAW_IMAGE") == "") && os.Getenv("CREATE_VM") == "true" {
+	if os.Getenv("ISO") == "" && os.Getenv("RAW_IMAGE") == "" {
 		fmt.Println("ISO or RAW_IMAGE missing")
 		os.Exit(1)
 	}
@@ -127,11 +118,11 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 
 	memory := os.Getenv("MEMORY")
 	if memory == "" {
-		memory = "2096"
+		memory = "6000"
 	}
 	cpus := os.Getenv("CPUS")
 	if cpus == "" {
-		cpus = "2"
+		cpus = "4"
 	}
 
 	opts := []types.MachineOption{
@@ -240,27 +231,21 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 		})
 	}
 
-	if os.Getenv("USE_QEMU") == "true" {
-		opts = append(opts, types.QEMUEngine)
-
-		// You can connect to it with "spicy" or other tool.
-		// DISPLAY is already taken on Linux X sessions
-		if os.Getenv("MACHINE_SPICY") != "" {
+	// You can connect to it with "spicy" or other tool.
+	// DISPLAY is already taken on Linux X sessions
+	if os.Getenv("MACHINE_SPICY") != "" {
+		spicePort, _ = getFreePort()
+		for spicePort == sshPort { // avoid collision
 			spicePort, _ = getFreePort()
-			for spicePort == sshPort { // avoid collision
-				spicePort, _ = getFreePort()
-			}
-			display := fmt.Sprintf("-spice port=%d,addr=127.0.0.1,disable-ticketing=yes", spicePort)
-			opts = append(opts, types.WithDisplay(display))
-
-			cmd := exec.Command("spicy",
-				"-h", "127.0.0.1",
-				"-p", strconv.Itoa(spicePort))
-			err = cmd.Start()
-			Expect(err).ToNot(HaveOccurred())
 		}
-	} else {
-		opts = append(opts, types.VBoxEngine)
+		display := fmt.Sprintf("-spice port=%d,addr=127.0.0.1,disable-ticketing=yes", spicePort)
+		opts = append(opts, types.WithDisplay(display))
+
+		cmd := exec.Command("spicy",
+			"-h", "127.0.0.1",
+			"-p", strconv.Itoa(spicePort))
+		err = cmd.Start()
+		Expect(err).ToNot(HaveOccurred())
 	}
 
 	return opts
