@@ -190,9 +190,6 @@ func (d *Deployer) tmpRootFs() string {
 }
 
 func (d *Deployer) destination() string {
-	if d.Config.State == "" {
-		return d.Config.StateDir("auroraboot")
-	}
 	return d.Config.State
 }
 

@@ -56,8 +56,8 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          tags: quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
-          # https://docs.redhat.com/en/documentation/red_hat_quay/3.4/html/use_red_hat_quay/working_with_tags#tag-expiration
+          tags: |
+            quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
           labels: |
             quay.expires-after=6h
   e2e-tests:
