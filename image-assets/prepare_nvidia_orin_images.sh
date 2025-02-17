@@ -129,7 +129,15 @@ cp -rfv recovery_partition.img bootloader/
 
 # Create the grubenv forcing first boot to be on recovery system
 mkdir -p $WORKDIR/oem
-cp -rfv /defaults.yaml $WORKDIR/oem/01_defaults.yaml
+$WORKDIR/oem/01_defaults.yaml <<EOF
+#cloud-config
+
+# Additional system users
+users:
+- name: "kairos"
+  passwd: "kairos"
+  groups: [ "admin" ]
+EOF
 
 # Create a 64MB filesystem for OEM volume
 truncate -s $((64*1024*1024)) bootloader/oem.img

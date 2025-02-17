@@ -17,15 +17,8 @@ RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN dnf in -y bc qemu-tools qemu-img qemu-system-x86 jq genisoimage docker git curl gdisk kpartx \
-    sudo xfsprogs parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
-    grub2 dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools openssl \
-    python3-cryptography python3-pefile # ukify deps
-# systemd-ukify systemd-boot
-# Install grub2-efi-x64 only on x86 arches
-RUN if [ "$(uname -m)" == "x86_64" ]; then dnf install -y grub2-efi-x64; fi
-# Install grub2-efi-arm64 only on arm64 arches
-RUN if [ "$(uname -m)" == "aarch64" ]; then dnf install -y grub2-efi-aa64; fi
+RUN dnf in -y bc jq genisoimage docker sudo parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
+    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
@@ -44,13 +37,9 @@ ENV CONTAINERD_DISABLE_PIGZ=1
 RUN luet repo update
 RUN luet install -y system/systemd-boot
 
-## Live CD artifacts
-# TODO: This seems like we can skip if we use the artifacts from the rootfs?
-RUN luet install -y livecd/grub2 --system-target /grub2
-# This we can definitely skip if we use the artifacts from the rootfs
-# The only thing we need is the grub.cfg to be on our constants the rest is provided by the rootfs
-# We only need this packages for the systems that do not provide signed artifacts (archlinux) so should we skip the shim in that case
-# and just use the grub.efi directly unsigned? Arch wont support secureboto in any case so....
+# Install the grub2-efi-image package to get the unsigned shim and the unsigned grub.efi
+# TODO: Remove this. Only used by alpine+arch. It should fallback to not install the shim if on alpine and install the usigned grub.efi
+# Alpine doesnt ship a shim so we can skip it directly and install the grub in the shim place.
 RUN luet install -y livecd/grub2-efi-image --system-target /efi
 
 ## RPI64
@@ -67,12 +56,13 @@ RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
 # get them from the x86 repo and we want it to do it from the arm64 repo, even on x86
 # so we use the arm64 luet config and use that to install those on x86
 # This is being used by the prepare_arm_images.sh and build-arch-image.sh scripts
-# TODO: Remove this when raw image is implemented in go as we should get the artifacts from the rootfs
+# TODO: Remove this. Only used for orin image. It should be built in the RAW image generation directly so we cna drop this
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-efi --system-target /arm/raw/grubefi
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
 
 # kairos-agent so we can use the pull-image
+# TODO: What? I cant see where this is used anywhere? Check why its here? Its like 35Mb on nothingness if not used?
 RUN luet install -y system/kairos-agent
 
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
@@ -104,12 +94,7 @@ RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
 
 # ARM helpers
-COPY ./image-assets/build-arm-image.sh /build-arm-image.sh
-COPY ./image-assets/arm /arm
-COPY ./image-assets/prepare_arm_images.sh /prepare_arm_images.sh
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
-
-COPY ./image-assets/defaults.yaml /defaults.yaml
 
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 

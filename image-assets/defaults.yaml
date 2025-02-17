@@ -1,7 +1,0 @@
-#cloud-config
-
-# Additional system users
-users:
-- name: "kairos"
-  passwd: "kairos"
-  groups: [ "admin" ]

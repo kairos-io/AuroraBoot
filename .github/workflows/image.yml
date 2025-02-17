@@ -1,69 +1,83 @@
 ---
-name: 'build container images'
+name: 'Release images'
 
 on:
   push:
-    branches:
-      - main
     tags:
       - '*'
+
 concurrency:
   group: ci-image-${{ github.head_ref || github.ref }}-${{ github.repository }}
-  cancel-in-progress: true
+  cancel-in-progress: false # we never want to cancel a running job on release
 jobs:
-  docker:
-    runs-on: ubuntu-latest
+  build-linux-amd64:
+    runs-on: 'ubuntu-24.04'
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-
-      - name: Prepare
-        id: prep
-        run: |
-          DOCKER_IMAGE=quay.io/kairos/auroraboot
-          VERSION=latest
-          BINARY_VERSION=$(git describe --always --tags --dirty)
-          SHORTREF=${GITHUB_SHA::8}
-          # If this is git tag, use the tag name as a docker tag
-          if [[ $GITHUB_REF == refs/tags/* ]]; then
-            VERSION=${GITHUB_REF#refs/tags/}
-          fi
-          TAGS="${DOCKER_IMAGE}:${VERSION},${DOCKER_IMAGE}:${SHORTREF}"
-          # If the VERSION looks like a version number, assume that
-          # this is the most recent version of the image and also
-          # tag it 'latest'.
-          if [[ $VERSION =~ ^v[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
-            TAGS="$TAGS,${DOCKER_IMAGE}:latest"
-          fi
-          # Set output parameters.
-          echo ::set-output name=binary_version::${BINARY_VERSION}
-          echo ::set-output name=tags::${TAGS}
-          echo ::set-output name=docker_image::${DOCKER_IMAGE}
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@master
-        with:
-          platforms: all
-
       - name: Set up Docker Buildx
-        id: buildx
         uses: docker/setup-buildx-action@master
-
-      - name: Login to DockerHub
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
+      - uses: docker/login-action@v3
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
-
       - name: Build
         uses: docker/build-push-action@v6
         with:
-          builder: ${{ steps.buildx.outputs.name }}
+          # https://docs.redhat.com/en/documentation/red_hat_quay/3.4/html/use_red_hat_quay/working_with_tags#tag-expiration
+          labels: |
+            quay.expires-after=6h
           build-args: |
-            VERSION=${{ steps.prep.outputs.binary_version }}
-          context: ./
-          file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
+            VERSION=${{ github.ref_name }}
+          provenance: false
+          platforms: linux/amd64
           push: true
-          tags: ${{ steps.prep.outputs.tags }}
+          tags: quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}-amd64
+  build-linux-arm64:
+    runs-on: 'ubuntu-24.04-arm'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@master
+      - uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          # https://docs.redhat.com/en/documentation/red_hat_quay/3.4/html/use_red_hat_quay/working_with_tags#tag-expiration
+          labels: |
+            quay.expires-after=6h
+          build-args: |
+            VERSION=${{ github.ref_name }}
+          provenance: false
+          platforms: linux/arm64
+          push: true
+          tags: quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}-arm64
+  build:
+    needs:
+      - build-linux-amd64
+      - build-linux-arm64
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - uses: docker/metadata-action@v5
+        id: metadata
+        with:
+          images: quay.io/kairos/auroraboot
+      - uses: int128/docker-manifest-create-action@v2
+        id: build
+        with:
+          index-annotations: ${{ steps.metadata.outputs.labels }}
+          tags: ${{ steps.metadata.outputs.tags }}
+          sources: |
+            quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}-amd64
+            quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}-arm64

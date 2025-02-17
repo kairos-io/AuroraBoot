@@ -32,7 +32,34 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          file: ./coverage.out
+          files: ./coverage.out
+  build-image:
+    runs-on: kvm
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@master
+      - name: Login to Quay Registry
+        uses: docker/login-action@v3
+        with:
+          registry: quay.io
+          username: ${{ secrets.QUAY_USERNAME }}
+          password: ${{ secrets.QUAY_PASSWORD }}
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          push: true
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          tags: |
+            quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
+          labels: |
+            quay.expires-after=6h
   e2e-tests:
     runs-on: kvm
     steps:
@@ -54,7 +81,6 @@ jobs:
         with:
           push: false
           load: true
-          builder: ${{ steps.buildx.outputs.name }}
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
@@ -67,21 +93,51 @@ jobs:
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
-          file: ./coverage.out
-  test-bootable:
-    runs-on: ubuntu-latest
+          files: ./coverage.out
+  test-bootable-iso-uki:
+    runs-on: kvm
+    needs: build-image
     steps:
-      - uses: earthly/actions-setup@v1.0.13
       - name: Checkout code
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Build
-        run: earthly +test-bootable
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@master
+      - name: Generate raw image
+        run: |
+          mkdir build
+          docker run --rm --privileged \
+          -v $PWD/build/:/output \
+          -v $PWD/e2e/assets/keys/:/keys \
+          quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
+          --debug \
+          build-uki \
+          --output-dir /output \
+          -k /keys \
+          --output-type iso \
+          -x "console=ttyS0" \
+          quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3
+      - name: Test UKI iso is bootable
+        env:
+          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
+          KVM: true
+          EFIVARS_EMPTY: true
+        run: |
+          export ISO=$(find $PWD/build -name *.iso)
+          go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi:
     runs-on: kvm
+    needs: build-image
     steps:
-      - uses: earthly/actions-setup@v1.0.13
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -96,35 +152,28 @@ jobs:
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@master
-      - name: Build local image
-        uses: docker/build-push-action@v6
-        with:
-          push: false
-          load: true
-          builder: ${{ steps.buildx.outputs.name }}
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          tags: auroraboot:latest
       - name: Generate raw image
         run: |
-          docker run --rm --privileged -v $PWD/build/:/output auroraboot:latest --debug --set "disable_http_server=true" --set "disable_netboot=true" --set "disk.efi=true" --set "disk.size=16000" --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3" --set "state_dir=/output"
+          mkdir build
+          docker run --rm --privileged \
+          -v $PWD/build/:/output \
+          quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
+          --debug \
+          --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
+          --set "disk.efi=true" \
+          --set "disk.size=16000" \
+          --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
       - name: Test raw image is bootable
         env:
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
-          USE_QEMU: true
-          MEMORY: 4000
-          CPUS: 2
-          CREATE_VM: true
           KVM: true
-          SECUREBOOT: true
+          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-bios:
     runs-on: kvm
+    needs: build-image
     steps:
-      - uses: earthly/actions-setup@v1.0.13
       - name: Checkout code
         uses: actions/checkout@v4
         with:
@@ -139,27 +188,20 @@ jobs:
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@master
-      - name: Build local image
-        uses: docker/build-push-action@v6
-        with:
-          push: false
-          load: true
-          builder: ${{ steps.buildx.outputs.name }}
-          context: .
-          file: ./Dockerfile
-          platforms: linux/amd64
-          tags: auroraboot:latest
       - name: Generate raw image
         run: |
-          docker run --rm --privileged -v $PWD/build/:/output auroraboot:latest --debug --set "disable_http_server=true" --set "disable_netboot=true" --set "disk.bios=true" --set "disk.size=16000" --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3" --set "state_dir=/output"
+          mkdir build
+          docker run --rm --privileged \
+          -v $PWD/build/:/output \
+          quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
+          --debug \
+          --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
+          --set "disk.bios=true" \
+          --set "disk.size=16000" \
+          --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
       - name: Test raw image is bootable
         env:
-          USE_QEMU: true
-          MEMORY: 4000
-          CPUS: 2
-          CREATE_VM: true
           KVM: true
-          SECUREBOOT: false
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
