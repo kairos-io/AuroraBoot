@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
+	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/robert-nix/ansihtml"
@@ -36,6 +37,15 @@ func getFileSystem(useOS bool) http.FileSystem {
 	return http.FS(fsys)
 }
 
+type JobData struct {
+	Variant            string `json:"variant"`
+	Model              string `json:"model"`
+	TrustedBoot        bool   `json:"trusted_boot"`
+	KubernetesProvider string `json:"kubernetes_provider"`
+	KubernetesVersion  string `json:"kubernetes_version"`
+	Image              string `json:"image"`
+}
+
 func App(listenAddr, artifactDir string) error {
 	e := echo.New()
 	e.Use(middleware.Logger())
@@ -48,43 +58,47 @@ func App(listenAddr, artifactDir string) error {
 	e.GET("/", echo.WrapHandler(assetHandler))
 
 	// Store the last submitted form data
-	var lastFormData map[string]string
+	jobsData := map[string]JobData{}
 	var mu sync.Mutex
 
 	// Handle form submission
 	e.POST("/start", func(c echo.Context) error {
 		mu.Lock()
 		defer mu.Unlock()
-		// Collect form data
-		lastFormData = map[string]string{
-			"variant":             c.FormValue("variant"),
-			"model":               c.FormValue("model"),
-			"trusted_boot":        c.FormValue("trusted_boot"),
-			"kubernetes_provider": c.FormValue("kubernetes_provider"),
-			"kubernetes_version":  c.FormValue("kubernetes_version"),
-			"image":               c.FormValue("image"),
+
+		// Collect job data
+		job := JobData{
+			Variant:            c.FormValue("variant"),
+			Model:              c.FormValue("model"),
+			TrustedBoot:        c.FormValue("trusted_boot") == "true",
+			KubernetesProvider: c.FormValue("kubernetes_provider"),
+			KubernetesVersion:  c.FormValue("kubernetes_version"),
+			Image:              c.FormValue("image"),
 		}
 
-		fmt.Printf("Received form data: %+v\n", lastFormData)
+		id := uuid.NewString()
 
-		return c.String(http.StatusOK, "Form submitted successfully. Connect to WebSocket to view the process.")
+		jobsData[id] = job
+
+		return c.JSON(http.StatusOK, map[string]string{"uuid": id})
 	})
 
 	// Handle WebSocket connection
-	e.GET("/ws", func(c echo.Context) error {
+	e.GET("/ws/:uuid", func(c echo.Context) error {
 		websocket.Handler(func(ws *websocket.Conn) {
 			mu.Lock()
-			defer mu.Unlock()
-
-			defer ws.Close()
-
-			if lastFormData == nil {
-				websocket.Message.Send(ws, "No form data submitted. Please submit the form first.")
+			uuid := c.Param("uuid")
+			jobData, exists := jobsData[uuid]
+			mu.Unlock()
+			if !exists {
+				websocket.Message.Send(ws, "Job not found")
 				return
 			}
 
+			defer ws.Close()
+
 			// Log the start of the process
-			websocket.Message.Send(ws, fmt.Sprintf("Starting process with data: %+v\n", lastFormData))
+			websocket.Message.Send(ws, fmt.Sprintf("Starting process with data: %+v\n", jobData))
 
 			tempdir, err := os.MkdirTemp("", "build")
 			if err != nil {
@@ -106,23 +120,29 @@ func App(listenAddr, artifactDir string) error {
 					tempdir,
 					"my-image",
 					"v0.2.3",
-					lastFormData["image"],
-					lastFormData["variant"],
-					lastFormData["model"],
-					lastFormData["trusted_boot"] == "true",
-					lastFormData["kubernetes_provider"],
-					lastFormData["kubernetes_version"],
+					jobData.Image,
+					jobData.Variant,
+					jobData.Model,
+					jobData.TrustedBoot,
+					jobData.KubernetesProvider,
+					jobData.KubernetesVersion,
 				))
+
+			fmt.Println("Finished building image")
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to build image: %v", err))
 				return
 			}
 
+			// Create the output dir for the job
+			jobOutputDir := filepath.Join(artifactDir, uuid)
+			os.MkdirAll(jobOutputDir, os.ModePerm)
+
 			websocket.Message.Send(ws, "Saving container image...")
 
 			err = runBashProcessWithOutput(
 				ws,
-				saveOCI(filepath.Join(artifactDir, "image.tar"), "my-image"),
+				saveOCI(filepath.Join(jobOutputDir, "image.tar"), "my-image"),
 			)
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
@@ -131,7 +151,7 @@ func App(listenAddr, artifactDir string) error {
 
 			err = runBashProcessWithOutput(
 				ws,
-				buildRawDisk("my-image", artifactDir),
+				buildRawDisk("my-image", jobOutputDir),
 			)
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
@@ -140,7 +160,7 @@ func App(listenAddr, artifactDir string) error {
 
 			err = runBashProcessWithOutput(
 				ws,
-				buildISO("my-image", artifactDir, "custom-kairos"),
+				buildISO("my-image", jobOutputDir, "custom-kairos"),
 			)
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
@@ -152,16 +172,16 @@ func App(listenAddr, artifactDir string) error {
 				URL  string `json:"url"`
 			}
 
-			rawImage, err := searchFileByExtensionInDirectory(artifactDir, ".raw")
+			rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to find raw disk image: %v", err))
 				return
 			}
 
 			links := []Link{
-				{Name: "Container image", URL: "/artifacts/image.tar"},
-				{Name: "Raw disk image", URL: "/artifacts/" + filepath.Base(rawImage)},
-				{Name: "ISO image", URL: "/artifacts/custom-kairos.iso"},
+				{Name: "Container image", URL: "/artifacts/" + uuid + "/image.tar"},
+				{Name: "Raw disk image", URL: "/artifacts/" + uuid + "/" + filepath.Base(rawImage)},
+				{Name: "ISO image", URL: "/artifacts/" + uuid + "/custom-kairos.iso"},
 			}
 
 			dat, err := json.Marshal(links)
