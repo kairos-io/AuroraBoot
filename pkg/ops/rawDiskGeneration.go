@@ -359,22 +359,18 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	}
 
 	// Now search for the grubARCH.efi and copy it to the efi partition from the rootfs
-	if strings.Contains(strings.ToLower(flavor), "alpine") && strings.Contains(strings.ToLower(model), "rpi") {
-		internal.Log.Logger.Warn().Msg("Running on Alpine+RPI, not copying shim or grub.")
-	} else {
-		err = r.copyShimOrGrub(tmpDirEfi, "shim")
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy shim")
-			return "", err
-		}
-
-		err = r.copyShimOrGrub(tmpDirEfi, "grub")
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
-			return "", err
-		}
+	err = r.copyShimOrGrub(tmpDirEfi, "shim")
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to copy shim")
+		return "", err
 	}
 
+	err = r.copyShimOrGrub(tmpDirEfi, "grub")
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
+		return "", err
+	}
+	
 	// Do board specific stuff
 	if model == "rpi4" {
 		err = copyFirmwareRpi4(tmpDirEfi)
@@ -741,6 +737,49 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		return fmt.Errorf("invalid which value: %s", which)
 	}
 
+	// Alpine does not provide a shim nor a grub file, so we need to copy the shim from the docker image that we ship as fallback artifcat
+	if model, flavor, _ := r.GetModelAndFlavor(); flavor == "alpine" && model != "generic" {
+		if arch == "arm64" {
+			// Copy the grub in the shim place
+			err = utils.CopyFile(
+				r.config.Fs,
+				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
+				filepath.Join(target, constants.EfiBootPath, "bootaa64.efi"),
+			)
+			if err != nil {
+				return fmt.Errorf("could not write file %s at dir %s from %s", "bootaa64.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
+			}
+			// Also copy it into the grub name to have the same files as in other flavors
+			err = utils.CopyFile(
+				r.config.Fs,
+				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
+				filepath.Join(target, constants.EfiBootPath, "grub.efi"),
+			)
+			if err != nil {
+				return fmt.Errorf("could not write file %s at dir %s from %s", "grub.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
+			}
+		} else {
+			err = utils.CopyFile(
+				r.config.Fs,
+				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
+				filepath.Join(target, constants.EfiBootPath, "bootx64.efi"),
+			)
+			if err != nil {
+				return fmt.Errorf("could not write file %s at dir %s from %s", "bootx64.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
+			}
+			// Also copy it into the grub name to hav ethe same files as in other flavors
+			err = utils.CopyFile(
+				r.config.Fs,
+				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
+				filepath.Join(target, constants.EfiBootPath, "grub.efi"),
+			)
+			if err != nil {
+				return fmt.Errorf("could not write file %s at dir %s from %s", "grub.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
+			}
+		}
+		return nil
+	}
+
 	for _, f := range searchFiles {
 		_, err := r.config.Fs.Stat(filepath.Join(r.Source, f))
 		if err != nil {
@@ -752,7 +791,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		name = strings.TrimSuffix(name, ".signed")
 		// remove the .dualsigned suffix if present
 		name = strings.TrimSuffix(name, ".dualsigned")
-		fileWriteName := filepath.Join(target, fmt.Sprintf("EFI/BOOT/%s", name))
+		fileWriteName := filepath.Join(target, constants.EfiBootPath, name)
 		r.config.Logger.Debugf("Copying %s to %s", f, fileWriteName)
 
 		// Try to find the paths give until we succeed
@@ -772,7 +811,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		// any bootloader entries, so our recent installation has the lower priority if something else is on the bootloader
 		if which == "shim" {
 			writeShim := agentConstants.GetFallBackEfi(arch)
-			err = r.config.Fs.WriteFile(filepath.Join(target, "EFI/BOOT/", writeShim), fileContent, agentConstants.FilePerm)
+			err = r.config.Fs.WriteFile(filepath.Join(target, constants.EfiBootPath, writeShim), fileContent, agentConstants.FilePerm)
 			if err != nil {
 				return fmt.Errorf("could not write file %s at dir %s", writeShim, target)
 			}
