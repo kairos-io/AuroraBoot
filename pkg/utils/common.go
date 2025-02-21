@@ -18,9 +18,11 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
+	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/spf13/viper"
 )
 
@@ -345,4 +347,48 @@ func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
 	}
 	l.Logger.Debug().Str("file", releaseFilename).Str("rootfs", rootfs).Msg("Could not find KAIROS_ARCH/KAIROS_TARGETARCH in rootfs")
 	return "", fmt.Errorf("KAIROS_ARCH/KAIROS_TARGETARCH not found in %s", releaseFilename)
+}
+
+// NameFromRootfs This generates the artifact name based on the rootfs kairos-release files
+// name of isos for example so we store them equally:
+// kairos-ubuntu-24.04-core-amd64-generic-v3.2.4.iso
+// Raw images
+// kairos-ubuntu-24.04-core-amd64-generic-v3.2.4.raw
+// Containers
+// 24.10-core-amd64-generic-v3.3.1
+// 22.04-core-arm64-rpi4-v3.3.1
+// UKI containers
+// 24.04-core-amd64-generic-v3.3.1-uki
+// raw images for boards
+// 22.04-core-arm64-rpi4-v3.3.1-img
+// So basically for iso/raw images we append kairos and the distro name
+// for containers we store them under the distro name (ubuntu, opensuse, etc) as the repo name
+// and then the rest is for the tag
+// quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.4
+func NameFromRootfs(rootfs string) string {
+	var label string
+	var flavor string
+	var err error
+	if _, ok := os.Stat(filepath.Join(rootfs, "etc/kairos-release")); ok == nil {
+		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
+		}
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+		}
+	} else {
+		// Before 3.2.x the kairos info was in /etc/os-release
+		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
+		}
+		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(rootfs, "etc/os-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
+		}
+	}
+
+	return fmt.Sprintf("kairos-%s-%s", flavor, label)
 }

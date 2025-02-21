@@ -422,36 +422,7 @@ func (r *RawImage) Build() error {
 	defer r.config.Fs.RemoveAll(r.TempDir())
 
 	// Get the artifact version from the rootfs
-	var label string
-	var flavor string
-	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
-		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.Source, "etc/kairos-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
-			return err
-		}
-		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
-			return err
-		}
-	} else {
-		// Before 3.2.x the kairos info was in /etc/os-release
-		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/os-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
-			return err
-		}
-		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(r.Source, "etc/os-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
-			return err
-		}
-	}
-
-	// name of isos for example so we store them equally:
-	// kairos-ubuntu-24.04-core-amd64-generic-v3.2.4.iso
-	outputName := fmt.Sprintf("kairos-%s-%s.raw", flavor, label)
+	outputName := utils.NameFromRootfs(r.Source) + ".raw"
 	internal.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
 
 	internal.Log.Logger.Info().Msg("Creating RECOVERY image")
