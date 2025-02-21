@@ -27,10 +27,10 @@ var BuildISOCmd = cli.Command{
 			Usage:   "The cloud config to embed in the ISO",
 		},
 		&cli.StringFlag{
-			Name:    "name",
+			Name:    "override-name",
 			Aliases: []string{"n"},
-			Value:   KairosDefaultArtifactName,
-			Usage:   "Basename of the generated ISO file",
+			Value:   "",
+			Usage:   "Overrride default ISO file name",
 		},
 		&cli.StringFlag{
 			Name:    "output",
@@ -73,7 +73,7 @@ var BuildISOCmd = cli.Command{
 			cli.ShowCommandHelp(ctx, ctx.Command.Name)
 			fmt.Println("")
 
-			return errors.New("No source defined")
+			return errors.New("no source defined")
 		}
 
 		cloudConfig := ""
@@ -90,13 +90,14 @@ var BuildISOCmd = cli.Command{
 			ContainerImage: source,
 		}
 		isoOptions := schema.ISO{
-			Name:          artifactBaseName(ctx),
+			OverrideName:  ctx.String("override-name"),
 			IncludeDate:   ctx.Bool("date"),
 			OverlayISO:    ctx.String("overlay-iso"),
 			OverlayRootfs: ctx.String("overlay-rootfs"),
 			OverlayUEFI:   ctx.String("overlay-uefi"),
 			Arch:          ctx.String("arch"),
 		}
+
 		if err := validateISOOptions(isoOptions); err != nil {
 			return err
 		}
@@ -129,14 +130,6 @@ var BuildISOCmd = cli.Command{
 	},
 }
 
-func artifactBaseName(ctx *cli.Context) string {
-	if setName := ctx.String("name"); setName != "" {
-		return setName
-	}
-
-	return KairosDefaultArtifactName
-}
-
 func validateISOOptions(i schema.ISO) error {
 	for _, path := range []string{i.OverlayISO, i.OverlayRootfs, i.OverlayUEFI} {
 		if path == "" {
@@ -148,7 +141,7 @@ func validateISOOptions(i schema.ISO) error {
 			continue
 		}
 		if os.IsNotExist(err) {
-			return fmt.Errorf("Invalid path '%s'", path)
+			return fmt.Errorf("invalid path '%s'", path)
 		}
 	}
 
