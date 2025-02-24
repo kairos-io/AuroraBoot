@@ -986,33 +986,35 @@ func (r *RawImage) FinalizeImage(image string) error {
 // so we have the same behaviour as in other flavors
 func (r *RawImage) CopyAlpineShimAndGrub(arch, target string) error {
 	var err error
-	grubPath := filepath.Join("/efi", arch, constants.EfiBootPath, "bootx64.efi")
-	targetPath := filepath.Join(target, constants.EfiBootPath, "bootx64.efi")
+	shimSrc := filepath.Join("/efi", arch, constants.EfiBootPath, "bootx64.efi")
+	shimTarget := filepath.Join(target, constants.EfiBootPath, "bootx64.efi")
+	grubSrc := filepath.Join("/efi", arch, constants.EfiBootPath, "grub.efi")
+	grubTarget := filepath.Join(target, constants.EfiBootPath, "grub.efi")
 
 	if arch == "arm64" {
-		grubPath = filepath.Join("/efi", arch, constants.EfiBootPath, "bootaa64.efi")
-		targetPath = filepath.Join(target, constants.EfiBootPath, "bootaa64.efi")
+		shimSrc = filepath.Join("/efi", arch, constants.EfiBootPath, "bootaa64.efi")
+		shimTarget = filepath.Join(target, constants.EfiBootPath, "bootaa64.efi")
 	}
 
 	err = utils.CopyFile(
 		r.config.Fs,
-		grubPath,
-		targetPath,
+		shimSrc,
+		shimTarget,
 	)
 	if err != nil {
-		return fmt.Errorf("could not write file %s at dir %s from %s", "bootx64.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
+		return fmt.Errorf("could not copy file %s from %s", shimSrc, shimTarget)
 	}
-	r.config.Logger.Logger.Debug().Str("source", grubPath).Str("target", targetPath).Msg("Copied")
+	r.config.Logger.Logger.Debug().Str("source", shimSrc).Str("target", shimTarget).Msg("Copied")
 	// Also copy it into the grub name to have the same files as in other flavors
 	err = utils.CopyFile(
 		r.config.Fs,
-		grubPath,
-		filepath.Join(target, constants.EfiBootPath, "grub.efi"),
+		grubSrc,
+		grubTarget,
 	)
 	if err != nil {
-		return fmt.Errorf("could not write file grub.efi at dir %s from %s", target, grubPath)
+		return fmt.Errorf("could not copy file %s from %s", grubSrc, grubTarget)
 	}
-	r.config.Logger.Logger.Debug().Str("source", grubPath).Str("target", filepath.Join(target, constants.EfiBootPath, "grub.efi")).Msg("Copied")
+	r.config.Logger.Logger.Debug().Str("source", grubSrc).Str("target", grubTarget).Msg("Copied")
 
 	return err
 }

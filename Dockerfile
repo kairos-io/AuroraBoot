@@ -49,8 +49,8 @@ RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
 ## RAW images for arm64
 
 # Used for alpine disk images as fallback. We need both arches.
-RUN luet install --config /tmp/luet-amd64.yaml -y static/grub-efi --system-target /efi/amd64/
-RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-efi --system-target /efi/arm64/
+RUN luet install --config /tmp/luet-amd64.yaml -y livecd/grub2-efi-image --system-target /efi/amd64/
+RUN luet install --config /tmp/luet-arm64.yaml -y livecd/grub2-efi-image --system-target /efi/arm64/
 # Orin uses these artifacts
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
 # Orin uses these artifacts
