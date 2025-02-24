@@ -370,7 +370,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
 		return "", err
 	}
-	
+
 	// Do board specific stuff
 	if model == "rpi4" {
 		err = copyFirmwareRpi4(tmpDirEfi)
@@ -738,7 +738,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 	}
 
 	// Alpine does not provide a shim nor a grub file, so we need to copy the shim from the docker image that we ship as fallback artifcat
-	if model, flavor, _ := r.GetModelAndFlavor(); flavor == "alpine" && model != "generic" {
+	if model, flavor, err := r.GetModelAndFlavor(); flavor == "alpine" && model != "generic" && err == nil {
 		if arch == "arm64" {
 			// Copy the grub in the shim place
 			err = utils.CopyFile(
