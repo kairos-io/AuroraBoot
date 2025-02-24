@@ -739,45 +739,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 
 	// Alpine does not provide a shim nor a grub file, so we need to copy the shim from the docker image that we ship as fallback artifcat
 	if model, flavor, err := r.GetModelAndFlavor(); flavor == "alpine" && model != "generic" && err == nil {
-		if arch == "arm64" {
-			// Copy the grub in the shim place
-			err = utils.CopyFile(
-				r.config.Fs,
-				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
-				filepath.Join(target, constants.EfiBootPath, "bootaa64.efi"),
-			)
-			if err != nil {
-				return fmt.Errorf("could not write file %s at dir %s from %s", "bootaa64.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
-			}
-			// Also copy it into the grub name to have the same files as in other flavors
-			err = utils.CopyFile(
-				r.config.Fs,
-				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
-				filepath.Join(target, constants.EfiBootPath, "grub.efi"),
-			)
-			if err != nil {
-				return fmt.Errorf("could not write file %s at dir %s from %s", "grub.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
-			}
-		} else {
-			err = utils.CopyFile(
-				r.config.Fs,
-				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
-				filepath.Join(target, constants.EfiBootPath, "bootx64.efi"),
-			)
-			if err != nil {
-				return fmt.Errorf("could not write file %s at dir %s from %s", "bootx64.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
-			}
-			// Also copy it into the grub name to hav ethe same files as in other flavors
-			err = utils.CopyFile(
-				r.config.Fs,
-				filepath.Join("/efi", constants.EfiBootPath, "grub.efi"),
-				filepath.Join(target, constants.EfiBootPath, "grub.efi"),
-			)
-			if err != nil {
-				return fmt.Errorf("could not write file %s at dir %s from %s", "grub.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
-			}
-		}
-		return nil
+		return r.CopyAlpineShimAndGrub(arch, target)
 	}
 
 	for _, f := range searchFiles {
@@ -1017,4 +979,52 @@ func (r *RawImage) FinalizeImage(image string) error {
 		return err
 	}
 	return nil
+}
+
+// CopyAlpineShimAndGrub copies the grub.efi to the shim place and also to the grub place
+// As alpine does not provide a shim, we need to copy the grub.efi to the shim place
+// so we have the same behaviour as in other flavors
+func (r *RawImage) CopyAlpineShimAndGrub(arch, target string) error {
+	var err error
+	grubPath := filepath.Join("/efi", constants.EfiBootPath, "grub.efi")
+
+	if arch == "arm64" {
+		// Copy the grub in the shim place
+		err = utils.CopyFile(
+			r.config.Fs,
+			filepath.Join(grubPath),
+			filepath.Join(target, constants.EfiBootPath, "bootaa64.efi"),
+		)
+		if err != nil {
+			return fmt.Errorf("could not write file %s at dir %s from %s", "bootaa64.efi", target, grubPath)
+		}
+		// Also copy it into the grub name to have the same files as in other flavors
+		err = utils.CopyFile(
+			r.config.Fs,
+			grubPath,
+			filepath.Join(target, constants.EfiBootPath, "grub.efi"),
+		)
+		if err != nil {
+			return fmt.Errorf("could not write file %s at dir %s from %s", "grub.efi", target, grubPath)
+		}
+	} else {
+		err = utils.CopyFile(
+			r.config.Fs,
+			grubPath,
+			filepath.Join(target, constants.EfiBootPath, "bootx64.efi"),
+		)
+		if err != nil {
+			return fmt.Errorf("could not write file %s at dir %s from %s", "bootx64.efi", target, filepath.Join("/efi", constants.EfiBootPath, "grub.efi"))
+		}
+		// Also copy it into the grub name to hav ethe same files as in other flavors
+		err = utils.CopyFile(
+			r.config.Fs,
+			grubPath,
+			filepath.Join(target, constants.EfiBootPath, "grub.efi"),
+		)
+		if err != nil {
+			return fmt.Errorf("could not write file %s at dir %s from %s", "grub.efi", target, grubPath)
+		}
+	}
+	return err
 }
