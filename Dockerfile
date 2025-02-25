@@ -48,13 +48,12 @@ RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
 
 ## RAW images for arm64
 
-# Used for alpine disk images as fallback. We need both arches.
-RUN luet install --config /tmp/luet-amd64.yaml -y livecd/grub2-efi-image --system-target /efi/amd64/
-RUN luet install --config /tmp/luet-arm64.yaml -y livecd/grub2-efi-image --system-target /efi/arm64/
 # Orin uses these artifacts
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
-# Orin uses these artifacts
+# Orin uses these artifacts. Alpine uses these artifacts for fallback efi values
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
+# You can build amd64 raw images for alpine so....we need this.
+RUN luet install --config /tmp/luet-amd64.yaml -y static/grub-artifacts --system-target /amd/raw/grubartifacts
 
 # kairos-agent so we can use the pull-image
 # TODO: What? I cant see where this is used anywhere? Check why its here? Its like 35Mb on nothingness if not used?
@@ -62,34 +61,25 @@ RUN luet install -y system/kairos-agent
 
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
 # so temporal files are stored in each dir
-RUN rm -Rf /grub2/var/tmp
-RUN rm -Rf /grub2/var/cache
-RUN rm -Rf /efi/amd64/var/tmp
-RUN rm -Rf /efi/arm64/var/tmp
-RUN rm -Rf /efi/amd64/var/cache
-RUN rm -Rf /efi/arm64/var/cache
 RUN rm -Rf /rpi/var/tmp
 RUN rm -Rf /rpi/var/cache
 RUN rm -Rf /pinebookpro/u-boot/var/tmp
 RUN rm -Rf /pinebookpro/u-boot/var/cache
 RUN rm -Rf /firmware/odroid-c2/var/tmp
 RUN rm -Rf /firmware/odroid-c2/var/cache
-RUN rm -Rf /arm/raw/grubefi/var/tmp
-RUN rm -Rf /arm/raw/grubefi/var/cache
 RUN rm -Rf /arm/raw/grubconfig/var/tmp
 RUN rm -Rf /arm/raw/grubconfig/var/cache
 RUN rm -Rf /arm/raw/grubartifacts/var/tmp
+RUN rm -Rf /amd/raw/grubartifacts/var/tmp
 RUN rm -Rf /arm/raw/grubartifacts/var/cache
+RUN rm -Rf /amd/raw/grubartifacts/var/cache
 # Remove the var dir if empty
-RUN rm -d /grub2/var || true
-RUN rm -d /efi/amd64/var || true
-RUN rm -d /efi/arm64/var || true
 RUN rm -d /rpi/var || true
 RUN rm -d /pinebookpro/u-boot/var || true
 RUN rm -d /firmware/odroid-c2/var || true
-RUN rm -d /arm/raw/grubefi/var || true
 RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
+RUN rm -d /amd/raw/grubartifacts/var || true
 
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh

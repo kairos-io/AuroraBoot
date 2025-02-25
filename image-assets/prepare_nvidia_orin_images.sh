@@ -44,9 +44,9 @@ set root=($root)
 set prefix=($root)/grub2
 configfile ($root)/etc/cos/grub.cfg
 EOF
-cp -rfv /arm/raw/grubartifacts/arm64-efi/grub.efi $WORKDIR/tmpefi/EFI/BOOT/bootaa64.efi
-cp -rfv /arm/raw/grubartifacts/arm64-efi/grub.efi $WORKDIR/tmpefi/EFI/BOOT/grub.efi
-cp -rfv /arm/raw/grubartifacts/* $WORKDIR/tmpefi/EFI/BOOT/
+# Package now bundles the grub artifacts in the proper places /efi/boot/bootaa64.efi and so on
+# so we can just dump it there
+cp -rfv /arm/raw/grubartifacts/* $WORKDIR/tmpefi/
 mkdir -p $WORKDIR/tmpefi/EFI/BOOT/fonts
 mv $WORKDIR/tmpefi/EFI/BOOT/*pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
 

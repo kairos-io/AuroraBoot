@@ -986,25 +986,23 @@ func (r *RawImage) FinalizeImage(image string) error {
 // so we have the same behaviour as in other flavors
 func (r *RawImage) CopyAlpineShimAndGrub(arch, target string) error {
 	var err error
-	shimSrc := filepath.Join("/efi", arch, constants.EfiBootPath, "bootx64.efi")
-	shimTarget := filepath.Join(target, constants.EfiBootPath, "bootx64.efi")
-	grubSrc := filepath.Join("/efi", arch, constants.EfiBootPath, "grub.efi")
-	grubTarget := filepath.Join(target, constants.EfiBootPath, "grub.efi")
+	grubSrc := filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	grubTarget := filepath.Join(target, constants.EfiBootPath, "bootx64.efi")
 
 	if arch == "arm64" {
-		shimSrc = filepath.Join("/efi", arch, constants.EfiBootPath, "bootaa64.efi")
-		shimTarget = filepath.Join(target, constants.EfiBootPath, "bootaa64.efi")
+		grubSrc = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+		grubTarget = filepath.Join(target, constants.EfiBootPath, "bootaa64.efi")
 	}
 
 	err = utils.CopyFile(
 		r.config.Fs,
-		shimSrc,
-		shimTarget,
+		grubSrc,
+		grubTarget,
 	)
 	if err != nil {
-		return fmt.Errorf("could not copy file %s from %s", shimSrc, shimTarget)
+		return fmt.Errorf("could not copy file %s from %s", grubSrc, grubTarget)
 	}
-	r.config.Logger.Logger.Debug().Str("source", shimSrc).Str("target", shimTarget).Msg("Copied")
+	r.config.Logger.Logger.Debug().Str("source", grubSrc).Str("target", grubTarget).Msg("Copied")
 	// Also copy it into the grub name to have the same files as in other flavors
 	err = utils.CopyFile(
 		r.config.Fs,
