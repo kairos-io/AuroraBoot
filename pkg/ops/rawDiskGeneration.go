@@ -164,6 +164,12 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 				},
 			}, "network": {
 				schema.Stage{
+					Name: "Trigger udevadm",
+					Commands: []string{
+						"udevadm trigger",
+					},
+				},
+				schema.Stage{
 					If:   `[ -f "/run/cos/recovery_mode" ]`,
 					Name: "Run auto reset",
 					Commands: []string{
