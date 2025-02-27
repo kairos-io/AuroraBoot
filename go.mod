@@ -12,8 +12,8 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/containerd/containerd v1.7.26
 	github.com/diskfs/go-diskfs v1.4.2
-	github.com/foxboron/go-uefi v0.0.0-20241219185318-19dc140271bf
-	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
+	github.com/foxboron/go-uefi v0.0.0-20250207204325-69fb7dba244f
+	github.com/foxboron/sbctl v0.0.0-20250215140158-4386be42db82
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.20.3
 	github.com/hashicorp/go-multierror v1.1.1
@@ -83,8 +83,9 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20230602022725-51bbb787efab // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/fatih/color v1.15.0 // indirect
+	github.com/fatih/color v1.17.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/foxboron/go-tpm-keyfiles v0.0.0-20240725205618-b7c5a84edf9d // indirect
 	github.com/fsnotify/fsnotify v1.7.0 // indirect
 	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
@@ -94,6 +95,7 @@ require (
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/goccy/go-yaml v1.11.3 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -120,6 +122,7 @@ require (
 	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
+	github.com/landlock-lsm/go-landlock v0.0.0-20240715193425-db0c8d6f1dff // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/lufia/plan9stats v0.0.0-20211012122336-39d0f177ccd0 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
@@ -212,6 +215,7 @@ require (
 	golang.org/x/term v0.29.0 // indirect
 	golang.org/x/text v0.22.0 // indirect
 	golang.org/x/tools v0.30.0 // indirect
+	golang.org/x/xerrors v0.0.0-20231012003039-104605ab7028 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20250124145028-65684f501c47 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250212204824-5a70512c5d8b // indirect
 	google.golang.org/grpc v1.70.0 // indirect
@@ -223,6 +227,7 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/mount-utils v0.32.2 // indirect
 	k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 // indirect
+	kernel.org/pub/linux/libs/security/libcap/psx v1.2.70 // indirect
 	pault.ag/go/modprobe v0.2.0 // indirect
 	pault.ag/go/topsort v0.1.1 // indirect
 )
