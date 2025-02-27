@@ -87,7 +87,7 @@ jobs:
           tags: auroraboot:latest
       - name: Run e2e tests
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "!bootable && !raw-bootable" ./e2e
+          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
       - name: Codecov
         uses: codecov/codecov-action@v5
         env:

@@ -10,7 +10,7 @@ import (
 	"github.com/onsi/gomega/format"
 )
 
-var _ = Describe("ISO image generation", Label("iso"), func() {
+var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 	Context("build", func() {
 		var tempDir string
 		var err error

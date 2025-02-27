@@ -18,7 +18,7 @@ import (
 )
 
 // As this tests all use loop devices, they should be run serially so they dont hit each other while acquiring the loop device number
-var _ = Describe("Disk image generation", Label("raw-disks"), Serial, Ordered, func() {
+var _ = Describe("Disk image generation", Label("raw-disks", "e2e"), Serial, Ordered, func() {
 	var tempDir string
 	var err error
 	var aurora *Auroraboot
