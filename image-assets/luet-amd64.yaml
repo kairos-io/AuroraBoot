@@ -14,3 +14,13 @@ repositories:
       - "quay.io/kairos/packages"
     # renovate: datasource=docker depName=quay.io/kairos/packages
     reference: 202501131503-gitd0ac910f-repository.yaml
+  - name: "plural"
+    description: "plural repository"
+    type: "docker"
+    cached: true
+    enable: true
+    priority: 2
+    urls:
+      - "ghcr.io/pluralsh/packages"
+    # renovate: datasource=docker depName=ghcr.io/pluralsh/packages
+    reference: 202502280838-gitbd4e6ec7-repository.yaml

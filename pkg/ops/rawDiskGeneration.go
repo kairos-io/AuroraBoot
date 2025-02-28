@@ -3,6 +3,12 @@ package ops
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+
 	"github.com/diskfs/go-diskfs"
 	"github.com/diskfs/go-diskfs/partition"
 	"github.com/diskfs/go-diskfs/partition/gpt"
@@ -21,11 +27,12 @@ import (
 	"github.com/twpayne/go-vfs/v5"
 	"golang.org/x/sys/unix"
 	"gopkg.in/yaml.v3"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"runtime"
-	"strings"
+)
+
+const (
+	modelRpi3 = "rpi3"
+	modelRpi4 = "rpi4"
+	modelRpi5 = "rpi5"
 )
 
 // What it does
@@ -333,6 +340,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	}
 
 	model, flavor, err := r.GetModelAndFlavor()
+	internal.Log.Logger.Info().Str("model", model).Str("flavor", flavor).Msg("model and flavor")
 
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
@@ -376,10 +384,10 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	}
 
 	// Do board specific stuff
-	if model == "rpi4" {
-		err = copyFirmwareRpi4(tmpDirEfi)
+	if model == modelRpi4 || model == modelRpi5 {
+		err = copyFirmwareRpi(tmpDirEfi, model)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi4 firmware")
+			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi firmware")
 			return "", err
 		}
 	}
@@ -938,7 +946,7 @@ func (r *RawImage) FinalizeImage(image string) error {
 
 	// Do board specific stuff
 	switch model {
-	case "rpi4", "rpi3":
+	case modelRpi5, modelRpi4, modelRpi3:
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on RPI.")
 	case "odroid-c2":
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Odroid-C2.")
