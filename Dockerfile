@@ -45,6 +45,9 @@ RUN luet install -y livecd/grub2-efi-image --system-target /efi
 ## RPI64
 RUN luet install -y firmware/u-boot-rpi64 firmware/raspberrypi-firmware firmware/raspberrypi-firmware-config firmware/raspberrypi-firmware-dt --system-target /rpi/
 
+## RPI5
+RUN luet install -y firmware/rpi5 --system-target /rpi5/
+
 ## PineBook64 Pro
 RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro/u-boot
 

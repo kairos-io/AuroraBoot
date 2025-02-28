@@ -17,6 +17,7 @@ STATEDIR=$(mktemp -d --tmpdir arm-builder.XXXXXXXXXX)
 : "${STATE_LABEL:=COS_STATE}"
   
 state_size="${STATE_SIZE:-4992}"
+
 recovery_size="${RECOVERY_SIZE:-2192}"
 default_active_size="${DEFAULT_ACTIVE_SIZE:-2400}"
 menu_entry="${DEFAULT_MENU_ENTRY:-Kairos}"

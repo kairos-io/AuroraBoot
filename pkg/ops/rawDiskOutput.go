@@ -7,12 +7,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"io"
 	"io/fs"
 	"math"
 	"os"
 	"time"
+
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 
 	uuidPkg "github.com/gofrs/uuid"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -329,9 +330,16 @@ func chsCalculation(sectors uint64) chs {
 
 // Model specific funtions
 
-// copyFirmwareRpi4 will copy the proper firmware files for a Raspberry Pi 4 into the EFI partition
-func copyFirmwareRpi4(target string) error {
-	internal.Log.Logger.Info().Str("target", target).Msg("Copying Raspberry Pi 4 firmware")
-	// Copy the firmware files from /rpi/ into target
-	return utils.CopyDir("/rpi/", target)
+// copyFirmwareRpi will copy the proper firmware files for a Raspberry Pi 4 and 5 into the EFI partition
+func copyFirmwareRpi(target, model string) error {
+	internal.Log.Logger.Info().Str("target", target).Str("model", model).Msg("Copying Raspberry Pi firmware")
+	if model == modelRpi4 {
+		// Copy the firmware files from /rpi/ into target
+		return utils.CopyDir("/rpi/", target)
+	}
+	if model == modelRpi5 {
+		// Copy the firmware files from /rpi5/ into target
+		return utils.CopyDir("/rpi5/", target)
+	}
+	return fmt.Errorf("unknown model: %s", model)
 }
