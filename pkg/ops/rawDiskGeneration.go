@@ -390,7 +390,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		File:       filepath.Join(r.TempDir(), "efi.img"),
 		FS:         agentConstants.EfiFs,
 		Label:      agentConstants.EfiLabel,
-		Size:       agentConstants.EfiSize * 2,
+		Size:       agentConstants.EfiSize,
 		Source:     v1.NewDirSrc(tmpDirEfi),
 		MountPoint: tmpDirEfiMount,
 	}
