@@ -37,16 +37,8 @@ mkdir -p $WORKDIR/tmpefi
 
 # Create the EFI partition FAT16 and include the EFI image and a basic grub.cfg
 truncate -s $((20*1024*1024)) bootloader/efi.img
-mkdir -p $WORKDIR/tmpefi/EFI/BOOT
-$WORKDIR/tmpefi/EFI/BOOT/grub.cfg <<EOF
-search --no-floppy --label --set=root COS_RECOVERY
-set root=($root)
-set prefix=($root)/grub2
-configfile ($root)/etc/cos/grub.cfg
-EOF
-# Package now bundles the grub artifacts in the proper places /efi/boot/bootaa64.efi and so on
-# so we can just dump it there
-cp -rfv /arm/raw/grubartifacts/* $WORKDIR/tmpefi/
+cp -rfv /arm/raw/grubefi/* $WORKDIR/tmpefi
+cp -rfv /arm/raw/grubartifacts/* $WORKDIR/tmpefi/EFI/BOOT/
 mkdir -p $WORKDIR/tmpefi/EFI/BOOT/fonts
 mv $WORKDIR/tmpefi/EFI/BOOT/*pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
 

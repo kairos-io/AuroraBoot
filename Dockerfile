@@ -49,6 +49,7 @@ RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
 ## RAW images for arm64
 
 # Orin uses these artifacts
+RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-efi --system-target /arm/raw/grubefi
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
 # Orin uses these artifacts. Alpine uses these artifacts for fallback efi values
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
@@ -73,6 +74,8 @@ RUN rm -Rf /arm/raw/grubartifacts/var/tmp
 RUN rm -Rf /amd/raw/grubartifacts/var/tmp
 RUN rm -Rf /arm/raw/grubartifacts/var/cache
 RUN rm -Rf /amd/raw/grubartifacts/var/cache
+RUN rm -Rf /arm/raw/grubefi/var/tmp
+RUN rm -Rf /arm/raw/grubefi/var/cache
 # Remove the var dir if empty
 RUN rm -d /rpi/var || true
 RUN rm -d /pinebookpro/u-boot/var || true
@@ -80,6 +83,7 @@ RUN rm -d /firmware/odroid-c2/var || true
 RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
 RUN rm -d /amd/raw/grubartifacts/var || true
+RUN rm -d /arm/raw/grubefi/var || true
 
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
