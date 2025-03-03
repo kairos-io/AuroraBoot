@@ -377,11 +377,11 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		return "", err
 	}
 
-	// Do board specific stuff
-	if model == "rpi4" {
-		err = copyFirmwareRpi4(tmpDirEfi)
+	// Copy RPI firmware, should be valid for rpi3,4,5 and beyond if the rpi firmware files are updated
+	if strings.HasPrefix(model, "rpi") {
+		err = copyFirmwareRpi(tmpDirEfi)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi4 firmware")
+			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi firmware")
 			return "", err
 		}
 	}
