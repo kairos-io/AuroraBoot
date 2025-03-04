@@ -38,7 +38,8 @@ RUN luet repo update
 RUN luet install -y system/systemd-boot
 
 ## RPI64
-RUN luet install -y firmware/u-boot-rpi64 firmware/raspberrypi-firmware firmware/raspberrypi-firmware-config firmware/raspberrypi-firmware-dt --system-target /rpi/
+## Both arches have the same package files so no matter the arch here.
+RUN luet install -y firmware/u-boot-rpi64 firmware/rpi --system-target /rpi/
 
 ## PineBook64 Pro
 RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro/u-boot
