@@ -2,7 +2,7 @@ module github.com/kairos-io/AuroraBoot
 
 go 1.23.6
 
-toolchain go1.24.0
+toolchain go1.24.1
 
 // https://github.com/golang/go/blob/583d750fa119d504686c737be6a898994b674b69/src/crypto/x509/parser.go#L1014-L1018
 // For keys with negative serial number:
