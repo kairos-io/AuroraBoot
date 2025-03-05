@@ -164,6 +164,12 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 				},
 			}, "network": {
 				schema.Stage{
+					Name: "Trigger udevadm",
+					Commands: []string{
+						"udevadm trigger",
+					},
+				},
+				schema.Stage{
 					If:   `[ -f "/run/cos/recovery_mode" ]`,
 					Name: "Run auto reset",
 					Commands: []string{
@@ -359,27 +365,23 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	}
 
 	// Now search for the grubARCH.efi and copy it to the efi partition from the rootfs
-	if strings.Contains(strings.ToLower(flavor), "alpine") && strings.Contains(strings.ToLower(model), "rpi") {
-		internal.Log.Logger.Warn().Msg("Running on Alpine+RPI, not copying shim or grub.")
-	} else {
-		err = r.copyShimOrGrub(tmpDirEfi, "shim")
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy shim")
-			return "", err
-		}
-
-		err = r.copyShimOrGrub(tmpDirEfi, "grub")
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
-			return "", err
-		}
+	err = r.copyShimOrGrub(tmpDirEfi, "shim")
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to copy shim")
+		return "", err
 	}
 
-	// Do board specific stuff
-	if model == "rpi4" {
-		err = copyFirmwareRpi4(tmpDirEfi)
+	err = r.copyShimOrGrub(tmpDirEfi, "grub")
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
+		return "", err
+	}
+
+	// Copy RPI firmware, should be valid for rpi3,4,5 and beyond if the rpi firmware files are updated
+	if strings.HasPrefix(model, "rpi") {
+		err = copyFirmwareRpi(tmpDirEfi)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi4 firmware")
+			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi firmware")
 			return "", err
 		}
 	}
@@ -741,6 +743,11 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		return fmt.Errorf("invalid which value: %s", which)
 	}
 
+	// Alpine does not provide a shim nor a grub file, so we need to copy the shim from the docker image that we ship as fallback artifact
+	if _, flavor, err := r.GetModelAndFlavor(); flavor == "alpine" && err == nil {
+		return r.CopyAlpineShimAndGrub(arch, target)
+	}
+
 	for _, f := range searchFiles {
 		_, err := r.config.Fs.Stat(filepath.Join(r.Source, f))
 		if err != nil {
@@ -752,7 +759,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		name = strings.TrimSuffix(name, ".signed")
 		// remove the .dualsigned suffix if present
 		name = strings.TrimSuffix(name, ".dualsigned")
-		fileWriteName := filepath.Join(target, fmt.Sprintf("EFI/BOOT/%s", name))
+		fileWriteName := filepath.Join(target, constants.EfiBootPath, name)
 		r.config.Logger.Debugf("Copying %s to %s", f, fileWriteName)
 
 		// Try to find the paths give until we succeed
@@ -772,7 +779,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		// any bootloader entries, so our recent installation has the lower priority if something else is on the bootloader
 		if which == "shim" {
 			writeShim := agentConstants.GetFallBackEfi(arch)
-			err = r.config.Fs.WriteFile(filepath.Join(target, "EFI/BOOT/", writeShim), fileContent, agentConstants.FilePerm)
+			err = r.config.Fs.WriteFile(filepath.Join(target, constants.EfiBootPath, writeShim), fileContent, agentConstants.FilePerm)
 			if err != nil {
 				return fmt.Errorf("could not write file %s at dir %s", writeShim, target)
 			}
@@ -978,4 +985,40 @@ func (r *RawImage) FinalizeImage(image string) error {
 		return err
 	}
 	return nil
+}
+
+// CopyAlpineShimAndGrub copies the grub.efi to the shim place and also to the grub place
+// As alpine does not provide a shim, we need to copy the grub.efi to the shim place
+// so we have the same behaviour as in other flavors
+func (r *RawImage) CopyAlpineShimAndGrub(arch, target string) error {
+	var err error
+	grubSrc := filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	grubTarget := filepath.Join(target, constants.EfiBootPath, "bootx64.efi")
+
+	if arch == "arm64" {
+		grubSrc = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+		grubTarget = filepath.Join(target, constants.EfiBootPath, "bootaa64.efi")
+	}
+
+	err = utils.CopyFile(
+		r.config.Fs,
+		grubSrc,
+		grubTarget,
+	)
+	if err != nil {
+		return fmt.Errorf("could not copy file %s from %s", grubSrc, grubTarget)
+	}
+	r.config.Logger.Logger.Debug().Str("source", grubSrc).Str("target", grubTarget).Msg("Copied")
+	// Also copy it into the grub name to have the same files as in other flavors
+	err = utils.CopyFile(
+		r.config.Fs,
+		grubSrc,
+		grubTarget,
+	)
+	if err != nil {
+		return fmt.Errorf("could not copy file %s from %s", grubSrc, grubTarget)
+	}
+	r.config.Logger.Logger.Debug().Str("source", grubSrc).Str("target", grubTarget).Msg("Copied")
+
+	return err
 }

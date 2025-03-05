@@ -37,13 +37,9 @@ ENV CONTAINERD_DISABLE_PIGZ=1
 RUN luet repo update
 RUN luet install -y system/systemd-boot
 
-# Install the grub2-efi-image package to get the unsigned shim and the unsigned grub.efi
-# TODO: Remove this. Only used by alpine+arch. It should fallback to not install the shim if on alpine and install the usigned grub.efi
-# Alpine doesnt ship a shim so we can skip it directly and install the grub in the shim place.
-RUN luet install -y livecd/grub2-efi-image --system-target /efi
-
 ## RPI64
-RUN luet install -y firmware/u-boot-rpi64 firmware/raspberrypi-firmware firmware/raspberrypi-firmware-config firmware/raspberrypi-firmware-dt --system-target /rpi/
+## Both arches have the same package files so no matter the arch here.
+RUN luet install -y firmware/u-boot-rpi64 firmware/rpi --system-target /rpi/
 
 ## PineBook64 Pro
 RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro/u-boot
@@ -52,14 +48,14 @@ RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro
 RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
 
 ## RAW images for arm64
-# Luet will install this artifacts from the current arch repo, so in x86 it will
-# get them from the x86 repo and we want it to do it from the arm64 repo, even on x86
-# so we use the arm64 luet config and use that to install those on x86
-# This is being used by the prepare_arm_images.sh and build-arch-image.sh scripts
-# TODO: Remove this. Only used for orin image. It should be built in the RAW image generation directly so we cna drop this
+
+# Orin uses these artifacts
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-efi --system-target /arm/raw/grubefi
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
+# Orin uses these artifacts. Alpine uses these artifacts for fallback efi values
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
+# You can build amd64 raw images for alpine so....we need this.
+RUN luet install --config /tmp/luet-amd64.yaml -y static/grub-artifacts --system-target /amd/raw/grubartifacts
 
 # kairos-agent so we can use the pull-image
 # TODO: What? I cant see where this is used anywhere? Check why its here? Its like 35Mb on nothingness if not used?
@@ -67,31 +63,28 @@ RUN luet install -y system/kairos-agent
 
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
 # so temporal files are stored in each dir
-RUN rm -Rf /grub2/var/tmp
-RUN rm -Rf /grub2/var/cache
-RUN rm -Rf /efi/var/tmp
-RUN rm -Rf /efi/var/cache
 RUN rm -Rf /rpi/var/tmp
 RUN rm -Rf /rpi/var/cache
 RUN rm -Rf /pinebookpro/u-boot/var/tmp
 RUN rm -Rf /pinebookpro/u-boot/var/cache
 RUN rm -Rf /firmware/odroid-c2/var/tmp
 RUN rm -Rf /firmware/odroid-c2/var/cache
-RUN rm -Rf /arm/raw/grubefi/var/tmp
-RUN rm -Rf /arm/raw/grubefi/var/cache
 RUN rm -Rf /arm/raw/grubconfig/var/tmp
 RUN rm -Rf /arm/raw/grubconfig/var/cache
 RUN rm -Rf /arm/raw/grubartifacts/var/tmp
+RUN rm -Rf /amd/raw/grubartifacts/var/tmp
 RUN rm -Rf /arm/raw/grubartifacts/var/cache
+RUN rm -Rf /amd/raw/grubartifacts/var/cache
+RUN rm -Rf /arm/raw/grubefi/var/tmp
+RUN rm -Rf /arm/raw/grubefi/var/cache
 # Remove the var dir if empty
-RUN rm -d /grub2/var || true
-RUN rm -d /efi/var || true
 RUN rm -d /rpi/var || true
 RUN rm -d /pinebookpro/u-boot/var || true
 RUN rm -d /firmware/odroid-c2/var || true
-RUN rm -d /arm/raw/grubefi/var || true
 RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
+RUN rm -d /amd/raw/grubartifacts/var || true
+RUN rm -d /arm/raw/grubefi/var || true
 
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
