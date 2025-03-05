@@ -30,7 +30,7 @@ jobs:
           provenance: false
           platforms: linux/amd64
           push: true
-          tags: quay.io/kairos/ci-temp-images:auroraboot-${{ github.ref_name }}-amd64
+          tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-amd64
   build-linux-arm64:
     runs-on: 'ubuntu-24.04-arm'
     steps:
@@ -51,7 +51,7 @@ jobs:
           provenance: false
           platforms: linux/arm64
           push: true
-          tags: quay.io/kairos/ci-temp-images:auroraboot-${{ github.ref_name }}-arm64
+          tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-arm64
   build:
     needs:
       - build-linux-amd64
@@ -73,18 +73,5 @@ jobs:
           index-annotations: ${{ steps.metadata.outputs.labels }}
           tags: ${{ steps.metadata.outputs.tags }}
           sources: |
-            quay.io/kairos/ci-temp-images:auroraboot-${{ github.ref_name }}-amd64
-            quay.io/kairos/ci-temp-images:auroraboot-${{ github.ref_name }}-arm64
-  cleanup:
-    runs-on: ubuntu-24.04
-    needs: build
-    steps:
-      - uses: docker/login-action@v3
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Cleanup
-        run: |
-          docker image rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.ref_name }}-amd64
-          docker image rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.ref_name }}-arm64
+            quay.io/kairos/auroraboot:${{ github.ref_name }}-amd64
+            quay.io/kairos/auroraboot:${{ github.ref_name }}-arm64
