@@ -502,10 +502,10 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	switch b.cfg.Arch {
 	case constants.ArchAmd64, constants.Archx86:
 		shimDest = filepath.Join(tempdir, constants.ShimEfiDest)
-		fallBackShim = filepath.Join("/efi", constants.EfiBootPath, "bootx64.efi")
+		fallBackShim = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	case constants.ArchArm64:
 		shimDest = filepath.Join(tempdir, constants.ShimEfiArmDest)
-		fallBackShim = filepath.Join("/efi", constants.EfiBootPath, "bootaa64.efi")
+		fallBackShim = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	default:
 		err = fmt.Errorf("not supported architecture: %v", b.cfg.Arch)
 	}
@@ -563,7 +563,10 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 // rootdir is the rootfs where the shim files are searched for
 func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	// this is shipped usually with osbuilder and the files come from livecd/grub2-efi-artifacts
-	var fallBackGrub = filepath.Join("/efi", constants.EfiBootPath, "grub.efi")
+	var fallBackGrub = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	if b.cfg.Arch == constants.ArchAmd64 || b.cfg.Arch == constants.Archx86 {
+		fallBackGrub = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	}
 	var err error
 	// Get possible grub file paths
 	grubFiles := sdkutils.GetEfiGrubFiles(b.cfg.Arch)
