@@ -7,12 +7,13 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"io"
 	"io/fs"
 	"math"
 	"os"
 	"time"
+
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 
 	uuidPkg "github.com/gofrs/uuid"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -69,6 +70,7 @@ func Raw2Azure(source string) (string, error) {
 		return name, err
 	}
 	size := uint64(info.Size())
+	// TODO: Round to MB (Azure requirement)
 	header := newVHDFixed(size)
 	err = binary.Write(vhdFile, binary.BigEndian, header)
 	if err != nil {
@@ -233,6 +235,7 @@ type VHDHeader struct {
 // Lots of magic numbers here, but they are all defined in the VHD format spec
 func newVHDFixed(size uint64) VHDHeader {
 	header := VHDHeader{}
+	hexToField("636f6e6563746978", header.Cookie[:])
 	hexToField("00000002", header.Features[:])
 	hexToField("00010000", header.FileFormatVersion[:])
 	hexToField("ffffffffffffffff", header.DataOffset[:])
