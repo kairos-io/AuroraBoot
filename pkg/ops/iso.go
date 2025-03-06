@@ -494,7 +494,6 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	var err error
 	var arch string
 	// Get possible shim file paths
-	// GET arch from rootfs
 	arch, err = utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
 	if err != nil {
 		return err
