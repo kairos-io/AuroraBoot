@@ -81,10 +81,10 @@ const (
 
 	UkiCmdline            = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
 	UkiCmdlineInstall     = "install-mode"
-	UkiSystemdBootx86     = "/usr/kairos/systemd-bootx64.efi"
-	UkiSystemdBootArm     = "/usr/kairos/systemd-bootaa64.efi"
-	UkiSystemdBootStubx86 = "/usr/kairos/linuxx64.efi.stub"
-	UkiSystemdBootStubArm = "/usr/kairos/linuxaa64.efi.stub"
+	UkiSystemdBootx86     = "/amd/systemd-boot/systemd-bootx64.efi"
+	UkiSystemdBootStubx86 = "/amd/systemd-boot/linuxx64.efi.stub"
+	UkiSystemdBootArm     = "/arm/systemd-boot/systemd-bootaa64.efi"
+	UkiSystemdBootStubArm = "/arm/systemd-boot/linuxaa64.efi.stub"
 
 	EfiFallbackNamex86 = "BOOTX64.EFI"
 	EfiFallbackNameArm = "BOOTAA64.EFI"

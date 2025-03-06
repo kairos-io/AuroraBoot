@@ -333,5 +333,5 @@ func chsCalculation(sectors uint64) chs {
 func copyFirmwareRpi(target string) error {
 	internal.Log.Logger.Info().Str("target", target).Msg("Copying Raspberry Pi firmware")
 	// Copy the firmware files from /rpi/ into target
-	return utils.CopyDir("/rpi/", target)
+	return utils.CopyDir("/arm/rpi/", target)
 }
