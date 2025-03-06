@@ -135,9 +135,6 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		cfg.Name = i.Name
 		cfg.OutDir = dst
 		cfg.Date = i.IncludeDate
-		if i.Arch != "" {
-			cfg.Arch = i.Arch
-		}
 
 		spec := &LiveISO{
 			RootFS:             []*v1types.ImageSource{v1types.NewDirSrc(src)},
@@ -495,11 +492,16 @@ func (b *BuildISOAction) writeUbuntuGrubEfiCfg(path string) error {
 func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	var fallBackShim string
 	var err error
+	var arch string
 	// Get possible shim file paths
-	shimFiles := sdkutils.GetEfiShimFiles(b.cfg.Arch)
+	arch, err = utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
+	if err != nil {
+		return err
+	}
+	shimFiles := sdkutils.GetEfiShimFiles(arch)
 	// Calculate shim path based on arch
 	var shimDest string
-	switch b.cfg.Arch {
+	switch arch {
 	case constants.ArchAmd64, constants.Archx86:
 		shimDest = filepath.Join(tempdir, constants.ShimEfiDest)
 		fallBackShim = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
@@ -507,7 +509,7 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 		shimDest = filepath.Join(tempdir, constants.ShimEfiArmDest)
 		fallBackShim = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	default:
-		err = fmt.Errorf("not supported architecture: %v", b.cfg.Arch)
+		return fmt.Errorf("not supported architecture: %v", arch)
 	}
 	var shimDone bool
 	for _, f := range shimFiles {
@@ -562,14 +564,21 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 // tempdir is the temp dir where the EFI image is generated from
 // rootdir is the rootfs where the shim files are searched for
 func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
-	// this is shipped usually with osbuilder and the files come from livecd/grub2-efi-artifacts
-	var fallBackGrub = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
-	if b.cfg.Arch == constants.ArchAmd64 || b.cfg.Arch == constants.Archx86 {
-		fallBackGrub = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
-	}
+	var fallBackGrub string
 	var err error
+
+	arch, err := utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
+	switch arch {
+	case constants.ArchAmd64, constants.Archx86:
+		fallBackGrub = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	case constants.ArchArm64:
+		fallBackGrub = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	default:
+		return fmt.Errorf("not supported architecture: %v", arch)
+	}
+
 	// Get possible grub file paths
-	grubFiles := sdkutils.GetEfiGrubFiles(b.cfg.Arch)
+	grubFiles := sdkutils.GetEfiGrubFiles(arch)
 	var grubDone bool
 	for _, f := range grubFiles {
 		stat, err := b.cfg.Fs.Stat(filepath.Join(rootdir, f))

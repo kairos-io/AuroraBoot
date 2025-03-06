@@ -35,7 +35,7 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 		})
 
 		It("generate an iso image from a container", func() {
-			image := "quay.io/kairos/core-rockylinux:latest"
+			image := "quay.io/kairos/rockylinux:9-core-amd64-generic-v3.3.1"
 			_, err := PullImage(image)
 			Expect(err).ToNot(HaveOccurred())
 
@@ -55,7 +55,7 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 		})
 
 		It("fails if cloud config is empty", func() {
-			image := "quay.io/kairos/core-rockylinux:latest"
+			image := "quay.io/kairos/rockylinux:9-core-amd64-generic-v3.3.1"
 
 			err := WriteConfig("", tempDir)
 			Expect(err).ToNot(HaveOccurred())
@@ -72,8 +72,8 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 		It("generate an iso image from a release", func() {
 			out, err := aurora.Run("--debug",
 				"--set", "disable_http_server=true",
-				"--set", "artifact_version=v2.4.2",
-				"--set", "release_version=v2.4.2",
+				"--set", "artifact_version=v3.3.1",
+				"--set", "release_version=v3.3.1",
 				"--set", "flavor=rockylinux",
 				"--set", "flavor_release=9",
 				"--set", "repository=kairos-io/kairos",
