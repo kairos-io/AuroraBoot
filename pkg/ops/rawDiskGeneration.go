@@ -725,7 +725,6 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 	var copyDone bool
 	var arch string
 
-	// Try to get the arch from the source rootfs
 	arch, err := utils.GetArchFromRootfs(r.Source, r.config.Logger)
 	if err != nil {
 		return err
