@@ -35,7 +35,7 @@ require (
 	github.com/u-root/u-root v0.14.0
 	github.com/urfave/cli/v2 v2.27.6
 	golang.org/x/exp v0.0.0-20250106191152-7588d65b2ba8
-	golang.org/x/mod v0.23.0
+	golang.org/x/mod v0.24.0
 	golang.org/x/sys v0.30.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1
