@@ -317,7 +317,7 @@ func NameFromCmdline(basename, cmdline string) string {
 }
 
 // GetArchFromRootfs returns the architecture from the rootfs of a Kairos image
-func GetArchFromRootfs(rootfs string) (string, error) {
+func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
 	var arch string
 	var ok bool
 	releaseFilename := filepath.Join("etc", "kairos-release")
@@ -325,20 +325,24 @@ func GetArchFromRootfs(rootfs string) (string, error) {
 		// Try to fall back to os-release as we used that before
 		releaseFilename = filepath.Join("etc", "os-release")
 	}
+	l.Logger.Debug().Str("file", releaseFilename).Str("rootfs", rootfs).Msg("Checking for architecture in rootfs")
+
 	kairosRelease, err := godotenv.Read(filepath.Join(rootfs, releaseFilename))
 	if err != nil {
 		return "", err
 	}
 	arch, ok = kairosRelease["KAIROS_ARCH"]
 	if ok && arch != "" {
+		l.Logger.Debug().Str("file", releaseFilename).Str("arch", arch).Str("rootfs", rootfs).Msg("Found KAIROS_ARCH in rootfs")
 		return arch, nil
 	}
 
 	// Fall back to target arch, this was used before kairos-init
 	archFallback, ok := kairosRelease["KAIROS_TARGETARCH"]
 	if ok && archFallback != "" {
+		l.Logger.Debug().Str("file", releaseFilename).Str("arch", arch).Str("rootfs", rootfs).Msg("Found KAIROS_TARGETARCH in rootfs")
 		return archFallback, nil
 	}
-
-	return "", fmt.Errorf("KAIROS_ARCH not found in %s", releaseFilename)
+	l.Logger.Debug().Str("file", releaseFilename).Str("rootfs", rootfs).Msg("Could not find KAIROS_ARCH/KAIROS_TARGETARCH in rootfs")
+	return "", fmt.Errorf("KAIROS_ARCH/KAIROS_TARGETARCH not found in %s", releaseFilename)
 }

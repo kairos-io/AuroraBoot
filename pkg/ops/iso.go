@@ -495,7 +495,7 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	var arch string
 	// Get possible shim file paths
 	// GET arch from rootfs
-	arch, err = utils.GetArchFromRootfs(rootdir)
+	arch, err = utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
 	if err != nil {
 		return err
 	}
@@ -568,7 +568,7 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	var fallBackGrub string
 	var err error
 
-	arch, err := utils.GetArchFromRootfs(rootdir)
+	arch, err := utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
 	switch arch {
 	case constants.ArchAmd64, constants.Archx86:
 		fallBackGrub = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
