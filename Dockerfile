@@ -18,7 +18,7 @@ FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 RUN dnf in -y bc jq genisoimage docker sudo parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
-    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2
+    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2 openssl
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
@@ -65,6 +65,10 @@ RUN luet install -y system/kairos-agent
 
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
 # so temporal files are stored in each dir
+RUN rm -Rf /arm/systemd-boot/var/tmp
+RUN rm -Rf /amd/systemd-boot/var/tmp
+RUN rm -Rf /arm/systemd-boot/var/cache
+RUN rm -Rf /amd/systemd-boot/var/cache
 RUN rm -Rf /arm/rpi/var/tmp
 RUN rm -Rf /arm/rpi/var/cache
 RUN rm -Rf /arm/pinebookpro/var/tmp
@@ -80,6 +84,8 @@ RUN rm -Rf /amd/raw/grubartifacts/var/cache
 RUN rm -Rf /arm/raw/grubefi/var/tmp
 RUN rm -Rf /arm/raw/grubefi/var/cache
 # Remove the var dir if empty
+RUN rm -d /arm/systemd-boot/var || true
+RUN rm -d /amd/systemd-boot/var || true
 RUN rm -d /arm/rpi/var || true
 RUN rm -d /arm/pinebookpro/var || true
 RUN rm -d /arm/odroid-c2/var || true
