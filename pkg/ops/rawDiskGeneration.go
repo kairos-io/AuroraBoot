@@ -730,6 +730,9 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 	if err != nil {
 		return err
 	}
+	if arch == "" {
+		return fmt.Errorf("no arch found in rootfs")
+	}
 
 	if which == "shim" {
 		searchFiles = sdkUtils.GetEfiShimFiles(arch)

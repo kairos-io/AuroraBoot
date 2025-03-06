@@ -510,7 +510,7 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 		shimDest = filepath.Join(tempdir, constants.ShimEfiArmDest)
 		fallBackShim = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	default:
-		err = fmt.Errorf("not supported architecture: %v", arch)
+		return fmt.Errorf("not supported architecture: %v", arch)
 	}
 	var shimDone bool
 	for _, f := range shimFiles {
@@ -574,6 +574,8 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 		fallBackGrub = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	case constants.ArchArm64:
 		fallBackGrub = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	default:
+		return fmt.Errorf("not supported architecture: %v", arch)
 	}
 
 	// Get possible grub file paths

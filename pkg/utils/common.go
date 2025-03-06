@@ -340,7 +340,7 @@ func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
 	// Fall back to target arch, this was used before kairos-init
 	archFallback, ok := kairosRelease["KAIROS_TARGETARCH"]
 	if ok && archFallback != "" {
-		l.Logger.Debug().Str("file", releaseFilename).Str("arch", arch).Str("rootfs", rootfs).Msg("Found KAIROS_TARGETARCH in rootfs")
+		l.Logger.Debug().Str("file", releaseFilename).Str("arch", archFallback).Str("rootfs", rootfs).Msg("Found KAIROS_TARGETARCH in rootfs")
 		return archFallback, nil
 	}
 	l.Logger.Debug().Str("file", releaseFilename).Str("rootfs", rootfs).Msg("Could not find KAIROS_ARCH/KAIROS_TARGETARCH in rootfs")
