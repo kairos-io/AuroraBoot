@@ -22,7 +22,7 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 
 			err = WriteConfig("test", tempDir)
 			Expect(err).ToNot(HaveOccurred())
-			aurora = NewAuroraboot("auroraboot")
+			aurora = NewAuroraboot()
 			// Map the config.yaml file to the container and the temp dir to the state dir
 			aurora.ManualDirs = map[string]string{
 				fmt.Sprintf("%s/config.yaml", tempDir): "/config.yaml",
@@ -32,7 +32,6 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 
 		AfterEach(func() {
 			os.RemoveAll(tempDir)
-			aurora.Cleanup()
 		})
 
 		It("generate an iso image from a container", func() {

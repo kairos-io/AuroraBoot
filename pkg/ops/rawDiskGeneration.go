@@ -944,32 +944,33 @@ func (r *RawImage) FinalizeImage(image string) error {
 	// Do board specific stuff
 	switch model {
 	case "rpi4", "rpi3":
+		// RPI firmware is done in the EFI partition
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on RPI.")
 	case "odroid-c2":
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Odroid-C2.")
-		err = utils.DD("/firmware/odroid-c2/bl1.bin.hardkernel", image, 1, 442, 0, 0)
+		err = utils.DD("/arm/odroid-c2/bl1.bin.hardkernel", image, 1, 442, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
 			return err
 		}
-		err = utils.DD("/firmware/odroid-c2/bl1.bin.hardkernel", image, 512, 0, 1, 1)
+		err = utils.DD("/arm/odroid-c2/bl1.bin.hardkernel", image, 512, 0, 1, 1)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
 			return err
 		}
-		err = utils.DD("/firmware/odroid-c2/u-boot.odroidc2", image, 512, 0, 0, 97)
+		err = utils.DD("/arm/odroid-c2/u-boot.odroidc2", image, 512, 0, 0, 97)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.odroidc2")
 			return err
 		}
 	case "pinebookpro":
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Pinebook Pro.")
-		err = utils.DD("/pinebookpro/u-boot/usr/lib/u-boot/pinebook-pro-rk3399/idbloader.img", image, 64, 0, 0, 0)
+		err = utils.DD("/arm/pinebookpro/usr/lib/u-boot/pinebook-pro-rk3399/idbloader.img", image, 64, 0, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd idbloader.img")
 			return err
 		}
-		err = utils.DD("/pinebookpro/u-boot/usr/lib/u-boot/pinebook-pro-rk3399/u-boot.itb", image, 16384, 0, 0, 0)
+		err = utils.DD("/arm/pinebookpro/usr/lib/u-boot/pinebook-pro-rk3399/u-boot.itb", image, 16384, 0, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.itb")
 			return err

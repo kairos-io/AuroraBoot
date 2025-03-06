@@ -28,12 +28,11 @@ var _ = Describe("genkey", Label("genkey", "e2e"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		asusKeysDir = filepath.Join(currentDir, "assets", "asus-PN64-vendor-keys")
 
-		auroraboot = NewAuroraboot("quay.io/kairos/osbuilder-tools", resultDir, asusKeysDir)
+		auroraboot = NewAuroraboot(resultDir, asusKeysDir)
 	})
 
 	AfterEach(func() {
 		os.RemoveAll(resultDir)
-		auroraboot.Cleanup()
 	})
 
 	When("expiration-in-days is not specified", func() {

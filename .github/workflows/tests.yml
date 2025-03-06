@@ -84,10 +84,10 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          tags: auroraboot:latest
+          tags: auroraboot:test
       - name: Run e2e tests
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
+          go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
       - name: Codecov
         uses: codecov/codecov-action@v5
         env:

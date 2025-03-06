@@ -36,7 +36,6 @@ var stateContains = func(vm VM, query string, expected ...string) {
 }
 
 type Auroraboot struct {
-	Path           string
 	ContainerImage string
 	Dirs           []string          // directories to mount from host
 	ManualDirs     map[string]string // directories to mount from host to an specific path in the container
@@ -47,19 +46,29 @@ func TestAurorabootE2E(t *testing.T) {
 	RunSpecs(t, "Auroraboot end to end test suite")
 }
 
-func NewAuroraboot(image string, dirs ...string) *Auroraboot {
-	tmpDir, err := os.MkdirTemp("", "auroraboot-e2e-tmp")
+func NewAuroraboot(dirs ...string) *Auroraboot {
+	newAurorabootImage()
+	return &Auroraboot{ContainerImage: "auroraboot:test", Dirs: dirs}
+}
+
+// newAurorabootImage builds the auroraboot image for testing.
+func newAurorabootImage() {
+	// Get root path of the project
+	testDir, err := os.Getwd()
 	Expect(err).ToNot(HaveOccurred())
-	aurorabootBinary := path.Join(tmpDir, "auroraboot")
-	compileAuroraboot(aurorabootBinary)
-	return &Auroraboot{ContainerImage: image, Path: aurorabootBinary, Dirs: dirs}
+	parentDir := path.Join(testDir, "..")
+	rootDir, err := filepath.Abs(parentDir)
+	Expect(err).ToNot(HaveOccurred())
+	// Build auroraboot image
+	output, err := exec.Command("docker", "build", "--target", "default", "-t", "auroraboot:test", "-f", filepath.Join(rootDir, "Dockerfile"), rootDir).CombinedOutput()
+	Expect(err).ToNot(HaveOccurred(), string(output))
 }
 
 // auroraboot relies on various external binaries. To make sure those dependencies
 // are in place (or to test the behavior of auroraboot when they are not), we run auroraboot
 // in a container using this function.
 func (e *Auroraboot) Run(aurorabootArgs ...string) (string, error) {
-	return e.ContainerRun("/bin/auroraboot", aurorabootArgs...)
+	return e.ContainerRun("auroraboot", aurorabootArgs...)
 }
 
 // We need --privileged for `mount` to work in the container (used in the build_uki_test.go).
@@ -68,7 +77,6 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 		"run", "--rm", "--privileged",
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"--entrypoint", entrypoint,
-		"-v", fmt.Sprintf("%s:/bin/auroraboot", e.Path),
 	}
 
 	for _, d := range e.Dirs {
@@ -86,27 +94,6 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 	out, err := cmd.CombinedOutput()
 
 	return string(out), err
-}
-
-func (e *Auroraboot) Cleanup() {
-	dir := filepath.Dir(e.Path)
-	Expect(os.RemoveAll(dir)).ToNot(HaveOccurred())
-}
-
-func compileAuroraboot(targetPath string) {
-	testDir, err := os.Getwd()
-	Expect(err).ToNot(HaveOccurred())
-
-	parentDir := path.Join(testDir, "..")
-	rootDir, err := filepath.Abs(parentDir)
-	Expect(err).ToNot(HaveOccurred())
-
-	cmd := exec.Command("go", "build", "-o", targetPath)
-	cmd.Env = append(os.Environ(), "CGO_ENABLED=0")
-	cmd.Dir = rootDir
-
-	out, err := cmd.CombinedOutput()
-	Expect(err).ToNot(HaveOccurred(), string(out))
 }
 
 func PullImage(image string) (string, error) {
