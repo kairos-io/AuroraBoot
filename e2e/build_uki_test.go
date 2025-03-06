@@ -27,29 +27,12 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 		Expect(err).ToNot(HaveOccurred())
 		keysDir = filepath.Join(currentDir, "assets", "keys")
 		Expect(os.MkdirAll(keysDir, 0755)).ToNot(HaveOccurred())
-
-		auroraboot = NewAuroraboot("quay.io/kairos/osbuilder-tools", resultDir, keysDir)
+		auroraboot = NewAuroraboot(resultDir, keysDir)
 		image = fmt.Sprintf("quay.io/kairos/fedora:38-core-amd64-generic-%s", kairosVersion)
 	})
 
 	AfterEach(func() {
 		os.RemoveAll(resultDir)
-		auroraboot.Cleanup()
-	})
-
-	When("some dependency is missing", func() {
-		BeforeEach(func() {
-			auroraboot = NewAuroraboot("busybox", resultDir, keysDir)
-		})
-
-		It("returns an error about missing deps", func() {
-			out, err := auroraboot.Run("build-uki", "--output-dir", resultDir, "-k", keysDir, "--output-type", "iso", image)
-			Expect(err).To(HaveOccurred(), out)
-			Expect(out).To(Or(
-				MatchRegexp("executable file not found in \\$PATH"),
-				MatchRegexp("no such file or directory"),
-			))
-		})
 	})
 
 	Describe("single-efi-cmdline", func() {
@@ -62,12 +45,12 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 
 		It("creates additional .efi and .conf files", func() {
 			content := listEfiFiles(auroraboot, resultFile)
-			Expect(string(content)).To(MatchRegexp("my_entry.efi"))
-			Expect(string(content)).To(MatchRegexp("my_other_entry.efi"))
+			Expect(content).To(MatchRegexp("my_entry.efi"))
+			Expect(content).To(MatchRegexp("my_other_entry.efi"))
 
 			content = listConfFiles(auroraboot, resultFile)
-			Expect(string(content)).To(MatchRegexp("my_entry.conf"))
-			Expect(string(content)).To(MatchRegexp("my_other_entry.conf"))
+			Expect(content).To(MatchRegexp("my_entry.conf"))
+			Expect(content).To(MatchRegexp("my_other_entry.conf"))
 		})
 	})
 
@@ -81,7 +64,7 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 			It("sets the secure-boot-enroll correctly", func() {
 				By("checking if the default value for secure-boot-enroll is set")
 				content := readLoaderConf(auroraboot, resultFile)
-				Expect(string(content)).To(MatchRegexp("secure-boot-enroll if-safe"))
+				Expect(content).To(MatchRegexp("secure-boot-enroll if-safe"))
 			})
 		})
 
@@ -94,7 +77,7 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 			It("sets the secure-boot-enroll correctly", func() {
 				By("checking if the user value for secure-boot-enroll is set")
 				content := readLoaderConf(auroraboot, resultFile)
-				Expect(string(content)).To(MatchRegexp("secure-boot-enroll manual"))
+				Expect(content).To(MatchRegexp("secure-boot-enroll manual"))
 			})
 		})
 	})

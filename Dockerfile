@@ -18,7 +18,7 @@ FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 RUN dnf in -y bc jq genisoimage docker sudo parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
-    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2
+    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2 openssl
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
@@ -35,17 +35,19 @@ RUN cp /tmp/luet-${TARGETARCH}.yaml /etc/luet/luet.yaml
 # https://github.com/containerd/containerd/blob/7c3aca7a610df76212171d200ca3811ff6096eb8/archive/compression/compression.go#L50
 ENV CONTAINERD_DISABLE_PIGZ=1
 RUN luet repo update
-RUN luet install -y system/systemd-boot
+## Each arch has its own systemd-boot artifacts, we should ship both in both images for multi-arch build support
+RUN luet install --config /tmp/luet-arm64.yaml -y system/systemd-boot --system-target /arm/systemd-boot
+RUN luet install --config /tmp/luet-amd64.yaml -y system/systemd-boot --system-target /amd/systemd-boot
 
 ## RPI64
 ## Both arches have the same package files so no matter the arch here.
-RUN luet install -y firmware/u-boot-rpi64 firmware/rpi --system-target /rpi/
+RUN luet install -y firmware/u-boot-rpi64 firmware/rpi --system-target /arm/rpi/
 
 ## PineBook64 Pro
-RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /pinebookpro/u-boot
+RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /arm/pinebookpro/
 
 ## Odroid fw
-RUN luet install -y firmware/odroid-c2 --system-target /firmware/odroid-c2
+RUN luet install -y firmware/odroid-c2 --system-target /arm/odroid-c2
 
 ## RAW images for arm64
 
@@ -54,7 +56,7 @@ RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-efi --system-targe
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-target /arm/raw/grubconfig
 # Orin uses these artifacts. Alpine uses these artifacts for fallback efi values
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
-# You can build amd64 raw images for alpine so....we need this.
+# You can build amd64 raw images for alpine so....we need this in both images
 RUN luet install --config /tmp/luet-amd64.yaml -y static/grub-artifacts --system-target /amd/raw/grubartifacts
 
 # kairos-agent so we can use the pull-image
@@ -63,12 +65,16 @@ RUN luet install -y system/kairos-agent
 
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
 # so temporal files are stored in each dir
-RUN rm -Rf /rpi/var/tmp
-RUN rm -Rf /rpi/var/cache
-RUN rm -Rf /pinebookpro/u-boot/var/tmp
-RUN rm -Rf /pinebookpro/u-boot/var/cache
-RUN rm -Rf /firmware/odroid-c2/var/tmp
-RUN rm -Rf /firmware/odroid-c2/var/cache
+RUN rm -Rf /arm/systemd-boot/var/tmp
+RUN rm -Rf /amd/systemd-boot/var/tmp
+RUN rm -Rf /arm/systemd-boot/var/cache
+RUN rm -Rf /amd/systemd-boot/var/cache
+RUN rm -Rf /arm/rpi/var/tmp
+RUN rm -Rf /arm/rpi/var/cache
+RUN rm -Rf /arm/pinebookpro/var/tmp
+RUN rm -Rf /arm/pinebookpro/var/cache
+RUN rm -Rf /arm/odroid-c2/var/tmp
+RUN rm -Rf /arm/odroid-c2/var/cache
 RUN rm -Rf /arm/raw/grubconfig/var/tmp
 RUN rm -Rf /arm/raw/grubconfig/var/cache
 RUN rm -Rf /arm/raw/grubartifacts/var/tmp
@@ -78,9 +84,11 @@ RUN rm -Rf /amd/raw/grubartifacts/var/cache
 RUN rm -Rf /arm/raw/grubefi/var/tmp
 RUN rm -Rf /arm/raw/grubefi/var/cache
 # Remove the var dir if empty
-RUN rm -d /rpi/var || true
-RUN rm -d /pinebookpro/u-boot/var || true
-RUN rm -d /firmware/odroid-c2/var || true
+RUN rm -d /arm/systemd-boot/var || true
+RUN rm -d /amd/systemd-boot/var || true
+RUN rm -d /arm/rpi/var || true
+RUN rm -d /arm/pinebookpro/var || true
+RUN rm -d /arm/odroid-c2/var || true
 RUN rm -d /arm/raw/grubconfig/var || true
 RUN rm -d /arm/raw/grubartifacts/var || true
 RUN rm -d /amd/raw/grubartifacts/var || true
