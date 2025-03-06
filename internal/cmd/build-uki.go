@@ -204,6 +204,7 @@ var BuildUKICmd = cli.Command{
 			ops.WithLogger(logger),
 		)
 
+		// TODO: DROP
 		if err := checkBuildUKIDeps(config.Arch); err != nil {
 			return err
 		}

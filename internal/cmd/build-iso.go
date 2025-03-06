@@ -3,13 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"os"
-	"runtime"
-
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
+	"os"
 )
 
 const (
@@ -54,13 +52,6 @@ var BuildISOCmd = cli.Command{
 			Name:  "overlay-iso",
 			Usage: "Path of the overlayed iso data",
 		},
-		// https://github.com/kairos-io/enki/blob/6b92cbae96e92a1e36dfae2d5fdb5f3fb79bf99d/pkg/action/build-iso.go#L263
-		&cli.StringFlag{
-			Name:    "arch",
-			Aliases: []string{"a"},
-			Value:   runtime.GOARCH,
-			Usage:   "Arch to build the image for (amd64, x86_64, arm64, aarch64)",
-		},
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
@@ -95,7 +86,6 @@ var BuildISOCmd = cli.Command{
 			OverlayISO:    ctx.String("overlay-iso"),
 			OverlayRootfs: ctx.String("overlay-rootfs"),
 			OverlayUEFI:   ctx.String("overlay-uefi"),
-			Arch:          ctx.String("arch"),
 		}
 		if err := validateISOOptions(isoOptions); err != nil {
 			return err

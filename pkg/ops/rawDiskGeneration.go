@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -727,12 +726,9 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 	var arch string
 
 	// Try to get the arch from the source rootfs
-	arch = runtime.GOARCH
-	parsedArch, err := sdkUtils.OSRelease("KAIROS_TARGETARCH", filepath.Join(r.Source, "etc/kairos-release"))
-	if err == nil && parsedArch != "" {
-		arch = parsedArch
-	} else {
-		internal.Log.Logger.Warn().Err(err).Str("arch", runtime.GOARCH).Msg("failed to geta arch from source rootfs, defaulting to use artifacts from runtime arch")
+	arch, err := utils.GetArchFromRootfs(r.Source)
+	if err != nil {
+		return err
 	}
 
 	if which == "shim" {

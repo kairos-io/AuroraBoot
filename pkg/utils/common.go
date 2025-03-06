@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"fmt"
+	"github.com/joho/godotenv"
 	"io"
 	"os"
 	"path/filepath"
@@ -313,4 +314,31 @@ func NameFromCmdline(basename, cmdline string) string {
 	// If the cmdline is empty, we remove the underscore as to not get a dangling one
 	finalName := strings.TrimSuffix(name, "_")
 	return finalName
+}
+
+// GetArchFromRootfs returns the architecture from the rootfs of a Kairos image
+func GetArchFromRootfs(rootfs string) (string, error) {
+	var arch string
+	var ok bool
+	releaseFilename := filepath.Join("etc", "kairos-release")
+	if _, ok := os.Stat(filepath.Join(rootfs, releaseFilename)); os.IsNotExist(ok) {
+		// Try to fall back to os-release as we used that before
+		releaseFilename = filepath.Join("etc", "os-release")
+	}
+	kairosRelease, err := godotenv.Read(filepath.Join(rootfs, releaseFilename))
+	if err != nil {
+		return "", err
+	}
+	arch, ok = kairosRelease["KAIROS_ARCH"]
+	if ok && arch != "" {
+		return arch, nil
+	}
+
+	// Fall back to target arch, this was used before kairos-init
+	archFallback, ok := kairosRelease["KAIROS_TARGETARCH"]
+	if ok && archFallback != "" {
+		return archFallback, nil
+	}
+
+	return "", fmt.Errorf("KAIROS_ARCH not found in %s", releaseFilename)
 }
