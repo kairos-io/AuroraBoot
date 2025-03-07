@@ -33,7 +33,7 @@ var _ = Describe("Disk image generation", Label("raw-disks", "e2e"), Serial, Ord
 		err = WriteConfig("test", tempDir)
 		Expect(err).ToNot(HaveOccurred())
 
-		aurora = NewAuroraboot("auroraboot")
+		aurora = NewAuroraboot()
 		// Map the config.yaml file to the container and the temp dir to the state dir
 		aurora.ManualDirs = map[string]string{
 			fmt.Sprintf("%s/config.yaml", tempDir): "/config.yaml",
@@ -43,7 +43,6 @@ var _ = Describe("Disk image generation", Label("raw-disks", "e2e"), Serial, Ord
 
 	AfterEach(func() {
 		os.RemoveAll(tempDir)
-		aurora.Cleanup()
 	})
 
 	Context("source is an ISO", func() {

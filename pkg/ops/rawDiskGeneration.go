@@ -24,7 +24,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 )
 
@@ -726,13 +725,12 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 	var copyDone bool
 	var arch string
 
-	// Try to get the arch from the source rootfs
-	arch = runtime.GOARCH
-	parsedArch, err := sdkUtils.OSRelease("KAIROS_TARGETARCH", filepath.Join(r.Source, "etc/kairos-release"))
-	if err == nil && parsedArch != "" {
-		arch = parsedArch
-	} else {
-		internal.Log.Logger.Warn().Err(err).Str("arch", runtime.GOARCH).Msg("failed to geta arch from source rootfs, defaulting to use artifacts from runtime arch")
+	arch, err := utils.GetArchFromRootfs(r.Source, r.config.Logger)
+	if err != nil {
+		return err
+	}
+	if arch == "" {
+		return fmt.Errorf("no arch found in rootfs")
 	}
 
 	if which == "shim" {
@@ -946,32 +944,33 @@ func (r *RawImage) FinalizeImage(image string) error {
 	// Do board specific stuff
 	switch model {
 	case "rpi4", "rpi3":
+		// RPI firmware is done in the EFI partition
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on RPI.")
 	case "odroid-c2":
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Odroid-C2.")
-		err = utils.DD("/firmware/odroid-c2/bl1.bin.hardkernel", image, 1, 442, 0, 0)
+		err = utils.DD("/arm/odroid-c2/bl1.bin.hardkernel", image, 1, 442, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
 			return err
 		}
-		err = utils.DD("/firmware/odroid-c2/bl1.bin.hardkernel", image, 512, 0, 1, 1)
+		err = utils.DD("/arm/odroid-c2/bl1.bin.hardkernel", image, 512, 0, 1, 1)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
 			return err
 		}
-		err = utils.DD("/firmware/odroid-c2/u-boot.odroidc2", image, 512, 0, 0, 97)
+		err = utils.DD("/arm/odroid-c2/u-boot.odroidc2", image, 512, 0, 0, 97)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.odroidc2")
 			return err
 		}
 	case "pinebookpro":
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Pinebook Pro.")
-		err = utils.DD("/pinebookpro/u-boot/usr/lib/u-boot/pinebook-pro-rk3399/idbloader.img", image, 64, 0, 0, 0)
+		err = utils.DD("/arm/pinebookpro/usr/lib/u-boot/pinebook-pro-rk3399/idbloader.img", image, 64, 0, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd idbloader.img")
 			return err
 		}
-		err = utils.DD("/pinebookpro/u-boot/usr/lib/u-boot/pinebook-pro-rk3399/u-boot.itb", image, 16384, 0, 0, 0)
+		err = utils.DD("/arm/pinebookpro/usr/lib/u-boot/pinebook-pro-rk3399/u-boot.itb", image, 16384, 0, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.itb")
 			return err
