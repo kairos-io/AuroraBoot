@@ -45,8 +45,6 @@ func Raw2Azure(source string) (string, error) {
 	var finalSize int64
 	// Calculate the final size in bytes
 	finalSize = ((actualSize + constants.MB - 1) / constants.MB) * constants.MB
-	finalSize -= 512
-	// Remove the 512 bytes for the header that we are going to add afterwards
 
 	// If the actual size is different from the final size, we have to resize the image
 	if actualSize != finalSize {
@@ -70,7 +68,6 @@ func Raw2Azure(source string) (string, error) {
 		return name, err
 	}
 	size := uint64(info.Size())
-	// TODO: Round to MB (Azure requirement)
 	header := newVHDFixed(size)
 	err = binary.Write(vhdFile, binary.BigEndian, header)
 	if err != nil {
@@ -90,7 +87,7 @@ func Raw2Azure(source string) (string, error) {
 	}
 	sizeFile := fileInfo.Size()
 
-	if sizeFile%constants.MB != 0 {
+	if int64(size)%constants.MB != 0 {
 		err = fmt.Errorf("The file %s size %d bytes is not divisible by 1 MB.\n", fileInfo.Name(), sizeFile)
 		internal.Log.Logger.Error().Err(err).Msg("Error validating file size")
 		return name, err
