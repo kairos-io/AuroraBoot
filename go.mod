@@ -12,11 +12,12 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/containerd/containerd v1.7.26
 	github.com/diskfs/go-diskfs v1.4.2
-	github.com/foxboron/go-uefi v0.0.0-20241219185318-19dc140271bf
+	github.com/foxboron/go-uefi v0.0.0-20250207204325-69fb7dba244f
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.20.3
 	github.com/hashicorp/go-multierror v1.1.1
+	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.2.5
 	github.com/kairos-io/kairos-agent/v2 v2.16.4
 	github.com/kairos-io/kairos-sdk v0.7.3
@@ -116,7 +117,6 @@ require (
 	github.com/jaypipes/ghw v0.13.0 // indirect
 	github.com/jaypipes/pcidb v1.0.1 // indirect
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
-	github.com/joho/godotenv v1.5.1 // indirect
 	github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
