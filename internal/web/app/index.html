@@ -18,14 +18,18 @@
         <div>
             <label for="variant" class="block text-gray-700 font-semibold mb-1">Variant</label>
             <select id="variant" name="variant" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
-              <option value="core">Generic</option>
-              <option value="standard">For Kubernetes</option>
+              <option value="core">Core (wihout Kubernetes)</option>
+              <option value="standard">Standard (with Kubernetes)</option>
             </select>
         </div>
 
         <div>
-          <label for="model" class="block text-gray-700 font-semibold mb-1">Model</label>
-          <input type="text" id="model" name="model" placeholder="Enter model name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+            <label for="model" class="block text-gray-700 font-semibold mb-1">Model</label>
+            <select id="model" name="model" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+              <option value="generic">Generic</option>
+              <option value="rpi4">Raspberry Pi 4</option>
+              <option value="rpi3">Raspberry Pi 3</option>
+            </select>
         </div>
 
         <div class="flex items-center">
@@ -36,17 +40,20 @@
         <div id="kubernetes-fields" style="display: none;" class="space-y-4 border-t border-gray-200 pt-4">
           <h2 class="text-xl font-semibold text-gray-800">Kubernetes Options</h2>
           <div>
-            <label for="kubernetes_provider" class="block text-gray-700 font-semibold mb-1">Kubernetes Provider</label>
-            <input type="text" id="kubernetes_provider" name="kubernetes_provider" placeholder="Enter provider name" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
+              <label for="kubernetes_distribution" class="block text-gray-700 font-semibold mb-1">K8s Distribution</label>
+              <select id="kubernetes_distribution" name="kubernetes_distribution" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500" required>
+                <option value="k3s">K3s</option>
+                <option value="k0s">K0s</option>
+              </select>
           </div>
 
           <div>
-            <label for="kubernetes_version" class="block text-gray-700 font-semibold mb-1">Kubernetes Version</label>
+            <label for="kubernetes_version" class="block text-gray-700 font-semibold mb-1"><span id="kubernetes_distribution_name">K3s</span> Version</label>
             <input type="text" id="kubernetes_version" name="kubernetes_version" placeholder="Enter version" class="w-full px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500">
           </div>
         </div>
 
-        <button type="submit" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-indigo-700 transition w-full">Start Process</button>
+        <button type="submit" class="bg-indigo-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-indigo-700 transition w-full">Build!</button>
     </form>
 
     <h2 class="text-2xl font-semibold mt-10 text-gray-800 border-t border-gray-200 pt-6">Process Output</h2>
@@ -63,60 +70,69 @@
   </div>
 
   <script>
-    document.getElementById('variant').addEventListener('change', function() {
-      const kubernetesFields = document.getElementById('kubernetes-fields');
-      const kubernetesProvider = document.getElementById('kubernetes_provider');
-      const kubernetesVersion = document.getElementById('kubernetes_version');
+    document.addEventListener('DOMContentLoaded', () => {
+      const kubernetesDistribution = document.getElementById('kubernetes_distribution');
 
-      if (this.value === 'standard') {
-        kubernetesFields.style.display = 'block';
-        kubernetesProvider.setAttribute('required', 'required');
-        kubernetesVersion.setAttribute('required', 'required');
-      } else {
-        kubernetesFields.style.display = 'none';
-        kubernetesProvider.removeAttribute('required');
-        kubernetesVersion.removeAttribute('required');
-      }
-    });
+      document.getElementById('variant').addEventListener('change', function() {
+        const kubernetesFields = document.getElementById('kubernetes-fields');
+        const kubernetesVersion = document.getElementById('kubernetes_version');
 
-    document.getElementById('variant').dispatchEvent(new Event('change'));
+        if (this.value === 'standard') {
+          kubernetesFields.style.display = 'block';
+          kubernetesDistribution.setAttribute('required', 'required');
+          kubernetesVersion.setAttribute('required', 'required');
+        } else {
+          kubernetesFields.style.display = 'none';
+          kubernetesDistribution.removeAttribute('required');
+          kubernetesVersion.removeAttribute('required');
+        }
+      });
+      document.getElementById('variant').dispatchEvent(new Event('change'));
 
-    document.getElementById('process-form').addEventListener('submit', function(event) {
-      event.preventDefault();
+      kubernetesDistribution.addEventListener('change', function() {
+        const selectedOption = this.options[this.selectedIndex].value;
+        document.getElementById('kubernetes_distribution_name').innerText = selectedOption.charAt(0).toUpperCase() + selectedOption.slice(1);
+      });
 
-      const formData = new FormData(event.target);
 
-      fetch('/start', {
-        method: 'POST',
-        body: formData
-      }).then(response => response.json())
-        .then(result => {
-          const socket = new WebSocket("ws://" + window.location.host + "/ws/" + result.uuid);
-          const outputElement = document.getElementById('output');
-          const linkElement = document.getElementById('links');
 
-          outputElement.innerHTML = "";
+      document.getElementById('process-form').addEventListener('submit', function(event) {
+        event.preventDefault();
 
-          socket.onmessage = function(event) {
-            try {
-              const data = JSON.parse(event.data);
-              if (data.length) {
-                for (const link of data) {
-                  linkElement.innerHTML += "<a href='" + link.url + "' target=_blank class='text-indigo-600 hover:underline'>" + link.name + "</a><br>";
+        const formData = new FormData(event.target);
+
+        fetch('/start', {
+          method: 'POST',
+          body: formData
+        }).then(response => response.json())
+          .then(result => {
+            const socket = new WebSocket("ws://" + window.location.host + "/ws/" + result.uuid);
+            const outputElement = document.getElementById('output');
+            const linkElement = document.getElementById('links');
+
+            outputElement.innerHTML = "";
+
+            socket.onmessage = function(event) {
+              try {
+                const data = JSON.parse(event.data);
+                if (data.length) {
+                  for (const link of data) {
+                    linkElement.innerHTML += "<a href='" + link.url + "' target=_blank class='text-indigo-600 hover:underline'>" + link.name + "</a><br>";
+                  }
+                  document.getElementById('links-container').style.display = 'block';
                 }
-                document.getElementById('links-container').style.display = 'block';
-              }
-            } catch (e) {}
+              } catch (e) {}
 
-            outputElement.innerHTML += event.data + "\n";
-            outputElement.scrollTop = outputElement.scrollHeight;
-          };
+              outputElement.innerHTML += event.data + "\n";
+              outputElement.scrollTop = outputElement.scrollHeight;
+            };
 
-          socket.onclose = function() {
-            outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";
-            outputElement.scrollTop = outputElement.scrollHeight;
-          };
-        });
+            socket.onclose = function() {
+              outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";
+              outputElement.scrollTop = outputElement.scrollHeight;
+            };
+          });
+      });
     });
   </script>
 </body>

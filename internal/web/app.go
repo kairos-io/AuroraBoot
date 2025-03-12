@@ -38,12 +38,12 @@ func getFileSystem(useOS bool) http.FileSystem {
 }
 
 type JobData struct {
-	Variant            string `json:"variant"`
-	Model              string `json:"model"`
-	TrustedBoot        bool   `json:"trusted_boot"`
-	KubernetesProvider string `json:"kubernetes_provider"`
-	KubernetesVersion  string `json:"kubernetes_version"`
-	Image              string `json:"image"`
+	Variant                string `json:"variant"`
+	Model                  string `json:"model"`
+	TrustedBoot            bool   `json:"trusted_boot"`
+	KubernetesDistribution string `json:"kubernetes_distribution"`
+	KubernetesVersion      string `json:"kubernetes_version"`
+	Image                  string `json:"image"`
 }
 
 func App(listenAddr, artifactDir string) error {
@@ -68,12 +68,12 @@ func App(listenAddr, artifactDir string) error {
 
 		// Collect job data
 		job := JobData{
-			Variant:            c.FormValue("variant"),
-			Model:              c.FormValue("model"),
-			TrustedBoot:        c.FormValue("trusted_boot") == "true",
-			KubernetesProvider: c.FormValue("kubernetes_provider"),
-			KubernetesVersion:  c.FormValue("kubernetes_version"),
-			Image:              c.FormValue("image"),
+			Variant:                c.FormValue("variant"),
+			Model:                  c.FormValue("model"),
+			TrustedBoot:            c.FormValue("trusted_boot") == "true",
+			KubernetesDistribution: c.FormValue("kubernetes_distribution"),
+			KubernetesVersion:      c.FormValue("kubernetes_version"),
+			Image:                  c.FormValue("image"),
 		}
 
 		id := uuid.NewString()
@@ -124,7 +124,7 @@ func App(listenAddr, artifactDir string) error {
 					jobData.Variant,
 					jobData.Model,
 					jobData.TrustedBoot,
-					jobData.KubernetesProvider,
+					jobData.KubernetesDistribution,
 					jobData.KubernetesVersion,
 				))
 
