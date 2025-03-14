@@ -55,7 +55,7 @@ func App(listenAddr, artifactDir string) error {
 	os.MkdirAll(artifactDir, os.ModePerm)
 
 	assetHandler := http.FileServer(getFileSystem(false))
-	e.GET("/", echo.WrapHandler(assetHandler))
+	e.GET("/*", echo.WrapHandler(assetHandler))
 
 	// Store the last submitted form data
 	jobsData := map[string]JobData{}
@@ -73,7 +73,7 @@ func App(listenAddr, artifactDir string) error {
 			TrustedBoot:            c.FormValue("trusted_boot") == "true",
 			KubernetesDistribution: c.FormValue("kubernetes_distribution"),
 			KubernetesVersion:      c.FormValue("kubernetes_version"),
-			Image:                  c.FormValue("image"),
+			Image:                  c.FormValue("base_image"),
 		}
 
 		id := uuid.NewString()
