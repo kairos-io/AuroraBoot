@@ -110,6 +110,12 @@ document.addEventListener('DOMContentLoaded', () => {
     modalBackdrop.classList.add("hidden");
     staticModal.classList.add("hidden");
     restartButton.classList.add("hidden");
+    document.querySelectorAll('.spinner').forEach(function(element) {
+      element.classList.remove("hidden");
+    });
+    document.querySelectorAll('.done').forEach(function(element) {
+      element.classList.add("hidden");
+    });
   });
 
   document.getElementById('process-form').addEventListener('submit', function(event) {
