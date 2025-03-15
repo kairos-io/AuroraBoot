@@ -1,4 +1,9 @@
 document.addEventListener('DOMContentLoaded', () => {
+  const byoi = document.getElementById('byoi');
+  // when byoi is clicked on, select the base_image radio button that has the value byoi
+  byoi.addEventListener('click', function() {
+    document.querySelector('input[value="byoi"]').checked = true;
+  });
   const arm64 = document.getElementById('arm64-option');
   const amd64 = document.getElementById('amd64-option');
   const armOnlyElements = document.querySelectorAll('.arm-only');
@@ -82,12 +87,36 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
+  const logsToggle = document.getElementById('logs-toggle');
+  const logs = document.getElementById('output');
+  logsToggle.addEventListener('change', function() {
+    if (this.checked) {
+      logs.style.display = 'block';
+    } else {
+      logs.style.display = 'none';
+    }
+  });
+
+  const restartButton = document.getElementById('restart-button');
+  const staticModal = document.getElementById('static-modal');
+  const modalBackdrop = document.getElementById('modal-backdrop');
+
+  restartButton.addEventListener('click', function() {
+    logs.innerHTML = "";
+    const downloads = document.getElementById('downloads');
+    downloads.style.display = 'none';
+    const buildingButton = document.getElementById('building-button');
+    buildingButton.style.display = 'none';
+    const linkElement = document.getElementById('links');
+    linkElement.innerHTML = "";
+    modalBackdrop.classList.add("hidden");
+    staticModal.classList.add("hidden");
+  });
+
   document.getElementById('process-form').addEventListener('submit', function(event) {
     event.preventDefault();
-    const submitButton = document.getElementById('submit-button');
-    const buildingButton = document.getElementById('building-button');
-    submitButton.style.display = 'none';
-    buildingButton.style.display = 'block';
+    modalBackdrop.classList.remove("hidden");
+    staticModal.classList.remove("hidden");
 
     const formData = new FormData(event.target);
 
@@ -98,7 +127,6 @@ document.addEventListener('DOMContentLoaded', () => {
       .then(result => {
         const socket = new WebSocket("ws://" + window.location.host + "/ws/" + result.uuid);
         const outputElement = document.getElementById('output');
-        outputElement.style.display = 'block';
         const linkElement = document.getElementById('links');
 
         outputElement.innerHTML = "";
@@ -108,20 +136,50 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = JSON.parse(event.data);
             if (data.length) {
               for (const link of data) {
-                linkElement.innerHTML += `<a href="${link.url}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${link.name}</a>&nbsp;`;
+                linkElement.innerHTML += `<a href="${link.url}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${link.name}</a>`;
               }
             }
           } catch (e) {}
 
-          outputElement.innerHTML += event.data + "\n";
+          const message = event.data;
+          updateStatus(message);
+          outputElement.innerHTML += `${event.data}\n`;
           outputElement.scrollTop = outputElement.scrollHeight;
         };
 
+        const buildingContainerImage = document.getElementById('building-container-image');
+        const generatingTarball = document.getElementById('generating-tarball');
+        const generatingRawImage = document.getElementById('generating-raw-image');
+        const generatingISO = document.getElementById('generating-iso');
+        const generatingDownloadLinks = document.getElementById('generating-download-links');
+
+        function updateStatus(message) {
+          if (message.includes("Building container image")) {
+            buildingContainerImage.classList.remove("hidden");
+          } else if (message.includes("Generating tarball")) {
+            generatingTarball.classList.remove("hidden");
+            buildingContainerImage.querySelector('.spinner').classList.add("hidden");
+            buildingContainerImage.querySelector('.done').classList.remove("hidden");
+          } else if (message.includes("Generating raw image")) {
+            generatingRawImage.classList.remove("hidden");
+            generatingTarball.querySelector('.spinner').classList.add("hidden");
+            generatingTarball.querySelector('.done').classList.remove("hidden");
+          } else if (message.includes("Generating ISO")) {
+            generatingISO.classList.remove("hidden");
+            generatingRawImage.querySelector('.spinner').classList.add("hidden");
+            generatingRawImage.querySelector('.done').classList.remove("hidden");
+          } else if (message.includes("Generating download links")) {
+            generatingDownloadLinks.classList.remove("hidden");
+            generatingISO.querySelector('.spinner').classList.add("hidden");
+            generatingISO.querySelector('.done').classList.remove("hidden");
+          }
+        }
+
         socket.onclose = function() {
+          generatingDownloadLinks.querySelector('.spinner').classList.add("hidden");
+          generatingDownloadLinks.querySelector('.done').classList.remove("hidden");
           outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";
           outputElement.scrollTop = outputElement.scrollHeight;
-          submitButton.style.display = 'block';
-          buildingButton.style.display = 'none';
           const downloads = document.getElementById('downloads');
           downloads.style.display = 'block';
         };

@@ -66,6 +66,10 @@ func App(listenAddr, artifactDir string) error {
 		mu.Lock()
 		defer mu.Unlock()
 
+		image := c.FormValue("base_image")
+		if image == "byoi" {
+			image = c.FormValue("byoi_image")
+		}
 		// Collect job data
 		job := JobData{
 			Variant:                c.FormValue("variant"),
@@ -73,7 +77,7 @@ func App(listenAddr, artifactDir string) error {
 			TrustedBoot:            c.FormValue("trusted_boot") == "true",
 			KubernetesDistribution: c.FormValue("kubernetes_distribution"),
 			KubernetesVersion:      c.FormValue("kubernetes_version"),
-			Image:                  c.FormValue("base_image"),
+			Image:                  image,
 		}
 
 		id := uuid.NewString()
@@ -138,7 +142,7 @@ func App(listenAddr, artifactDir string) error {
 			jobOutputDir := filepath.Join(artifactDir, uuid)
 			os.MkdirAll(jobOutputDir, os.ModePerm)
 
-			websocket.Message.Send(ws, "Saving container image...")
+			websocket.Message.Send(ws, "Generating tarball...")
 
 			err = runBashProcessWithOutput(
 				ws,
@@ -149,6 +153,7 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Generating raw image...")
 			err = runBashProcessWithOutput(
 				ws,
 				buildRawDisk("my-image", jobOutputDir),
@@ -158,6 +163,7 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Generating ISO...")
 			err = runBashProcessWithOutput(
 				ws,
 				buildISO("my-image", jobOutputDir, "custom-kairos"),
@@ -178,6 +184,7 @@ func App(listenAddr, artifactDir string) error {
 				return
 			}
 
+			websocket.Message.Send(ws, "Generating download links...")
 			links := []Link{
 				{Name: "Container image", URL: "/artifacts/" + uuid + "/image.tar"},
 				{Name: "Raw disk image", URL: "/artifacts/" + uuid + "/" + filepath.Base(rawImage)},
