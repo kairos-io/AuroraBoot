@@ -105,12 +105,11 @@ document.addEventListener('DOMContentLoaded', () => {
     logs.innerHTML = "";
     const downloads = document.getElementById('downloads');
     downloads.style.display = 'none';
-    const buildingButton = document.getElementById('building-button');
-    buildingButton.style.display = 'none';
     const linkElement = document.getElementById('links');
     linkElement.innerHTML = "";
     modalBackdrop.classList.add("hidden");
     staticModal.classList.add("hidden");
+    restartButton.classList.add("hidden");
   });
 
   document.getElementById('process-form').addEventListener('submit', function(event) {
@@ -176,6 +175,7 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         socket.onclose = function() {
+          restartButton.classList.remove("hidden");
           generatingDownloadLinks.querySelector('.spinner').classList.add("hidden");
           generatingDownloadLinks.querySelector('.done').classList.remove("hidden");
           outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";

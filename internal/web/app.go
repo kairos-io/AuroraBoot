@@ -70,13 +70,23 @@ func App(listenAddr, artifactDir string) error {
 		if image == "byoi" {
 			image = c.FormValue("byoi_image")
 		}
+
+		variant := c.FormValue("variant")
+
+		kubernetesDistribution := c.FormValue("kubernetes_distribution")
+		kubernetesVersion := c.FormValue("kubernetes_version")
+		if variant == "core" {
+			kubernetesDistribution = ""
+			kubernetesVersion = ""
+		}
+
 		// Collect job data
 		job := JobData{
-			Variant:                c.FormValue("variant"),
+			Variant:                variant,
 			Model:                  c.FormValue("model"),
 			TrustedBoot:            c.FormValue("trusted_boot") == "true",
-			KubernetesDistribution: c.FormValue("kubernetes_distribution"),
-			KubernetesVersion:      c.FormValue("kubernetes_version"),
+			KubernetesDistribution: kubernetesDistribution,
+			KubernetesVersion:      kubernetesVersion,
 			Image:                  image,
 		}
 
