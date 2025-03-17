@@ -46,12 +46,6 @@ RUN dnf in -y bc \
               xorriso \
               zstd
 
-# systemd-ukify systemd-boot
-# Install grub2-efi-x64 only on x86 arches
-RUN if [ "$(uname -m)" == "x86_64" ]; then dnf install -y grub2-efi-x64; fi
-# Install grub2-efi-arm64 only on arm64 arches
-RUN if [ "$(uname -m)" == "aarch64" ]; then dnf install -y grub2-efi-aa64; fi
-
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
 ENV TMPDIR=/tmp
