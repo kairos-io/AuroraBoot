@@ -20,7 +20,6 @@ RUN dnf -y update
 RUN dnf in -y bc \
               binutils \
               curl \
-              docker \
               dosfstools \
               e2fsprogs \
               erofs-utils \
@@ -45,8 +44,7 @@ RUN dnf in -y bc \
               util-linux \
               xfsprogs \
               xorriso \
-              zstd \
-              python3-cryptography python3-pefile # ukify deps
+              zstd
 
 # systemd-ukify systemd-boot
 # Install grub2-efi-x64 only on x86 arches
@@ -131,7 +129,6 @@ RUN rm -d /arm/raw/grubefi/var || true
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
 
-RUN dnf remove -y moby-engine
 ENV BUILDKIT_PROGRESS=plain
 RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo && dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
 
