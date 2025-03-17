@@ -34,7 +34,7 @@ jobs:
         with:
           files: ./coverage.out
   build-image:
-    runs-on: kvm
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -220,4 +220,4 @@ jobs:
        uses: cypress-io/github-action@v6
        with:
          working-directory: e2e/web/
-         start: docker run --rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web
+         start: docker run --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web
