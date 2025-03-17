@@ -216,6 +216,8 @@ jobs:
      - name: Set up Docker Buildx
        id: buildx
        uses: docker/setup-buildx-action@master
+     - name: Preload the Aurora image
+       run: docker pull quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
      - name: Cypress run
        uses: cypress-io/github-action@v6
        with:
