@@ -27,23 +27,8 @@ func buildISO(containerImage, outputDir, artifactName string) string {
 func buildOCI(
 	contextDir,
 	image string,
-	karosInitVersion string,
-	baseImage string,
-	variant string,
-	model string,
-	trustedBoot bool,
-	kubernetesProvider string,
-	kubernetesVersion string,
 ) string {
-	return fmt.Sprintf(`docker build %s \
-	--build-arg VARIANT=%s \
-	--build-arg MODEL=%s \
-	--build-arg TRUSTED_BOOT=%t \
-	--build-arg KUBERNETES_PROVIDER=%s \
-	--build-arg KUBERNETES_VERSION=%s \
-	--build-arg KAIROS_INIT_VERSION=%s \
-	--build-arg BASE_IMAGE=%s \
-	-t %s`, contextDir, variant, model, trustedBoot, kubernetesProvider, kubernetesVersion, karosInitVersion, baseImage, image)
+	return fmt.Sprintf(`docker build %s -t %s`, contextDir, image)
 }
 
 func saveOCI(dst, image string) string {

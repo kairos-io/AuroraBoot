@@ -44,6 +44,7 @@ type JobData struct {
 	KubernetesDistribution string `json:"kubernetes_distribution"`
 	KubernetesVersion      string `json:"kubernetes_version"`
 	Image                  string `json:"image"`
+	Version                string `json:"version"`
 }
 
 func App(listenAddr, artifactDir string) error {
@@ -88,6 +89,7 @@ func App(listenAddr, artifactDir string) error {
 			KubernetesDistribution: kubernetesDistribution,
 			KubernetesVersion:      kubernetesVersion,
 			Image:                  image,
+			Version:                c.FormValue("version"),
 		}
 
 		id := uuid.NewString()
@@ -133,13 +135,6 @@ func App(listenAddr, artifactDir string) error {
 				buildOCI(
 					tempdir,
 					"my-image",
-					"v0.2.3",
-					jobData.Image,
-					jobData.Variant,
-					jobData.Model,
-					jobData.TrustedBoot,
-					jobData.KubernetesDistribution,
-					jobData.KubernetesVersion,
 				))
 
 			fmt.Println("Finished building image")

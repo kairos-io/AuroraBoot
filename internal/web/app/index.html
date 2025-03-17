@@ -8,16 +8,16 @@
         <script src="index.js"></script>
     </head>
     <body class="">
-        <div id="sticky-banner" tabindex="-1" class="fixed top-0 start-0 z-50 flex justify-between w-full p-4 border-b border-gray-200 bg-gray-50 dark:bg-gray-700 dark:border-gray-600">
+        <div id="sticky-banner" tabindex="-1" class="fixed top-0 start-0 z-50 flex justify-between w-full p-4 border-b border-red-200 bg-red-50 dark:bg-gray-800 dark:border-red-800">
             <div class="flex items-center mx-auto">
-                <p class="flex items-center text-sm font-normal text-gray-500 dark:text-gray-400">
-                    <span class="inline-flex p-1 me-3 bg-gray-200 rounded-full dark:bg-gray-600 w-6 h-6 items-center justify-center shrink-0">
-                        <svg class="w-3 h-3 text-gray-500 dark:text-gray-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 19">
+                <p class="flex items-center text-sm font-normal text-gray-500 dark:text-red-400">
+                    <span class="inline-flex p-1 me-3 bg-red-200 rounded-full dark:bg-gray-600 w-6 h-6 items-center justify-center shrink-0">
+                        <svg class="w-3 h-3 text-red-500 dark:text-red-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 19">
                             <path d="M15 1.943v12.114a1 1 0 0 1-1.581.814L8 11V5l5.419-3.871A1 1 0 0 1 15 1.943ZM7 4H2a2 2 0 0 0-2 2v4a2 2 0 0 0 2 2v5a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2V4ZM4 17v-5h1v5H4ZM16 5.183v5.634a2.984 2.984 0 0 0 0-5.634Z"/>
                         </svg>
                         <span class="sr-only">Light bulb</span>
                     </span>
-                    <span>This feature is still in heavy development. You can track the progress or give feedback on <a href="https://github.com/kairos-io/kairos/issues/3244" class="inline font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline">this ticket</a></span>
+                    <span>This feature is still in heavy development. You can expect changes on its UI or functionality without notice. You can track the progress or give feedback on <a href="https://github.com/kairos-io/kairos/issues/3244" class="inline font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline">this ticket</a></span>
                 </p>
             </div>
         </div>
@@ -286,7 +286,11 @@
                                 <label for="kubernetes_release" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"><span id="kubernetes_distro_name">K3s</span> Release</label>
                                 <input type="text" name="kubernetes_release" id="kubernetes_release" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v1.32.0"/>
                             </div>
-                            <button id="submit-button" type="submit" class="w-full px-5 py-3 text-base font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 sm:w-auto dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Build Image</button>
+                            <div>
+                                <label for="version" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Version</label>
+                                <input type="text" name="version" id="version" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v0.1.0-alpha" required/>
+                            </div>
+                            <button id="submit-button" type="submit" class="w-full px-5 py-3 text-base font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 sm:w-auto dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Build</button>
                         </form>
                         <div id="modal-backdrop" class="fixed inset-0 z-40 bg-black/75 h-screen hidden"></div>
                         <!-- Main modal -->
@@ -377,7 +381,6 @@
                                 </div>
                             </div>
                         </div>
-
                     </div>
                 </div>
             </div>
