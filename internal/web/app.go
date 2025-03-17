@@ -11,7 +11,7 @@ import (
 	"path/filepath"
 	"sync"
 
-	"github.com/google/uuid"
+	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"github.com/robert-nix/ansihtml"
@@ -92,11 +92,14 @@ func App(listenAddr, artifactDir string) error {
 			Version:                c.FormValue("version"),
 		}
 
-		id := uuid.NewString()
+		id, err := uuid.NewV4()
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate UUID"})
+		}
 
-		jobsData[id] = job
+		jobsData[id.String()] = job
 
-		return c.JSON(http.StatusOK, map[string]string{"uuid": id})
+		return c.JSON(http.StatusOK, map[string]string{"uuid": id.String()})
 	})
 
 	// Handle WebSocket connection
