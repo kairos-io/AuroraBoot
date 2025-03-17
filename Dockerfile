@@ -17,8 +17,34 @@ RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedora:$FEDORA_VERSION AS default
 RUN dnf -y update
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
-RUN dnf in -y bc jq genisoimage docker sudo parted e2fsprogs erofs-utils binutils curl util-linux udev rsync \
-    dosfstools mtools xorriso lvm2 zstd sbsigntools squashfs-tools kpartx grub2 openssl
+RUN dnf in -y bc \
+              binutils \
+              curl \
+              dosfstools \
+              e2fsprogs \
+              erofs-utils \
+              gdisk \
+              genisoimage \
+              git \
+              grub2 \
+              jq \
+              kpartx \
+              lvm2 \
+              mtools \
+              openssl \
+              parted \
+              qemu-img \
+              qemu-system-x86 \
+              qemu-tools \
+              rsync \
+              sbsigntools \
+              squashfs-tools \
+              sudo \
+              udev \
+              util-linux \
+              xfsprogs \
+              xorriso \
+              zstd
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 ENV LUET_NOLOCK=true
@@ -96,6 +122,9 @@ RUN rm -d /arm/raw/grubefi/var || true
 
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
+
+ENV BUILDKIT_PROGRESS=plain
+RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo && dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
 
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
