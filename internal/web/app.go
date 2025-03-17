@@ -122,7 +122,7 @@ func App(listenAddr, artifactDir string) error {
 
 			defer os.RemoveAll(tempdir)
 
-			if err := prepareDockerfile(tempdir); err != nil {
+			if err := prepareDockerfile(jobData, tempdir); err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to prepare image: %v", err))
 				return
 			}
