@@ -5,8 +5,9 @@ describe('Basic Tests for webui', () => {
     const expectedText = [
         "Ubuntu 24.04 LTS",
         "Fedora 40",
-        "Alpine 19",
+        "Alpine 3.21",
         "Rocky Linux 9",
+        "Debian 12 (Bookworm)",
         "AMD64",
         "ARM64",
         "Core",
