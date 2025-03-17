@@ -1,3 +1,6 @@
+var Convert = require('ansi-to-html');
+var convert = new Convert();
+
 document.addEventListener('DOMContentLoaded', () => {
   const byoi = document.getElementById('byoi');
   // when byoi is clicked on, select the base_image radio button that has the value byoi
@@ -148,7 +151,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
           const message = event.data;
           updateStatus(message);
-          outputElement.innerHTML += `${event.data}\n`;
+          outputElement.innerHTML += `${convert.toHtml(message)}\n`;
           outputElement.scrollTop = outputElement.scrollHeight;
         };
 

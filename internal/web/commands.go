@@ -36,26 +36,8 @@ func saveOCI(dst, image string) string {
 }
 
 func runBashProcessWithOutput(ws io.Writer, command string) error {
-	// Simulate a background process
 	cmd := exec.Command("bash", "-c", command)
-	stdout, _ := cmd.StdoutPipe()
-	stderr, _ := cmd.StderrPipe()
-
-	out := io.MultiReader(stdout, stderr)
-
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	// Stream process output to writer
-	reader := io.TeeReader(ansiToHTML(out), ws)
-	if _, err := io.Copy(io.Discard, reader); err != nil {
-		return err
-	}
-
-	if err := cmd.Wait(); err != nil {
-		return err
-	}
-
-	return nil
+	cmd.Stdout = ws
+	cmd.Stderr = ws
+	return cmd.Run()
 }
