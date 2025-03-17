@@ -12,7 +12,7 @@ describe('Basic Tests for webui', () => {
         "ARM64",
         "Core",
         "Standard",
-        "Welcome to the Kairos Factory"
+        "Welcome to the Kairos Factory",
     ];
 
     expectedText.forEach((text) => {
@@ -21,6 +21,21 @@ describe('Basic Tests for webui', () => {
             cy.contains(text).should("exist").should("be.visible")
         });
     });
+
+
+    const values = [
+        "ubuntu:24.04",
+        "fedora:40",
+        "alpine:3.21",
+        "rockylinux:9",
+        "debian:12",
+    ]
+    values.forEach((value) => {
+        it(`Input with value ${value} exists`, () => {
+            cy.get(`input[type="radio"][name="base_image"][value="${value}"]`, {timeout: 1000}).should("exist")
+        });
+    });
+
 
     it("base images has the proper sizes", () => {
         cy.get(".baseimage-list", { timeout: 1000 }).should("exist").should("be.visible")
