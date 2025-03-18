@@ -1,5 +1,6 @@
 {
   "dependencies": {
-    "ansi-to-html": "^0.7.2"
+    "ansi-to-html": "^0.7.2",
+    "esbuild": "^0.25.1"
   }
 }

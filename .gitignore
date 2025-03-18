@@ -6,3 +6,4 @@ coverage.out
 coverage.out.*
 AuroraBoot
 internal/web/app/node_modules/
+internal/web/app/bundle.js

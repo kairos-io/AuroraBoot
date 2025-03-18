@@ -3,6 +3,14 @@ ARG LUET_VERSION=0.36.0
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
+FROM node:23 AS js
+WORKDIR /work
+RUN rm -rf node_modules package-lock.json 
+ADD ./internal/web/app/package.json .
+ADD ./internal/web/app/package-lock.json .
+ADD ./internal/web/app/index.js .
+RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
+
 FROM golang AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
@@ -10,6 +18,7 @@ ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
+COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
