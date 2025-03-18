@@ -24,17 +24,28 @@ ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 FROM fedora:$FEDORA_VERSION AS default
+ARG TARGETARCH
+ENV BUILDKIT_PROGRESS=plain
+ENV LUET_NOLOCK=true
+ENV TMPDIR=/tmp
+# `luet repo update` fails with `/usr/bin/unpigz: invalid argument` on arm for some reason without this option:
+# https://github.com/containerd/containerd/blob/7c3aca7a610df76212171d200ca3811ff6096eb8/archive/compression/compression.go#L50
+ENV CONTAINERD_DISABLE_PIGZ=1
 RUN dnf -y update
+RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 RUN dnf in -y bc \
               binutils \
+              containerd.io \
               curl \
+              docker-ce \
+              docker-ce-cli \
+              docker-buildx-plugin \
               dosfstools \
               e2fsprogs \
               erofs-utils \
               gdisk \
               genisoimage \
-              git \
               grub2 \
               jq \
               kpartx \
@@ -42,23 +53,16 @@ RUN dnf in -y bc \
               mtools \
               openssl \
               parted \
-              qemu-img \
-              qemu-system-x86 \
-              qemu-tools \
               rsync \
               sbsigntools \
               squashfs-tools \
               sudo \
               udev \
               util-linux \
-              xfsprogs \
               xorriso \
               zstd
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
-ENV LUET_NOLOCK=true
-ENV TMPDIR=/tmp
-ARG TARGETARCH
 # copy both arches
 COPY image-assets/luet-arm64.yaml /tmp/luet-arm64.yaml
 COPY image-assets/luet-amd64.yaml /tmp/luet-amd64.yaml
@@ -66,9 +70,6 @@ COPY image-assets/luet-amd64.yaml /tmp/luet-amd64.yaml
 RUN mkdir -p /etc/luet/
 RUN cp /tmp/luet-${TARGETARCH}.yaml /etc/luet/luet.yaml
 ## Uki artifacts, will be set under the /usr/kairos directory
-# `luet repo update` fails with `/usr/bin/unpigz: invalid argument` on arm for some reason without this option:
-# https://github.com/containerd/containerd/blob/7c3aca7a610df76212171d200ca3811ff6096eb8/archive/compression/compression.go#L50
-ENV CONTAINERD_DISABLE_PIGZ=1
 RUN luet repo update
 ## Each arch has its own systemd-boot artifacts, we should ship both in both images for multi-arch build support
 RUN luet install --config /tmp/luet-arm64.yaml -y system/systemd-boot --system-target /arm/systemd-boot
@@ -79,7 +80,7 @@ RUN luet install --config /tmp/luet-amd64.yaml -y system/systemd-boot --system-t
 RUN luet install -y firmware/u-boot-rpi64 firmware/rpi --system-target /arm/rpi/
 
 ## PineBook64 Pro
-RUN luet install -y arm-vendor-blob/u-boot-rockchip --system-target /arm/pinebookpro/
+RUN luet install -y uboot/rockchip --system-target /arm/pinebookpro/
 
 ## Odroid fw
 RUN luet install -y firmware/odroid-c2 --system-target /arm/odroid-c2
@@ -131,9 +132,6 @@ RUN rm -d /arm/raw/grubefi/var || true
 
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
-
-ENV BUILDKIT_PROGRESS=plain
-RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo && dnf install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin
 
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 

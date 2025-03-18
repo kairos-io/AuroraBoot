@@ -965,12 +965,12 @@ func (r *RawImage) FinalizeImage(image string) error {
 		}
 	case "pinebookpro":
 		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Pinebook Pro.")
-		err = utils.DD("/arm/pinebookpro/usr/lib/u-boot/pinebook-pro-rk3399/idbloader.img", image, 64, 0, 0, 0)
+		err = utils.DD("/arm/pinebookpro/idbloader.img", image, 64, 0, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd idbloader.img")
 			return err
 		}
-		err = utils.DD("/arm/pinebookpro/usr/lib/u-boot/pinebook-pro-rk3399/u-boot.itb", image, 16384, 0, 0, 0)
+		err = utils.DD("/arm/pinebookpro/u-boot.itb", image, 16384, 0, 0, 0)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.itb")
 			return err
