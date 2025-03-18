@@ -4,7 +4,6 @@ import (
 	"embed"
 	"encoding/json"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -14,7 +13,6 @@ import (
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"github.com/robert-nix/ansihtml"
 	"golang.org/x/net/websocket"
 )
 
@@ -140,7 +138,6 @@ func App(listenAddr, artifactDir string) error {
 					"my-image",
 				))
 
-			fmt.Println("Finished building image")
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Failed to build image: %v", err))
 				return
@@ -246,28 +243,4 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 	}
 
 	return file, nil
-}
-
-func ansiToHTML(r io.Reader) io.Reader {
-
-	pr, pw := io.Pipe()
-
-	go func() {
-		defer pw.Close()
-
-		// Read from the reader and write to the pipe
-		buf := make([]byte, 1024)
-		for {
-			n, err := r.Read(buf)
-			if err != nil {
-				if err != io.EOF {
-					pw.CloseWithError(err)
-				}
-				break
-			}
-			pw.Write(ansihtml.ConvertToHTML(buf[:n]))
-		}
-	}()
-
-	return pr
 }

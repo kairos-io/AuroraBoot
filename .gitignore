@@ -4,5 +4,8 @@ dist/
 build/
 coverage.out
 coverage.out.*
+AuroraBoot
+internal/web/app/node_modules/
+internal/web/app/bundle.js
 e2e/web/node_modules/
 e2e/web/cypress/screenshots/
