@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	containerdCompression "github.com/containerd/containerd/archive/compression"
+	containerdCompression "github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/google/go-containerregistry/pkg/name"
 	container "github.com/google/go-containerregistry/pkg/v1"
 	"github.com/google/go-containerregistry/pkg/v1/empty"
