@@ -4,3 +4,5 @@ dist/
 build/
 coverage.out
 coverage.out.*
+e2e/web/node_modules/
+e2e/web/cypress/screenshots/
