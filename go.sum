@@ -615,6 +615,8 @@ github.com/itchyny/timefmt-go v0.1.6/go.mod h1:RRDZYC5s9ErkjQvTvvU7keJjxUYzIISJG
 github.com/jarcoal/httpmock v1.0.5/go.mod h1:ATjnClrvW/3tijVmpL/va5Z3aAyGvqU3gCT8nX0Txik=
 github.com/jaypipes/ghw v0.13.0 h1:log8MXuB8hzTNnSktqpXMHc0c/2k/WgjOMSUtnI1RV4=
 github.com/jaypipes/ghw v0.13.0/go.mod h1:In8SsaDqlb1oTyrbmTC14uy+fbBMvp+xdqX51MidlD8=
+github.com/jaypipes/ghw v0.15.0 h1:kjn+8fWVtB/DKfwMwpojLFMM6a3zdBF1OnBhAbvJ1BI=
+github.com/jaypipes/ghw v0.15.0/go.mod h1:In8SsaDqlb1oTyrbmTC14uy+fbBMvp+xdqX51MidlD8=
 github.com/jaypipes/pcidb v1.0.1 h1:WB2zh27T3nwg8AE8ei81sNRb9yWBii3JGNJtT7K9Oic=
 github.com/jaypipes/pcidb v1.0.1/go.mod h1:6xYUz/yYEyOkIkUt2t2J2folIuZ4Yg6uByCGFXMCeE4=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
@@ -650,6 +652,8 @@ github.com/kairos-io/go-ukify v0.2.5 h1:3ohFO1FhYKbeB/NSsgaq/05CHv1F+/SX1PGDNexL
 github.com/kairos-io/go-ukify v0.2.5/go.mod h1:xGAR9EDOo459L7g8AixVaZQHi9ctGy6/Qk44nXJ1TVw=
 github.com/kairos-io/kairos-agent/v2 v2.16.4 h1:kSOcGJ1SVSGrhFyJJ8kaTdOjK5WtbnK0bduCYrbVi1E=
 github.com/kairos-io/kairos-agent/v2 v2.16.4/go.mod h1:iUXtS2mJOWv8XwiiXdFeSRPgx3V4yBV1ti8kuSzpYjE=
+github.com/kairos-io/kairos-agent/v2 v2.17.0 h1:q95BOO6++GYQpE9lm6uiYkEdYabmbTvG3/V4pJoa6sc=
+github.com/kairos-io/kairos-agent/v2 v2.17.0/go.mod h1:0QzhwfI7KnSHsxsR4jVqlqTXfhybXzRoe43cvAc88CU=
 github.com/kairos-io/kairos-sdk v0.7.3 h1:OyDSEQVtc1MnRrP3M8d+wref0RA3eZof/FTL5ETOlXM=
 github.com/kairos-io/kairos-sdk v0.7.3/go.mod h1:ZSxP3VgOE2+f/3IdPNcGK7qcYLWl44zV+gq0m+9ovoo=
 github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07 h1:cE0KsjMDuEkOMSOpRgkfGw7rT4Yk6io0V/3f/W1m2sY=
