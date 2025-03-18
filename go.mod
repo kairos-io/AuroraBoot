@@ -10,7 +10,7 @@ godebug x509negativeserial=1
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/containerd/containerd v1.7.27
+	github.com/containerd/containerd/v2 v2.0.4
 	github.com/diskfs/go-diskfs v1.4.2
 	github.com/foxboron/go-uefi v0.0.0-20250207204325-69fb7dba244f
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
@@ -29,7 +29,6 @@ require (
 	github.com/onsi/ginkgo/v2 v2.23.0
 	github.com/onsi/gomega v1.36.2
 	github.com/otiai10/copy v1.14.1
-	github.com/robert-nix/ansihtml v1.0.1
 	github.com/sanity-io/litter v1.5.8
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
@@ -65,6 +64,7 @@ require (
 	github.com/codingsince1985/checksum v1.2.4 // indirect
 	github.com/containerd/cgroups/v3 v3.0.5 // indirect
 	github.com/containerd/console v1.0.4 // indirect
+	github.com/containerd/containerd v1.7.27 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
