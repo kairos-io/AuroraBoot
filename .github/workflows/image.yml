@@ -4,7 +4,7 @@ name: 'Release images'
 on:
   push:
     tags:
-      - '*'
+      - 'v*'
 
 concurrency:
   group: ci-image-${{ github.head_ref || github.ref }}-${{ github.repository }}
