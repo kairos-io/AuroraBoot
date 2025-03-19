@@ -7,11 +7,12 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"fmt"
-	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"os"
 	"os/exec"
 	"path/filepath"
+
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/ops"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -141,8 +142,8 @@ var _ = Describe("Disk image generation", Label("raw-disks", "e2e"), Serial, Ord
 				f, _ := os.Open(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.2.1.raw.vhd"))
 				defer f.Close()
 				info, _ := f.Stat()
-				// Should be divisible by 1024*1024
-				Expect(info.Size() % constants.MB).To(BeNumerically("==", 0))
+				// Should be divisible by 1024*1024 + 512 bytes header
+				Expect(info.Size() % constants.MB).To(BeNumerically("==", 512))
 				// Dump the header from the file into our VHDHeader
 				buff := make([]byte, 512)
 				_, _ = f.ReadAt(buff, info.Size()-512)
