@@ -11,7 +11,7 @@ godebug x509negativeserial=1
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/containerd/containerd/v2 v2.0.4
-	github.com/diskfs/go-diskfs v1.4.2
+	github.com/diskfs/go-diskfs v1.5.2
 	github.com/foxboron/go-uefi v0.0.0-20250207204325-69fb7dba244f
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/gofrs/uuid v4.4.0+incompatible
@@ -25,7 +25,7 @@ require (
 	github.com/klauspost/compress v1.18.0
 	github.com/labstack/echo/v4 v4.13.3
 	github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82
-	github.com/mudler/yip v1.15.0
+	github.com/mudler/yip v1.16.0
 	github.com/onsi/ginkgo/v2 v2.23.3
 	github.com/onsi/gomega v1.36.3
 	github.com/otiai10/copy v1.14.1
@@ -92,7 +92,7 @@ require (
 	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.6.2 // indirect
-	github.com/go-git/go-git/v5 v5.13.2 // indirect
+	github.com/go-git/go-git/v5 v5.14.0 // indirect
 	github.com/go-logr/logr v1.4.2 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
