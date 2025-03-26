@@ -17,10 +17,8 @@ import (
 	agentUtils "github.com/kairos-io/kairos-agent/v2/pkg/utils"
 	fsutils "github.com/kairos-io/kairos-agent/v2/pkg/utils/fs"
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
-	"github.com/mudler/yip/pkg/schema"
 	"github.com/twpayne/go-vfs/v5"
 	"golang.org/x/sys/unix"
-	"gopkg.in/yaml.v3"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -126,70 +124,53 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	// - Adds a persistent partition with the rest of the disk
 	// - If the recovery mode file is present, it will run the reset command unattended
 	// - If the reset cloud init file is present, it will remove it. Magic! So we dont get any traces of the extra config for raw images
-	conf := &schema.YipConfig{
-		Name: "Expand disk layout",
-		Stages: map[string][]schema.Stage{
-			"rootfs.before": {
-				schema.Stage{
-					Name: "Add state partition",
-					Layout: schema.Layout{
-						Device: &schema.Device{
-							Label: agentConstants.RecoveryLabel,
-						},
-						Parts: []schema.Partition{
-							{
-								FSLabel:    agentConstants.StateLabel,
-								Size:       uint(size),
-								PLabel:     agentConstants.StatePartName,
-								FileSystem: agentConstants.LinuxFs,
-							},
-						},
-					},
-				}, schema.Stage{
-					Name: "Add persistent partition",
-					Layout: schema.Layout{
-						Device: &schema.Device{
-							Label: agentConstants.RecoveryLabel,
-						},
-						Parts: []schema.Partition{
-							{
-								FSLabel:    agentConstants.PersistentLabel,
-								Size:       0, // It will get expanded to the end of the disk
-								PLabel:     agentConstants.PersistentPartName,
-								FileSystem: agentConstants.LinuxFs,
-							},
-						},
-					},
-				},
-			}, "network": {
-				schema.Stage{
-					Name: "Trigger udevadm",
-					Commands: []string{
-						"udevadm trigger",
-					},
-				},
-				schema.Stage{
-					If:   `[ -f "/run/cos/recovery_mode" ]`,
-					Name: "Run auto reset",
-					Commands: []string{
-						"kairos-agent --debug reset --unattended --reboot",
-					},
-				},
-			}, "after-reset": {
-				schema.Stage{
-					If:   `[ -f "/oem/` + resetCloudInit + `" ]`,
-					Name: "Auto remove this file",
-					Commands: []string{
-						fmt.Sprintf("rm /oem/%s", resetCloudInit),
-					},
-				},
-			},
-		},
-	}
-	yipYAML, err := yaml.Marshal(conf)
+	conf := fmt.Sprintf(`name: Expand disk layout and autoreset
+stages:
+    after-reset:
+        - commands:
+            - rm /oem/%[8]s
+          if: '[ -f "/oem/%[8]s" ]'
+          name: Auto remove this file
+    network:
+        - commands:
+            - udevadm trigger
+          name: Trigger udevadm
+        - commands:
+            - kairos-agent --debug reset --unattended --reboot
+          if: '[ -f "/run/cos/recovery_mode" ] && [ ! -f "/oem/.autoreset.skip" ]'
+          name: Run auto reset
+    rootfs.before:
+        - name: Add state partition
+          layout:
+            device:
+                label: %[1]s
+            add_partitions:
+                - fsLabel: %[2]s
+                  size: %[3]d
+                  pLabel: %[4]s
+                  filesystem: %[5]s
+        - name: Add persistent partition
+          layout:
+            device:
+                label: %[1]s
+            add_partitions:
+                - fsLabel: %[6]s
+                  pLabel: %[7]s
+                  filesystem: %[5]s
+`,
+		agentConstants.RecoveryLabel,      // 1
+		agentConstants.StateLabel,         // 2
+		size,                              // 3
+		agentConstants.StatePartName,      // 4
+		agentConstants.LinuxFs,            // 5
+		agentConstants.PersistentLabel,    // 6
+		agentConstants.PersistentPartName, // 7
+		resetCloudInit,                    // 8
+	)
+
 	// Save the cloud config
 	internal.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("Creating reset cloud config")
-	err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, resetCloudInit), yipYAML, 0o644)
+	err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, resetCloudInit), []byte(conf), 0o644)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("failed to write cloud config")
 		return "", err
