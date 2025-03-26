@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"github.com/diskfs/go-diskfs"
+	fileBackend "github.com/diskfs/go-diskfs/backend/file"
 	"github.com/diskfs/go-diskfs/partition"
 	"github.com/diskfs/go-diskfs/partition/gpt"
 	"github.com/gofrs/uuid"
@@ -546,12 +547,12 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	endDiskFile = filepath.Join(r.TempDir(), "end.raw")
 	// THIS SIZE MARKS THE START SECTOR FOR THE PARTITIONS BELOW!
 	// So this mean we have an empty 2048 sectors at the start of the disk, partitions then start at that point
-	init, err := diskfs.Create(filepath.Join(r.TempDir(), "init.raw"), 1*1024*1024, diskfs.Raw, diskfs.SectorSizeDefault)
+	init, err := fileBackend.CreateFromPath(filepath.Join(r.TempDir(), "init.raw"), 1*1024*1024)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to create init disk")
 		return err
 	}
-	end, err := diskfs.Create(filepath.Join(r.TempDir(), "end.raw"), 1*1024*1024, diskfs.Raw, diskfs.SectorSize512)
+	end, err := fileBackend.CreateFromPath(filepath.Join(r.TempDir(), "end.raw"), 1*1024*1024)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", endDiskFile).Msg("failed to create end disk")
 		return err
