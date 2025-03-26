@@ -422,7 +422,7 @@ func (r *RawImage) Build() error {
 	defer r.config.Fs.RemoveAll(r.TempDir())
 
 	// Get the artifact version from the rootfs
-	outputName := utils.NameFromRootfs(r.Source) + ".raw"
+	outputName := fmt.Sprintf("%s-%s.raw", constants.KairosDefaultArtifactName, utils.NameFromRootfs(r.Source))
 	internal.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
 
 	internal.Log.Logger.Info().Msg("Creating RECOVERY image")

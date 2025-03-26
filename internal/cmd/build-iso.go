@@ -10,10 +10,6 @@ import (
 	"os"
 )
 
-const (
-	KairosDefaultArtifactName = "kairos"
-)
-
 var BuildISOCmd = cli.Command{
 	Name:    "build-iso",
 	Aliases: []string{"bi"},

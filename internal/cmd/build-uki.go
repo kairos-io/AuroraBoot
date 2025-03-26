@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/kairos-io/AuroraBoot/internal"
 	"io"
 	"log/slog"
 	"math"
@@ -263,6 +264,8 @@ var BuildUKICmd = cli.Command{
 			return err
 		}
 
+		outputName := utils.NameFromRootfs(sourceDir)
+
 		logger.Info("Creating additional directories in the rootfs")
 		if err := setupDirectoriesAndFiles(sourceDir); err != nil {
 			return err
@@ -270,12 +273,12 @@ var BuildUKICmd = cli.Command{
 
 		logger.Info("Copying kernel")
 		if err := copyKernel(sourceDir, artifactsTempDir); err != nil {
-			return fmt.Errorf("Copying kernel: %w", err)
+			return fmt.Errorf("copying kernel: %w", err)
 		}
 
 		// Remove the boot directory as we already copied the kernel and we dont need the initrd files
 		if err := os.RemoveAll(filepath.Join(sourceDir, "boot")); err != nil {
-			return fmt.Errorf("Cleaning up the source directory: %w", err)
+			return fmt.Errorf("cleaning up the source directory: %w", err)
 		}
 
 		logger.Info("Creating an initramfs file")
@@ -360,7 +363,7 @@ var BuildUKICmd = cli.Command{
 			if err != nil {
 				return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
 			}
-			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePath, ctx.String("keys"), kairosVersion, ctx.String("name"), entries, logger); err != nil {
+			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePath, ctx.String("keys"), outputName, ctx.String("name"), entries, logger); err != nil {
 				return err
 			}
 		case string(constants.ContainerOutput):
@@ -375,7 +378,7 @@ var BuildUKICmd = cli.Command{
 				return err
 			}
 			// Then build the image
-			if err := createContainer(temp, ctx.String("output-dir"), ctx.String("name"), kairosVersion, logger); err != nil {
+			if err := createContainer(temp, ctx.String("output-dir"), ctx.String("name"), outputName, logger); err != nil {
 				return err
 			}
 		case string(constants.DefaultOutput):
@@ -689,7 +692,7 @@ func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, kairosVersion, artifactName string, entries []utils.BootEntry, logger sdkTypes.KairosLogger) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, logger sdkTypes.KairosLogger) error {
 	// isoDir is where we generate the img file. We pass this dir to xorriso.
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
@@ -744,10 +747,12 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		}
 	}
 
-	isoName := fmt.Sprintf("%s_%s.iso", KairosDefaultArtifactName, kairosVersion)
+	isoName := fmt.Sprintf("%s-%s-uki.iso", constants.KairosDefaultArtifactName, outputName)
 	if artifactName != "" {
 		isoName = fmt.Sprintf("%s.iso", artifactName)
 	}
+
+	internal.Log.Logger.Debug().Str("name", isoName).Msg("Got output name")
 
 	logger.Info("Creating the iso files with xorriso")
 	cmd := exec.Command("xorriso", "-as", "mkisofs", "-V", "UKI_ISO_INSTALL", "-isohybrid-gpt-basdat",
@@ -904,7 +909,7 @@ func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEn
 	return nil
 }
 
-func createContainer(sourceDir, outputDir, artifactName, version string, logger sdkTypes.KairosLogger) error {
+func createContainer(sourceDir, outputDir, artifactName, outputName string, logger sdkTypes.KairosLogger) error {
 	temp, err := os.CreateTemp("", "image.tar")
 	if err != nil {
 		return err
@@ -917,15 +922,16 @@ func createContainer(sourceDir, outputDir, artifactName, version string, logger 
 	}
 	_ = temp.Close()
 	defer os.RemoveAll(temp.Name())
-	finalImage := filepath.Join(outputDir, fmt.Sprintf("kairos_uki_%s.tar", version))
+	finalImage := filepath.Join(outputDir, fmt.Sprintf("%s-%s-uki.tar", constants.KairosDefaultArtifactName, outputName))
 	// TODO: get the arch from the running system or by flag? Config.Arch has this value on it
 	arch := "amd64"
 	os := "linux"
 	// Build imageTar from normal tar
-	tarName := fmt.Sprintf("kairos_uki_%s.tar", version)
+	tarName := fmt.Sprintf("%s-%s-uki.tar", constants.KairosDefaultArtifactName, outputName)
 	if artifactName != "" {
 		tarName = fmt.Sprintf("%s.tar", artifactName)
 	}
+	internal.Log.Logger.Debug().Str("name", tarName).Msg("Got output name")
 	err = utils.CreateTar(logger, temp.Name(), finalImage, tarName, arch, os)
 	if err != nil {
 		return err

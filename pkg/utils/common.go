@@ -365,6 +365,9 @@ func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
 // for containers we store them under the distro name (ubuntu, opensuse, etc) as the repo name
 // and then the rest is for the tag
 // quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.4
+// so in here we only return the shared part of the name
+// its the callers responsibility to add the rest of the name if its building an iso or raw image
+// also, no extension is added to the name, so its up to the caller to add it
 func NameFromRootfs(rootfs string) string {
 	var label string
 	var flavor string
@@ -390,5 +393,5 @@ func NameFromRootfs(rootfs string) string {
 		}
 	}
 
-	return fmt.Sprintf("kairos-%s-%s", flavor, label)
+	return fmt.Sprintf("%s-%s", flavor, label)
 }
