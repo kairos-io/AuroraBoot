@@ -137,7 +137,7 @@ stages:
           name: Trigger udevadm
         - commands:
             - kairos-agent --debug reset --unattended --reboot
-          if: '[ -f "/run/cos/recovery_mode" ] && [ ! -f "/oem/.autoreset.sentinel" ]'
+          if: '[ -f "/run/cos/recovery_mode" ] && [ ! -f "/oem/.autoreset.skip" ]'
           name: Run auto reset
     rootfs.before:
         - name: Add state partition
