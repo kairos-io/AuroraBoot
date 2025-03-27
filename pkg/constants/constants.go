@@ -40,18 +40,19 @@ var GrubLiveBiosCfg []byte
 type UkiOutput string
 
 const (
-	IsoEFIPath     = "/boot/uefi.img"
-	EfiBootPath    = "/EFI/BOOT"
-	EfiLabel       = "COS_GRUB"
-	EfiFs          = "vfat"
-	IsoRootFile    = "rootfs.squashfs"
-	ISOLabel       = "COS_LIVE"
-	ShimEfiDest    = EfiBootPath + "/bootx64.efi"
-	ShimEfiArmDest = EfiBootPath + "/bootaa64.efi"
-	BuildImgName   = "elemental"
-	GrubCfg        = "grub.cfg"
-	GrubPrefixDir  = "/boot/grub2"
-	GrubEfiCfg     = "search --no-floppy --file --set=root " + IsoKernelPath +
+	KairosDefaultArtifactName = "kairos"
+	IsoEFIPath                = "/boot/uefi.img"
+	EfiBootPath               = "/EFI/BOOT"
+	EfiLabel                  = "COS_GRUB"
+	EfiFs                     = "vfat"
+	IsoRootFile               = "rootfs.squashfs"
+	ISOLabel                  = "COS_LIVE"
+	ShimEfiDest               = EfiBootPath + "/bootx64.efi"
+	ShimEfiArmDest            = EfiBootPath + "/bootaa64.efi"
+	BuildImgName              = "elemental"
+	GrubCfg                   = "grub.cfg"
+	GrubPrefixDir             = "/boot/grub2"
+	GrubEfiCfg                = "search --no-floppy --file --set=root " + IsoKernelPath +
 		"\nset prefix=($root)" + GrubPrefixDir +
 		"\nconfigfile $prefix/" + GrubCfg
 

@@ -44,7 +44,6 @@ func GetApp(version string) *cli.App {
 			if err != nil {
 				return err
 			}
-			c.ISO.Name = KairosDefaultArtifactName
 
 			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
 			err = deployer.RegisterAll(d)

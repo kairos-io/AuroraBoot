@@ -18,17 +18,17 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 	var auroraboot *Auroraboot
 
 	BeforeEach(func() {
-		kairosVersion := "v2.5.0"
+		kairosVersion := "v3.3.3"
 		resultDir, err = os.MkdirTemp("", "auroraboot-build-uki-test-")
 		Expect(err).ToNot(HaveOccurred())
-		resultFile = filepath.Join(resultDir, fmt.Sprintf("kairos_%s.iso", kairosVersion))
+		image = fmt.Sprintf("quay.io/kairos/fedora:40-core-amd64-generic-%s-uki", kairosVersion)
+		resultFile = filepath.Join(resultDir, fmt.Sprintf("kairos-fedora-40-core-amd64-generic-%s-uki.iso", kairosVersion))
 
 		currentDir, err := os.Getwd()
 		Expect(err).ToNot(HaveOccurred())
 		keysDir = filepath.Join(currentDir, "assets", "keys")
 		Expect(os.MkdirAll(keysDir, 0755)).ToNot(HaveOccurred())
 		auroraboot = NewAuroraboot(resultDir, keysDir)
-		image = fmt.Sprintf("quay.io/kairos/fedora:38-core-amd64-generic-%s", kairosVersion)
 	})
 
 	AfterEach(func() {
@@ -84,6 +84,7 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 })
 
 func buildISO(auroraboot *Auroraboot, image, keysDir, resultDir, resultFile string, additionalArgs ...string) string {
+	By(fmt.Sprintf("building the iso from %s", image))
 	args := []string{"build-uki", "--output-dir", resultDir, "-k", keysDir, "--output-type", "iso"}
 	args = append(args, additionalArgs...)
 	args = append(args, image)
@@ -92,7 +93,7 @@ func buildISO(auroraboot *Auroraboot, image, keysDir, resultDir, resultFile stri
 
 	By("building the iso")
 	_, err = os.Stat(resultFile)
-	Expect(err).ToNot(HaveOccurred())
+	Expect(err).ToNot(HaveOccurred(), out)
 
 	return out
 }

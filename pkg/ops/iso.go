@@ -121,6 +121,12 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		if i.DataPath != "" {
 			overlay = i.DataPath
 		}
+		if i.OverrideName != "" {
+			i.Name = i.OverrideName
+		} else {
+			// Generate name from the rootfs kairos-release file
+			i.Name = fmt.Sprintf("kairos-%s", utils.NameFromRootfs(src))
+		}
 
 		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst"
 		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
@@ -642,6 +648,8 @@ func (b BuildISOAction) burnISO(root string) error {
 	} else {
 		isoFileName = fmt.Sprintf("%s.iso", b.cfg.Name)
 	}
+
+	internal.Log.Logger.Debug().Str("name", isoFileName).Msg("Got output name")
 
 	outputFile = isoFileName
 	if b.cfg.OutDir != "" {

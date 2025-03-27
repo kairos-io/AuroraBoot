@@ -23,7 +23,7 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 
 	It("errors out if no rootfs sources are defined", func() {
 		err = app.Run([]string{"", "build-iso"}) // first arg is the path to the program
-		Expect(err).To(MatchError("No source defined"))
+		Expect(err.Error()).To(Equal("no source defined"))
 	})
 
 	It("Errors out if rootfs is a non valid argument", Label("flags"), func() {
@@ -35,18 +35,18 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 	It("Errors out if overlay roofs path does not exist", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--overlay-rootfs", "/nonexistingpath", "system/cos"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("Invalid path"))
+		Expect(err.Error()).To(ContainSubstring("invalid path"))
 	})
 
 	It("Errors out if overlay uefi path does not exist", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--overlay-uefi", "/nonexistingpath", "someimage:latest"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("Invalid path"))
+		Expect(err.Error()).To(ContainSubstring("invalid path"))
 	})
 
 	It("Errors out if overlay iso path does not exist", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--overlay-iso", "/nonexistingpath", "some/image:latest"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("Invalid path"))
+		Expect(err.Error()).To(ContainSubstring("invalid path"))
 	})
 })
