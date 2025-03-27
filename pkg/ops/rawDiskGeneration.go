@@ -163,7 +163,7 @@ stages:
 		agentConstants.StateLabel,         // 2
 		size,                              // 3
 		agentConstants.StatePartName,      // 4
-		agentConstants.LinuxFs,            // 5
+		agentConstants.LinuxImgFs,         // 5
 		agentConstants.PersistentLabel,    // 6
 		agentConstants.PersistentPartName, // 7
 		resetCloudInit,                    // 8
@@ -179,7 +179,7 @@ stages:
 
 	OemPartitionImage := v1.Image{
 		File:       filepath.Join(r.TempDir(), "oem.img"),
-		FS:         agentConstants.LinuxFs,
+		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.OEMLabel,
 		Size:       agentConstants.OEMSize,
 		Source:     v1.NewDirSrc(tmpDirOem),
@@ -266,7 +266,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	// We use the dir we created with the image above, which contains the recovery.img and the grub.cfg stuff
 	recoverPartitionImage := &v1.Image{
 		File:       filepath.Join(r.TempDir(), "recovery.img"),
-		FS:         agentConstants.LinuxFs,
+		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.RecoveryLabel,
 		Size:       uint(size),
 		Source:     v1.NewDirSrc(tmpDirRecovery),
@@ -833,7 +833,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// Get only the loop device without the /dev/ prefix
 	cleanLoopDevice := string(loopDevice)[5:]
 	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
-	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxFs, 0, "")
+	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxImgFs, 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err
