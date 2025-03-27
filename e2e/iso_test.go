@@ -50,7 +50,7 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 			Expect(out).To(ContainSubstring("gen-iso"), out)
 			Expect(out).ToNot(ContainSubstring("build-arm-image"), out)
 			Expect(err).ToNot(HaveOccurred())
-			_, err = os.Stat(filepath.Join(tempDir, "kairos.iso"))
+			_, err = os.Stat(filepath.Join(tempDir, "kairos-rockylinux-9-core-amd64-generic-v3.3.1.iso"))
 			Expect(err).ToNot(HaveOccurred())
 		})
 
