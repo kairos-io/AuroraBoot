@@ -1,0 +1,13 @@
+version: '3.8'
+
+services:
+  auroraboot:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    volumes:
+      - .:/app
+    privileged: true  # Required for system operations
+    network_mode: host  # Required for network operations
+    environment:
+      - GO_ENV=development 

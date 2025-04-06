@@ -4,7 +4,7 @@ go 1.24.2
 
 // https://github.com/golang/go/blob/583d750fa119d504686c737be6a898994b674b69/src/crypto/x509/parser.go#L1014-L1018
 // For keys with negative serial number:
-godebug x509negativeserial=1
+// Note: x509negativeserial=1 is handled by the crypto/x509 package
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
