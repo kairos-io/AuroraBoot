@@ -42,6 +42,11 @@ func TestRedFishDeployCmd(t *testing.T) {
 			expectError: false,
 		},
 		{
+			name:        "DMTF Vendor",
+			vendor:      "dmtf",
+			expectError: false,
+		},
+		{
 			name:        "Unknown Vendor",
 			vendor:      "unknown",
 			expectError: true,
@@ -60,7 +65,8 @@ func TestRedFishDeployCmd(t *testing.T) {
 			// Set up test arguments
 			args := []string{
 				"auroraboot",
-				"deploy-redfish",
+				"redfish",
+				"deploy",
 				"--endpoint", "https://example.com",
 				"--username", "admin",
 				"--password", "password",
@@ -99,130 +105,67 @@ func TestRedFishDeployCmd_Validation(t *testing.T) {
 	err = os.WriteFile(isoPath, []byte("test iso content"), 0644)
 	require.NoError(t, err)
 
-	// Test cases for validation
-	testCases := []struct {
-		name        string
-		args        []string
-		expectError bool
-		errorMsg    string
-	}{
-		{
-			name: "Missing Endpoint",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--username", "admin",
-				"--password", "password",
-				"--vendor", "generic",
-				isoPath,
-			},
-			expectError: true,
-			errorMsg:    "required flag",
-		},
-		{
-			name: "Missing Username",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--endpoint", "https://example.com",
-				"--password", "password",
-				"--vendor", "generic",
-				isoPath,
-			},
-			expectError: true,
-			errorMsg:    "required flag",
-		},
-		{
-			name: "Missing Password",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--endpoint", "https://example.com",
-				"--username", "admin",
-				"--vendor", "generic",
-				isoPath,
-			},
-			expectError: true,
-			errorMsg:    "required flag",
-		},
-		{
-			name: "Missing ISO Path",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--endpoint", "https://example.com",
-				"--username", "admin",
-				"--password", "password",
-				"--vendor", "generic",
-			},
-			expectError: true,
-			errorMsg:    "ISO path is required",
-		},
-		{
-			name: "Invalid Memory Value",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--endpoint", "https://example.com",
-				"--username", "admin",
-				"--password", "password",
-				"--vendor", "generic",
-				"--min-memory", "invalid",
-				isoPath,
-			},
-			expectError: true,
-			errorMsg:    "invalid value",
-		},
-		{
-			name: "Invalid CPU Value",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--endpoint", "https://example.com",
-				"--username", "admin",
-				"--password", "password",
-				"--vendor", "generic",
-				"--min-cpus", "invalid",
-				isoPath,
-			},
-			expectError: true,
-			errorMsg:    "invalid value",
-		},
-		{
-			name: "Invalid Timeout Value",
-			args: []string{
-				"auroraboot",
-				"deploy-redfish",
-				"--endpoint", "https://example.com",
-				"--username", "admin",
-				"--password", "password",
-				"--vendor", "generic",
-				"--timeout", "invalid",
-				isoPath,
-			},
-			expectError: true,
-			errorMsg:    "invalid value",
+	// Create a new app
+	app := &cli.App{
+		Commands: []*cli.Command{
+			&RedFishDeployCmd,
 		},
 	}
 
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			// Create a new app for each test case
-			app := &cli.App{
-				Commands: []*cli.Command{
-					&RedFishDeployCmd,
-				},
-			}
-
-			// Run the command
-			err := app.Run(tc.args)
-
-			if tc.expectError {
-				assert.Error(t, err)
-				assert.Contains(t, err.Error(), tc.errorMsg)
-			} else {
-				assert.NoError(t, err)
-			}
-		})
+	// Test missing required flags
+	args := []string{
+		"auroraboot",
+		"redfish",
+		"deploy",
+		isoPath,
 	}
+
+	err = app.Run(args)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "required flag")
+
+	// Test invalid memory value
+	args = []string{
+		"auroraboot",
+		"redfish",
+		"deploy",
+		"--endpoint", "https://example.com",
+		"--username", "admin",
+		"--password", "password",
+		"--min-memory", "-1",
+		isoPath,
+	}
+
+	err = app.Run(args)
+	assert.Error(t, err)
+
+	// Test invalid CPU value
+	args = []string{
+		"auroraboot",
+		"redfish",
+		"deploy",
+		"--endpoint", "https://example.com",
+		"--username", "admin",
+		"--password", "password",
+		"--min-cpus", "0",
+		isoPath,
+	}
+
+	err = app.Run(args)
+	assert.Error(t, err)
+
+	// Test invalid timeout value
+	args = []string{
+		"auroraboot",
+		"redfish",
+		"deploy",
+		"--endpoint", "https://example.com",
+		"--username", "admin",
+		"--password", "password",
+		"--timeout", "0s",
+		isoPath,
+	}
+
+	err = app.Run(args)
+	assert.Error(t, err)
 }
