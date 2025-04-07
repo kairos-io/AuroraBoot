@@ -250,10 +250,37 @@ func (c *SuperMicroClient) GetDeploymentStatus() (*DeploymentStatus, error) {
 		return nil, fmt.Errorf("status check failed with status: %d", resp.StatusCode)
 	}
 
-	var status DeploymentStatus
-	if err := json.NewDecoder(resp.Body).Decode(&status); err != nil {
-		return nil, fmt.Errorf("decoding status: %w", err)
+	// Parse the response
+	var systemData map[string]interface{}
+	if err := json.NewDecoder(resp.Body).Decode(&systemData); err != nil {
+		return nil, fmt.Errorf("decoding system data: %w", err)
 	}
 
-	return &status, nil
+	// Get the power state
+	powerState, ok := systemData["PowerState"].(string)
+	if !ok {
+		powerState = "Unknown"
+	}
+
+	// Determine deployment status based on power state
+	status := &DeploymentStatus{
+		Progress: 0,
+	}
+
+	switch powerState {
+	case "On":
+		status.State = "Completed"
+		status.Message = "Deployment completed"
+		status.Progress = 100
+	case "Off":
+		status.State = "Failed"
+		status.Message = "System powered off during deployment"
+		status.Progress = 0
+	default:
+		status.State = "InProgress"
+		status.Message = "Deployment in progress"
+		status.Progress = 50
+	}
+
+	return status, nil
 }

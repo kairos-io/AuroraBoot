@@ -60,17 +60,13 @@ func TestHPEClient_GetSystemInfo(t *testing.T) {
 
 			// Return mock system info
 			sysInfo := SystemInfo{
-				Manufacturer:              "HPE",
-				Model:                     "ProLiant DL380 Gen10",
-				SerialNumber:              "MXQ93701J4",
-				MemorySize:                128,
-				ProcessorCount:            24,
-				ProcessorModel:            "Intel(R) Xeon(R) Gold 6130",
-				BiosVersion:               "U30 v2.00 (11/05/2019)",
-				PowerState:                "On",
-				BootSourceOverrideEnabled: "Once",
-				BootSourceOverrideTarget:  "Cd",
-				BootSourceOverrideMode:    "UEFI",
+				ID:             "1",
+				Name:           "Test System",
+				Model:          "ProLiant DL380 Gen10",
+				Manufacturer:   "HPE",
+				SerialNumber:   "MXQ93701J4",
+				MemorySize:     128,
+				ProcessorCount: 24,
 			}
 			json.NewEncoder(w).Encode(sysInfo)
 			return
@@ -209,48 +205,10 @@ func TestHPEClient_DeployISO(t *testing.T) {
 	assert.NotNil(t, status)
 	assert.Equal(t, "Started", status.State)
 	assert.Equal(t, "Deployment initiated", status.Message)
-	assert.Equal(t, float64(0), status.Progress)
+	assert.Equal(t, float64(0), float64(status.Progress))
 }
 
 func TestHPEClient_GetDeploymentStatus(t *testing.T) {
-	// Create a test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Mock authentication endpoint
-		if r.URL.Path == "/redfish/v1/SessionService/Sessions" && r.Method == "POST" {
-			w.Header().Set("X-Auth-Token", "test-token")
-			w.Header().Set("Location", "/redfish/v1/SessionService/Sessions/1")
-			w.WriteHeader(http.StatusCreated)
-			return
-		}
-
-		// Mock system status endpoint
-		if r.URL.Path == "/redfish/v1/Systems/1" && r.Method == "GET" {
-			// Check for auth token
-			if r.Header.Get("X-Auth-Token") != "test-token" {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-
-			// Return mock system data with different power states
-			powerState := r.URL.Query().Get("powerState")
-			if powerState == "" {
-				powerState = "On" // Default to On
-			}
-
-			systemData := map[string]interface{}{
-				"PowerState": powerState,
-			}
-			json.NewEncoder(w).Encode(systemData)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
-	// Create client
-	client, err := NewHPEClient(server.URL, "admin", "password", true, 10*time.Second)
-	require.NoError(t, err)
-
 	// Test GetDeploymentStatus with different power states
 	testCases := []struct {
 		name         string
@@ -314,7 +272,7 @@ func TestHPEClient_GetDeploymentStatus(t *testing.T) {
 			assert.NotNil(t, status)
 			assert.Equal(t, tc.wantState, status.State)
 			assert.Equal(t, tc.wantMsg, status.Message)
-			assert.Equal(t, tc.wantProgress, status.Progress)
+			assert.Equal(t, tc.wantProgress, float64(status.Progress))
 		})
 	}
 }

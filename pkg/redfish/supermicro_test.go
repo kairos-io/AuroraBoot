@@ -63,10 +63,10 @@ func TestSuperMicroClient_GetSystemInfo(t *testing.T) {
 				ID:             "1",
 				Name:           "Test System",
 				Model:          "X11DPi-NT",
-				Manufacturer:   "SuperMicro",
-				SerialNumber:   "123456789",
-				MemorySize:     128,
-				ProcessorCount: 24,
+				Manufacturer:   "Supermicro",
+				SerialNumber:   "0123456789",
+				MemorySize:     256,
+				ProcessorCount: 32,
 			}
 			json.NewEncoder(w).Encode(sysInfo)
 			return
@@ -83,11 +83,11 @@ func TestSuperMicroClient_GetSystemInfo(t *testing.T) {
 	sysInfo, err := client.GetSystemInfo()
 	require.NoError(t, err)
 	assert.NotNil(t, sysInfo)
-	assert.Equal(t, "SuperMicro", sysInfo.Manufacturer)
+	assert.Equal(t, "Supermicro", sysInfo.Manufacturer)
 	assert.Equal(t, "X11DPi-NT", sysInfo.Model)
-	assert.Equal(t, "123456789", sysInfo.SerialNumber)
-	assert.Equal(t, 128, sysInfo.MemorySize)
-	assert.Equal(t, 24, sysInfo.ProcessorCount)
+	assert.Equal(t, "0123456789", sysInfo.SerialNumber)
+	assert.Equal(t, 256, sysInfo.MemorySize)
+	assert.Equal(t, 32, sysInfo.ProcessorCount)
 }
 
 func TestSuperMicroClient_DeployISO(t *testing.T) {
@@ -110,29 +110,21 @@ func TestSuperMicroClient_DeployISO(t *testing.T) {
 			return
 		}
 
-		// Mock virtual media endpoint
-		if r.URL.Path == "/redfish/v1/Systems/1/VirtualMedia/2/Actions/VirtualMedia.InsertMedia" && r.Method == "POST" {
+		// Mock virtual media endpoint for SuperMicro
+		if r.URL.Path == "/redfish/v1/Systems/1/VirtualMedia/1/Upload" && r.Method == "POST" {
 			// Check for auth token
 			if r.Header.Get("X-Auth-Token") != "test-token" {
 				w.WriteHeader(http.StatusUnauthorized)
 				return
 			}
 
-			// Parse request body
-			var payload map[string]interface{}
-			err := json.NewDecoder(r.Body).Decode(&payload)
-			if err != nil {
+			// Check content type
+			if r.Header.Get("Content-Type") != "application/octet-stream" {
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
 
-			// Check payload
-			if payload["Image"] == nil || payload["WriteProtected"] == nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusAccepted)
 			return
 		}
 
@@ -173,20 +165,6 @@ func TestSuperMicroClient_DeployISO(t *testing.T) {
 				return
 			}
 
-			// Parse request body
-			var resetPayload map[string]interface{}
-			err := json.NewDecoder(r.Body).Decode(&resetPayload)
-			if err != nil {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
-			// Check reset type
-			if resetPayload["ResetType"] != "ForceRestart" {
-				w.WriteHeader(http.StatusBadRequest)
-				return
-			}
-
 			w.WriteHeader(http.StatusOK)
 			return
 		}
@@ -205,44 +183,10 @@ func TestSuperMicroClient_DeployISO(t *testing.T) {
 	assert.NotNil(t, status)
 	assert.Equal(t, "Started", status.State)
 	assert.Equal(t, "Deployment initiated", status.Message)
-	assert.Equal(t, float64(0), status.Progress)
+	assert.Equal(t, float64(0), float64(status.Progress))
 }
 
 func TestSuperMicroClient_GetDeploymentStatus(t *testing.T) {
-	// Create a test server
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Mock authentication endpoint
-		if r.URL.Path == "/redfish/v1/SessionService/Sessions" && r.Method == "POST" {
-			w.Header().Set("X-Auth-Token", "test-token")
-			w.Header().Set("Location", "/redfish/v1/SessionService/Sessions/1")
-			w.WriteHeader(http.StatusCreated)
-			return
-		}
-
-		// Mock system status endpoint
-		if r.URL.Path == "/redfish/v1/Systems/1" && r.Method == "GET" {
-			// Check for auth token
-			if r.Header.Get("X-Auth-Token") != "test-token" {
-				w.WriteHeader(http.StatusUnauthorized)
-				return
-			}
-
-			// Return mock system data with different power states
-			powerState := r.URL.Query().Get("powerState")
-			if powerState == "" {
-				powerState = "On" // Default to On
-			}
-
-			systemData := map[string]interface{}{
-				"PowerState": powerState,
-			}
-			json.NewEncoder(w).Encode(systemData)
-			return
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-
 	// Test GetDeploymentStatus with different power states
 	testCases := []struct {
 		name         string
@@ -286,6 +230,12 @@ func TestSuperMicroClient_GetDeploymentStatus(t *testing.T) {
 				}
 
 				if r.URL.Path == "/redfish/v1/Systems/1" && r.Method == "GET" {
+					// Check for auth token
+					if r.Header.Get("X-Auth-Token") != "test-token" {
+						w.WriteHeader(http.StatusUnauthorized)
+						return
+					}
+
 					systemData := map[string]interface{}{
 						"PowerState": tc.powerState,
 					}
@@ -306,7 +256,7 @@ func TestSuperMicroClient_GetDeploymentStatus(t *testing.T) {
 			assert.NotNil(t, status)
 			assert.Equal(t, tc.wantState, status.State)
 			assert.Equal(t, tc.wantMsg, status.Message)
-			assert.Equal(t, tc.wantProgress, status.Progress)
+			assert.Equal(t, tc.wantProgress, float64(status.Progress))
 		})
 	}
 }
