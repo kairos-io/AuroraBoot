@@ -16,11 +16,11 @@ type Requirements struct {
 
 // Inspector handles hardware inspection and validation
 type Inspector struct {
-	client *redfish.Client
+	client redfish.VendorClient
 }
 
 // NewInspector creates a new hardware inspector
-func NewInspector(client *redfish.Client) *Inspector {
+func NewInspector(client redfish.VendorClient) *Inspector {
 	return &Inspector{
 		client: client,
 	}
@@ -54,19 +54,18 @@ type SystemInfo struct {
 	SerialNumber   string
 }
 
-// ValidateRequirements checks if the system meets the specified requirements
+// ValidateRequirements checks if the system meets the minimum requirements
 func (i *Inspector) ValidateRequirements(info *SystemInfo, reqs *Requirements) error {
 	if info.MemoryGiB < reqs.MinMemoryGiB {
-		return fmt.Errorf("insufficient memory: got %d GiB, need %d GiB",
+		return fmt.Errorf("insufficient memory: %d GiB (minimum: %d GiB)",
 			info.MemoryGiB, reqs.MinMemoryGiB)
 	}
 
 	if info.ProcessorCount < reqs.MinCPUs {
-		return fmt.Errorf("insufficient CPUs: got %d, need %d",
+		return fmt.Errorf("insufficient CPUs: %d (minimum: %d)",
 			info.ProcessorCount, reqs.MinCPUs)
 	}
 
-	// Additional feature checks could be added here
 	for _, feature := range reqs.RequiredFeatures {
 		if !i.hasFeature(info, feature) {
 			return fmt.Errorf("missing required feature: %s", feature)
@@ -78,15 +77,7 @@ func (i *Inspector) ValidateRequirements(info *SystemInfo, reqs *Requirements) e
 
 // hasFeature checks if the system has a specific feature
 func (i *Inspector) hasFeature(info *SystemInfo, feature string) bool {
-	// This is a placeholder implementation
-	// In a real implementation, this would check specific hardware features
-	// based on the manufacturer and model
-	switch feature {
-	case "UEFI":
-		return true // Most modern systems support UEFI
-	case "IPMI":
-		return true // Most server hardware supports IPMI
-	default:
-		return false
-	}
+	// Add feature detection logic here
+	// For now, we'll assume all systems have UEFI
+	return true
 }

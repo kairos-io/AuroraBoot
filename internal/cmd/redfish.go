@@ -9,6 +9,19 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+type RedFishDeployConfig struct {
+	Endpoint         string        `arg:"--endpoint" help:"RedFish endpoint URL"`
+	Username         string        `arg:"--username" help:"RedFish username"`
+	Password         string        `arg:"--password" help:"RedFish password"`
+	Vendor           string        `arg:"--vendor" help:"Hardware vendor (generic, supermicro, ilo)" default:"generic"`
+	VerifySSL        bool          `arg:"--verify-ssl" help:"Verify SSL certificates" default:"true"`
+	MinMemory        int           `arg:"--min-memory" help:"Minimum required memory in GB" default:"4"`
+	MinCPUs          int           `arg:"--min-cpus" help:"Minimum required CPUs" default:"2"`
+	RequiredFeatures []string      `arg:"--required-features" help:"Required hardware features"`
+	Timeout          time.Duration `arg:"--timeout" help:"Operation timeout" default:"5m"`
+	ISO              string        `arg:"positional" help:"Path to ISO file"`
+}
+
 var RedFishDeployCmd = cli.Command{
 	Name:  "deploy-redfish",
 	Usage: "Deploy ISO to server via RedFish",
@@ -27,6 +40,11 @@ var RedFishDeployCmd = cli.Command{
 			Name:     "password",
 			Usage:    "RedFish password",
 			Required: true,
+		},
+		&cli.StringFlag{
+			Name:  "vendor",
+			Usage: "Hardware vendor (generic, supermicro)",
+			Value: "generic",
 		},
 		&cli.BoolFlag{
 			Name:  "verify-ssl",
@@ -55,14 +73,24 @@ var RedFishDeployCmd = cli.Command{
 		},
 	},
 	Action: func(c *cli.Context) error {
-		// Create RedFish client
-		client, err := redfish.NewClient(
-			c.String("endpoint"),
-			c.String("username"),
-			c.String("password"),
-			c.Bool("verify-ssl"),
-			c.Duration("timeout"),
-		)
+		endpoint := c.String("endpoint")
+		username := c.String("username")
+		password := c.String("password")
+		vendor := c.String("vendor")
+		verifySSL := c.Bool("verify-ssl")
+		minMemory := c.Int("min-memory")
+		minCPUs := c.Int("min-cpus")
+		requiredFeatures := c.StringSlice("required-features")
+		timeout := c.Duration("timeout")
+		isoPath := c.Args().First()
+
+		if isoPath == "" {
+			return fmt.Errorf("ISO path is required")
+		}
+
+		// Create vendor-specific RedFish client
+		vendorType := redfish.VendorType(vendor)
+		client, err := redfish.NewVendorClient(vendorType, endpoint, username, password, verifySSL, timeout)
 		if err != nil {
 			return fmt.Errorf("creating RedFish client: %w", err)
 		}
@@ -76,21 +104,17 @@ var RedFishDeployCmd = cli.Command{
 			return fmt.Errorf("inspecting system: %w", err)
 		}
 
+		fmt.Printf("System: %s %s (SN: %s)\n",
+			sysInfo.Manufacturer, sysInfo.Model, sysInfo.SerialNumber)
+
 		// Validate requirements
 		reqs := &hardware.Requirements{
-			MinMemoryGiB:     c.Int("min-memory"),
-			MinCPUs:          c.Int("min-cpus"),
-			RequiredFeatures: c.StringSlice("required-features"),
+			MinMemoryGiB:     minMemory,
+			MinCPUs:          minCPUs,
+			RequiredFeatures: requiredFeatures,
 		}
-
 		if err := inspector.ValidateRequirements(sysInfo, reqs); err != nil {
 			return fmt.Errorf("validating requirements: %w", err)
-		}
-
-		// Get ISO path from arguments
-		isoPath := c.Args().Get(0)
-		if isoPath == "" {
-			return fmt.Errorf("ISO path is required")
 		}
 
 		// Deploy ISO
@@ -100,8 +124,6 @@ var RedFishDeployCmd = cli.Command{
 		}
 
 		fmt.Printf("Deployment started: %s\n", status.Message)
-		fmt.Printf("System: %s %s (SN: %s)\n",
-			sysInfo.Manufacturer, sysInfo.Model, sysInfo.SerialNumber)
 
 		// Monitor deployment
 		for {
@@ -110,19 +132,16 @@ var RedFishDeployCmd = cli.Command{
 				return fmt.Errorf("getting deployment status: %w", err)
 			}
 
-			fmt.Printf("Deployment status: %s (Progress: %d%%)\n",
-				status.State, status.Progress)
+			fmt.Printf("Deployment status: %s (%.0f%%)\n", status.State, status.Progress)
 
 			if status.State == "Completed" {
 				fmt.Println("Deployment completed successfully")
 				break
-			}
-
-			if status.State == "Failed" {
+			} else if status.State == "Failed" {
 				return fmt.Errorf("deployment failed: %s", status.Message)
 			}
 
-			time.Sleep(10 * time.Second)
+			time.Sleep(5 * time.Second)
 		}
 
 		return nil
