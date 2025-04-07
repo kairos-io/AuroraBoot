@@ -12,6 +12,7 @@ const (
 	VendorGeneric    VendorType = "generic"
 	VendorSuperMicro VendorType = "supermicro"
 	VendorHPE        VendorType = "ilo"
+	VendorDMTF       VendorType = "dmtf"
 )
 
 // VendorClient interface defines vendor-specific RedFish operations
@@ -31,6 +32,8 @@ func NewVendorClient(vendor VendorType, baseURL, username, password string, veri
 		return NewSuperMicroClient(baseURL, username, password, verifySSL, timeout)
 	case VendorHPE:
 		return NewHPEClient(baseURL, username, password, verifySSL, timeout)
+	case VendorDMTF:
+		return NewDMTFClient(baseURL, username, password, verifySSL, timeout)
 	case VendorGeneric:
 		return NewGenericClient(baseURL, username, password, verifySSL, timeout)
 	default:

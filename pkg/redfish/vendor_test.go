@@ -33,6 +33,11 @@ func TestNewVendorClient(t *testing.T) {
 			wantErr: false,
 		},
 		{
+			name:    "DMTF Vendor",
+			vendor:  VendorDMTF,
+			wantErr: false,
+		},
+		{
 			name:        "Unknown Vendor",
 			vendor:      "unknown",
 			wantErr:     true,
@@ -91,6 +96,11 @@ func TestVendorType_String(t *testing.T) {
 			name:     "HPE iLO Vendor",
 			vendor:   VendorHPE,
 			expected: "ilo",
+		},
+		{
+			name:     "DMTF Vendor",
+			vendor:   VendorDMTF,
+			expected: "dmtf",
 		},
 	}
 
