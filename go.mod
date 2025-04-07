@@ -1,8 +1,6 @@
 module github.com/kairos-io/AuroraBoot
 
-go 1.23.6
-
-toolchain go1.24.2
+go 1.24.2
 
 // https://github.com/golang/go/blob/583d750fa119d504686c737be6a898994b674b69/src/crypto/x509/parser.go#L1014-L1018
 // For keys with negative serial number:
@@ -20,7 +18,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.2.5
 	github.com/kairos-io/kairos-agent/v2 v2.18.0
-	github.com/kairos-io/kairos-sdk v0.7.3
+	github.com/kairos-io/kairos-sdk v0.8.1
 	github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07
 	github.com/klauspost/compress v1.18.0
 	github.com/labstack/echo/v4 v4.13.3
@@ -37,7 +35,7 @@ require (
 	github.com/urfave/cli/v2 v2.27.6
 	golang.org/x/exp v0.0.0-20250305212735-054e65f0b394
 	golang.org/x/mod v0.24.0
-	golang.org/x/net v0.37.0
+	golang.org/x/net v0.38.0
 	golang.org/x/sys v0.31.0
 	gopkg.in/yaml.v1 v1.0.0-20140924161607-9f9df34309c0
 	gopkg.in/yaml.v3 v3.0.1
@@ -70,6 +68,7 @@ require (
 	github.com/containerd/log v0.1.0 // indirect
 	github.com/containerd/stargz-snapshotter/estargz v0.16.3 // indirect
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
+	github.com/coreos/go-systemd/v22 v22.5.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.6 // indirect
 	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
