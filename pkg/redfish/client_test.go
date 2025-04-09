@@ -108,14 +108,21 @@ func TestDeployISO(t *testing.T) {
 	}
 
 	// Create a temporary ISO file for testing
-	tmpFile := "test.iso"
-	if err := os.WriteFile(tmpFile, []byte("test iso content"), 0644); err != nil {
-		t.Fatalf("Failed to create test ISO: %v", err)
+	tmpFile, err := os.CreateTemp("", "test-*.iso")
+	if err != nil {
+		t.Fatalf("Failed to create temp file: %v", err)
 	}
-	defer os.Remove(tmpFile)
+	defer os.Remove(tmpFile.Name())
+
+	if _, err := tmpFile.Write([]byte("test iso content")); err != nil {
+		t.Fatalf("Failed to write test ISO: %v", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		t.Fatalf("Failed to close temp file: %v", err)
+	}
 
 	// Test ISO deployment
-	status, err := client.DeployISO(tmpFile)
+	status, err := client.DeployISO(tmpFile.Name())
 	if err != nil {
 		t.Fatalf("Failed to deploy ISO: %v", err)
 	}
