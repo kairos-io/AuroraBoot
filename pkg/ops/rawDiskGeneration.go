@@ -3,11 +3,6 @@ package ops
 import (
 	"bytes"
 	"fmt"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
-
 	"github.com/diskfs/go-diskfs"
 	fileBackend "github.com/diskfs/go-diskfs/backend/file"
 	"github.com/diskfs/go-diskfs/partition"
@@ -25,6 +20,10 @@ import (
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/twpayne/go-vfs/v5"
 	"golang.org/x/sys/unix"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 )
 
 // What it does
@@ -67,19 +66,11 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	// Create a temp dir for copying the files to
 	tmpDirOem := filepath.Join(r.TempDir(), "oem")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirOem, 0755)
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirOem).Msg("failed to create temp dir")
-		return "", err
-	}
 	defer r.config.Fs.RemoveAll(tmpDirOem)
 
 	// This is where the oem partition will be mounted to copy the files to
 	tmpDirOemMount := filepath.Join(r.TempDir(), "oem-mount")
 	err = fsutils.MkdirAll(r.config.Fs, tmpDirOemMount, 0755)
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirOemMount).Msg("failed to create mount dir")
-		return "", err
-	}
 	defer r.config.Fs.RemoveAll(tmpDirOemMount)
 
 	// Copy the cloud config to the oem partition if there is any

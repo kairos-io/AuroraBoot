@@ -12,6 +12,8 @@ import (
 )
 
 // GenericClient implements generic RedFish operations
+// This would work with tools like:
+// https://github.com/openstack/sushy-tools
 type GenericClient struct {
 	baseURL    string
 	username   string

@@ -21,4 +21,7 @@ auroraboot redfish deploy \
   --min-cpus 2 \
   --required-features "UEFI" \
   --timeout 30m \
-  "$ISO_PATH" 
+  "$ISO_PATH"
+
+# NOTE: You can run `auroraboot` using docker as well. E.g.
+# docker run --rm -v "$ISO_PATH:/iso" quay.io/kairos/auroraboot redfish deploy <args here

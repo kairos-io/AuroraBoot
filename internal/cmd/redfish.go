@@ -24,7 +24,7 @@ type RedFishDeployConfig struct {
 
 var RedFishDeployCmd = cli.Command{
 	Name:  "redfish",
-	Usage: "Deploy ISO to server via RedFish",
+	Usage: "Deploy ISO to server via RedFish (EXPERIMENTAL)",
 	Subcommands: []*cli.Command{
 		{
 			Name:  "deploy",
