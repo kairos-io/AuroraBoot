@@ -3,7 +3,6 @@ package cmd
 import (
 	"errors"
 	"fmt"
-	"github.com/kairos-io/AuroraBoot/internal"
 	"io"
 	"log/slog"
 	"math"
@@ -13,6 +12,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"github.com/kairos-io/AuroraBoot/internal"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -298,7 +299,7 @@ var BuildUKICmd = cli.Command{
 		for _, entry := range entries {
 			logger.Info(fmt.Sprintf("Running ukify for cmdline: %s: %s", entry.Title, entry.Cmdline))
 
-			logger.Infof("Generating: " + entry.FileName + ".efi")
+			logger.Infof("Generating: %s.efi", entry.FileName)
 
 			// New ukifier !!
 			// Create Builder instance
@@ -868,14 +869,14 @@ func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEn
 		return err
 	}
 	for dir, files := range filesMap {
-		logger.Debugf(fmt.Sprintf("creating dir %s", filepath.Join(outputDir, dir)))
+		logger.Debugf("creating dir %s", filepath.Join(outputDir, dir))
 		err = os.MkdirAll(filepath.Join(outputDir, dir), os.ModeDir|os.ModePerm)
 		if err != nil {
 			logger.Errorf("creating dir %s: %s", dir, err)
 			return err
 		}
 		for _, f := range files {
-			logger.Debugf(fmt.Sprintf("copying %s to %s", f, filepath.Join(outputDir, dir, filepath.Base(f))))
+			logger.Debugf("copying %s to %s", f, filepath.Join(outputDir, dir, filepath.Base(f)))
 			source, err := os.Open(f)
 			if err != nil {
 				logger.Errorf("opening file %s: %s", f, err)

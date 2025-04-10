@@ -136,7 +136,7 @@ var RedFishDeployCmd = cli.Command{
 						return fmt.Errorf("getting deployment status: %w", err)
 					}
 
-					fmt.Printf("Deployment status: %s (%.0f%%)\n", status.State, status.Progress)
+					fmt.Printf("Deployment status: %s (%d%%)\n", status.State, status.Progress)
 
 					if status.State == "Completed" {
 						fmt.Println("Deployment completed successfully")

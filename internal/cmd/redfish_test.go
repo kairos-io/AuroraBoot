@@ -122,7 +122,7 @@ func TestRedFishDeployCmd_Validation(t *testing.T) {
 
 	err = app.Run(args)
 	assert.Error(t, err)
-	assert.Contains(t, err.Error(), "required flag")
+	assert.Contains(t, err.Error(), "Required flags")
 
 	// Test invalid memory value
 	args = []string{
