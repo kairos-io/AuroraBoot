@@ -369,29 +369,38 @@ func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
 // its the callers responsibility to add the rest of the name if its building an iso or raw image
 // also, no extension is added to the name, so its up to the caller to add it
 func NameFromRootfs(rootfs string) string {
-	var label string
-	var flavor string
-	var err error
 	if _, ok := os.Stat(filepath.Join(rootfs, "etc/kairos-release")); ok == nil {
-		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(rootfs, "etc/kairos-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
-		}
-		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/kairos-release"))
+		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
 		}
+		variant, err := sdkUtils.OSRelease("VARIANT", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+		}
+		arch, err := sdkUtils.OSRelease("ARCH", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+		}
+		model, err := sdkUtils.OSRelease("MODEL", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+		}
+		version, err := sdkUtils.OSRelease("VERSION", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+		}
+		return fmt.Sprintf("%s-%s-%s-%s-%s", flavor, variant, arch, model, version)
 	} else {
 		// Before 3.2.x the kairos info was in /etc/os-release
-		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
+		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
 		}
-		label, err = sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(rootfs, "etc/os-release"))
+		label, err := sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(rootfs, "etc/os-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
 		}
+		return fmt.Sprintf("%s-%s", flavor, label)
 	}
-
-	return fmt.Sprintf("%s-%s", flavor, label)
 }
