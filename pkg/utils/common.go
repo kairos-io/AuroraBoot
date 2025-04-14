@@ -193,7 +193,7 @@ func Tar(src string, writers ...io.Writer) error {
 }
 
 // CreateTar a imagetarball from a standard tarball
-func CreateTar(log sdkTypes.KairosLogger, srctar, dstimageTar, imagename, architecture, OS string) error {
+func CreateTar(srctar, dstimageTar, imagename, architecture, OS string) error {
 
 	dstFile, err := os.Create(dstimageTar)
 	if err != nil {
