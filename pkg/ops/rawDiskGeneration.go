@@ -35,7 +35,6 @@ import (
 // Mount them with loop devices and copy the artifacts to them
 // Once the images are created, they are concatenated together with a GPT partition table
 // The final image is then truncated to the nearest sector size
-// TODO: Add BIOS support
 // TODO: Add testing
 
 type RawImage struct {
@@ -43,6 +42,7 @@ type RawImage struct {
 	Source      string               // Source image to copy the artifacts from, which will be the rootfs in the final image
 	Output      string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
 	FinalSize   uint64               // Final size of the disk image in MB
+	StateSize   int64                // Size of the state partition in MB
 	tmpDir      string               // A temp dir to do all work on
 	elemental   *elemental.Elemental // Elemental instance to use for the operations
 	efi         bool                 // If the image should be EFI or BIOS
@@ -51,14 +51,14 @@ type RawImage struct {
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output, cc string, finalsize uint64) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
+	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, StateSize: stateSize}
 }
 
-func NewBiosRawImage(source, output string, cc string, finalsize uint64) *RawImage {
+func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize int64) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
+	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, StateSize: stateSize}
 }
 
 // createOemPartitionImage creates an OEM partition image with the given cloud config
@@ -116,8 +116,16 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 		return "", err
 	}
 
-	size := (info.Size()*3 + 100*1024*1024) / (1024 * 1024)
-	internal.Log.Logger.Debug().Int64("size", size).Msg("calculated state partition size")
+	var stateSize int64
+	if r.StateSize > 0 {
+		// Use the state size from the config
+		// stateSize is in MB so we can use it directly
+		stateSize = r.StateSize
+	} else {
+		stateSize = (info.Size()*3 + 100*1024*1024) / (1024 * 1024)
+	}
+
+	internal.Log.Logger.Debug().Int64("size", stateSize).Msg("calculated state partition size")
 
 	// Create a reset config
 	// This:
@@ -161,7 +169,7 @@ stages:
 `,
 		agentConstants.RecoveryLabel,      // 1
 		agentConstants.StateLabel,         // 2
-		size,                              // 3
+		stateSize,                         // 3
 		agentConstants.StatePartName,      // 4
 		agentConstants.LinuxImgFs,         // 5
 		agentConstants.PersistentLabel,    // 6
