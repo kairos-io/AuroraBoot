@@ -374,23 +374,31 @@ func NameFromRootfs(rootfs string) string {
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
 		}
+		flavorVersion, err := sdkUtils.OSRelease("FLAVOR_RELEASE", filepath.Join(rootfs, "etc/kairos-release"))
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor version")
+		}
 		variant, err := sdkUtils.OSRelease("VARIANT", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image variant")
 		}
 		arch, err := sdkUtils.OSRelease("ARCH", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			// Try to get TARGETARCH as a fallback
+			arch, err = sdkUtils.OSRelease("TARGETARCH", filepath.Join(rootfs, "etc/kairos-release"))
+			if err != nil {
+				internal.Log.Logger.Error().Err(err).Msg("failed to get image arch")
+			}
 		}
 		model, err := sdkUtils.OSRelease("MODEL", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image model")
 		}
 		version, err := sdkUtils.OSRelease("VERSION", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image version")
 		}
-		return fmt.Sprintf("%s-%s-%s-%s-%s", flavor, variant, arch, model, version)
+		return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
 	} else {
 		// Before 3.2.x the kairos info was in /etc/os-release
 		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
