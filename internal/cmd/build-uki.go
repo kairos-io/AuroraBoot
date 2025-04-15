@@ -48,8 +48,6 @@ func (h *CustomHandler) WithGroup(name string) slog.Handler {
 
 // Handle processes the log record and redirects it to your logger.
 func (h *CustomHandler) Handle(c context.Context, r slog.Record) error {
-	// Example: Redirect to your logger (replace this with your logger logic)
-	// Here, we just print the log message to the console.
 	logMessage := r.Message
 	// Replace this with your logger's logic
 	// Process attributes
