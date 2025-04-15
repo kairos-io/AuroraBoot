@@ -14,7 +14,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -260,15 +260,15 @@ var BuildUKICmd = cli.Command{
 		if ctx.Bool("debug") {
 			logLevel = "debug"
 		}
-		internal.Log = sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
+		log.Log = sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
 
 		// TODO: Get rid of "configs".
 		config := ops.NewConfig(
 			ops.WithImageExtractor(v1.OCIImageExtractor{}),
-			ops.WithLogger(internal.Log),
+			ops.WithLogger(log.Log),
 		)
 
-		slog.SetDefault(slog.New(&CustomHandler{l: internal.Log}))
+		slog.SetDefault(slog.New(&CustomHandler{l: log.Log}))
 
 		// TODO: DROP
 		if err := checkBuildUKIDeps(config.Arch); err != nil {
@@ -283,7 +283,7 @@ var BuildUKICmd = cli.Command{
 		}
 		defer os.RemoveAll(artifactsTempDir)
 
-		internal.Log.Logger.Info().Msg("Extracting image to a temporary directory")
+		log.Log.Logger.Info().Msg("Extracting image to a temporary directory")
 		// Source dir is the directory where we extract the image
 		// It should only contain the image files and whatever changes we add or remove like creating dir or removing leftover
 		// lets not pollute it
@@ -313,7 +313,7 @@ var BuildUKICmd = cli.Command{
 			if err != nil {
 				return fmt.Errorf("converting overlay-rootfs to absolute path: %w", err)
 			}
-			internal.Log.Logger.Info().Str("source", absolutePath).Msg("Adding files from to rootfs")
+			log.Log.Logger.Info().Str("source", absolutePath).Msg("Adding files from to rootfs")
 			overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", absolutePath))
 			if err != nil {
 				return fmt.Errorf("error creating overlay image: %s", err)
@@ -330,14 +330,14 @@ var BuildUKICmd = cli.Command{
 		}
 
 		outputName := utils.NameFromRootfs(sourceDir)
-		internal.Log.Logger.Debug().Str("name", outputName).Msg("Getting name from rootfs")
+		log.Log.Logger.Debug().Str("name", outputName).Msg("Getting name from rootfs")
 
-		internal.Log.Logger.Info().Msg("Creating additional directories in the rootfs")
+		log.Log.Logger.Info().Msg("Creating additional directories in the rootfs")
 		if err := setupDirectoriesAndFiles(sourceDir); err != nil {
 			return err
 		}
 
-		internal.Log.Logger.Info().Msg("Copying kernel")
+		log.Log.Logger.Info().Msg("Copying kernel")
 		if err := copyKernel(sourceDir, artifactsTempDir); err != nil {
 			return fmt.Errorf("copying kernel: %w", err)
 		}
@@ -347,7 +347,7 @@ var BuildUKICmd = cli.Command{
 			return fmt.Errorf("cleaning up the source directory: %w", err)
 		}
 
-		internal.Log.Logger.Info().Msg("Creating an initramfs file")
+		log.Log.Logger.Info().Msg("Creating an initramfs file")
 		if err := createInitramfs(sourceDir, artifactsTempDir); err != nil {
 			return err
 		}
@@ -362,9 +362,9 @@ var BuildUKICmd = cli.Command{
 			GetUkiSingleCmdlines(boodBranding, singleEfiCmdlines)...)
 
 		for _, entry := range entries {
-			internal.Log.Logger.Info().Msg(fmt.Sprintf("Running ukify for cmdline: %s: %s", entry.Title, entry.Cmdline))
+			log.Log.Logger.Info().Msg(fmt.Sprintf("Running ukify for cmdline: %s: %s", entry.Title, entry.Cmdline))
 
-			internal.Log.Logger.Info().Str("name", fmt.Sprintf("%s.efi", entry.FileName)).Msg("Generating efi")
+			log.Log.Logger.Info().Str("name", fmt.Sprintf("%s.efi", entry.FileName)).Msg("Generating efi")
 
 			// New ukifier !!
 			// Create Builder instance
@@ -385,7 +385,7 @@ var BuildUKICmd = cli.Command{
 				return fmt.Errorf("unsupported arch: %s", config.Arch)
 			}
 
-			if internal.Log.GetLevel().String() == "debug" {
+			if log.Log.GetLevel().String() == "debug" {
 				slog.SetLogLoggerLevel(slog.LevelDebug)
 			}
 			builder := &uki.Builder{
@@ -413,7 +413,7 @@ var BuildUKICmd = cli.Command{
 				return err
 			}
 
-			internal.Log.Logger.Info().Msg("Creating kairos and loader conf files")
+			log.Log.Logger.Info().Msg("Creating kairos and loader conf files")
 			if err := createConfFiles(sourceDir, entry.Cmdline, entry.Title, entry.FileName, kairosVersion, ctx.Bool("include-version-in-config"), ctx.Bool("include-cmdline-in-config")); err != nil {
 				return err
 			}
@@ -453,7 +453,7 @@ var BuildUKICmd = cli.Command{
 			}
 		}
 
-		internal.Log.Logger.Info().Str("type", ctx.String("output-type")).Str("where", ctx.String("output-dir")).Msg("Done building")
+		log.Log.Logger.Info().Str("type", ctx.String("output-type")).Str("where", ctx.String("output-dir")).Msg("Done building")
 
 		return nil
 	},
@@ -771,7 +771,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		return err
 	}
 
-	internal.Log.Logger.Info().Msg("Calculating the size of the img file")
+	log.Log.Logger.Info().Msg("Calculating the size of the img file")
 	artifactSize, err := sumFileSizes(filesMap)
 	if err != nil {
 		return err
@@ -780,35 +780,35 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	// Create just the size we need + 50MB just in case
 	imgSize := artifactSize + 50
 	imgFile := filepath.Join(isoDir, "efiboot.img")
-	internal.Log.Logger.Info().Int64("size", imgSize).Msg("Creating the img file")
+	log.Log.Logger.Info().Int64("size", imgSize).Msg("Creating the img file")
 	if err = createImgWithSize(imgFile, imgSize); err != nil {
 		return err
 	}
 	defer os.Remove(imgFile)
 
-	internal.Log.Logger.Info().Str("name", imgFile).Msg("Created image")
+	log.Log.Logger.Info().Str("name", imgFile).Msg("Created image")
 
-	internal.Log.Logger.Info().Msg("Creating directories in the img file")
+	log.Log.Logger.Info().Msg("Creating directories in the img file")
 	if err := createImgDirs(imgFile, filesMap); err != nil {
 		return err
 	}
 
-	internal.Log.Logger.Info().Msg("Copying files in the img file")
+	log.Log.Logger.Info().Msg("Copying files in the img file")
 	if err := copyFilesToImg(imgFile, filesMap); err != nil {
 		return err
 	}
 
 	if overlayISO != "" {
-		internal.Log.Logger.Info().Str("source", overlayISO).Msg("Adding files from to iso")
+		log.Log.Logger.Info().Str("source", overlayISO).Msg("Adding files from to iso")
 		overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", overlayISO))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("error creating overlay image")
+			log.Log.Logger.Error().Err(err).Msg("error creating overlay image")
 			return err
 		}
 		_, err = e.DumpSource(isoDir, overlay)
 
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("error copying overlay image")
+			log.Log.Logger.Error().Err(err).Msg("error copying overlay image")
 			return err
 		}
 	}
@@ -818,9 +818,9 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		isoName = fmt.Sprintf("%s.iso", artifactName)
 	}
 
-	internal.Log.Logger.Debug().Str("name", isoName).Msg("Got output name")
+	log.Log.Logger.Debug().Str("name", isoName).Msg("Got output name")
 
-	internal.Log.Logger.Info().Msg("Creating the iso files with xorriso")
+	log.Log.Logger.Info().Msg("Creating the iso files with xorriso")
 	cmd := exec.Command("xorriso", "-as", "mkisofs", "-V", "UKI_ISO_INSTALL", "-isohybrid-gpt-basdat",
 		"-e", filepath.Base(imgFile), "-no-emul-boot", "-o", filepath.Join(outputDir, isoName), isoDir)
 	out, err := cmd.CombinedOutput()
@@ -934,40 +934,40 @@ func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEn
 		return err
 	}
 	for dir, files := range filesMap {
-		internal.Log.Logger.Debug().Str("dir", filepath.Join(outputDir, dir)).Msg("creating dir")
+		log.Log.Logger.Debug().Str("dir", filepath.Join(outputDir, dir)).Msg("creating dir")
 		err = os.MkdirAll(filepath.Join(outputDir, dir), os.ModeDir|os.ModePerm)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("dir", dir).Msg("creating dir")
+			log.Log.Logger.Error().Err(err).Str("dir", dir).Msg("creating dir")
 			return err
 		}
 		for _, f := range files {
-			internal.Log.Logger.Debug().Str("from", f).Str("to", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("copying file")
+			log.Log.Logger.Debug().Str("from", f).Str("to", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("copying file")
 			source, err := os.Open(f)
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Str("file", f).Msg("opening file")
+				log.Log.Logger.Error().Err(err).Str("file", f).Msg("opening file")
 				return err
 			}
 			defer func(source *os.File) {
 				err := source.Close()
 				if err != nil {
-					internal.Log.Logger.Error().Err(err).Str("file", f).Msg("closing file")
+					log.Log.Logger.Error().Err(err).Str("file", f).Msg("closing file")
 				}
 			}(source)
 
 			destination, err := os.Create(filepath.Join(outputDir, dir, filepath.Base(f)))
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Str("file", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("creating file")
+				log.Log.Logger.Error().Err(err).Str("file", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("creating file")
 				return err
 			}
 			defer func(destination *os.File) {
 				err := destination.Close()
 				if err != nil {
-					internal.Log.Logger.Error().Err(err).Str("file", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("closing file")
+					log.Log.Logger.Error().Err(err).Str("file", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("closing file")
 				}
 			}(destination)
 			_, err = io.Copy(destination, source)
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Str("from", f).Str("to", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("copying file")
+				log.Log.Logger.Error().Err(err).Str("from", f).Str("to", filepath.Join(outputDir, dir, filepath.Base(f))).Msg("copying file")
 				return err
 			}
 		}
@@ -981,7 +981,7 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string) erro
 		return err
 	}
 	// Create tarball from sourceDir
-	internal.Log.Logger.Info().Str("sourceDir", sourceDir).Str("temp", temp.Name()).Msg("Creating tarball")
+	log.Log.Logger.Info().Str("sourceDir", sourceDir).Str("temp", temp.Name()).Msg("Creating tarball")
 	err = utils.Tar(sourceDir, temp)
 	if err != nil {
 		return err
@@ -996,7 +996,7 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string) erro
 	if artifactName != "" {
 		tarName = fmt.Sprintf("%s.tar", artifactName)
 	}
-	internal.Log.Logger.Debug().Str("name", tarName).Msg("Got output name")
+	log.Log.Logger.Debug().Str("name", tarName).Msg("Got output name")
 	err = utils.CreateTar(temp.Name(), finalImage, tarName, arch, "linux")
 	if err != nil {
 		return err

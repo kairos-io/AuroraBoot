@@ -16,7 +16,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 
 	uuidPkg "github.com/gofrs/uuid"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 )
 
@@ -24,13 +24,13 @@ import (
 // All VHDs on Azure must have a virtual size aligned to 1 MB (1024 × 1024 bytes)
 // The Hyper-V virtual hard disk (VHDX) format isn't supported in Azure, only fixed VHD
 func Raw2Azure(source string) (string, error) {
-	internal.Log.Logger.Info().Str("source", source).Msg("Converting raw disk to Azure VHD")
+	log.Log.Logger.Info().Str("source", source).Msg("Converting raw disk to Azure VHD")
 	name := fmt.Sprintf("%s.vhd", source)
 	// Copy raw to new image with VHD appended
 	// rename file to .vhd
 	err := os.Rename(source, name)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error renaming raw image to vhd")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error renaming raw image to vhd")
 		return name, err
 	}
 	// Open it
@@ -38,7 +38,7 @@ func Raw2Azure(source string) (string, error) {
 	// Calculate rounded size
 	info, err := vhdFile.Stat()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error getting file info")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error getting file info")
 		return name, err
 	}
 	actualSize := info.Size()
@@ -48,48 +48,48 @@ func Raw2Azure(source string) (string, error) {
 
 	// If the actual size is different from the final size, we have to resize the image
 	if actualSize != finalSize {
-		internal.Log.Logger.Info().Int64("actualSize", actualSize).Int64("finalSize", finalSize+512).Msg("Resizing image")
+		log.Log.Logger.Info().Int64("actualSize", actualSize).Int64("finalSize", finalSize+512).Msg("Resizing image")
 		// If you do not seek, you will override the data
 		_, err = vhdFile.Seek(0, io.SeekEnd)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error seeking to end")
+			log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error seeking to end")
 			return name, err
 		}
 		err = vhdFile.Truncate(finalSize)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error truncating file")
+			log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error truncating file")
 			return name, err
 		}
 	}
 	// Transform it to VHD
 	info, err = vhdFile.Stat() // Stat again to get the new size
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error getting file info")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error getting file info")
 		return name, err
 	}
 	size := uint64(info.Size())
 	header := newVHDFixed(size)
 	err = binary.Write(vhdFile, binary.BigEndian, header)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error writing header")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error writing header")
 		return name, err
 	}
 	err = vhdFile.Close()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error closing file")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error closing file")
 		return name, err
 	}
 	// Lets validate that the file size is divisible by 1 MB before claiming its ok
 	fileInfo, err := os.Stat(vhdFile.Name())
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error getting file info")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error getting file info")
 		return name, err
 	}
 	sizeFile := fileInfo.Size()
 
 	if int64(size)%constants.MB != 0 {
 		err = fmt.Errorf("The file %s size %d bytes is not divisible by 1 MB.\n", fileInfo.Name(), sizeFile)
-		internal.Log.Logger.Error().Err(err).Msg("Error validating file size")
+		log.Log.Logger.Error().Err(err).Msg("Error validating file size")
 		return name, err
 
 	}
@@ -101,36 +101,36 @@ func Raw2Azure(source string) (string, error) {
 // The disk image filename must be disk.raw.
 // The compressed file must be a .tar.gz file that uses gzip compression and the --format=oldgnu option for the tar utility.
 func Raw2Gce(source string) (string, error) {
-	internal.Log.Logger.Info().Msg("Transforming raw image into gce format")
+	log.Log.Logger.Info().Msg("Transforming raw image into gce format")
 	name := fmt.Sprintf("%s.gce.tar.gz", source)
 	actImg, err := os.OpenFile(source, os.O_CREATE|os.O_APPEND|os.O_WRONLY, constants.FilePerm)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("file", source).Msg("Error opening file")
+		log.Log.Logger.Error().Err(err).Str("file", source).Msg("Error opening file")
 		return name, err
 	}
 	info, err := actImg.Stat()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("file", source).Msg("Error getting file info")
+		log.Log.Logger.Error().Err(err).Str("file", source).Msg("Error getting file info")
 		return name, err
 	}
 	actualSize := info.Size()
 	finalSizeGB := actualSize/constants.GB + 1
 	finalSizeBytes := finalSizeGB * constants.GB
-	internal.Log.Logger.Info().Int64("current", actualSize).Int64("final", finalSizeBytes).Str("file", source).Msg("Resizing image")
+	log.Log.Logger.Info().Int64("current", actualSize).Int64("final", finalSizeBytes).Str("file", source).Msg("Resizing image")
 	// REMEMBER TO SEEK!
 	_, err = actImg.Seek(0, io.SeekEnd)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("file", source).Msg("Error seeking to end")
+		log.Log.Logger.Error().Err(err).Str("file", source).Msg("Error seeking to end")
 		return name, err
 	}
 	err = actImg.Truncate(finalSizeBytes)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("file", source).Msg("Error truncating file")
+		log.Log.Logger.Error().Err(err).Str("file", source).Msg("Error truncating file")
 		return name, err
 	}
 	err = actImg.Close()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("file", source).Msg("Error closing file")
+		log.Log.Logger.Error().Err(err).Str("file", source).Msg("Error closing file")
 		return name, err
 	}
 
@@ -139,15 +139,15 @@ func Raw2Gce(source string) (string, error) {
 	// Create destination file
 	file, err := os.Create(name)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("destination", name).Msg("Error creating destination file")
+		log.Log.Logger.Error().Err(err).Str("destination", name).Msg("Error creating destination file")
 		return name, err
 	}
-	internal.Log.Logger.Info().Str("destination", file.Name()).Msg("Compressing raw image into a tar.gz")
+	log.Log.Logger.Info().Str("destination", file.Name()).Msg("Compressing raw image into a tar.gz")
 
 	defer func(file *os.File) {
 		err = file.Close()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("destination", file.Name()).Msg("Error closing destination file")
+			log.Log.Logger.Error().Err(err).Str("destination", file.Name()).Msg("Error closing destination file")
 		}
 	}(file)
 	// Create gzip writer
@@ -158,7 +158,7 @@ func Raw2Gce(source string) (string, error) {
 	defer func(gzipWriter *gzip.Writer) {
 		err := gzipWriter.Close()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("destination", file.Name()).Msg("Error closing gzip writer")
+			log.Log.Logger.Error().Err(err).Str("destination", file.Name()).Msg("Error closing gzip writer")
 		}
 	}(gzipWriter)
 	// Create tarwriter pointing to our gzip writer
@@ -166,7 +166,7 @@ func Raw2Gce(source string) (string, error) {
 	defer func(tarWriter *tar.Writer) {
 		err = tarWriter.Close()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("destination", file.Name()).Msg("Error closing tar writer")
+			log.Log.Logger.Error().Err(err).Str("destination", file.Name()).Msg("Error closing tar writer")
 		}
 	}(tarWriter)
 
@@ -176,7 +176,7 @@ func Raw2Gce(source string) (string, error) {
 	defer func(sourceFile fs.File) {
 		err = sourceFile.Close()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error closing source file")
+			log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error closing source file")
 		}
 	}(sourceFile)
 
@@ -190,19 +190,19 @@ func Raw2Gce(source string) (string, error) {
 	// Write header with all the info
 	err = tarWriter.WriteHeader(header)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error writing header")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error writing header")
 		return name, err
 	}
 	// copy the actual data
 	_, err = io.Copy(tarWriter, sourceFile)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error copying data")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error copying data")
 		return name, err
 	}
 	// Remove full raw image, we already got the compressed one
 	err = os.RemoveAll(source)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", source).Msg("Error removing full raw image")
+		log.Log.Logger.Error().Err(err).Str("source", source).Msg("Error removing full raw image")
 		return name, err
 	}
 	return name, nil
@@ -331,7 +331,7 @@ func chsCalculation(sectors uint64) chs {
 
 // copyFirmwareRpi will copy the proper firmware files for a Raspberry Pi into the EFI partition
 func copyFirmwareRpi(target string) error {
-	internal.Log.Logger.Info().Str("target", target).Msg("Copying Raspberry Pi firmware")
+	log.Log.Logger.Info().Str("target", target).Msg("Copying Raspberry Pi firmware")
 	// Copy the firmware files from /rpi/ into target
 	return utils.CopyDir("/arm/rpi/", target)
 }

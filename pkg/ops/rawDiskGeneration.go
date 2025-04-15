@@ -8,7 +8,7 @@ import (
 	"github.com/diskfs/go-diskfs/partition"
 	"github.com/diskfs/go-diskfs/partition/gpt"
 	"github.com/gofrs/uuid"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/kairos-io/kairos-agent/v2/pkg/config"
@@ -52,12 +52,12 @@ type RawImage struct {
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
 func NewEFIRawImage(source, output, cc string, finalsize uint64) *RawImage {
-	cfg := config.NewConfig(config.WithLogger(internal.Log))
+	cfg := config.NewConfig(config.WithLogger(log.Log))
 	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
 }
 
 func NewBiosRawImage(source, output string, cc string, finalsize uint64) *RawImage {
-	cfg := config.NewConfig(config.WithLogger(internal.Log))
+	cfg := config.NewConfig(config.WithLogger(log.Log))
 	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize}
 }
 
@@ -76,27 +76,27 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	// Copy the cloud config to the oem partition if there is any
 	ccContent, err := r.config.Fs.ReadFile(r.CloudConfig)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Msg("failed to read cloud config")
+		log.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Msg("failed to read cloud config")
 		return "", err
 	}
 	if r.CloudConfig != "" && len(ccContent) > 0 {
-		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Copying cloud config to oem partition")
+		log.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Copying cloud config to oem partition")
 		f, err := r.config.Fs.ReadFile(r.CloudConfig)
 		if err != nil {
 			return "", err
 		}
-		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Str("content", string(f)).Interface("s", f).Msg("Copying cloud config to oem partition")
+		log.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Str("content", string(f)).Interface("s", f).Msg("Copying cloud config to oem partition")
 		err = fsutils.Copy(r.config.Fs, r.CloudConfig, filepath.Join(tmpDirOem, "90_custom.yaml"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to copy cloud config")
+			log.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to copy cloud config")
 			return "", err
 		}
 	} else {
 		// Create a default cloud config yaml with at least a user
-		internal.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Creating default cloud config")
+		log.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Creating default cloud config")
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, "90_custom.yaml"), []byte(constants.DefaultCloudConfig), 0o644)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to write cloud config")
+			log.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to write cloud config")
 			return "", err
 		}
 	}
@@ -112,12 +112,12 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	// Calculate the size of the state partition based on the recovery image size
 	info, err := r.config.Fs.Stat(recoveryImagePath)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", recoveryImagePath).Msg("failed to stat recovery image")
+		log.Log.Logger.Error().Err(err).Str("source", recoveryImagePath).Msg("failed to stat recovery image")
 		return "", err
 	}
 
 	size := (info.Size()*3 + 100*1024*1024) / (1024 * 1024)
-	internal.Log.Logger.Debug().Int64("size", size).Msg("calculated state partition size")
+	log.Log.Logger.Debug().Int64("size", size).Msg("calculated state partition size")
 
 	// Create a reset config
 	// This:
@@ -170,10 +170,10 @@ stages:
 	)
 
 	// Save the cloud config
-	internal.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("Creating reset cloud config")
+	log.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("Creating reset cloud config")
 	err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, resetCloudInit), []byte(conf), 0o644)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("failed to write cloud config")
+		log.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("failed to write cloud config")
 		return "", err
 	}
 
@@ -189,7 +189,7 @@ stages:
 	// Deploy the source to the image
 	_, err = r.elemental.DeployImageNodirs(&OemPartitionImage, false)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", OemPartitionImage).Msg("failed to create oem image")
+		log.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", OemPartitionImage).Msg("failed to create oem image")
 		return "", err
 	}
 
@@ -206,7 +206,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	tmpDirRecoveryImage := filepath.Join(r.TempDir(), "recovery-img")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirRecoveryImage, 0755)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecoveryImage).Msg("failed to create temp dir")
+		log.Log.Logger.Error().Err(err).Str("target", tmpDirRecoveryImage).Msg("failed to create temp dir")
 		return "", err
 	}
 	defer r.config.Fs.RemoveAll(tmpDirRecoveryImage)
@@ -232,7 +232,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	_, err = r.elemental.DeployImage(recoveryImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", recoveryImage).Msg("failed to create recovery image")
+		log.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", recoveryImage).Msg("failed to create recovery image")
 		return "", err
 	}
 
@@ -240,25 +240,25 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	// contents come form https://github.com/kairos-io/packages/blob/main/packages/static/grub-config/files/grub.cfg
 
 	// Copy the grub.cfg from the rootfs into the recovery partition
-	internal.Log.Logger.Debug().Str("source", r.Source).Str("target", filepath.Join(tmpDirRecovery, filepath.Dir(agentConstants.GrubConf))).Msg("Copying grub.cfg")
+	log.Log.Logger.Debug().Str("source", r.Source).Str("target", filepath.Join(tmpDirRecovery, filepath.Dir(agentConstants.GrubConf))).Msg("Copying grub.cfg")
 	err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirRecovery, filepath.Dir(agentConstants.GrubConf)), 0755)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecovery).Msg("failed to create grub dir")
+		log.Log.Logger.Error().Err(err).Str("target", tmpDirRecovery).Msg("failed to create grub dir")
 		return "", err
 	}
 	_, err = r.config.Fs.Stat(filepath.Join(r.Source, agentConstants.GrubConf))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", r.Source).Msg("failed to stat grub.cfg")
+		log.Log.Logger.Error().Err(err).Str("target", r.Source).Msg("failed to stat grub.cfg")
 		return "", err
 	}
 	grubCfg, err := r.config.Fs.ReadFile(filepath.Join(r.Source, agentConstants.GrubConf))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", r.Source).Msg("failed to read grub.cfg")
+		log.Log.Logger.Error().Err(err).Str("target", r.Source).Msg("failed to read grub.cfg")
 		return "", err
 	}
 	err = r.config.Fs.WriteFile(filepath.Join(tmpDirRecovery, agentConstants.GrubConf), grubCfg, 0o644)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirRecovery).Msg("failed to write grub.cfg")
+		log.Log.Logger.Error().Err(err).Str("target", tmpDirRecovery).Msg("failed to write grub.cfg")
 		return "", err
 	}
 
@@ -282,7 +282,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	_, err = r.elemental.DeployImageNodirs(recoverPartitionImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", recoverPartitionImage).Msg("failed to create recovery image")
+		log.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", recoverPartitionImage).Msg("failed to create recovery image")
 		return "", err
 	}
 
@@ -296,7 +296,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	tmpDirEfi := filepath.Join(r.TempDir(), "efi")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirEfi, 0755)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create temp dir")
+		log.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create temp dir")
 		return "", err
 	}
 	defer r.config.Fs.RemoveAll(tmpDirEfi)
@@ -305,7 +305,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	tmpDirEfiMount := filepath.Join(r.TempDir(), "efi-mount")
 	err = fsutils.MkdirAll(r.config.Fs, tmpDirEfiMount, 0755)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfiMount).Msg("failed to create temp dir")
+		log.Log.Logger.Error().Err(err).Str("target", tmpDirEfiMount).Msg("failed to create temp dir")
 		return "", err
 	}
 	defer r.config.Fs.RemoveAll(tmpDirEfiMount)
@@ -315,32 +315,32 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	// Create dirs as needed
 	err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirEfi, "EFI", "BOOT"), 0755)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create boot dir")
+		log.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create boot dir")
 		return "", err
 	}
 
 	model, flavor, err := r.GetModelAndFlavor()
 
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
+		log.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
 		return "", err
 	}
 
 	if strings.Contains(flavor, "ubuntu") {
 		err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirEfi, "EFI", "ubuntu"), 0755)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create ubuntu dir")
+			log.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to create ubuntu dir")
 			return "", err
 		}
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirEfi, "EFI", "ubuntu", "grub.cfg"), []byte(constants.GrubEfiRecovery), 0o644)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to write grub.cfg")
+			log.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to write grub.cfg")
 			return "", err
 		}
 	} else {
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirEfi, "EFI", "BOOT", "grub.cfg"), []byte(constants.GrubEfiRecovery), 0o644)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to write grub.cfg")
+			log.Log.Logger.Error().Err(err).Str("target", tmpDirEfi).Msg("failed to write grub.cfg")
 			return "", err
 		}
 	}
@@ -348,13 +348,13 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	// Now search for the grubARCH.efi and copy it to the efi partition from the rootfs
 	err = r.copyShimOrGrub(tmpDirEfi, "shim")
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to copy shim")
+		log.Log.Logger.Error().Err(err).Msg("failed to copy shim")
 		return "", err
 	}
 
 	err = r.copyShimOrGrub(tmpDirEfi, "grub")
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to copy grub")
+		log.Log.Logger.Error().Err(err).Msg("failed to copy grub")
 		return "", err
 	}
 
@@ -362,7 +362,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	if strings.HasPrefix(model, "rpi") {
 		err = copyFirmwareRpi(tmpDirEfi)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to copy rpi firmware")
+			log.Log.Logger.Error().Err(err).Msg("failed to copy rpi firmware")
 			return "", err
 		}
 	}
@@ -379,7 +379,7 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 	// Deploy the source to the image
 	_, err = r.elemental.DeployImageNodirs(&efiPartitionImage, false)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", efiPartitionImage).Msg("failed to create efi image")
+		log.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", efiPartitionImage).Msg("failed to create efi image")
 		return "", err
 	}
 
@@ -391,17 +391,17 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 func (r *RawImage) createBiosPartitionImage() (string, error) {
 	f, err := r.config.Fs.Create(filepath.Join(r.TempDir(), "bios.img"))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to create bios image")
+		log.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to create bios image")
 		return "", err
 	}
 	err = f.Truncate(int64(agentConstants.BiosSize * 1024 * 1024))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to truncate bios image")
+		log.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to truncate bios image")
 		return "", err
 	}
 	err = f.Close()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to close bios image")
+		log.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to close bios image")
 		return "", err
 	}
 
@@ -423,24 +423,24 @@ func (r *RawImage) Build() error {
 
 	// Get the artifact version from the rootfs
 	outputName := fmt.Sprintf("%s-%s.raw", constants.KairosDefaultArtifactName, utils.NameFromRootfs(r.Source))
-	internal.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
+	log.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
 
-	internal.Log.Logger.Info().Msg("Creating RECOVERY image")
+	log.Log.Logger.Info().Msg("Creating RECOVERY image")
 	// Create the Recovery partition
 	recoveryImagePath, err := r.createRecoveryPartitionImage()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to create recovery partition")
+		log.Log.Logger.Error().Err(err).Msg("failed to create recovery partition")
 		return err
 	}
 	defer r.config.Fs.Remove(recoveryImagePath)
-	internal.Log.Logger.Info().Msg("Created RECOVERY image")
+	log.Log.Logger.Info().Msg("Created RECOVERY image")
 
-	internal.Log.Logger.Info().Msg("Creating BOOT image")
+	log.Log.Logger.Info().Msg("Creating BOOT image")
 	if r.efi {
 		// Create the EFI partition
 		bootImagePath, err = r.createEFIPartitionImage()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to create efi partition")
+			log.Log.Logger.Error().Err(err).Msg("failed to create efi partition")
 			return err
 		}
 		defer r.config.Fs.Remove(bootImagePath)
@@ -448,43 +448,43 @@ func (r *RawImage) Build() error {
 		// Create the BIOS partition AFTER the recovery partition, as it needs the recovery image to install grub
 		bootImagePath, err = r.createBiosPartitionImage()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to create bios partition")
+			log.Log.Logger.Error().Err(err).Msg("failed to create bios partition")
 			return err
 		}
 
 		defer r.config.Fs.Remove(bootImagePath)
 	}
-	internal.Log.Logger.Info().Msg("Created BOOT image")
+	log.Log.Logger.Info().Msg("Created BOOT image")
 
 	// Oem after recovery, as it needs the recovery image to calculate the size of the state partition
-	internal.Log.Logger.Info().Msg("Creating OEM image")
+	log.Log.Logger.Info().Msg("Creating OEM image")
 	// Create the OEM partition
 	oemImagePath, err := r.createOemPartitionImage(recoveryImagePath)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to create oem partition")
+		log.Log.Logger.Error().Err(err).Msg("failed to create oem partition")
 		return err
 	}
 	defer r.config.Fs.Remove(oemImagePath)
-	internal.Log.Logger.Info().Msg("Created OEM image")
+	log.Log.Logger.Info().Msg("Created OEM image")
 
 	// Create the final disk image
-	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembling final disk image")
+	log.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembling final disk image")
 	err = r.createDiskImage(filepath.Join(r.Output, outputName), []string{bootImagePath, oemImagePath, recoveryImagePath})
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to create disk image")
+		log.Log.Logger.Error().Err(err).Msg("failed to create disk image")
 		return err
 	}
 	info, err := r.config.Fs.Stat(filepath.Join(r.Output, outputName))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to stat final image")
+		log.Log.Logger.Error().Err(err).Msg("failed to stat final image")
 		return err
 	}
 	// truncate the image to desired size
 	if r.FinalSize > 0 && uint64(info.Size()) < r.FinalSize*1024*1024 {
-		internal.Log.Logger.Info().Int64("size", info.Size()).Msg("Truncating final image")
+		log.Log.Logger.Info().Int64("size", info.Size()).Msg("Truncating final image")
 		err = os.Truncate(filepath.Join(r.Output, outputName), int64(r.FinalSize*1024*1024))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to truncate final image")
+			log.Log.Logger.Error().Err(err).Msg("failed to truncate final image")
 			return err
 		}
 
@@ -492,7 +492,7 @@ func (r *RawImage) Build() error {
 
 	// Do some final adjustments for boards
 	err = r.FinalizeImage(filepath.Join(r.Output, outputName))
-	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembled final disk image")
+	log.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembled final disk image")
 
 	return nil
 }
@@ -507,7 +507,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	var table partition.Table
 	var parts []*gpt.Partition
 
-	internal.Log.Logger.Debug().Str("disk", rawDiskFile).Strs("parts", partImgs).Msg("Creating disk image")
+	log.Log.Logger.Debug().Str("disk", rawDiskFile).Strs("parts", partImgs).Msg("Creating disk image")
 
 	// Create disk image, 1Mb for alignment and GPT header, 2MB for bios boot partition
 	// Then concat all partition images
@@ -520,22 +520,22 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	// So this mean we have an empty 2048 sectors at the start of the disk, partitions then start at that point
 	init, err := fileBackend.CreateFromPath(filepath.Join(r.TempDir(), "init.raw"), 1*1024*1024)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to create init disk")
+		log.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to create init disk")
 		return err
 	}
 	end, err := fileBackend.CreateFromPath(filepath.Join(r.TempDir(), "end.raw"), 1*1024*1024)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", endDiskFile).Msg("failed to create end disk")
+		log.Log.Logger.Error().Err(err).Str("target", endDiskFile).Msg("failed to create end disk")
 		return err
 	}
 	err = init.Close()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to close init disk")
+		log.Log.Logger.Error().Err(err).Str("target", initDiskFile).Msg("failed to close init disk")
 		return err
 	}
 	err = end.Close()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", endDiskFile).Msg("failed to close end disk")
+		log.Log.Logger.Error().Err(err).Str("target", endDiskFile).Msg("failed to close end disk")
 		return err
 	}
 
@@ -553,7 +553,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	// Add the partition table
 	finalDisk, err := diskfs.Open(rawDiskFile)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to open final disk")
+		log.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to open final disk")
 		return err
 	}
 	defer finalDisk.Close()
@@ -563,7 +563,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
 	err = os.Truncate(rawDiskFile, int64(size))
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to truncate final disk")
+		log.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to truncate final disk")
 		return err
 	}
 
@@ -574,7 +574,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 		// EFI
 		stat, err = os.Stat(partImgs[0])
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat efi partition")
+			log.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat efi partition")
 			return err
 		}
 		size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
@@ -603,7 +603,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	// OEM
 	stat, err = os.Stat(partImgs[1])
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat oem partition")
+		log.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat oem partition")
 		return err
 	}
 	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
@@ -618,7 +618,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	// Recovery
 	stat, err = os.Stat(partImgs[2])
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat recovery partition")
+		log.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat recovery partition")
 		return err
 	}
 	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
@@ -640,7 +640,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	}
 	err = finalDisk.Partition(table)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to partition final disk")
+		log.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to partition final disk")
 		return err
 	}
 
@@ -648,12 +648,12 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	if !r.efi {
 		err = r.installGrubToDisk(rawDiskFile)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to install grub to final disk")
+			log.Log.Logger.Error().Err(err).Str("target", rawDiskFile).Msg("failed to install grub to final disk")
 			return err
 		}
 	}
 
-	internal.Log.Logger.Info().Str("disk", rawDiskFile).Msg("Created disk image")
+	log.Log.Logger.Info().Str("disk", rawDiskFile).Msg("Created disk image")
 
 	return nil
 }
@@ -745,7 +745,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 }
 
 func (r *RawImage) installGrubToDisk(image string) error {
-	internal.Log.Logger.Debug().Str("backingFile", image).Msg("Attaching file to loop device")
+	log.Log.Logger.Debug().Str("backingFile", image).Msg("Attaching file to loop device")
 	// Create a dir to store the recovery partition contents
 	tmpDirRecovery := filepath.Join(r.TempDir(), "recovery")
 	err := fsutils.MkdirAll(r.config.Fs, tmpDirRecovery, 0755)
@@ -761,13 +761,13 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// I tried but the devices didnt appear properly dur to it being in a container
 	// so I went with the easy way
 	out, err := exec.Command("losetup", "-D").CombinedOutput()
-	internal.Log.Logger.Debug().Str("output", string(out)).Msg("Detaching loop devices")
+	log.Log.Logger.Debug().Str("output", string(out)).Msg("Detaching loop devices")
 	if err != nil {
 		return fmt.Errorf("failed to detach loop devices: %w", err)
 	}
 
 	loopDevice, err := exec.Command("losetup", "-f", "--show", image).CombinedOutput()
-	internal.Log.Logger.Debug().Str("output", string(loopDevice)).Msg("Attaching image to loop device")
+	log.Log.Logger.Debug().Str("output", string(loopDevice)).Msg("Attaching image to loop device")
 	if err != nil {
 		return fmt.Errorf("failed to attach file to loop device: %w", err)
 	}
@@ -777,9 +777,9 @@ func (r *RawImage) installGrubToDisk(image string) error {
 
 	// Run kpartx
 	out, err = exec.Command("kpartx", "-av", string(loopDevice)).CombinedOutput()
-	internal.Log.Logger.Debug().Str("output", string(out)).Msg("Running kpartx")
+	log.Log.Logger.Debug().Str("output", string(out)).Msg("Running kpartx")
 	if err != nil {
-		internal.Log.Logger.Error().Str("output", string(out)).Msg("kpartx output")
+		log.Log.Logger.Error().Str("output", string(out)).Msg("kpartx output")
 		return fmt.Errorf("failed to run kpartx: %w", err)
 	}
 
@@ -787,17 +787,17 @@ func (r *RawImage) installGrubToDisk(image string) error {
 		// TODO: move this to a function
 		out, err := exec.Command("kpartx", "-dv", string(loopDevice)).CombinedOutput()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("out", string(out)).Msg("failed to detach loop device")
+			log.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("out", string(out)).Msg("failed to detach loop device")
 			return
 		}
 		out, err = exec.Command("losetup", "-d", string(loopDevice)).CombinedOutput()
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("out", string(out)).Msg("failed to detach loop device")
+			log.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("out", string(out)).Msg("failed to detach loop device")
 			return
 		}
 	}()
 
-	internal.Log.Logger.Debug().Str("device", string(loopDevice)).Str("image", image).Msg("Attached image to loop device")
+	log.Log.Logger.Debug().Str("device", string(loopDevice)).Str("image", image).Msg("Attached image to loop device")
 
 	// While grub is installed to disk + bios_boot partition, it still needs to have the config and mod files available
 	// so, the grub files are stored in the recovery partition
@@ -806,7 +806,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
 	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxImgFs, 0, "")
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
+		log.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err
 	}
 
@@ -825,16 +825,16 @@ func (r *RawImage) installGrubToDisk(image string) error {
 		"--force", string(loopDevice),
 		fmt.Sprintf("--boot-directory=%s", tmpDirRecovery),
 	}
-	internal.Log.Logger.Debug().Strs("args", args).Msg("Running grub2-install")
+	log.Log.Logger.Debug().Strs("args", args).Msg("Running grub2-install")
 	out, err = exec.Command("grub2-install", args...).CombinedOutput()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("output", string(out)).Msg("failed to install grub")
+		log.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Str("output", string(out)).Msg("failed to install grub")
 		return err
 	}
 	// Copy recovery grub.cfg to /mnt/recovery/grub2/grub.cfg so its picked up by the grub which then chainloads the rest
 	err = r.config.Fs.WriteFile(filepath.Join(tmpDirRecovery, "grub2", "grub.cfg"), []byte(constants.GrubEfiRecovery), 0o644)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to write grub.cfg")
+		log.Log.Logger.Error().Err(err).Str("device", string(loopDevice)).Msg("failed to write grub.cfg")
 		return err
 	}
 
@@ -850,35 +850,35 @@ func (r *RawImage) GetModelAndFlavor() (string, string, error) {
 	if _, ok := r.config.Fs.Stat(filepath.Join(r.Source, "etc/kairos-release")); ok == nil {
 		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
+			log.Log.Logger.Error().Err(err).Msg("failed to get flavor")
 			return "", "", err
 		}
 		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
+			log.Log.Logger.Error().Err(err).Msg("failed to get model")
 			return "", "", err
 		}
 	} else {
 		// Fallback to /etc/os-release for older images
 		flavor, err = sdkUtils.OSRelease("FLAVOR", filepath.Join(r.Source, "etc/os-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get flavor")
+			log.Log.Logger.Error().Err(err).Msg("failed to get flavor")
 			return "", "", err
 		}
 		model, err = sdkUtils.OSRelease("MODEL", filepath.Join(r.Source, "etc/os-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get model")
+			log.Log.Logger.Error().Err(err).Msg("failed to get model")
 			return "", "", err
 		}
 	}
 
 	if flavor == "" || model == "" {
-		internal.Log.Logger.Error().Msg("failed to get flavor or model")
+		log.Log.Logger.Error().Msg("failed to get flavor or model")
 		return "", "", fmt.Errorf("failed to get flavor or model")
 	}
 
-	internal.Log.Logger.Debug().Str("flavor", flavor).Msg("got flavor")
-	internal.Log.Logger.Debug().Str("model", model).Msg("got model")
+	log.Log.Logger.Debug().Str("flavor", flavor).Msg("got flavor")
+	log.Log.Logger.Debug().Str("model", model).Msg("got model")
 
 	return model, flavor, nil
 }
@@ -890,7 +890,7 @@ func (r *RawImage) FinalizeImage(image string) error {
 	// Get the model
 	model, _, err := r.GetModelAndFlavor()
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
+		log.Log.Logger.Error().Err(err).Msg("failed to get flavor or model")
 		return err
 	}
 
@@ -898,34 +898,34 @@ func (r *RawImage) FinalizeImage(image string) error {
 	switch model {
 	case "rpi4", "rpi3":
 		// RPI firmware is done in the EFI partition
-		internal.Log.Logger.Debug().Str("model", model).Msg("Running on RPI.")
+		log.Log.Logger.Debug().Str("model", model).Msg("Running on RPI.")
 	case "odroid-c2":
-		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Odroid-C2.")
+		log.Log.Logger.Debug().Str("model", model).Msg("Running on Odroid-C2.")
 		err = utils.DD("/arm/odroid-c2/bl1.bin.hardkernel", image, 1, 442, 0, 0)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
+			log.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
 			return err
 		}
 		err = utils.DD("/arm/odroid-c2/bl1.bin.hardkernel", image, 512, 0, 1, 1)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
+			log.Log.Logger.Error().Err(err).Msg("failed to dd bl1.bin.hardkernel")
 			return err
 		}
 		err = utils.DD("/arm/odroid-c2/u-boot.odroidc2", image, 512, 0, 0, 97)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.odroidc2")
+			log.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.odroidc2")
 			return err
 		}
 	case "pinebookpro":
-		internal.Log.Logger.Debug().Str("model", model).Msg("Running on Pinebook Pro.")
+		log.Log.Logger.Debug().Str("model", model).Msg("Running on Pinebook Pro.")
 		err = utils.DD("/arm/pinebookpro/idbloader.img", image, 64, 0, 0, 0)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to dd idbloader.img")
+			log.Log.Logger.Error().Err(err).Msg("failed to dd idbloader.img")
 			return err
 		}
 		err = utils.DD("/arm/pinebookpro/u-boot.itb", image, 16384, 0, 0, 0)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.itb")
+			log.Log.Logger.Error().Err(err).Msg("failed to dd u-boot.itb")
 			return err
 		}
 	}
@@ -933,7 +933,7 @@ func (r *RawImage) FinalizeImage(image string) error {
 	// Set the final image to be used by all as we run inside a container and the image is owned by root otherwise
 	err = r.config.Fs.Chmod(image, 0777)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("failed to chmod final image")
+		log.Log.Logger.Error().Err(err).Msg("failed to chmod final image")
 		return err
 	}
 	return nil

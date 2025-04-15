@@ -3,7 +3,7 @@ package netboot
 import (
 	"strconv"
 
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/netboot/booters"
 	"github.com/kairos-io/netboot/server"
 	"github.com/kairos-io/netboot/types"
@@ -30,11 +30,11 @@ func Server(kernel, cmdline string, address, httpPort, initrd string, nobind boo
 	}
 
 	logger := func(subsystem, msg string) {
-		internal.Log.Logger.Info().Str("subsystem", subsystem).Msg(msg)
+		log.Log.Logger.Info().Str("subsystem", subsystem).Msg(msg)
 	}
 
 	loggerDebug := func(subsystem, msg string) {
-		internal.Log.Logger.Debug().Str("subsystem", subsystem).Msg(msg)
+		log.Log.Logger.Debug().Str("subsystem", subsystem).Msg(msg)
 	}
 
 	s := &server.Server{

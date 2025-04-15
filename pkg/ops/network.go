@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/cavaliergopher/grab/v3"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 )
 
 const (
@@ -30,7 +30,7 @@ func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
 			<-ctx.Done()
 			serverOne.Shutdown(context.Background())
 		}()
-		internal.Log.Logger.Info().Msgf("Listening on %v...", listenAddr)
+		log.Log.Logger.Info().Msgf("Listening on %v...", listenAddr)
 		return serverOne.ListenAndServe()
 	}
 }
@@ -52,9 +52,9 @@ func download(ctx context.Context, url, dst string) (string, error) {
 	req, _ := grab.NewRequest(dst, url)
 
 	// start download
-	internal.Log.Logger.Info().Msgf("Downloading %v...", req.URL())
+	log.Log.Logger.Info().Msgf("Downloading %v...", req.URL())
 	resp := client.Do(req)
-	internal.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
+	log.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
 
 	// start UI loop
 	t := time.NewTicker(500 * time.Millisecond)
@@ -67,7 +67,7 @@ Loop:
 			defer os.RemoveAll(dstFile)
 			return dst, fmt.Errorf("context canceled")
 		case <-t.C:
-			internal.Log.Logger.Printf("%s: transferred %v / %v bytes (%.2f%%)",
+			log.Log.Logger.Printf("%s: transferred %v / %v bytes (%.2f%%)",
 				url,
 				resp.BytesComplete(),
 				resp.Size(),

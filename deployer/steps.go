@@ -3,7 +3,7 @@ package deployer
 import (
 	"context"
 	"github.com/hashicorp/go-multierror"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"os"
 	"path/filepath"
@@ -18,7 +18,7 @@ func (d *Deployer) StepPrepNetbootDir() error {
 		func(ctx context.Context) error {
 			err := os.RemoveAll(d.dstNetboot())
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
+				log.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
 				return err
 			}
 			return os.MkdirAll(d.dstNetboot(), 0755)
@@ -31,7 +31,7 @@ func (d *Deployer) StepPrepTmpRootDir() error {
 		func(ctx context.Context) error {
 			err := os.RemoveAll(d.tmpRootFs())
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+				log.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
 				return err
 			}
 			return os.MkdirAll(d.tmpRootFs(), 0755)
@@ -44,7 +44,7 @@ func (d *Deployer) CleanTmpDirs() error {
 	var err *multierror.Error
 	err = multierror.Append(err, os.RemoveAll(d.tmpRootFs()))
 	if err.ErrorOrNil() != nil {
-		internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+		log.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
 	}
 
 	err = multierror.Append(err, os.RemoveAll(d.dstNetboot()))
@@ -283,7 +283,7 @@ func (d *Deployer) rawDiskSize() uint64 {
 	}
 	sizeInt, err := strconv.ParseUint(d.Config.Disk.Size, 10, 64)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
+		log.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
 		return 0
 	}
 	return sizeInt

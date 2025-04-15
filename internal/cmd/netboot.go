@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/kairos-sdk/types"
 	"github.com/urfave/cli/v2"
@@ -46,7 +46,7 @@ var NetBootCmd = cli.Command{
 		if c.Bool("debug") {
 			loglevel = "debug"
 		}
-		internal.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
+		log.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
 
 		f := ops.ExtractNetboot(iso, output, name)
 		return f(c.Context)

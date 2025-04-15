@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
@@ -134,7 +134,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 			return err
 		}
 
-		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
+		log.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
 		cfg := NewBuildConfig(
 			WithLogger(sdkTypes.NewKairosLogger("auroraboot", "debug", false)),
 		)
@@ -163,7 +163,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 		buildISO := NewBuildISOAction(cfg, spec)
 		err = buildISO.ISORun()
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
+			log.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
 		}
 		return err
 	}
@@ -182,25 +182,25 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 		defer os.RemoveAll(tmp)
 
 		if i.DataPath != "" {
-			internal.Log.Logger.Info().Msgf("Adding data in '%s' to '%s'", i.DataPath, isoFile)
+			log.Log.Logger.Info().Msgf("Adding data in '%s' to '%s'", i.DataPath, isoFile)
 			err = copy.Copy(i.DataPath, tmp)
 			if err != nil {
 				return err
 			}
 		}
 
-		internal.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
+		log.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
 		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
 		if err != nil {
 			return err
 		}
 
 		out, err := sdkutils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s / -boot_image any replay", isoFile, injectedIso, tmp))
-		internal.Log.Print(out)
+		log.Log.Logger.Debug().Str("output", out).Msg("Xorriso output")
 		if err != nil {
 			return err
 		}
-		internal.Log.Logger.Info().Msgf("Wrote '%s'", injectedIso)
+		log.Log.Logger.Info().Msgf("Wrote '%s'", injectedIso)
 		return err
 	}
 }
@@ -649,7 +649,7 @@ func (b BuildISOAction) burnISO(root string) error {
 		isoFileName = fmt.Sprintf("%s.iso", b.cfg.Name)
 	}
 
-	internal.Log.Logger.Debug().Str("name", isoFileName).Msg("Got output name")
+	log.Log.Logger.Debug().Str("name", isoFileName).Msg("Got output name")
 
 	outputFile = isoFileName
 	if b.cfg.OutDir != "" {

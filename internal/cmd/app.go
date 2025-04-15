@@ -7,7 +7,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
@@ -43,10 +43,10 @@ func GetApp(version string) *cli.App {
 		UsageText:   ``,
 		Copyright:   "Kairos authors",
 		Action: func(ctx *cli.Context) error {
-			internal.Log = sdkTypes.NewKairosLogger("aurora", "info", false)
+			log.Log = sdkTypes.NewKairosLogger("aurora", "info", false)
 
 			if ctx.Bool("debug") {
-				internal.Log.SetLevel("debug")
+				log.Log.SetLevel("debug")
 			}
 			c, r, err := ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
 			if err != nil {
@@ -67,7 +67,7 @@ func GetApp(version string) *cli.App {
 			err = d.CollectErrors()
 			errCleanup := d.CleanTmpDirs()
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Msg("Failed to clean up tmp root dir")
+				log.Log.Logger.Error().Err(err).Msg("Failed to clean up tmp root dir")
 				// Append the cleanup error to the main errors if any
 				err = multierror.Append(err, errCleanup)
 			}

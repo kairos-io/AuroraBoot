@@ -18,7 +18,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/empty"
 	"github.com/google/go-containerregistry/pkg/v1/mutate"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
-	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/log"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
@@ -372,42 +372,42 @@ func NameFromRootfs(rootfs string) string {
 	if _, ok := os.Stat(filepath.Join(rootfs, "etc/kairos-release")); ok == nil {
 		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
 		}
 		flavorVersion, err := sdkUtils.OSRelease("FLAVOR_RELEASE", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor version")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image flavor version")
 		}
 		variant, err := sdkUtils.OSRelease("VARIANT", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image variant")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image variant")
 		}
 		arch, err := sdkUtils.OSRelease("ARCH", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
 			// Try to get TARGETARCH as a fallback
 			arch, err = sdkUtils.OSRelease("TARGETARCH", filepath.Join(rootfs, "etc/kairos-release"))
 			if err != nil {
-				internal.Log.Logger.Error().Err(err).Msg("failed to get image arch")
+				log.Log.Logger.Error().Err(err).Msg("failed to get image arch")
 			}
 		}
 		model, err := sdkUtils.OSRelease("MODEL", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image model")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image model")
 		}
 		version, err := sdkUtils.OSRelease("VERSION", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image version")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image version")
 		}
 		return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
 	} else {
 		// Before 3.2.x the kairos info was in /etc/os-release
 		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image label")
 		}
 		label, err := sdkUtils.OSRelease("IMAGE_LABEL", filepath.Join(rootfs, "etc/os-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image label")
+			log.Log.Logger.Error().Err(err).Msg("failed to get image label")
 		}
 		return fmt.Sprintf("%s-%s", flavor, label)
 	}
