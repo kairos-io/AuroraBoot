@@ -49,8 +49,6 @@ func (h *CustomHandler) WithGroup(name string) slog.Handler {
 // Handle processes the log record and redirects it to your logger.
 func (h *CustomHandler) Handle(c context.Context, r slog.Record) error {
 	logMessage := r.Message
-	// Replace this with your logger's logic
-	// Process attributes
 	entry := h.l.Logger.With()
 
 	r.Attrs(func(a slog.Attr) bool {
