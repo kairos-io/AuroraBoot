@@ -123,14 +123,14 @@ func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(constants.OpGenEFIRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		d.imageOrSquashFS(),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize())))
+		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize())))
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -284,6 +284,18 @@ func (d *Deployer) rawDiskSize() uint64 {
 	sizeInt, err := strconv.ParseUint(d.Config.Disk.Size, 10, 64)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
+		return 0
+	}
+	return sizeInt
+}
+
+func (d *Deployer) rawDiskStateSize() int64 {
+	if d.Config.Disk.StateSize == "" {
+		return 0
+	}
+	sizeInt, err := strconv.ParseInt(d.Config.Disk.StateSize, 10, 64)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.StateSize).Msg("Failed to parse disk state size, setting value to 0")
 		return 0
 	}
 	return sizeInt

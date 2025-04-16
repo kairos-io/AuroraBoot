@@ -46,11 +46,12 @@ type System struct {
 }
 
 type Disk struct {
-	EFI  bool   `yaml:"efi"`
-	GCE  bool   `yaml:"gce"`
-	VHD  bool   `yaml:"vhd"`
-	BIOS bool   `yaml:"bios"`
-	Size string `yaml:"size"`
+	EFI       bool   `yaml:"efi"`
+	GCE       bool   `yaml:"gce"`
+	VHD       bool   `yaml:"vhd"`
+	BIOS      bool   `yaml:"bios"`
+	Size      string `yaml:"size"`
+	StateSize string `yaml:"state_size"`
 }
 
 type NetBoot struct {
