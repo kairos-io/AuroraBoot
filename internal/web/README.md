@@ -27,3 +27,9 @@ To build the JavaScript assets, run the following command in the `web/app` direc
 ```bash
 esbuild index.js --bundle --outfile=bundle.js
 ```
+
+or using docker (from within this directory):
+
+```bash
+docker run --rm -v $PWD/app:/work --workdir /work node:23 /bin/bash -c 'npm ci && pwd && echo 'y' | npx esbuild index.js --bundle --outfile=bundle.js'
+```
