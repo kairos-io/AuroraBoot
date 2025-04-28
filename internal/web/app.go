@@ -202,22 +202,14 @@ func webSocketHandler(c echo.Context) error {
 		}
 
 		websocket.Message.Send(ws, "Generating raw image...")
-		err = runBashProcessWithOutput(
-			ws,
-			buildRawDisk("my-image", jobOutputDir),
-		)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
+		if err := buildRawDisk("my-image", jobOutputDir, ws); err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Failed to generate raw image: %v", err))
 			return
 		}
 
 		websocket.Message.Send(ws, "Generating ISO...")
-		err = runBashProcessWithOutput(
-			ws,
-			buildISO("my-image", jobOutputDir, "custom-kairos"),
-		)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
+		if err := buildISO("my-image", jobOutputDir, "custom-kairos", ws); err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Failed to generate ISO: %v", err))
 			return
 		}
 
