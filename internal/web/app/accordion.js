@@ -3,7 +3,6 @@ export function initializeAccordion() {
     const accordionSections = document.querySelectorAll('.accordion-section');
     accordionSections.forEach(section => {
         const header = section.querySelector('.accordion-header');
-        
         header.addEventListener('click', () => {
             // Close all other sections
             accordionSections.forEach(otherSection => {
@@ -11,12 +10,10 @@ export function initializeAccordion() {
                     otherSection.classList.remove('active');
                 }
             });
-            
             // Toggle current section
             section.classList.toggle('active');
         });
     });
-
     // Update selected options in accordion headers
     function updateSelectedOption(section, value) {
         const header = section.querySelector('.selected-option');
@@ -27,7 +24,13 @@ export function initializeAccordion() {
             const baseImageLabel = document.querySelector(`label[for="${baseValue}-option"]`);
             switch(section.dataset.section) {
                 case 'base-image':
-                    header.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
+                    if (value === 'byoi') {
+                        // For BYOI, show the text input value or a default message
+                        const byoiInput = document.getElementById('byoi');
+                        header.textContent = byoiInput.value || 'Not set';
+                    } else {
+                        header.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
+                    }
                     break;
                 case 'model':
                     const modelLabel = document.querySelector(`label[for="${value}-option"]`);
@@ -42,15 +45,19 @@ export function initializeAccordion() {
             }
         }
     }
-
     // Add change event listeners to all radio inputs
     document.querySelectorAll('input[type="radio"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
             if (e.target.checked) {
                 const section = e.target.closest('.accordion-section');
                 if (section) {
-                    updateSelectedOption(section, e.target.value);
-                    section.classList.remove('active');
+                    // For BYOI radio, use 'byoi' as value to trigger special handling
+                    const value = e.target.id === 'byoi-option' ? 'byoi' : e.target.value;
+                    updateSelectedOption(section, value);
+                    // Only collapse if the change wasn't triggered by clicking the text input
+                    if (!e.byoiTextInput) {
+                        section.classList.remove('active');
+                    }
                 }
             }
         });
@@ -61,8 +68,34 @@ export function initializeAccordion() {
         input.addEventListener('input', (e) => {
             const section = e.target.closest('.accordion-section');
             if (section) {
-                updateSelectedOption(section, e.target.value);
+                // For BYOI text input, update if it's currently selected
+                if (e.target.id === 'byoi') {
+                    const byoiRadio = document.getElementById('byoi-option');
+                    if (byoiRadio.checked) {
+                        updateSelectedOption(section, 'byoi');
+                    }
+                } else {
+                    updateSelectedOption(section, e.target.value);
+                }
             }
         });
     });
+
+    // Add special handling for BYOI text input
+    const byoiInput = document.getElementById('byoi');
+    if (byoiInput) {
+        // When clicking or focusing on the BYOI input, select its radio button
+        ['click', 'focus'].forEach(eventType => {
+            byoiInput.addEventListener(eventType, (e) => {
+                const byoiRadio = document.getElementById('byoi-option');
+                if (!byoiRadio.checked) {
+                    byoiRadio.checked = true;
+                    // Create a custom event with a flag to indicate it was triggered by text input
+                    const event = new Event('change');
+                    event.byoiTextInput = true;
+                    byoiRadio.dispatchEvent(event);
+                }
+            });
+        });
+    }
 } 
