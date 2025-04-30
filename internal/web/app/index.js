@@ -1,7 +1,12 @@
-var Convert = require('ansi-to-html');
-var convert = new Convert();
+import { initializeAccordion } from './accordion.js';
+import Convert from 'ansi-to-html';
+
+const convert = new Convert();
 
 document.addEventListener('DOMContentLoaded', () => {
+  // Initialize accordion functionality
+  initializeAccordion();
+
   const byoi = document.getElementById('byoi');
   // when byoi is clicked on, select the base_image radio button that has the value byoi
   byoi.addEventListener('click', function() {
@@ -88,6 +93,14 @@ document.addEventListener('DOMContentLoaded', () => {
       k3sOption.checked = false;
       kubernetesDistroName.innerText = 'K0s';
     }
+  });
+
+  // Add event listener for version input
+  const versionInput = document.getElementById('version');
+  const versionSection = versionInput.closest('.accordion-section');
+  versionInput.addEventListener('input', function() {
+    const selectedOption = versionSection.querySelector('.selected-option');
+    selectedOption.textContent = this.value || 'Not set';
   });
 
   const logsToggle = document.getElementById('logs-toggle');

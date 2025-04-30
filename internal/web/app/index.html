@@ -1,16 +1,93 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="bg-gray-50 dark:bg-gray-900">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Welcome to the Kairos Factory</title>
+        <title>Kairos Factory</title>
         <link rel="stylesheet" href="/output.css">
         <script src="./bundle.js"></script>
+        <style>
+            .accordion-section {
+                border: 1px solid #2c3c54;
+                border-radius: 0.5rem;
+                margin-bottom: 1rem;
+                overflow: hidden;
+            }
+            
+            .accordion-header {
+                padding: 1rem;
+                background-color: #2c3c54;
+                cursor: pointer;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+            
+            .accordion-header:hover {
+                background-color: #374a68;
+            }
 
+            .accordion-header > div {
+                display: grid;
+                grid-template-columns: 180px 1fr;
+                align-items: center;
+                gap: 1rem;
+                width: 100%;
+            }
+            
+            .accordion-content {
+                padding: 1rem;
+                display: none;
+            }
+            
+            .accordion-section.active .accordion-content {
+                display: block;
+            }
+            
+            .accordion-section.active .accordion-header .chevron-down {
+                transform: rotate(180deg);
+            }
+            
+            .chevron-down {
+                width: 20px;
+                height: 20px;
+                transition: transform 0.2s ease-in-out;
+                color: #e5e7eb;
+            }
+            
+            .section-title {
+                color: #e5e7eb;
+                font-weight: normal;
+                font-size: 0.875rem;
+            }
+            
+            .selected-option {
+                margin-left: 0;
+                font-weight: 600;
+                color: #ffffff;
+                font-size: 1rem;
+            }
+
+            /* Update model and variant option titles */
+            .model-title, .w-full.text-lg {
+                font-weight: normal;
+                color: #6b7280;
+            }
+
+            /* Update model and variant option descriptions */
+            .model-description, .w-full.text-sm {
+                color: #9ca3af;
+            }
+
+            /* Make selected radio options more prominent */
+            .peer-checked\:border-blue-600:checked + label {
+                background-color: #f3f4f6;
+            }
+        </style>
     </head>
-    <body class="">
-        <div id="sticky-banner" tabindex="-1" class="fixed top-0 start-0 z-50 flex justify-between w-full p-4 border-b border-red-200 bg-red-50 dark:bg-gray-800 dark:border-red-800">
-            <div class="flex items-center mx-auto">
+    <body>
+        <div id="sticky-banner" tabindex="-1" class="w-full p-4 border-b border-red-200 bg-red-50 dark:bg-gray-800 dark:border-red-800">
+            <div class="flex items-center max-w-screen-xl mx-auto">
                 <p class="flex items-center text-sm font-normal text-gray-500 dark:text-red-400">
                     <span class="inline-flex p-1 me-3 bg-red-200 rounded-full dark:bg-gray-600 w-6 h-6 items-center justify-center shrink-0">
                         <svg class="w-3 h-3 text-red-500 dark:text-red-400" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 18 19">
@@ -22,249 +99,306 @@
                 </p>
             </div>
         </div>
-        <section class="bg-gray-50 dark:bg-gray-900">
-            <div class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16 grid lg:grid-cols-3 gap-8 lg:gap-16">
-                <div class="lg:col-span-1 flex flex-col justify-center">
-                    <div class="flex items-center mb-6 text-gray-500 dark:text-gray-400">
-                        <svg class="w-15 h-15 mr-2 text" width="137" height="137" viewBox="0 0 137 137" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.18907e-05 1 68.502 18.8594)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 -0.500028 3.18907e-05 1 47.0088 31.2695)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499972 47.0088 6.45312)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(3.19859e-05 1 0.86601 0.500028 25.5139 43.6797)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499973 0.866041 0.499972 25.5139 68.4922)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-3.17834e-05 1 0.866009 -0.500028 4.02271 56.0898)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 68.5042 93.3125)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 47.011 105.723)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 47.011 80.9062)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.4985 118.141)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9917 105.73)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9917 130.547)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 132.979 56.0859)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 111.486 68.4961)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 111.486 43.6797)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.5002 43.6875)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9934 31.2773)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9934 56.0938)" fill="#fb9e70"></rect></svg>
+        <section class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16">
+            <div class="grid lg:grid-cols-3 gap-8 lg:gap-16">
+                <div class="lg:col-span-1">
+                    <div class="sticky top-24">
+                        <div class="flex items-center mb-6 text-gray-500 dark:text-gray-400">
+                            <svg class="w-15 h-15 mr-2 text" width="137" height="137" viewBox="0 0 137 137" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.18907e-05 1 68.502 18.8594)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 -0.500028 3.18907e-05 1 47.0088 31.2695)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499972 47.0088 6.45312)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(3.19859e-05 1 0.86601 0.500028 25.5139 43.6797)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499973 0.866041 0.499972 25.5139 68.4922)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-3.17834e-05 1 0.866009 -0.500028 4.02271 56.0898)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 68.5042 93.3125)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 47.011 105.723)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 47.011 80.9062)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.4985 118.141)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9917 105.73)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9917 130.547)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 132.979 56.0859)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 111.486 68.4961)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 111.486 43.6797)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.5002 43.6875)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9934 31.2773)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9934 56.0938)" fill="#fb9e70"></rect></svg>
+                        </div>
+                        <h1 class="items-center mb-4 text-4xl font-extrabold tracking-tight leading-none text-gray-900 md:text-5xl lg:text-6xl dark:text-white">Kairos Factory</h1>
+                        <p class="mb-6 text-lg font-normal text-gray-500 lg:text-xl dark:text-gray-400">The easiest way to generate immutable operating systems with all the bells and whistles for your project.</p>
+                        <a href="https://kairos.io" target="_blank" class="text-blue-600 dark:text-blue-500 hover:underline font-medium text-lg inline-flex items-center">Learn more in the documentation 
+                            <svg class="w-3.5 h-3.5 ms-2 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 10">
+                                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 5h12m0 0L9 1m4 4L9 9"/>
+                            </svg>
+                        </a>
                     </div>
-                    <h1 class="items-center mb-4 text-4xl font-extrabold tracking-tight leading-none text-gray-900 md:text-5xl lg:text-6xl dark:text-white">Welcome to the Kairos Factory</h1>
-                    <p class="mb-6 text-lg font-normal text-gray-500 lg:text-xl dark:text-gray-400">The easiest way to generate immutable operating systems with all the bells and whistles for your project.</p>
-                    <a href="https://kairos.io" target="_blank" class="text-blue-600 dark:text-blue-500 hover:underline font-medium text-lg inline-flex items-center">Learn more in the documentation 
-                        <svg class="w-3.5 h-3.5 ms-2 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 10">
-                            <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M1 5h12m0 0L9 1m4 4L9 9"/>
-                        </svg>
-                    </a>
                 </div>
                 <div class="lg:col-span-2">
-                    <div class="w-full p-6 space-y-8 sm:p-8 bg-white rounded-lg shadow-xl dark:bg-gray-800">
+                    <div class="w-full p-6 space-y-8 bg-white rounded-lg shadow-xl dark:bg-gray-800">
+                        <p class="text-gray-600 dark:text-gray-300 mb-6">Choose your desired configuration options below by selecting from each category. Once you've made your selections, click the "Build" button at the bottom to generate your custom Kairos image. The build process will create both an ISO and a raw disk image for your chosen configuration.</p>
                         <form id="process-form" class="mt-8 space-y-6" action="#">
-                            <div>
-                                <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Base Image</h3>
-                                <ul class="grid w-full gap-3 md:grid-cols-3 baseimage-list">
-                                    <li>
-                                        <input type="radio" name="base_image" id="ubuntu-option" value="ubuntu:24.04" class="hidden peer" required="" checked>
-                                        <label for="ubuntu-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">                           
-                                            <div class="flex items-center space-x-3">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#DD4814" d="M64 3.246C30.445 3.246 3.245 30.446 3.245 64c0 33.552 27.2 60.754 60.755 60.754 33.554 0 60.755-27.202 60.755-60.754 0-33.554-27.2-60.754-60.755-60.754zm13.631 20.922a8.108 8.108 0 1114.046 8.108A8.105 8.105 0 0180.6 35.243a8.11 8.11 0 01-2.969-11.075zM64 28.763c3.262 0 6.417.453 9.414 1.281a11.357 11.357 0 005.548 8.042 11.378 11.378 0 009.725.789c5.998 5.898 9.901 13.919 10.47 22.854l-11.558.17C86.532 49.796 76.377 40.306 64 40.306a23.6 23.6 0 00-9.98 2.203L48.383 32.41A35.116 35.116 0 0164 28.763zM22.689 72.112A8.112 8.112 0 0114.576 64a8.111 8.111 0 018.113-8.113 8.113 8.113 0 010 16.225zm7.191.722A11.377 11.377 0 0034.08 64c0-3.565-1.639-6.747-4.2-8.836 2.194-8.489 7.475-15.738 14.571-20.483l5.931 9.934C44.29 48.902 40.308 55.984 40.308 64s3.981 15.098 10.074 19.383l-5.931 9.937c-7.099-4.744-12.38-11.995-14.571-20.486zm58.831 33.964a8.105 8.105 0 01-11.077-2.969c-2.241-3.877-.911-8.835 2.969-11.076 3.877-2.239 8.838-.908 11.077 2.969a8.106 8.106 0 01-2.969 11.076zm-.024-17.673a11.357 11.357 0 00-9.725.788 11.36 11.36 0 00-5.547 8.042A35.232 35.232 0 0164 99.239a35.097 35.097 0 01-15.616-3.649l5.636-10.1A23.6 23.6 0 0064 87.694c12.378 0 22.532-9.488 23.596-21.592l11.561.169c-.569 8.935-4.472 16.956-10.47 22.854z"/></svg>
-                                                <div class="text-m font-semibold leading-none">Ubuntu 24.04 LTS</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="base_image" id="fedora-option" value="fedora:40" class="hidden peer">
-                                        <label for="fedora-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="flex items-center space-x-3">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M127.82 64.004C127.82 28.754 99.246.18 64 .18 28.766.18.203 28.73.18 63.957v49.39c.02 7.997 6.504 14.473 14.508 14.473h49.335c35.239-.015 63.797-28.578 63.797-63.816" fill="#294172"/><path d="M36.973 68.12H59.91V91.06c0 12.66-10.273 22.937-22.937 22.937-12.66 0-22.934-10.277-22.934-22.937 0-12.66 10.274-22.938 22.934-22.938zm0 0" fill="none" stroke-width="14.003274" stroke="#3c6eb4"/><path d="M82.738 68.164H59.801V45.231c0-12.66 10.277-22.938 22.937-22.938 12.66 0 22.938 10.274 22.938 22.938 0 12.66-10.278 22.933-22.938 22.933zm0 0" fill="none" stroke-width="14.003274" stroke="#3c6eb4"/><path d="M66.926 61.137v29.89c0 16.54-13.41 29.953-29.95 29.953-2.511 0-4.296-.285-6.617-.89-3.39-.887-6.156-3.664-6.16-6.895 0-3.906 2.836-6.746 7.074-6.746 2.016 0 2.747.387 5.704.387 8.718 0 15.793-7.063 15.808-15.785V77.312c0-1.23-1-2.23-2.234-2.226l-10.387-.004c-3.867 0-6.996-3.086-6.996-6.965 0-3.906 3.16-6.98 7.07-6.98" fill="#fff"/><path d="M52.785 75.148V45.262c0-16.543 13.41-29.953 29.953-29.953 2.508 0 4.293.28 6.617.89 3.387.887 6.157 3.664 6.157 6.895 0 3.906-2.836 6.746-7.07 6.746-2.02 0-2.75-.387-5.704-.387-8.722 0-15.797 7.063-15.812 15.781v13.743a2.235 2.235 0 002.234 2.226l10.387.004c3.871 0 6.996 3.086 6.996 6.965.004 3.906-3.16 6.98-7.07 6.98" fill="#fff"/><path d="M116.809 116.773v-2.652l-1.211 2.781-1.18-2.78v2.651h-.68v-4.187h.711l1.168 2.676 1.149-2.676h.722v4.187zm-4.954-3.484v3.484h-.71v-3.484h-1.192v-.703h3.09v.703" fill="#3c6eb4"/></svg>
+                            <div class="accordion-section active" data-section="base-image">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title">Base Image</span>
+                                        <span class="selected-option">Ubuntu 24.04 LTS</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Base Image</h3>
+                                    <ul class="grid w-full gap-3 md:grid-cols-3 baseimage-list">
+                                        <li>
+                                            <input type="radio" name="base_image" id="ubuntu-option" value="ubuntu:24.04" class="hidden peer" required="" checked>
+                                            <label for="ubuntu-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">                           
+                                                <div class="flex items-center space-x-3">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#DD4814" d="M64 3.246C30.445 3.246 3.245 30.446 3.245 64c0 33.552 27.2 60.754 60.755 60.754 33.554 0 60.755-27.202 60.755-60.754 0-33.554-27.2-60.754-60.755-60.754zm13.631 20.922a8.108 8.108 0 1114.046 8.108A8.105 8.105 0 0180.6 35.243a8.11 8.11 0 01-2.969-11.075zM64 28.763c3.262 0 6.417.453 9.414 1.281a11.357 11.357 0 005.548 8.042 11.378 11.378 0 009.725.789c5.998 5.898 9.901 13.919 10.47 22.854l-11.558.17C86.532 49.796 76.377 40.306 64 40.306a23.6 23.6 0 00-9.98 2.203L48.383 32.41A35.116 35.116 0 0164 28.763zM22.689 72.112A8.112 8.112 0 0114.576 64a8.111 8.111 0 018.113-8.113 8.113 8.113 0 010 16.225zm7.191.722A11.377 11.377 0 0034.08 64c0-3.565-1.639-6.747-4.2-8.836 2.194-8.489 7.475-15.738 14.571-20.483l5.931 9.934C44.29 48.902 40.308 55.984 40.308 64s3.981 15.098 10.074 19.383l-5.931 9.937c-7.099-4.744-12.38-11.995-14.571-20.486zm58.831 33.964a8.105 8.105 0 01-11.077-2.969c-2.241-3.877-.911-8.835 2.969-11.076 3.877-2.239 8.838-.908 11.077 2.969a8.106 8.106 0 01-2.969 11.076zm-.024-17.673a11.357 11.357 0 00-9.725.788 11.36 11.36 0 00-5.547 8.042A35.232 35.232 0 0164 99.239a35.097 35.097 0 01-15.616-3.649l5.636-10.1A23.6 23.6 0 0064 87.694c12.378 0 22.532-9.488 23.596-21.592l11.561.169c-.569 8.935-4.472 16.956-10.47 22.854z"/></svg>
+                                                    <div class="text-m font-semibold leading-none">Ubuntu 24.04 LTS</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="base_image" id="fedora-option" value="fedora:40" class="hidden peer">
+                                            <label for="fedora-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="flex items-center space-x-3">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M127.82 64.004C127.82 28.754 99.246.18 64 .18 28.766.18.203 28.73.18 63.957v49.39c.02 7.997 6.504 14.473 14.508 14.473h49.335c35.239-.015 63.797-28.578 63.797-63.816" fill="#294172"/><path d="M36.973 68.12H59.91V91.06c0 12.66-10.273 22.937-22.937 22.937-12.66 0-22.934-10.277-22.934-22.937 0-12.66 10.274-22.938 22.934-22.938zm0 0" fill="none" stroke-width="14.003274" stroke="#3c6eb4"/><path d="M82.738 68.164H59.801V45.231c0-12.66 10.277-22.938 22.937-22.938 12.66 0 22.938 10.274 22.938 22.938 0 12.66-10.278 22.933-22.938 22.933zm0 0" fill="none" stroke-width="14.003274" stroke="#3c6eb4"/><path d="M66.926 61.137v29.89c0 16.54-13.41 29.953-29.95 29.953-2.511 0-4.296-.285-6.617-.89-3.39-.887-6.156-3.664-6.16-6.895 0-3.906 2.836-6.746 7.074-6.746 2.016 0 2.747.387 5.704.387 8.718 0 15.793-7.063 15.808-15.785V77.312c0-1.23-1-2.23-2.234-2.226l-10.387-.004c-3.867 0-6.996-3.086-6.996-6.965 0-3.906 3.16-6.98 7.07-6.98" fill="#fff"/><path d="M52.785 75.148V45.262c0-16.543 13.41-29.953 29.953-29.953 2.508 0 4.293.28 6.617.89 3.387.887 6.157 3.664 6.157 6.895 0 3.906-2.836 6.746-7.07 6.746-2.02 0-2.75-.387-5.704-.387-8.722 0-15.797 7.063-15.812 15.781v13.743a2.235 2.235 0 002.234 2.226l10.387.004c3.871 0 6.996 3.086 6.996 6.965.004 3.906-3.16 6.98-7.07 6.98" fill="#fff"/><path d="M116.809 116.773v-2.652l-1.211 2.781-1.18-2.78v2.651h-.68v-4.187h.711l1.168 2.676 1.149-2.676h.722v4.187zm-4.954-3.484v3.484h-.71v-3.484h-1.192v-.703h3.09v.703" fill="#3c6eb4"/></svg>
 
-                                                <div class="text-m font-semibold leading-none">Fedora 40</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="base_image" id="opensuse-option" value="opensuse/leap:15.6" class="hidden peer">
-                                        <label for="opensuse-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="flex items-center space-x-3">
-                                                <svg
-                                                class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]"
-                                                xmlns:dc="http://purl.org/dc/elements/1.1/"
-                                                xmlns:cc="http://creativecommons.org/ns#"
-                                                xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
-                                                xmlns:svg="http://www.w3.org/2000/svg"
-                                                xmlns="http://www.w3.org/2000/svg"
-                                                width="256"
-                                                height="256"
-                                                viewBox="0 0 256 256.00001"
-                                                version="1.1"
-                                                id="svg8">
-                                                <defs
-                                                    id="defs2" />
-                                                <metadata
-                                                    id="metadata5">
-                                                    <rdf:RDF>
-                                                    <cc:Work
-                                                        rdf:about="">
-                                                        <dc:format>image/svg+xml</dc:format>
-                                                        <dc:type
-                                                        rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
-                                                        <dc:title></dc:title>
-                                                    </cc:Work>
-                                                    </rdf:RDF>
-                                                </metadata>
-                                                <circle
-                                                    r="98"
-                                                    style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1.96168292;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-                                                    id="path907"
-                                                    cx="128"
-                                                    cy="127.99999" />
-                                                <path
-                                                    style="opacity:1;fill:#73ba25;fill-opacity:1;stroke:none;stroke-width:13.84463978;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-                                                    d="M 128,16 A 112,112 0 0 0 16,128 112,112 0 0 0 128,240 112,112 0 0 0 240,128 112,112 0 0 0 128,16 Z m 0,14 a 97.998915,97.999659 0 0 1 98,98 97.998915,97.999659 0 0 1 -98,98 97.998915,97.999659 0 0 1 -73.763183,-33.66528 c 7.061098,-5.10706 18.640211,-3.80284 32.872314,-2.19605 6.934989,0.81013 14.833329,1.71669 23.008059,1.89869 22.82389,0.14504 47.40688,-4.07013 62.55908,-10.69825 9.80273,-4.26047 16.0584,-7.09653 19.97802,-10.66064 1.40972,-1.16811 2.14191,-3.06412 2.90357,-5.10474 l 0.53491,-1.34839 c 0.63379,-1.65411 1.56454,-5.13956 1.97388,-7.04956 0.16481,-0.8414 0.35765,-1.66518 -0.33838,-2.20288 -0.6363,-0.49168 -2.09863,0.38964 -2.09863,0.38964 -6.65366,4.00476 -23.28584,11.58939 -38.83667,11.91334 -19.30731,0.38942 -58.425755,-19.5443 -62.478764,-21.64942 -2.71264,-6.45909 -5.424076,-12.92177 -8.175778,-19.3645 27.986982,18.44043 51.201812,28.63435 68.971192,30.20631 19.78212,1.76219 35.20114,-9.03277 41.89404,-13.5232 0.87612,-0.58244 1.75161,-1.23425 2.55493,-1.86109 h 0.004 c 0.14375,-0.11214 0.47936,-0.40775 0.43579,-0.68017 -1.10961,-6.93392 -11.43969,-40.557897 -19.25854,-48.644534 -2.15437,-2.202672 -3.87946,-4.375411 -7.37256,-6.418947 -28.28567,-16.482787 -95.389828,-26.430355 -98.533705,-26.88574 0,0 -0.316184,-0.06492 -0.534912,0.14868 -0.169835,0.165952 -0.20337,0.485353 -0.20337,0.485353 0,0 -0.257656,13.903155 -0.297362,15.457768 -2.533803,-0.851287 -10.99503,-3.594596 -22.948243,-6.788093 A 97.998915,97.999659 0 0 1 128,30 Z m 20.42578,56.851078 c 0.4763,-0.0079 0.95442,-0.0035 1.43384,0.01199 15.81694,0.565582 28.24724,13.917972 27.70434,29.717522 -0.29835,7.66562 -3.50617,14.77959 -9.09692,19.98145 -5.60761,5.26668 -12.90665,7.97471 -20.61206,7.71607 -15.79992,-0.5826 -28.21547,-13.9073 -27.68555,-29.72095 0.28408,-7.66561 3.49191,-14.778768 9.09693,-19.996831 5.25711,-4.90819 12.01497,-7.59416 19.15942,-7.709222 z m 0.1897,8.457758 c -4.99469,0.0623 -9.69358,1.940689 -13.33862,5.359374 -3.88819,3.64661 -6.17999,8.5876 -6.34204,13.93677 -0.37225,11.05356 8.28161,20.35056 19.30981,20.75732 5.36323,0.16206 10.47533,-1.73499 14.38622,-5.38159 3.90522,-3.66361 6.15261,-8.6024 6.32325,-13.93163 0.37225,-11.05065 -8.28164,-20.337805 -19.33545,-20.729989 -0.33538,-0.01207 -0.6702,-0.01444 -1.00317,-0.01024 z m 4.27929,10.060794 c 4.91126,0 8.89014,2.64343 8.89014,5.93189 0,3.25718 -3.98164,5.91479 -8.89014,5.91479 -4.91139,0 -8.87817,-2.65746 -8.87817,-5.91479 0,-3.28846 3.96678,-5.93189 8.87817,-5.93189 z"
-                                                    id="path820-3-6" />
-                                                <circle
-                                                    style="opacity:0.3;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:3.088377;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
-                                                    id="path872"
-                                                    cx="787.51135"
-                                                    cy="-1078.8389"
-                                                    r="0" />
-                                                </svg>
-                                                <div class="text-m font-semibold leading-none">openSUSE Leap 15.6</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="base_image" id="debian-option" value="debian:12" class="hidden peer">
-                                        <label for="debian-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="flex items-center space-x-3">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#A80030" d="M73.776 67.531c-2.065.028.391 1.063 3.087 1.479a27.453 27.453 0 002.023-1.741c-1.679.41-3.387.419-5.11.262m11.086-2.763c1.229-1.697 2.127-3.556 2.442-5.478-.276 1.369-1.019 2.553-1.72 3.801-3.86 2.431-.363-1.443-.002-2.916-4.15 5.225-.57 3.133-.72 4.593m4.093-10.648c.249-3.72-.733-2.544-1.063-1.125.384.201.69 2.622 1.063 1.125M65.944 3.283c1.102.198 2.381.35 2.202.612 1.206-.263 1.48-.506-2.202-.612m2.202.613l-.779.161.725-.064.054-.097m34.372 51.634c.123 3.34-.978 4.961-1.969 7.829l-1.786.892c-1.46 2.838.142 1.802-.903 4.059-2.281 2.027-6.921 6.345-8.406 6.738-1.084-.023.734-1.278.972-1.771-3.052 2.098-2.449 3.147-7.118 4.422l-.136-.305c-11.516 5.417-27.51-5.318-27.299-19.966-.123.931-.349.697-.605 1.074-.594-7.537 3.481-15.107 10.353-18.196 6.722-3.329 14.602-1.963 19.417 2.524-2.644-3.465-7.909-7.137-14.148-6.793-6.111.097-11.828 3.98-13.735 8.196-3.132 1.972-3.495 7.6-4.859 8.628-1.835 13.491 3.453 19.318 12.398 26.175 1.407.949.396 1.093.587 1.815-2.972-1.392-5.694-3.493-7.931-6.065 1.186 1.739 2.468 3.429 4.125 4.756-2.803-.949-6.546-6.79-7.64-7.028 4.832 8.649 19.599 15.169 27.333 11.935-3.579.131-8.124.073-12.145-1.413-1.688-.869-3.984-2.669-3.574-3.007 10.553 3.944 21.456 2.988 30.586-4.333 2.323-1.81 4.861-4.887 5.594-4.93-1.105 1.661.188.8-.66 2.266 2.316-3.733-1.005-1.521 2.394-6.448l1.256 1.729c-.467-3.098 3.848-6.861 3.41-11.762.99-1.499 1.104 1.612.054 5.061 1.457-3.825.384-4.44.759-7.597.404 1.062.935 2.188 1.208 3.308-.95-3.696.975-6.226 1.45-8.373-.467-.208-1.464 1.634-1.692-2.732.034-1.896.528-.993.718-1.46-.373-.215-1.349-1.668-1.944-4.456.431-.655 1.151 1.698 1.739 1.795-.378-2.217-1.028-3.907-1.053-5.609-1.713-3.579-.606.478-1.996-1.536-1.823-5.687 1.513-1.32 1.738-3.903 2.763 4.003 4.339 10.208 5.062 12.777-.552-3.133-1.443-6.168-2.532-9.105.839.354-1.352-6.446 1.091-1.943-2.609-9.6-11.166-18.569-19.038-22.778.962.881 2.179 1.989 1.743 2.162-3.915-2.331-3.227-2.513-3.787-3.498-3.19-1.297-3.399.104-5.511.003-6.012-3.188-7.171-2.85-12.703-4.848l.252 1.177c-3.984-1.327-4.641.503-8.945.004-.263-.205 1.379-.74 2.73-.937-3.85.508-3.67-.759-7.438.14.929-.651 1.909-1.082 2.9-1.637-3.139.191-7.495 1.828-6.151.339-5.121 2.286-14.218 5.493-19.322 10.28l-.161-1.073c-2.339 2.809-10.2 8.387-10.826 12.022l-.625.146c-1.218 2.06-2.004 4.396-2.97 6.517-1.592 2.713-2.334 1.044-2.107 1.469-3.132 6.349-4.687 11.683-6.03 16.057.958 1.432.022 8.614.385 14.364-1.572 28.394 19.928 55.962 43.43 62.329 3.445 1.23 8.567 1.184 12.924 1.311-5.141-1.471-5.806-.778-10.813-2.525-3.614-1.701-4.405-3.644-6.964-5.864l1.014 1.79c-5.019-1.775-2.918-2.198-7.002-3.491l1.083-1.412c-1.627-.123-4.309-2.74-5.042-4.191l-1.779.07c-2.138-2.638-3.277-4.538-3.194-6.011l-.575 1.024c-.652-1.119-7.865-9.893-4.123-7.85-.696-.637-1.62-1.035-2.622-2.856l.762-.871c-1.802-2.316-3.315-5.287-3.2-6.276.96 1.298 1.627 1.54 2.287 1.763-4.548-11.285-4.803-.622-8.248-11.487l.729-.059c-.559-.842-.898-1.756-1.347-2.652l.316-3.161c-3.274-3.786-.916-16.098-.443-22.851.328-2.746 2.733-5.669 4.563-10.252l-1.114-.192c2.131-3.717 12.167-14.928 16.815-14.351 2.251-2.829-.446-.011-.886-.723 4.945-5.119 6.5-3.617 9.838-4.537 3.6-2.137-3.089.833-1.383-.815 6.223-1.589 4.41-3.613 12.528-4.42.857.487-1.987.752-2.701 1.385 5.185-2.536 16.408-1.959 23.697 1.408 8.458 3.952 17.961 15.638 18.336 26.631l.427.114c-.216 4.37.669 9.424-.865 14.066l1.043-2.201M51.233 70.366l-.29 1.448c1.357 1.845 2.435 3.843 4.167 5.283-1.246-2.434-2.173-3.44-3.877-6.731m3.208-.126c-.718-.795-1.144-1.751-1.62-2.704.456 1.675 1.388 3.114 2.255 4.578l-.635-1.874m56.785-12.343l-.304.762a36.72 36.72 0 01-3.599 11.487 36.107 36.107 0 003.903-12.249M66.353 2.293c1.396-.513 3.433-.281 4.914-.617-1.93.162-3.852.259-5.75.503l.836.114M17.326 28.362c.322 2.979-2.242 4.135.567 2.171 1.506-3.39-.588-.935-.567-2.171M14.025 42.15c.646-1.986.764-3.18 1.011-4.328-1.788 2.285-.823 2.773-1.011 4.328"/></svg>
+                                                    <div class="text-m font-semibold leading-none">Fedora 40</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="base_image" id="opensuse-option" value="opensuse/leap:15.6" class="hidden peer">
+                                            <label for="opensuse-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="flex items-center space-x-3">
+                                                    <svg
+                                                    class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]"
+                                                    xmlns:dc="http://purl.org/dc/elements/1.1/"
+                                                    xmlns:cc="http://creativecommons.org/ns#"
+                                                    xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"
+                                                    xmlns:svg="http://www.w3.org/2000/svg"
+                                                    xmlns="http://www.w3.org/2000/svg"
+                                                    width="256"
+                                                    height="256"
+                                                    viewBox="0 0 256 256.00001"
+                                                    version="1.1"
+                                                    id="svg8">
+                                                    <defs
+                                                        id="defs2" />
+                                                    <metadata
+                                                        id="metadata5">
+                                                        <rdf:RDF>
+                                                        <cc:Work
+                                                            rdf:about="">
+                                                            <dc:format>image/svg+xml</dc:format>
+                                                            <dc:type
+                                                            rdf:resource="http://purl.org/dc/dcmitype/StillImage" />
+                                                            <dc:title></dc:title>
+                                                        </cc:Work>
+                                                        </rdf:RDF>
+                                                    </metadata>
+                                                    <circle
+                                                        r="98"
+                                                        style="opacity:1;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:1.96168292;stroke-linecap:round;stroke-linejoin:round;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+                                                        id="path907"
+                                                        cx="128"
+                                                        cy="127.99999" />
+                                                    <path
+                                                        style="opacity:1;fill:#73ba25;fill-opacity:1;stroke:none;stroke-width:13.84463978;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+                                                        d="M 128,16 A 112,112 0 0 0 16,128 112,112 0 0 0 128,240 112,112 0 0 0 240,128 112,112 0 0 0 128,16 Z m 0,14 a 97.998915,97.999659 0 0 1 98,98 97.998915,97.999659 0 0 1 -98,98 97.998915,97.999659 0 0 1 -73.763183,-33.66528 c 7.061098,-5.10706 18.640211,-3.80284 32.872314,-2.19605 6.934989,0.81013 14.833329,1.71669 23.008059,1.89869 22.82389,0.14504 47.40688,-4.07013 62.55908,-10.69825 9.80273,-4.26047 16.0584,-7.09653 19.97802,-10.66064 1.40972,-1.16811 2.14191,-3.06412 2.90357,-5.10474 l 0.53491,-1.34839 c 0.63379,-1.65411 1.56454,-5.13956 1.97388,-7.04956 0.16481,-0.8414 0.35765,-1.66518 -0.33838,-2.20288 -0.6363,-0.49168 -2.09863,0.38964 -2.09863,0.38964 -6.65366,4.00476 -23.28584,11.58939 -38.83667,11.91334 -19.30731,0.38942 -58.425755,-19.5443 -62.478764,-21.64942 -2.71264,-6.45909 -5.424076,-12.92177 -8.175778,-19.3645 27.986982,18.44043 51.201812,28.63435 68.971192,30.20631 19.78212,1.76219 35.20114,-9.03277 41.89404,-13.5232 0.87612,-0.58244 1.75161,-1.23425 2.55493,-1.86109 h 0.004 c 0.14375,-0.11214 0.47936,-0.40775 0.43579,-0.68017 -1.10961,-6.93392 -11.43969,-40.557897 -19.25854,-48.644534 -2.15437,-2.202672 -3.87946,-4.375411 -7.37256,-6.418947 -28.28567,-16.482787 -95.389828,-26.430355 -98.533705,-26.88574 0,0 -0.316184,-0.06492 -0.534912,0.14868 -0.169835,0.165952 -0.20337,0.485353 -0.20337,0.485353 0,0 -0.257656,13.903155 -0.297362,15.457768 -2.533803,-0.851287 -10.99503,-3.594596 -22.948243,-6.788093 A 97.998915,97.999659 0 0 1 128,30 Z m 20.42578,56.851078 c 0.4763,-0.0079 0.95442,-0.0035 1.43384,0.01199 15.81694,0.565582 28.24724,13.917972 27.70434,29.717522 -0.29835,7.66562 -3.50617,14.77959 -9.09692,19.98145 -5.60761,5.26668 -12.90665,7.97471 -20.61206,7.71607 -15.79992,-0.5826 -28.21547,-13.9073 -27.68555,-29.72095 0.28408,-7.66561 3.49191,-14.778768 9.09693,-19.996831 5.25711,-4.90819 12.01497,-7.59416 19.15942,-7.709222 z m 0.1897,8.457758 c -4.99469,0.0623 -9.69358,1.940689 -13.33862,5.359374 -3.88819,3.64661 -6.17999,8.5876 -6.34204,13.93677 -0.37225,11.05356 8.28161,20.35056 19.30981,20.75732 5.36323,0.16206 10.47533,-1.73499 14.38622,-5.38159 3.90522,-3.66361 6.15261,-8.6024 6.32325,-13.93163 0.37225,-11.05065 -8.28164,-20.337805 -19.33545,-20.729989 -0.33538,-0.01207 -0.6702,-0.01444 -1.00317,-0.01024 z m 4.27929,10.060794 c 4.91126,0 8.89014,2.64343 8.89014,5.93189 0,3.25718 -3.98164,5.91479 -8.89014,5.91479 -4.91139,0 -8.87817,-2.65746 -8.87817,-5.91479 0,-3.28846 3.96678,-5.93189 8.87817,-5.93189 z"
+                                                        id="path820-3-6" />
+                                                    <circle
+                                                        style="opacity:0.3;fill:#ffffff;fill-opacity:1;stroke:none;stroke-width:3.088377;stroke-miterlimit:4;stroke-dasharray:none;stroke-opacity:1"
+                                                        id="path872"
+                                                        cx="787.51135"
+                                                        cy="-1078.8389"
+                                                        r="0" />
+                                                    </svg>
+                                                    <div class="text-m font-semibold leading-none">openSUSE Leap 15.6</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="base_image" id="debian-option" value="debian:12" class="hidden peer">
+                                            <label for="debian-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="flex items-center space-x-3">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path fill="#A80030" d="M73.776 67.531c-2.065.028.391 1.063 3.087 1.479a27.453 27.453 0 002.023-1.741c-1.679.41-3.387.419-5.11.262m11.086-2.763c1.229-1.697 2.127-3.556 2.442-5.478-.276 1.369-1.019 2.553-1.72 3.801-3.86 2.431-.363-1.443-.002-2.916-4.15 5.225-.57 3.133-.72 4.593m4.093-10.648c.249-3.72-.733-2.544-1.063-1.125.384.201.69 2.622 1.063 1.125M65.944 3.283c1.102.198 2.381.35 2.202.612 1.206-.263 1.48-.506-2.202-.612m2.202.613l-.779.161.725-.064.054-.097m34.372 51.634c.123 3.34-.978 4.961-1.969 7.829l-1.786.892c-1.46 2.838.142 1.802-.903 4.059-2.281 2.027-6.921 6.345-8.406 6.738-1.084-.023.734-1.278.972-1.771-3.052 2.098-2.449 3.147-7.118 4.422l-.136-.305c-11.516 5.417-27.51-5.318-27.299-19.966-.123.931-.349.697-.605 1.074-.594-7.537 3.481-15.107 10.353-18.196 6.722-3.329 14.602-1.963 19.417 2.524-2.644-3.465-7.909-7.137-14.148-6.793-6.111.097-11.828 3.98-13.735 8.196-3.132 1.972-3.495 7.6-4.859 8.628-1.835 13.491 3.453 19.318 12.398 26.175 1.407.949.396 1.093.587 1.815-2.972-1.392-5.694-3.493-7.931-6.065 1.186 1.739 2.468 3.429 4.125 4.756-2.803-.949-6.546-6.79-7.64-7.028 4.832 8.649 19.599 15.169 27.333 11.935-3.579.131-8.124.073-12.145-1.413-1.688-.869-3.984-2.669-3.574-3.007 10.553 3.944 21.456 2.988 30.586-4.333 2.323-1.81 4.861-4.887 5.594-4.93-1.105 1.661.188.8-.66 2.266 2.316-3.733-1.005-1.521 2.394-6.448l1.256 1.729c-.467-3.098 3.848-6.861 3.41-11.762.99-1.499 1.104 1.612.054 5.061 1.457-3.825.384-4.44.759-7.597.404 1.062.935 2.188 1.208 3.308-.95-3.696.975-6.226 1.45-8.373-.467-.208-1.464 1.634-1.692-2.732.034-1.896.528-.993.718-1.46-.373-.215-1.349-1.668-1.944-4.456.431-.655 1.151 1.698 1.739 1.795-.378-2.217-1.028-3.907-1.053-5.609-1.713-3.579-.606.478-1.996-1.536-1.823-5.687 1.513-1.32 1.738-3.903 2.763 4.003 4.339 10.208 5.062 12.777-.552-3.133-1.443-6.168-2.532-9.105.839.354-1.352-6.446 1.091-1.943-2.609-9.6-11.166-18.569-19.038-22.778.962.881 2.179 1.989 1.743 2.162-3.915-2.331-3.227-2.513-3.787-3.498-3.19-1.297-3.399.104-5.511.003-6.012-3.188-7.171-2.85-12.703-4.848l.252 1.177c-3.984-1.327-4.641.503-8.945.004-.263-.205 1.379-.74 2.73-.937-3.85.508-3.67-.759-7.438.14.929-.651 1.909-1.082 2.9-1.637-3.139.191-7.495 1.828-6.151.339-5.121 2.286-14.218 5.493-19.322 10.28l-.161-1.073c-2.339 2.809-10.2 8.387-10.826 12.022l-.625.146c-1.218 2.06-2.004 4.396-2.97 6.517-1.592 2.713-2.334 1.044-2.107 1.469-3.132 6.349-4.687 11.683-6.03 16.057.958 1.432.022 8.614.385 14.364-1.572 28.394 19.928 55.962 43.43 62.329 3.445 1.23 8.567 1.184 12.924 1.311-5.141-1.471-5.806-.778-10.813-2.525-3.614-1.701-4.405-3.644-6.964-5.864l1.014 1.79c-5.019-1.775-2.918-2.198-7.002-3.491l1.083-1.412c-1.627-.123-4.309-2.74-5.042-4.191l-1.779.07c-2.138-2.638-3.277-4.538-3.194-6.011l-.575 1.024c-.652-1.119-7.865-9.893-4.123-7.85-.696-.637-1.62-1.035-2.622-2.856l.762-.871c-1.802-2.316-3.315-5.287-3.2-6.276.96 1.298 1.627 1.54 2.287 1.763-4.548-11.285-4.803-.622-8.248-11.487l.729-.059c-.559-.842-.898-1.756-1.347-2.652l.316-3.161c-3.274-3.786-.916-16.098-.443-22.851.328-2.746 2.733-5.669 4.563-10.252l-1.114-.192c2.131-3.717 12.167-14.928 16.815-14.351 2.251-2.829-.446-.011-.886-.723 4.945-5.119 6.5-3.617 9.838-4.537 3.6-2.137-3.089.833-1.383-.815 6.223-1.589 4.41-3.613 12.528-4.42.857.487-1.987.752-2.701 1.385 5.185-2.536 16.408-1.959 23.697 1.408 8.458 3.952 17.961 15.638 18.336 26.631l.427.114c-.216 4.37.669 9.424-.865 14.066l1.043-2.201M51.233 70.366l-.29 1.448c1.357 1.845 2.435 3.843 4.167 5.283-1.246-2.434-2.173-3.44-3.877-6.731m3.208-.126c-.718-.795-1.144-1.751-1.62-2.704.456 1.675 1.388 3.114 2.255 4.578l-.635-1.874m56.785-12.343l-.304.762a36.72 36.72 0 01-3.599 11.487 36.107 36.107 0 003.903-12.249M66.353 2.293c1.396-.513 3.433-.281 4.914-.617-1.93.162-3.852.259-5.75.503l.836.114M17.326 28.362c.322 2.979-2.242 4.135.567 2.171 1.506-3.39-.588-.935-.567-2.171M14.025 42.15c.646-1.986.764-3.18 1.011-4.328-1.788 2.285-.823 2.773-1.011 4.328"/></svg>
 
-                                                <div class="text-m font-semibold leading-none">Debian 12 (Bookworm)</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="base_image" id="alpine-option" value="alpine:3.21" class="hidden peer">
-                                        <label for="alpine-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="flex items-center space-x-3">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" id="Alpine-Linux-Logo--Streamline-Logos" height="24" width="24"><desc>Alpine Linux Logo Streamline Icon: https://streamlinehq.com</desc><path fill="#000000" fill-rule="evenodd" d="M6.5 2.5 1 12l5.5 9.5h11L23 12l-5.5 -9.5h-11ZM3.863 13.614l6.243 -6.117 6.244 6.117c-0.361 0.37 -1.12 0.825 -1.744 0.731 -0.844 -0.126 -4.5 -3.965 -4.5 -3.965s-3.656 3.839 -4.5 3.965c-0.623 0.094 -1.383 -0.36 -1.743 -0.73Zm10.63 -5.252 5.457 5.346c-0.316 0.324 -1.312 0.72 -1.857 0.639 -0.737 -0.11 -3.6 -3.278 -3.6 -3.278l-1.367 -1.367 1.368 -1.34Zm-5.512 3.874v2.111c-0.73 -0.092 -1.053 -0.258 -1.49 -0.639l1.49 -1.472Z" clip-rule="evenodd" stroke-width="1"></path></svg>
+                                                    <div class="text-m font-semibold leading-none">Debian 12 (Bookworm)</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="base_image" id="alpine-option" value="alpine:3.21" class="hidden peer">
+                                            <label for="alpine-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="flex items-center space-x-3">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" id="Alpine-Linux-Logo--Streamline-Logos" height="24" width="24"><desc>Alpine Linux Logo Streamline Icon: https://streamlinehq.com</desc><path fill="#000000" fill-rule="evenodd" d="M6.5 2.5 1 12l5.5 9.5h11L23 12l-5.5 -9.5h-11ZM3.863 13.614l6.243 -6.117 6.244 6.117c-0.361 0.37 -1.12 0.825 -1.744 0.731 -0.844 -0.126 -4.5 -3.965 -4.5 -3.965s-3.656 3.839 -4.5 3.965c-0.623 0.094 -1.383 -0.36 -1.743 -0.73Zm10.63 -5.252 5.457 5.346c-0.316 0.324 -1.312 0.72 -1.857 0.639 -0.737 -0.11 -3.6 -3.278 -3.6 -3.278l-1.367 -1.367 1.368 -1.34Zm-5.512 3.874v2.111c-0.73 -0.092 -1.053 -0.258 -1.49 -0.639l1.49 -1.472Z" clip-rule="evenodd" stroke-width="1"></path></svg>
 
-                                                <div class="text-m font-semibold leading-none">Alpine 3.21</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="base_image" id="rocky-option" value="rockylinux:9" class="hidden peer">
-                                        <label for="rocky-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="flex items-center space-x-3">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" width="4096" height="4096" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                    <div class="text-m font-semibold leading-none">Alpine 3.21</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="base_image" id="rocky-option" value="rockylinux:9" class="hidden peer">
+                                            <label for="rocky-option" class="inline-flex items-center justify-between w-full p-2 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="flex items-center space-x-3">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" width="4096" height="4096" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg">
     <path fill-rule="evenodd" clip-rule="evenodd" d="M186.658 127.658C190.119 117.746 192 107.093 192 96C192 42.9807 149.019 0 96 0C42.9807 0 0 42.9807 0 96C0 122.234 10.523 146.011 27.5783 163.338L124.958 65.9584L149 90L186.658 127.658ZM169.122 158.205L124.958 114.042L55.7978 183.202C68.0269 188.849 81.6455 192 96 192C125.288 192 151.514 178.884 169.122 158.205Z" fill="#10B981"/>
     </svg>
 
-                                                <div class="text-m font-semibold leading-none">Rocky Linux 9</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li class="md:col-span-3">
-                                        <input type="radio" name="base_image" id="byoi-option" value="byoi" class="hidden peer">
-                                        <label for="byoi-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block w-full">
-                                                <div class="w-full text-m font-semibold">Bring Your Own Image</div>
-                                                <div class="w-full text-sm">Other versions from the previously listed distributions should work. It's also possible that some derivatives work as long as they use systemd or openrc as init system.</div>
-                                                <input type="text" name="byoi_image" id="byoi" class="w-full mt-2 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="your-repo.com/path:tag"/>
-                                            </div>
-                                        </label>
-                                    </li>
-                                </ul>
+                                                    <div class="text-m font-semibold leading-none">Rocky Linux 9</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li class="md:col-span-3">
+                                            <input type="radio" name="base_image" id="byoi-option" value="byoi" class="hidden peer">
+                                            <label for="byoi-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block w-full">
+                                                    <div class="w-full text-m font-semibold">Bring Your Own Image</div>
+                                                    <div class="w-full text-sm">Other versions from the previously listed distributions should work. It's also possible that some derivatives work as long as they use systemd or openrc as init system.</div>
+                                                    <input type="text" name="byoi_image" id="byoi" class="w-full mt-2 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="your-repo.com/path:tag"/>
+                                                </div>
+                                            </label>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Architecture</h3>
-                                <ul class="grid w-full gap-6 md:grid-cols-2 arch-list">
-                                    <li>
-                                        <input type="radio" name="architecture" id="amd64-option" value="amd64" class="hidden peer" required="" checked>
-                                        <label for="amd64-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">                           
-                                            <div class="block">
-                                                <div class="w-full text-lg font-semibold">AMD64</div>
-                                                <div class="w-full text-sm">For devices using the x86-64 (AMD64) architecture, commonly found in Intel and AMD processors.</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="architecture" id="arm64-option" value="arm64" class="hidden peer">
-                                        <label for="arm64-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block">
-                                                <div class="w-full text-lg font-semibold">ARM64</div>
-                                                <div class="w-full text-sm">For devices using the 64-bit ARM (AArch64) architecture.</br>&nbsp;</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                </ul>
+                            <div class="accordion-section" data-section="architecture">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title">Architecture</span>
+                                        <span class="selected-option">AMD64</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Architecture</h3>
+                                    <ul class="grid w-full gap-6 md:grid-cols-2 arch-list">
+                                        <li>
+                                            <input type="radio" name="architecture" id="amd64-option" value="amd64" class="hidden peer" required="" checked>
+                                            <label for="amd64-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">                           
+                                                <div class="block">
+                                                    <div class="w-full text-lg font-semibold">AMD64</div>
+                                                    <div class="w-full text-sm">For devices using the x86-64 (AMD64) architecture, commonly found in Intel and AMD processors.</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="architecture" id="arm64-option" value="arm64" class="hidden peer">
+                                            <label for="arm64-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block">
+                                                    <div class="w-full text-lg font-semibold">ARM64</div>
+                                                    <div class="w-full text-sm">For devices using the 64-bit ARM (AArch64) architecture.</br>&nbsp;</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Model</h3>
-                                <ul class="grid w-full gap-6 md:grid-cols-2 model-list">
-                                    <li class="model-option arm-only hidden">
-                                        <input type="radio" name="model" id="rpi3-option" value="rpi3" class="hidden peer">
-                                        <label for="rpi3-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="274.072px" height="350px" x="0px" y="0px" version="1.1" viewBox="0 0 274.072 350"><path d="M74.19.005c-1.77.055-3.676.708-5.838 2.415C63.057.377 57.922-.332 53.33 3.826c-7.091-.919-9.395.978-11.141 3.194-1.557-.032-11.648-1.6-16.275 5.303-11.629-1.376-15.305 6.841-11.141 14.502-2.375 3.677-4.836 7.309.718 14.319-1.965 3.904-.747 8.139 3.882 13.265-1.222 5.488 1.18 9.36 5.486 12.378-.806 7.51 6.887 11.876 9.184 13.433.882 4.376 2.72 8.505 11.507 10.789 1.449 6.521 6.73 7.648 11.844 9.017-16.901 9.824-31.396 22.75-31.297 54.466l-2.476 4.417c-19.379 11.785-36.815 49.664-9.55 80.453 1.781 9.637 4.768 16.56 7.427 24.221 3.978 30.873 29.937 45.328 36.783 47.037C68.315 318.26 79 325.512 93.46 330.591c13.631 14.06 28.399 19.417 43.247 19.408.218 0 .439.003.657 0 14.849.009 29.616-5.349 43.248-19.408 14.459-5.079 25.146-12.331 35.179-19.974 6.847-1.709 32.806-16.164 36.783-47.037 2.659-7.661 5.646-14.584 7.427-24.221 27.265-30.791 9.83-68.672-9.551-80.458l-2.479-4.416c.098-31.713-14.396-44.64-31.297-54.466 5.113-1.369 10.395-2.495 11.843-9.017 8.786-2.284 10.626-6.413 11.507-10.789 2.297-1.556 9.99-5.922 9.185-13.433 4.306-3.018 6.708-6.89 5.485-12.378 4.629-5.125 5.848-9.36 3.883-13.265 5.555-7.006 3.09-10.639.719-14.316 4.161-7.662.488-15.878-11.145-14.502-4.627-6.903-14.715-5.335-16.275-5.303-1.746-2.215-4.049-4.113-11.139-3.194-4.593-4.157-9.727-3.448-15.023-1.406-6.289-4.962-10.45-.984-15.203.52-7.614-2.488-9.355.92-13.096 2.308-8.304-1.754-10.827 2.065-14.808 6.098l-4.63-.092c-12.524 7.381-18.746 22.41-20.952 30.135-2.207-7.727-8.414-22.756-20.936-30.135l-4.63.092c-3.986-4.032-6.509-7.852-14.813-6.098C92.907 3.858 91.17.45 83.552 2.938c-3.12-.987-5.989-3.039-9.368-2.934l.006.001z"/><path fill="#BC1142" fill-rule="evenodd" d="M177.65 253.658v-.391c-.119-20.27-18.029-36.609-40.01-36.5-21.979.101-39.709 16.621-39.59 36.891v.39c.11 20.271 18.03 36.61 40.01 36.5 21.981-.1 39.701-16.62 39.59-36.89zm-62.83-104.84c-16.489-10.811-40.26-3.83-53.079 15.57-12.83 19.41-9.86 43.9 6.64 54.7 16.49 10.811 40.25 3.84 53.08-15.57 12.82-19.411 9.85-43.9-6.641-54.7zm44.511-1.961c-16.49 10.811-19.47 35.301-6.64 54.702 12.819 19.41 36.59 26.379 53.08 15.58 16.489-10.811 19.459-35.301 6.64-54.702-12.83-19.41-36.591-26.379-53.08-15.58zM32.392 166.478c-29.54 16.87-24.41 54.411-8.471 67.23 14.49 6.431 26.28-72 8.471-67.23zm205.769-.98c-17.81-4.77-6.011 73.67 8.47 67.231 15.939-12.811 21.07-50.361-8.47-67.231zm-60.5-58.4c-11.32 1.9 54.25 59.16 55.26 46.38 1.04-33.32-24.53-51.57-55.26-46.38zm-84.9-.98c-30.729-5.19-56.289 13.069-55.26 46.39 1.01 12.769 66.58-44.49 55.26-46.39zm44.139-7.77c-18.34-.48-35.939 13.61-35.979 21.78-.05 9.931 14.5 20.101 36.11 20.351 22.06.16 36.14-8.131 36.21-18.381.079-11.61-20.07-23.931-36.341-23.75zm1.121 203.6c-15.891-.39-40.261 6.37-39.961 15.03-.25 5.91 19.131 22.959 38.9 22.109 19.09.33 38.811-16.699 38.55-24.23-.039-7.759-21.499-13.599-37.489-12.909zm-59.06-45.969c-13.061-15.16-30.029-24.201-41.02-17.51-7.351 5.59-8.69 24.619 1.77 43.319 15.51 22.29 37.34 24.521 46.33 19.101 9.5-7.101 4.311-31.201-7.08-44.91zm115.84-4.361c-12.32 14.43-19.17 40.75-10.189 49.22 8.59 6.59 31.649 5.67 48.689-17.97 12.37-15.88 8.221-42.39 1.16-49.431-10.5-8.119-25.561 2.271-39.66 18.181z" clip-rule="evenodd"/><path fill="#75A928" fill-rule="evenodd" d="M49.247 32.48c25.851 8.78 49.17 20.491 68.71 36.6 22.939-10.85 7.12-38.21-4.07-49.07-.57 2.87-1.209 4.68-1.949 5.22-3.641-3.97-6.621-8.03-11.311-11.85-.02 2.24 1.11 4.68-1.68 6.46-2.52-3.44-5.92-6.51-10.44-9.11 2.181 3.81.38 4.96-.79 6.54-3.449-3-6.729-6.04-13.09-8.4 1.74 2.15 4.17 4.25 1.59 6.72-3.55-2.25-7.119-4.5-15.56-6.1 1.899 2.15 5.84 4.3 3.45 6.46-4.461-1.73-9.391-2.99-14.851-3.72 2.61 2.19 4.79 4.32 2.65 6.01-4.771-1.49-11.34-3.49-17.77-1.76l4.07 4.15c.45.56-9.52.43-16.09.53 2.4 3.39 4.84 6.65 6.27 12.47-.65.67-3.91.29-6.98 0 3.15 6.73 8.62 8.43 9.9 11.31-1.93 1.48-4.6 1.1-7.52.09 2.27 4.75 7.03 8 10.79 11.85-.95.681-2.61 1.091-6.54.62 3.47 3.74 7.67 7.17 12.64 10.25-.88 1.04-3.91.99-6.72 1.061 4.51 4.479 10.3 6.799 15.74 9.729-2.71 1.88-4.65 1.44-6.72 1.41 3.839 3.21 10.38 4.88 16.44 6.81-1.149 1.82-2.3 2.32-4.771 2.83 6.42 3.61 15.621 1.96 18.211 3.801-.62 1.81-2.391 2.989-4.51 3.979 10.34.61 38.609-.38 44.029-22.101C101.796 63.46 82.476 49.61 49.247 32.48zm176.309 0c-33.219 17.13-52.539 30.98-63.119 42.79 5.42 21.721 33.689 22.711 44.029 22.101-2.119-.99-3.889-2.17-4.51-3.979 2.59-1.841 11.791-.19 18.211-3.801-2.471-.51-3.621-1.01-4.771-2.83 6.061-1.93 12.602-3.6 16.441-6.81-2.07.03-4.01.47-6.721-1.41 5.439-2.931 11.23-5.25 15.74-9.729-2.811-.07-5.84-.021-6.721-1.061 4.971-3.08 9.17-6.51 12.641-10.25-3.93.471-5.59.061-6.539-.62 3.76-3.851 8.52-7.1 10.789-11.85-2.92 1.01-5.59 1.39-7.52-.09 1.279-2.88 6.75-4.58 9.9-11.31-3.07.29-6.33.67-6.98 0 1.43-5.82 3.879-9.09 6.279-12.47-6.58-.1-16.549.03-16.1-.53l4.07-4.16c-6.42-1.73-13 .28-17.77 1.77-2.141-1.69.039-3.83 2.648-6.01-5.459.73-10.389 1.98-14.85 3.71-2.379-2.15 1.551-4.3 3.451-6.45-8.441 1.6-12.012 3.85-15.561 6.1-2.58-2.47-.15-4.57 1.59-6.72-6.359 2.36-9.641 5.4-13.09 8.4-1.17-1.58-2.971-2.74-.791-6.54-4.52 2.6-7.92 5.67-10.43 9.1-2.799-1.78-1.67-4.21-1.68-6.45-4.699 3.82-7.68 7.88-11.32 11.85-.73-.54-1.379-2.35-1.949-5.22-11.189 10.86-27.01 38.221-4.061 49.07 19.524-16.11 42.844-27.821 68.694-36.601z" clip-rule="evenodd"/></svg>
-                                                <div class="w-full text-lg font-semibold model-title">Raspberry Pi 3</div>
-                                                <div class="w-full text-sm model-description">For Raspberry Pi 3 boards</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li class="model-option arm-only hidden">
-                                        <input type="radio" name="model" id="rpi4-option" value="rpi4" class="hidden peer">
-                                        <label for="rpi4-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="274.072px" height="350px" x="0px" y="0px" version="1.1" viewBox="0 0 274.072 350"><path d="M74.19.005c-1.77.055-3.676.708-5.838 2.415C63.057.377 57.922-.332 53.33 3.826c-7.091-.919-9.395.978-11.141 3.194-1.557-.032-11.648-1.6-16.275 5.303-11.629-1.376-15.305 6.841-11.141 14.502-2.375 3.677-4.836 7.309.718 14.319-1.965 3.904-.747 8.139 3.882 13.265-1.222 5.488 1.18 9.36 5.486 12.378-.806 7.51 6.887 11.876 9.184 13.433.882 4.376 2.72 8.505 11.507 10.789 1.449 6.521 6.73 7.648 11.844 9.017-16.901 9.824-31.396 22.75-31.297 54.466l-2.476 4.417c-19.379 11.785-36.815 49.664-9.55 80.453 1.781 9.637 4.768 16.56 7.427 24.221 3.978 30.873 29.937 45.328 36.783 47.037C68.315 318.26 79 325.512 93.46 330.591c13.631 14.06 28.399 19.417 43.247 19.408.218 0 .439.003.657 0 14.849.009 29.616-5.349 43.248-19.408 14.459-5.079 25.146-12.331 35.179-19.974 6.847-1.709 32.806-16.164 36.783-47.037 2.659-7.661 5.646-14.584 7.427-24.221 27.265-30.791 9.83-68.672-9.551-80.458l-2.479-4.416c.098-31.713-14.396-44.64-31.297-54.466 5.113-1.369 10.395-2.495 11.843-9.017 8.786-2.284 10.626-6.413 11.507-10.789 2.297-1.556 9.99-5.922 9.185-13.433 4.306-3.018 6.708-6.89 5.485-12.378 4.629-5.125 5.848-9.36 3.883-13.265 5.555-7.006 3.09-10.639.719-14.316 4.161-7.662.488-15.878-11.145-14.502-4.627-6.903-14.715-5.335-16.275-5.303-1.746-2.215-4.049-4.113-11.139-3.194-4.593-4.157-9.727-3.448-15.023-1.406-6.289-4.962-10.45-.984-15.203.52-7.614-2.488-9.355.92-13.096 2.308-8.304-1.754-10.827 2.065-14.808 6.098l-4.63-.092c-12.524 7.381-18.746 22.41-20.952 30.135-2.207-7.727-8.414-22.756-20.936-30.135l-4.63.092c-3.986-4.032-6.509-7.852-14.813-6.098C92.907 3.858 91.17.45 83.552 2.938c-3.12-.987-5.989-3.039-9.368-2.934l.006.001z"/><path fill="#BC1142" fill-rule="evenodd" d="M177.65 253.658v-.391c-.119-20.27-18.029-36.609-40.01-36.5-21.979.101-39.709 16.621-39.59 36.891v.39c.11 20.271 18.03 36.61 40.01 36.5 21.981-.1 39.701-16.62 39.59-36.89zm-62.83-104.84c-16.489-10.811-40.26-3.83-53.079 15.57-12.83 19.41-9.86 43.9 6.64 54.7 16.49 10.811 40.25 3.84 53.08-15.57 12.82-19.411 9.85-43.9-6.641-54.7zm44.511-1.961c-16.49 10.811-19.47 35.301-6.64 54.702 12.819 19.41 36.59 26.379 53.08 15.58 16.489-10.811 19.459-35.301 6.64-54.702-12.83-19.41-36.591-26.379-53.08-15.58zM32.392 166.478c-29.54 16.87-24.41 54.411-8.471 67.23 14.49 6.431 26.28-72 8.471-67.23zm205.769-.98c-17.81-4.77-6.011 73.67 8.47 67.231 15.939-12.811 21.07-50.361-8.47-67.231zm-60.5-58.4c-11.32 1.9 54.25 59.16 55.26 46.38 1.04-33.32-24.53-51.57-55.26-46.38zm-84.9-.98c-30.729-5.19-56.289 13.069-55.26 46.39 1.01 12.769 66.58-44.49 55.26-46.39zm44.139-7.77c-18.34-.48-35.939 13.61-35.979 21.78-.05 9.931 14.5 20.101 36.11 20.351 22.06.16 36.14-8.131 36.21-18.381.079-11.61-20.07-23.931-36.341-23.75zm1.121 203.6c-15.891-.39-40.261 6.37-39.961 15.03-.25 5.91 19.131 22.959 38.9 22.109 19.09.33 38.811-16.699 38.55-24.23-.039-7.759-21.499-13.599-37.489-12.909zm-59.06-45.969c-13.061-15.16-30.029-24.201-41.02-17.51-7.351 5.59-8.69 24.619 1.77 43.319 15.51 22.29 37.34 24.521 46.33 19.101 9.5-7.101 4.311-31.201-7.08-44.91zm115.84-4.361c-12.32 14.43-19.17 40.75-10.189 49.22 8.59 6.59 31.649 5.67 48.689-17.97 12.37-15.88 8.221-42.39 1.16-49.431-10.5-8.119-25.561 2.271-39.66 18.181z" clip-rule="evenodd"/><path fill="#75A928" fill-rule="evenodd" d="M49.247 32.48c25.851 8.78 49.17 20.491 68.71 36.6 22.939-10.85 7.12-38.21-4.07-49.07-.57 2.87-1.209 4.68-1.949 5.22-3.641-3.97-6.621-8.03-11.311-11.85-.02 2.24 1.11 4.68-1.68 6.46-2.52-3.44-5.92-6.51-10.44-9.11 2.181 3.81.38 4.96-.79 6.54-3.449-3-6.729-6.04-13.09-8.4 1.74 2.15 4.17 4.25 1.59 6.72-3.55-2.25-7.119-4.5-15.56-6.1 1.899 2.15 5.84 4.3 3.45 6.46-4.461-1.73-9.391-2.99-14.851-3.72 2.61 2.19 4.79 4.32 2.65 6.01-4.771-1.49-11.34-3.49-17.77-1.76l4.07 4.15c.45.56-9.52.43-16.09.53 2.4 3.39 4.84 6.65 6.27 12.47-.65.67-3.91.29-6.98 0 3.15 6.73 8.62 8.43 9.9 11.31-1.93 1.48-4.6 1.1-7.52.09 2.27 4.75 7.03 8 10.79 11.85-.95.681-2.61 1.091-6.54.62 3.47 3.74 7.67 7.17 12.64 10.25-.88 1.04-3.91.99-6.72 1.061 4.51 4.479 10.3 6.799 15.74 9.729-2.71 1.88-4.65 1.44-6.72 1.41 3.839 3.21 10.38 4.88 16.44 6.81-1.149 1.82-2.3 2.32-4.771 2.83 6.42 3.61 15.621 1.96 18.211 3.801-.62 1.81-2.391 2.989-4.51 3.979 10.34.61 38.609-.38 44.029-22.101C101.796 63.46 82.476 49.61 49.247 32.48zm176.309 0c-33.219 17.13-52.539 30.98-63.119 42.79 5.42 21.721 33.689 22.711 44.029 22.101-2.119-.99-3.889-2.17-4.51-3.979 2.59-1.841 11.791-.19 18.211-3.801-2.471-.51-3.621-1.01-4.771-2.83 6.061-1.93 12.602-3.6 16.441-6.81-2.07.03-4.01.47-6.721-1.41 5.439-2.931 11.23-5.25 15.74-9.729-2.811-.07-5.84-.021-6.721-1.061 4.971-3.08 9.17-6.51 12.641-10.25-3.93.471-5.59.061-6.539-.62 3.76-3.851 8.52-7.1 10.789-11.85-2.92 1.01-5.59 1.39-7.52-.09 1.279-2.88 6.75-4.58 9.9-11.31-3.07.29-6.33.67-6.98 0 1.43-5.82 3.879-9.09 6.279-12.47-6.58-.1-16.549.03-16.1-.53l4.07-4.16c-6.42-1.73-13 .28-17.77 1.77-2.141-1.69.039-3.83 2.648-6.01-5.459.73-10.389 1.98-14.85 3.71-2.379-2.15 1.551-4.3 3.451-6.45-8.441 1.6-12.012 3.85-15.561 6.1-2.58-2.47-.15-4.57 1.59-6.72-6.359 2.36-9.641 5.4-13.09 8.4-1.17-1.58-2.971-2.74-.791-6.54-4.52 2.6-7.92 5.67-10.43 9.1-2.799-1.78-1.67-4.21-1.68-6.45-4.699 3.82-7.68 7.88-11.32 11.85-.73-.54-1.379-2.35-1.949-5.22-11.189 10.86-27.01 38.221-4.061 49.07 19.524-16.11 42.844-27.821 68.694-36.601z" clip-rule="evenodd"/></svg>
-                                                <div class="w-full text-lg font-semibold model-title">Raspberry Pi 4</div>
-                                                <div class="w-full text-sm model-description">For Raspberry Pi 4 boards</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li class="model-option arm-only hidden">
-                                        <input type="radio" name="model" id="nvidia-agx-orin-option" value="nvidia-agx-orin" class="hidden peer">
-                                        <label for="nvidia-agx-orin-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="100" height="100" viewBox="0 0 48 48">
-                    <rect width="29" height="32" x="18" y="8" fill="#76b900"></rect><path fill="#fafafa" d="M18,17.68c0.52-0.05,1.05-0.09,1.57-0.07c4.95,0,7.9,3.85,7.9,3.85l-4.03,3.39 c-1.8-3.02-2.43-4.35-5.44-4.71V17.68z M18,28.72c0.73,0.24,1.52,0.36,2.3,0.36c5.88,0,11.35-7.6,11.35-7.6s-5.07-6.91-12.81-6.66 c-0.28,0-0.56,0.02-0.84,0.03v-2.3l0.84-0.05c10.76-0.37,17.78,8.82,17.78,8.82s-8.05,9.8-16.44,9.8c-0.73,0-1.47-0.07-2.18-0.19 V28.72z M19.95,36.09c-0.66,0-1.32-0.03-1.95-0.1v-2.44c0.59,0.07,1.22,0.12,1.81,0.12c7.82,0,13.47-3.99,18.94-8.7 c0.91,0.73,4.62,2.49,5.39,3.26C38.94,32.59,26.82,36.09,19.95,36.09z"></path><path fill="#76b900" d="M18,28.717v2.232c-7.219-1.29-9.225-8.806-9.225-8.806s3.47-3.836,9.225-4.464v2.441h-0.017 c-3.017-0.366-5.388,2.459-5.388,2.459S13.937,27.339,18,28.717"></path><path fill="#76b900" d="M5.183,21.829c0,0,4.272-6.313,12.834-6.975v-2.302c-9.486,0.767-17.682,8.789-17.682,8.789 S4.974,34.768,18,35.989v-2.441C8.444,32.361,5.183,21.829,5.183,21.829z"></path>
-                    </svg>
-                                                <div class="w-full text-lg font-semibold model-title">Nvidia AGX Orin</div>
-                                                <div class="w-full text-sm model-description">For Nvidia AGX Orin boards.</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li class="model-option">
-                                        <input type="radio" name="model" id="generic-option" value="generic" class="hidden peer" required="" checked>
-                                        <label for="generic-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">                           
-                                            <div class="block">
-                                                <div class="w-full text-lg font-semibold model-title">Generic</div>
-                                                <div class="w-full text-sm model-description">For generic boards and virtualization.</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                </ul>
+                            <div class="accordion-section" data-section="model">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title">Model</span>
+                                        <span class="selected-option">Generic</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Model</h3>
+                                    <ul class="grid w-full gap-6 md:grid-cols-2 model-list">
+                                        <li class="model-option arm-only hidden">
+                                            <input type="radio" name="model" id="rpi3-option" value="rpi3" class="hidden peer">
+                                            <label for="rpi3-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="274.072px" height="350px" x="0px" y="0px" version="1.1" viewBox="0 0 274.072 350"><path d="M74.19.005c-1.77.055-3.676.708-5.838 2.415C63.057.377 57.922-.332 53.33 3.826c-7.091-.919-9.395.978-11.141 3.194-1.557-.032-11.648-1.6-16.275 5.303-11.629-1.376-15.305 6.841-11.141 14.502-2.375 3.677-4.836 7.309.718 14.319-1.965 3.904-.747 8.139 3.882 13.265-1.222 5.488 1.18 9.36 5.486 12.378-.806 7.51 6.887 11.876 9.184 13.433.882 4.376 2.72 8.505 11.507 10.789 1.449 6.521 6.73 7.648 11.844 9.017-16.901 9.824-31.396 22.75-31.297 54.466l-2.476 4.417c-19.379 11.785-36.815 49.664-9.55 80.453 1.781 9.637 4.768 16.56 7.427 24.221 3.978 30.873 29.937 45.328 36.783 47.037C68.315 318.26 79 325.512 93.46 330.591c13.631 14.06 28.399 19.417 43.247 19.408.218 0 .439.003.657 0 14.849.009 29.616-5.349 43.248-19.408 14.459-5.079 25.146-12.331 35.179-19.974 6.847-1.709 32.806-16.164 36.783-47.037 2.659-7.661 5.646-14.584 7.427-24.221 27.265-30.791 9.83-68.672-9.551-80.458l-2.479-4.416c.098-31.713-14.396-44.64-31.297-54.466 5.113-1.369 10.395-2.495 11.843-9.017 8.786-2.284 10.626-6.413 11.507-10.789 2.297-1.556 9.99-5.922 9.185-13.433 4.306-3.018 6.708-6.89 5.485-12.378 4.629-5.125 5.848-9.36 3.883-13.265 5.555-7.006 3.09-10.639.719-14.316 4.161-7.662.488-15.878-11.145-14.502-4.627-6.903-14.715-5.335-16.275-5.303-1.746-2.215-4.049-4.113-11.139-3.194-4.593-4.157-9.727-3.448-15.023-1.406-6.289-4.962-10.45-.984-15.203.52-7.614-2.488-9.355.92-13.096 2.308-8.304-1.754-10.827 2.065-14.808 6.098l-4.63-.092c-12.524 7.381-18.746 22.41-20.952 30.135-2.207-7.727-8.414-22.756-20.936-30.135l-4.63.092c-3.986-4.032-6.509-7.852-14.813-6.098C92.907 3.858 91.17.45 83.552 2.938c-3.12-.987-5.989-3.039-9.368-2.934l.006.001z"/><path fill="#BC1142" fill-rule="evenodd" d="M177.65 253.658v-.391c-.119-20.27-18.029-36.609-40.01-36.5-21.979.101-39.709 16.621-39.59 36.891v.39c.11 20.271 18.03 36.61 40.01 36.5 21.981-.1 39.701-16.62 39.59-36.89zm-62.83-104.84c-16.489-10.811-40.26-3.83-53.079 15.57-12.83 19.41-9.86 43.9 6.64 54.7 16.49 10.811 40.25 3.84 53.08-15.57 12.82-19.411 9.85-43.9-6.641-54.7zm44.511-1.961c-16.49 10.811-19.47 35.301-6.64 54.702 12.819 19.41 36.59 26.379 53.08 15.58 16.489-10.811 19.459-35.301 6.64-54.702-12.83-19.41-36.591-26.379-53.08-15.58zM32.392 166.478c-29.54 16.87-24.41 54.411-8.471 67.23 14.49 6.431 26.28-72 8.471-67.23zm205.769-.98c-17.81-4.77-6.011 73.67 8.47 67.231 15.939-12.811 21.07-50.361-8.47-67.231zm-60.5-58.4c-11.32 1.9 54.25 59.16 55.26 46.38 1.04-33.32-24.53-51.57-55.26-46.38zm-84.9-.98c-30.729-5.19-56.289 13.069-55.26 46.39 1.01 12.769 66.58-44.49 55.26-46.39zm44.139-7.77c-18.34-.48-35.939 13.61-35.979 21.78-.05 9.931 14.5 20.101 36.11 20.351 22.06.16 36.14-8.131 36.21-18.381.079-11.61-20.07-23.931-36.341-23.75zm1.121 203.6c-15.891-.39-40.261 6.37-39.961 15.03-.25 5.91 19.131 22.959 38.9 22.109 19.09.33 38.811-16.699 38.55-24.23-.039-7.759-21.499-13.599-37.489-12.909zm-59.06-45.969c-13.061-15.16-30.029-24.201-41.02-17.51-7.351 5.59-8.69 24.619 1.77 43.319 15.51 22.29 37.34 24.521 46.33 19.101 9.5-7.101 4.311-31.201-7.08-44.91zm115.84-4.361c-12.32 14.43-19.17 40.75-10.189 49.22 8.59 6.59 31.649 5.67 48.689-17.97 12.37-15.88 8.221-42.39 1.16-49.431-10.5-8.119-25.561 2.271-39.66 18.181z" clip-rule="evenodd"/><path fill="#75A928" fill-rule="evenodd" d="M49.247 32.48c25.851 8.78 49.17 20.491 68.71 36.6 22.939-10.85 7.12-38.21-4.07-49.07-.57 2.87-1.209 4.68-1.949 5.22-3.641-3.97-6.621-8.03-11.311-11.85-.02 2.24 1.11 4.68-1.68 6.46-2.52-3.44-5.92-6.51-10.44-9.11 2.181 3.81.38 4.96-.79 6.54-3.449-3-6.729-6.04-13.09-8.4 1.74 2.15 4.17 4.25 1.59 6.72-3.55-2.25-7.119-4.5-15.56-6.1 1.899 2.15 5.84 4.3 3.45 6.46-4.461-1.73-9.391-2.99-14.851-3.72 2.61 2.19 4.79 4.32 2.65 6.01-4.771-1.49-11.34-3.49-17.77-1.76l4.07 4.15c.45.56-9.52.43-16.09.53 2.4 3.39 4.84 6.65 6.27 12.47-.65.67-3.91.29-6.98 0 3.15 6.73 8.62 8.43 9.9 11.31-1.93 1.48-4.6 1.1-7.52.09 2.27 4.75 7.03 8 10.79 11.85-.95.681-2.61 1.091-6.54.62 3.47 3.74 7.67 7.17 12.64 10.25-.88 1.04-3.91.99-6.72 1.061 4.51 4.479 10.3 6.799 15.74 9.729-2.71 1.88-4.65 1.44-6.72 1.41 3.839 3.21 10.38 4.88 16.44 6.81-1.149 1.82-2.3 2.32-4.771 2.83 6.42 3.61 15.621 1.96 18.211 3.801-.62 1.81-2.391 2.989-4.51 3.979 10.34.61 38.609-.38 44.029-22.101C101.796 63.46 82.476 49.61 49.247 32.48zm176.309 0c-33.219 17.13-52.539 30.98-63.119 42.79 5.42 21.721 33.689 22.711 44.029 22.101-2.119-.99-3.889-2.17-4.51-3.979 2.59-1.841 11.791-.19 18.211-3.801-2.471-.51-3.621-1.01-4.771-2.83 6.061-1.93 12.602-3.6 16.441-6.81-2.07.03-4.01.47-6.721-1.41 5.439-2.931 11.23-5.25 15.74-9.729-2.811-.07-5.84-.021-6.721-1.061 4.971-3.08 9.17-6.51 12.641-10.25-3.93.471-5.59.061-6.539-.62 3.76-3.851 8.52-7.1 10.789-11.85-2.92 1.01-5.59 1.39-7.52-.09 1.279-2.88 6.75-4.58 9.9-11.31-3.07.29-6.33.67-6.98 0 1.43-5.82 3.879-9.09 6.279-12.47-6.58-.1-16.549.03-16.1-.53l4.07-4.16c-6.42-1.73-13 .28-17.77 1.77-2.141-1.69.039-3.83 2.648-6.01-5.459.73-10.389 1.98-14.85 3.71-2.379-2.15 1.551-4.3 3.451-6.45-8.441 1.6-12.012 3.85-15.561 6.1-2.58-2.47-.15-4.57 1.59-6.72-6.359 2.36-9.641 5.4-13.09 8.4-1.17-1.58-2.971-2.74-.791-6.54-4.52 2.6-7.92 5.67-10.43 9.1-2.799-1.78-1.67-4.21-1.68-6.45-4.699 3.82-7.68 7.88-11.32 11.85-.73-.54-1.379-2.35-1.949-5.22-11.189 10.86-27.01 38.221-4.061 49.07 19.524-16.11 42.844-27.821 68.694-36.601z" clip-rule="evenodd"/></svg>
+                                                    <div class="w-full text-lg font-semibold model-title">Raspberry Pi 3</div>
+                                                    <div class="w-full text-sm model-description">For Raspberry Pi 3 boards</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li class="model-option arm-only hidden">
+                                            <input type="radio" name="model" id="rpi4-option" value="rpi4" class="hidden peer">
+                                            <label for="rpi4-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500" xmlns="http://www.w3.org/2000/svg" xml:space="preserve" width="274.072px" height="350px" x="0px" y="0px" version="1.1" viewBox="0 0 274.072 350"><path d="M74.19.005c-1.77.055-3.676.708-5.838 2.415C63.057.377 57.922-.332 53.33 3.826c-7.091-.919-9.395.978-11.141 3.194-1.557-.032-11.648-1.6-16.275 5.303-11.629-1.376-15.305 6.841-11.141 14.502-2.375 3.677-4.836 7.309.718 14.319-1.965 3.904-.747 8.139 3.882 13.265-1.222 5.488 1.18 9.36 5.486 12.378-.806 7.51 6.887 11.876 9.184 13.433.882 4.376 2.72 8.505 11.507 10.789 1.449 6.521 6.73 7.648 11.844 9.017-16.901 9.824-31.396 22.75-31.297 54.466l-2.476 4.417c-19.379 11.785-36.815 49.664-9.55 80.453 1.781 9.637 4.768 16.56 7.427 24.221 3.978 30.873 29.937 45.328 36.783 47.037C68.315 318.26 79 325.512 93.46 330.591c13.631 14.06 28.399 19.417 43.247 19.408.218 0 .439.003.657 0 14.849.009 29.616-5.349 43.248-19.408 14.459-5.079 25.146-12.331 35.179-19.974 6.847-1.709 32.806-16.164 36.783-47.037 2.659-7.661 5.646-14.584 7.427-24.221 27.265-30.791 9.83-68.672-9.551-80.458l-2.479-4.416c.098-31.713-14.396-44.64-31.297-54.466 5.113-1.369 10.395-2.495 11.843-9.017 8.786-2.284 10.626-6.413 11.507-10.789 2.297-1.556 9.99-5.922 9.185-13.433 4.306-3.018 6.708-6.89 5.485-12.378 4.629-5.125 5.848-9.36 3.883-13.265 5.555-7.006 3.09-10.639.719-14.316 4.161-7.662.488-15.878-11.145-14.502-4.627-6.903-14.715-5.335-16.275-5.303-1.746-2.215-4.049-4.113-11.139-3.194-4.593-4.157-9.727-3.448-15.023-1.406-6.289-4.962-10.45-.984-15.203.52-7.614-2.488-9.355.92-13.096 2.308-8.304-1.754-10.827 2.065-14.808 6.098l-4.63-.092c-12.524 7.381-18.746 22.41-20.952 30.135-2.207-7.727-8.414-22.756-20.936-30.135l-4.63.092c-3.986-4.032-6.509-7.852-14.813-6.098C92.907 3.858 91.17.45 83.552 2.938c-3.12-.987-5.989-3.039-9.368-2.934l.006.001z"/><path fill="#BC1142" fill-rule="evenodd" d="M177.65 253.658v-.391c-.119-20.27-18.029-36.609-40.01-36.5-21.979.101-39.709 16.621-39.59 36.891v.39c.11 20.271 18.03 36.61 40.01 36.5 21.981-.1 39.701-16.62 39.59-36.89zm-62.83-104.84c-16.489-10.811-40.26-3.83-53.079 15.57-12.83 19.41-9.86 43.9 6.64 54.7 16.49 10.811 40.25 3.84 53.08-15.57 12.82-19.411 9.85-43.9-6.641-54.7zm44.511-1.961c-16.49 10.811-19.47 35.301-6.64 54.702 12.819 19.41 36.59 26.379 53.08 15.58 16.489-10.811 19.459-35.301 6.64-54.702-12.83-19.41-36.591-26.379-53.08-15.58zM32.392 166.478c-29.54 16.87-24.41 54.411-8.471 67.23 14.49 6.431 26.28-72 8.471-67.23zm205.769-.98c-17.81-4.77-6.011 73.67 8.47 67.231 15.939-12.811 21.07-50.361-8.47-67.231zm-60.5-58.4c-11.32 1.9 54.25 59.16 55.26 46.38 1.04-33.32-24.53-51.57-55.26-46.38zm-84.9-.98c-30.729-5.19-56.289 13.069-55.26 46.39 1.01 12.769 66.58-44.49 55.26-46.39zm44.139-7.77c-18.34-.48-35.939 13.61-35.979 21.78-.05 9.931 14.5 20.101 36.11 20.351 22.06.16 36.14-8.131 36.21-18.381.079-11.61-20.07-23.931-36.341-23.75zm1.121 203.6c-15.891-.39-40.261 6.37-39.961 15.03-.25 5.91 19.131 22.959 38.9 22.109 19.09.33 38.811-16.699 38.55-24.23-.039-7.759-21.499-13.599-37.489-12.909zm-59.06-45.969c-13.061-15.16-30.029-24.201-41.02-17.51-7.351 5.59-8.69 24.619 1.77 43.319 15.51 22.29 37.34 24.521 46.33 19.101 9.5-7.101 4.311-31.201-7.08-44.91zm115.84-4.361c-12.32 14.43-19.17 40.75-10.189 49.22 8.59 6.59 31.649 5.67 48.689-17.97 12.37-15.88 8.221-42.39 1.16-49.431-10.5-8.119-25.561 2.271-39.66 18.181z" clip-rule="evenodd"/><path fill="#75A928" fill-rule="evenodd" d="M49.247 32.48c25.851 8.78 49.17 20.491 68.71 36.6 22.939-10.85 7.12-38.21-4.07-49.07-.57 2.87-1.209 4.68-1.949 5.22-3.641-3.97-6.621-8.03-11.311-11.85-.02 2.24 1.11 4.68-1.68 6.46-2.52-3.44-5.92-6.51-10.44-9.11 2.181 3.81.38 4.96-.79 6.54-3.449-3-6.729-6.04-13.09-8.4 1.74 2.15 4.17 4.25 1.59 6.72-3.55-2.25-7.119-4.5-15.56-6.1 1.899 2.15 5.84 4.3 3.45 6.46-4.461-1.73-9.391-2.99-14.851-3.72 2.61 2.19 4.79 4.32 2.65 6.01-4.771-1.49-11.34-3.49-17.77-1.76l4.07 4.15c.45.56-9.52.43-16.09.53 2.4 3.39 4.84 6.65 6.27 12.47-.65.67-3.91.29-6.98 0 3.15 6.73 8.62 8.43 9.9 11.31-1.93 1.48-4.6 1.1-7.52.09 2.27 4.75 7.03 8 10.79 11.85-.95.681-2.61 1.091-6.54.62 3.47 3.74 7.67 7.17 12.64 10.25-.88 1.04-3.91.99-6.72 1.061 4.51 4.479 10.3 6.799 15.74 9.729-2.71 1.88-4.65 1.44-6.72 1.41 3.839 3.21 10.38 4.88 16.44 6.81-1.149 1.82-2.3 2.32-4.771 2.83 6.42 3.61 15.621 1.96 18.211 3.801-.62 1.81-2.391 2.989-4.51 3.979 10.34.61 38.609-.38 44.029-22.101C101.796 63.46 82.476 49.61 49.247 32.48zm176.309 0c-33.219 17.13-52.539 30.98-63.119 42.79 5.42 21.721 33.689 22.711 44.029 22.101-2.119-.99-3.889-2.17-4.51-3.979 2.59-1.841 11.791-.19 18.211-3.801-2.471-.51-3.621-1.01-4.771-2.83 6.061-1.93 12.602-3.6 16.441-6.81-2.07.03-4.01.47-6.721-1.41 5.439-2.931 11.23-5.25 15.74-9.729-2.811-.07-5.84-.021-6.721-1.061 4.971-3.08 9.17-6.51 12.641-10.25-3.93.471-5.59.061-6.539-.62 3.76-3.851 8.52-7.1 10.789-11.85-2.92 1.01-5.59 1.39-7.52-.09 1.279-2.88 6.75-4.58 9.9-11.31-3.07.29-6.33.67-6.98 0 1.43-5.82 3.879-9.09 6.279-12.47-6.58-.1-16.549.03-16.1-.53l4.07-4.16c-6.42-1.73-13 .28-17.77 1.77-2.141-1.69.039-3.83 2.648-6.01-5.459.73-10.389 1.98-14.85 3.71-2.379-2.15 1.551-4.3 3.451-6.45-8.441 1.6-12.012 3.85-15.561 6.1-2.58-2.47-.15-4.57 1.59-6.72-6.359 2.36-9.641 5.4-13.09 8.4-1.17-1.58-2.971-2.74-.791-6.54-4.52 2.6-7.92 5.67-10.43 9.1-2.799-1.78-1.67-4.21-1.68-6.45-4.699 3.82-7.68 7.88-11.32 11.85-.73-.54-1.379-2.35-1.949-5.22-11.189 10.86-27.01 38.221-4.061 49.07 19.524-16.11 42.844-27.821 68.694-36.601z" clip-rule="evenodd"/></svg>
+                                                    <div class="w-full text-lg font-semibold model-title">Raspberry Pi 4</div>
+                                                    <div class="w-full text-sm model-description">For Raspberry Pi 4 boards</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li class="model-option arm-only hidden">
+                                            <input type="radio" name="model" id="nvidia-agx-orin-option" value="nvidia-agx-orin" class="hidden peer">
+                                            <label for="nvidia-agx-orin-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500" xmlns="http://www.w3.org/2000/svg" x="0px" y="0px" width="100" height="100" viewBox="0 0 48 48">
+    <rect width="29" height="32" x="18" y="8" fill="#76b900"></rect><path fill="#fafafa" d="M18,17.68c0.52-0.05,1.05-0.09,1.57-0.07c4.95,0,7.9,3.85,7.9,3.85l-4.03,3.39 c-1.8-3.02-2.43-4.35-5.44-4.71V17.68z M18,28.72c0.73,0.24,1.52,0.36,2.3,0.36c5.88,0,11.35-7.6,11.35-7.6s-5.07-6.91-12.81-6.66 c-0.28,0-0.56,0.02-0.84,0.03v-2.3l0.84-0.05c10.76-0.37,17.78,8.82,17.78,8.82s-8.05,9.8-16.44,9.8c-0.73,0-1.47-0.07-2.18-0.19 V28.72z M19.95,36.09c-0.66,0-1.32-0.03-1.95-0.1v-2.44c0.59,0.07,1.22,0.12,1.81,0.12c7.82,0,13.47-3.99,18.94-8.7 c0.91,0.73,4.62,2.49,5.39,3.26C38.94,32.59,26.82,36.09,19.95,36.09z"></path><path fill="#76b900" d="M18,28.717v2.232c-7.219-1.29-9.225-8.806-9.225-8.806s3.47-3.836,9.225-4.464v2.441h-0.017 c-3.017-0.366-5.388,2.459-5.388,2.459S13.937,27.339,18,28.717"></path><path fill="#76b900" d="M5.183,21.829c0,0,4.272-6.313,12.834-6.975v-2.302c-9.486,0.767-17.682,8.789-17.682,8.789 S4.974,34.768,18,35.989v-2.441C8.444,32.361,5.183,21.829,5.183,21.829z"></path>
+    </svg>
+                                                    <div class="w-full text-lg font-semibold model-title">Nvidia AGX Orin</div>
+                                                    <div class="w-full text-sm model-description">For Nvidia AGX Orin boards.</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li class="model-option">
+                                            <input type="radio" name="model" id="generic-option" value="generic" class="hidden peer" required="" checked>
+                                            <label for="generic-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">                           
+                                                <div class="block">
+                                                    <div class="w-full text-lg font-semibold model-title">Generic</div>
+                                                    <div class="w-full text-sm model-description">For generic boards and virtualization.</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
-                            <div>
-                                <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Variant</h3>
-                                <ul class="grid w-full gap-6 md:grid-cols-2 variant-list">
-                                    <li>
-                                        <input type="radio" name="variant" id="core-option" value="core" class="hidden peer" checked>
-                                        <label for="core-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500" width="137" height="137" viewBox="0 0 137 137" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.18907e-05 1 68.502 18.8594)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 -0.500028 3.18907e-05 1 47.0088 31.2695)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499972 47.0088 6.45312)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(3.19859e-05 1 0.86601 0.500028 25.5139 43.6797)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499973 0.866041 0.499972 25.5139 68.4922)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-3.17834e-05 1 0.866009 -0.500028 4.02271 56.0898)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 68.5042 93.3125)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 47.011 105.723)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 47.011 80.9062)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.4985 118.141)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9917 105.73)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9917 130.547)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 132.979 56.0859)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 111.486 68.4961)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 111.486 43.6797)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.5002 43.6875)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9934 31.2773)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9934 56.0938)" fill="#fb9e70"></rect></svg>
-                                                <div class="w-full text-lg font-semibold">Core</div>
-                                                <div class="w-full text-sm">Immutable, A/B Upgrades and cloud-init based configuration.</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="variant" id="standard-option" value="standard" class="hidden peer">
-                                        <label for="standard-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="block">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 122.88 118.78" style="enable-background:new 0 0 122.88 118.78" xml:space="preserve"><style type="text/css">.st0{fill:#326DE6;} .st1{fill:#FFFFFF;}</style><g><path class="st0" d="M112.13,26.42c-0.7-2.25-2.39-4.08-4.5-5.2L64.78,0.7C63.65,0.14,62.39,0,61.26,0s-2.39,0-3.51,0.28 L14.89,20.94c-2.11,0.98-3.65,2.81-4.22,5.2L0.14,72.37c-0.42,2.39,0.14,4.78,1.55,6.75l29.65,36.67c1.69,1.69,4.08,2.81,6.46,2.95 h47.21c2.53,0.28,4.92-0.84,6.46-2.95l29.65-36.67c1.41-1.97,1.97-4.36,1.69-6.75L112.13,26.42L112.13,26.42L112.13,26.42z"/><path class="st1" d="M105.59,69.45L105.59,69.45c-0.14,0-0.28,0-0.28-0.14c0-0.14-0.28-0.14-0.56-0.14 c-0.56-0.14-1.12-0.14-1.69-0.14c-0.28,0-0.56,0-0.84-0.14l-0.14,0c-1.55-0.14-3.23-0.42-4.78-0.84c-0.42-0.14-0.84-0.56-0.98-0.98 c0.14,0,0,0,0,0l0,0l-1.12-0.28c0.56-4.08,0.28-8.29-0.56-12.37c-0.98-4.08-2.67-8.01-4.92-11.52l0.84-0.84l0,0v-0.14 c0-0.42,0.14-0.98,0.42-1.26c1.26-1.12,2.53-1.97,3.93-2.81l0,0c0.28-0.14,0.56-0.28,0.84-0.42c0.56-0.28,0.98-0.56,1.55-0.84 c0.14-0.14,0.28-0.14,0.42-0.28s0-0.14,0-0.28l0,0c1.26-0.98,1.55-2.67,0.56-3.93c-0.42-0.56-1.26-0.98-1.97-0.98 c-0.7,0-1.41,0.28-1.97,0.7l0,0l-0.14,0.14c-0.14,0.14-0.28,0.28-0.42,0.28c-0.42,0.42-0.84,0.84-1.12,1.26 c-0.14,0.28-0.42,0.42-0.56,0.56l0,0c-0.98,1.12-2.25,2.25-3.51,3.09c-0.28,0.14-0.56,0.28-0.84,0.28c-0.14,0-0.42,0-0.56-0.14 l-0.14,0l-1.12,0.7c-1.12-1.12-2.39-2.25-3.51-3.37c-5.2-4.08-11.66-6.6-18.27-7.31l-0.14-1.12l0,0v0.14 c-0.42-0.28-0.56-0.7-0.7-1.12c0-1.55,0-3.09,0.28-4.78v-0.14c0-0.28,0.14-0.56,0.14-0.84c0.14-0.56,0.14-1.12,0.28-1.69V16.9l0,0 c0.14-1.41-0.98-2.81-2.39-2.95c-0.84-0.14-1.69,0.28-2.39,0.98c-0.56,0.56-0.84,1.26-0.84,1.97l0,0v0.7 c0,0.56,0.14,1.12,0.28,1.69c0.14,0.28,0.14,0.56,0.14,0.84v0.14c0.28,1.55,0.28,3.09,0.28,4.78c-0.14,0.42-0.28,0.84-0.7,1.12 v0.28l0,0l-0.14,1.12c-1.55,0.14-3.09,0.42-4.78,0.7c-6.6,1.41-12.65,4.92-17.28,9.84l-0.84-0.56l-0.14,0 c-0.14,0-0.28,0.14-0.56,0.14c-0.28,0-0.56-0.14-0.84-0.28c-1.26-0.98-2.53-2.11-3.51-3.23l0,0c-0.14-0.28-0.42-0.42-0.56-0.56 c-0.42-0.42-0.7-0.84-1.12-1.26c-0.14-0.14-0.28-0.14-0.42-0.28c-0.14-0.14-0.14-0.14-0.14-0.14l0,0c-0.56-0.42-1.26-0.7-1.97-0.7 c-0.84,0-1.55,0.28-1.97,0.98c-0.84,1.26-0.56,2.95,0.56,3.93l0,0c0.14,0,0.14,0.14,0.14,0.14s0.28,0.28,0.42,0.28 c0.42,0.28,0.98,0.56,1.55,0.84c0.28,0.14,0.56,0.28,0.84,0.42l0,0c1.41,0.84,2.81,1.69,3.93,2.81c0.28,0.28,0.56,0.84,0.42,1.26 v-0.14l0,0l0.84,0.84c-0.14,0.28-0.28,0.42-0.42,0.7c-4.36,6.89-6.18,15.04-4.92,23.05l-1.12,0.28l0,0c0,0.14-0.14,0.14-0.14,0.14 c-0.14,0.42-0.56,0.7-0.98,0.98c-1.55,0.42-3.09,0.7-4.78,0.84l0,0c-0.28,0-0.56,0-0.84,0.14c-0.56,0-1.12,0.14-1.69,0.14 c-0.14,0-0.28,0.14-0.56,0.14c-0.14,0-0.14,0-0.28,0.14l0,0c-1.55,0.28-2.53,1.69-2.25,3.23l0,0c0.28,1.26,1.55,2.11,2.81,1.97 c0.28,0,0.42,0,0.7-0.14l0,0c0.14,0,0.14,0,0.14-0.14c0-0.14,0.42,0,0.56,0c0.56-0.14,1.12-0.42,1.55-0.56 c0.28-0.14,0.56-0.28,0.84-0.28h0.14c1.55-0.56,2.95-0.98,4.64-1.26h0.14c0.42,0,0.84,0.14,1.12,0.42c0.14,0,0.14,0.14,0.14,0.14 l0,0l1.26-0.14c2.11,6.46,6.04,12.23,11.52,16.44c1.26,0.98,2.39,1.83,3.79,2.53l-0.7,0.98l0,0c0,0.14,0.14,0.14,0.14,0.14 c0.28,0.42,0.28,0.98,0.14,1.41c-0.56,1.41-1.41,2.81-2.25,4.08v0.14c-0.14,0.28-0.28,0.42-0.56,0.7 c-0.28,0.28-0.56,0.84-0.98,1.41c-0.14,0.14-0.14,0.28-0.28,0.42c0,0,0,0.14-0.14,0.14l0,0c-0.7,1.41-0.14,3.09,1.12,3.79 c0.28,0.14,0.7,0.28,0.98,0.28c1.12,0,2.11-0.7,2.67-1.69l0,0c0,0,0-0.14,0.14-0.14c0-0.14,0.14-0.28,0.28-0.42 c0.14-0.56,0.42-0.98,0.56-1.55l0.28-0.84l0,0c0.42-1.55,1.12-2.95,1.83-4.36c0.28-0.42,0.7-0.7,1.12-0.84c0.14,0,0.14,0,0.14-0.14 l0,0l0.56-1.12c3.93,1.55,8.01,2.25,12.22,2.25c2.53,0,5.06-0.28,7.59-0.98c1.55-0.28,3.09-0.84,4.5-1.26l0.56,0.98l0,0 c0.14,0,0.14,0,0.14,0.14c0.42,0.14,0.84,0.42,1.12,0.84c0.7,1.41,1.41,2.81,1.83,4.36v0.14l0.28,0.84 c0.14,0.56,0.28,1.12,0.56,1.55c0.14,0.14,0.14,0.28,0.28,0.42c0,0,0,0.14,0.14,0.14l0,0c0.56,0.98,1.55,1.69,2.67,1.69 c0.42,0,0.7-0.14,1.12-0.28c0.56-0.28,1.12-0.84,1.26-1.55c0.14-0.7,0.14-1.41-0.14-2.11l0,0c0-0.14-0.14-0.14-0.14-0.14 c0-0.14-0.14-0.28-0.28-0.42c-0.28-0.56-0.56-0.98-0.98-1.41c-0.14-0.28-0.28-0.42-0.56-0.7v-0.28c-0.98-1.26-1.69-2.67-2.25-4.08 c-0.14-0.42-0.14-0.98,0.14-1.41c0-0.14,0.14-0.14,0.14-0.14l0,0l-0.42-1.12c7.17-4.36,12.65-11.1,15.18-19.11l1.12,0.14l0,0 c0.14,0,0.14-0.14,0.14-0.14c0.28-0.28,0.7-0.42,1.12-0.42l0.14,0c1.55,0.28,3.09,0.7,4.5,1.26h0.14c0.28,0.14,0.56,0.28,0.84,0.28 c0.56,0.28,0.98,0.56,1.55,0.7c0.14,0,0.28,0.14,0.56,0.14c0.14,0,0.14,0,0.28,0.14l0,0c0.28,0.14,0.42,0.14,0.7,0.14 c1.26,0,2.39-0.84,2.81-1.97C107.98,70.86,106.85,69.73,105.59,69.45L105.59,69.45L105.59,69.45z M64.98,65.09l-3.79,1.83 l-3.79-1.83l-0.98-4.08l2.67-3.37h4.22l2.67,3.37L64.98,65.09L64.98,65.09z M87.88,55.96c0.7,2.95,0.84,5.9,0.56,8.85l-13.35-3.79 l0,0c-1.26-0.28-1.97-1.55-1.69-2.81c0.14-0.42,0.28-0.7,0.56-0.98l10.54-9.56C86.05,50.2,87.18,53.01,87.88,55.96L87.88,55.96 L87.88,55.96z M80.29,42.47l-11.52,8.15c-0.98,0.56-2.39,0.42-3.09-0.56c-0.28-0.28-0.42-0.56-0.42-0.98l-0.84-14.19 C70.6,35.59,76.08,38.26,80.29,42.47L80.29,42.47L80.29,42.47L80.29,42.47z M54.86,35.3l2.81-0.56l-0.7,14.05l0,0 c0,1.26-1.12,2.25-2.39,2.25c-0.42,0-0.7-0.14-1.12-0.28l-11.66-8.29C45.44,38.96,49.94,36.43,54.86,35.3L54.86,35.3z M37.72,47.67 l10.4,9.27l0,0c0.98,0.84,1.12,2.25,0.28,3.23c-0.28,0.42-0.56,0.56-1.12,0.7l-13.63,3.93C33.22,58.91,34.62,52.87,37.72,47.67 L37.72,47.67z M35.33,71.42l13.91-2.39c1.12,0,2.25,0.7,2.39,1.83c0.14,0.42,0.14,0.98-0.14,1.41l0,0l-5.34,12.93 C41.23,81.96,37.29,77.04,35.33,71.42L35.33,71.42z M67.23,88.84c-1.97,0.42-3.93,0.7-6.04,0.7c-2.95,0-6.04-0.56-8.85-1.41 l6.89-12.51c0.7-0.84,1.83-1.12,2.81-0.56c0.42,0.28,0.7,0.56,1.12,0.98l0,0l6.75,12.23C69.05,88.42,68.21,88.56,67.23,88.84 L67.23,88.84L67.23,88.84z M84.37,76.62c-2.11,3.37-5.06,6.32-8.43,8.43l-5.48-13.21c-0.28-1.12,0.28-2.25,1.26-2.67 c0.42-0.14,0.84-0.28,1.26-0.28l14.05,2.39C86.34,73.24,85.49,75.07,84.37,76.62L84.37,76.62z"/></g></svg>
-                                                <div class="w-full text-lg font-semibold">Standard</div>
-                                                <div class="w-full text-sm">Everything in Core plus Kubernetes, K9s and EdgeVPN included.</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                </ul>
+                            <div class="accordion-section" data-section="variant">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title">Variant</span>
+                                        <span class="selected-option">Core</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Variant</h3>
+                                    <ul class="grid w-full gap-6 md:grid-cols-2 variant-list">
+                                        <li>
+                                            <input type="radio" name="variant" id="core-option" value="core" class="hidden peer" checked>
+                                            <label for="core-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500" width="137" height="137" viewBox="0 0 137 137" fill="none" xmlns="http://www.w3.org/2000/svg"><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.18907e-05 1 68.502 18.8594)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 -0.500028 3.18907e-05 1 47.0088 31.2695)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499972 47.0088 6.45312)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(3.19859e-05 1 0.86601 0.500028 25.5139 43.6797)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499973 0.866041 0.499972 25.5139 68.4922)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-3.17834e-05 1 0.866009 -0.500028 4.02271 56.0898)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 68.5042 93.3125)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 47.011 105.723)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 47.011 80.9062)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.4985 118.141)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9917 105.73)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9917 130.547)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.86601 0.500028 -3.19781e-05 1 132.979 56.0859)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866009 -0.500028 3.18033e-05 1 111.486 68.4961)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(-0.866041 0.499972 0.866041 0.499973 111.486 43.6797)" fill="#fb9e70"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 -0.500028 3.18907e-05 -1 68.5002 43.6875)" fill="#ee5007"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.86601 0.500028 -3.18907e-05 -1 89.9934 31.2773)" fill="#ff7442"></rect><rect width="24.8171" height="24.8171" transform="matrix(0.866041 -0.499972 -0.866041 -0.499972 89.9934 56.0938)" fill="#fb9e70"></rect></svg>
+                                                    <div class="w-full text-lg font-semibold">Core</div>
+                                                    <div class="w-full text-sm">Immutable, A/B Upgrades and cloud-init based configuration.</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="variant" id="standard-option" value="standard" class="hidden peer">
+                                            <label for="standard-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="block">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500" version="1.1" id="Layer_1" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" x="0px" y="0px" viewBox="0 0 122.88 118.78" style="enable-background:new 0 0 122.88 118.78" xml:space="preserve"><style type="text/css">.st0{fill:#326DE6;} .st1{fill:#FFFFFF;}</style><g><path class="st0" d="M112.13,26.42c-0.7-2.25-2.39-4.08-4.5-5.2L64.78,0.7C63.65,0.14,62.39,0,61.26,0s-2.39,0-3.51,0.28 L14.89,20.94c-2.11,0.98-3.65,2.81-4.22,5.2L0.14,72.37c-0.42,2.39,0.14,4.78,1.55,6.75l29.65,36.67c1.69,1.69,4.08,2.81,6.46,2.95 h47.21c2.53,0.28,4.92-0.84,6.46-2.95l29.65-36.67c1.41-1.97,1.97-4.36,1.69-6.75L112.13,26.42L112.13,26.42L112.13,26.42z"/><path class="st1" d="M105.59,69.45L105.59,69.45c-0.14,0-0.28,0-0.28-0.14c0-0.14-0.28-0.14-0.56-0.14 c-0.56-0.14-1.12-0.14-1.69-0.14c-0.28,0-0.56,0-0.84-0.14l-0.14,0c-1.55-0.14-3.23-0.42-4.78-0.84c-0.42-0.14-0.84-0.56-0.98-0.98 c0.14,0,0,0,0,0l0,0l-1.12-0.28c0.56-4.08,0.28-8.29-0.56-12.37c-0.98-4.08-2.67-8.01-4.92-11.52l0.84-0.84l0,0v-0.14 c0-0.42,0.14-0.98,0.42-1.26c1.26-1.12,2.53-1.97,3.93-2.81l0,0c0.28-0.14,0.56-0.28,0.84-0.42c0.56-0.28,0.98-0.56,1.55-0.84 c0.14-0.14,0.28-0.14,0.42-0.28s0-0.14,0-0.28l0,0c1.26-0.98,1.55-2.67,0.56-3.93c-0.42-0.56-1.26-0.98-1.97-0.98 c-0.7,0-1.41,0.28-1.97,0.7l0,0l-0.14,0.14c-0.14,0.14-0.28,0.28-0.42,0.28c-0.42,0.42-0.84,0.84-1.12,1.26 c-0.14,0.28-0.42,0.42-0.56,0.56l0,0c-0.98,1.12-2.25,2.25-3.51,3.09c-0.28,0.14-0.56,0.28-0.84,0.28c-0.14,0-0.42,0-0.56-0.14 l-0.14,0l-1.12,0.7c-1.12-1.12-2.39-2.25-3.51-3.37c-5.2-4.08-11.66-6.6-18.27-7.31l-0.14-1.12l0,0v0.14 c-0.42-0.28-0.56-0.7-0.7-1.12c0-1.55,0-3.09,0.28-4.78v-0.14c0-0.28,0.14-0.56,0.14-0.84c0.14-0.56,0.14-1.12,0.28-1.69V16.9l0,0 c0.14-1.41-0.98-2.81-2.39-2.95c-0.84-0.14-1.69,0.28-2.39,0.98c-0.56,0.56-0.84,1.26-0.84,1.97l0,0v0.7 c0,0.56,0.14,1.12,0.28,1.69c0.14,0.28,0.14,0.56,0.14,0.84v0.14c0.28,1.55,0.28,3.09,0.28,4.78c-0.14,0.42-0.28,0.84-0.7,1.12 v0.28l0,0l-0.14,1.12c-1.55,0.14-3.09,0.42-4.78,0.7c-6.6,1.41-12.65,4.92-17.28,9.84l-0.84-0.56l-0.14,0 c-0.14,0-0.28,0.14-0.56,0.14c-0.28,0-0.56-0.14-0.84-0.28c-1.26-0.98-2.53-2.11-3.51-3.23l0,0c-0.14-0.28-0.42-0.42-0.56-0.56 c-0.42-0.42-0.7-0.84-1.12-1.26c-0.14-0.14-0.28-0.14-0.42-0.28c-0.14-0.14-0.14-0.14-0.14-0.14l0,0c-0.56-0.42-1.26-0.7-1.97-0.7 c-0.84,0-1.55,0.28-1.97,0.98c-0.84,1.26-0.56,2.95,0.56,3.93l0,0c0.14,0,0.14,0.14,0.14,0.14s0.28,0.28,0.42,0.28 c0.42,0.28,0.98,0.56,1.55,0.84c0.28,0.14,0.56,0.28,0.84,0.42l0,0c1.41,0.84,2.81,1.69,3.93,2.81c0.28,0.28,0.56,0.84,0.42,1.26 v-0.14l0,0l0.84,0.84c-0.14,0.28-0.28,0.42-0.42,0.7c-4.36,6.89-6.18,15.04-4.92,23.05l-1.12,0.28l0,0c0,0.14-0.14,0.14-0.14,0.14 c-0.14,0.42-0.56,0.7-0.98,0.98c-1.55,0.42-3.09,0.7-4.78,0.84l0,0c-0.28,0-0.56,0-0.84,0.14c-0.56,0-1.12,0.14-1.69,0.14 c-0.14,0-0.28,0.14-0.56,0.14c-0.14,0-0.14,0-0.28,0.14l0,0c-1.55,0.28-2.53,1.69-2.25,3.23l0,0c0.28,1.26,1.55,2.11,2.81,1.97 c0.28,0,0.42,0,0.7-0.14l0,0c0.14,0,0.14,0,0.14-0.14c0-0.14,0.42,0,0.56,0c0.56-0.14,1.12-0.42,1.55-0.56 c0.28-0.14,0.56-0.28,0.84-0.28h0.14c1.55-0.56,2.95-0.98,4.64-1.26h0.14c0.42,0,0.84,0.14,1.12,0.42c0.14,0,0.14,0.14,0.14,0.14 l0,0l1.26-0.14c2.11,6.46,6.04,12.23,11.52,16.44c1.26,0.98,2.39,1.83,3.79,2.53l-0.7,0.98l0,0c0,0.14,0.14,0.14,0.14,0.14 c0.28,0.42,0.28,0.98,0.14,1.41c-0.56,1.41-1.41,2.81-2.25,4.08v0.14c-0.14,0.28-0.28,0.42-0.56,0.7 c-0.28,0.28-0.56,0.84-0.98,1.41c-0.14,0.14-0.14,0.28-0.28,0.42c0,0,0,0.14-0.14,0.14l0,0c-0.7,1.41-0.14,3.09,1.12,3.79 c0.28,0.14,0.7,0.28,0.98,0.28c1.12,0,2.11-0.7,2.67-1.69l0,0c0,0,0-0.14,0.14-0.14c0-0.14,0.14-0.28,0.28-0.42 c0.14-0.56,0.42-0.98,0.56-1.55l0.28-0.84l0,0c0.42-1.55,1.12-2.95,1.83-4.36c0.28-0.42,0.7-0.7,1.12-0.84c0.14,0,0.14,0,0.14-0.14 l0,0l0.56-1.12c3.93,1.55,8.01,2.25,12.22,2.25c2.53,0,5.06-0.28,7.59-0.98c1.55-0.28,3.09-0.84,4.5-1.26l0.56,0.98l0,0 c0.14,0,0.14,0,0.14,0.14c0.42,0.14,0.84,0.42,1.12,0.84c0.7,1.41,1.41,2.81,1.83,4.36v0.14l0.28,0.84 c0.14,0.56,0.28,1.12,0.56,1.55c0.14,0.14,0.14,0.28,0.28,0.42c0,0,0,0.14,0.14,0.14l0,0c0.56,0.98,1.55,1.69,2.67,1.69 c0.42,0,0.7-0.14,1.12-0.28c0.56-0.28,1.12-0.84,1.26-1.55c0.14-0.7,0.14-1.41-0.14-2.11l0,0c0-0.14-0.14-0.14-0.14-0.14 c0-0.14-0.14-0.28-0.28-0.42c-0.28-0.56-0.56-0.98-0.98-1.41c-0.14-0.28-0.28-0.42-0.56-0.7v-0.28c-0.98-1.26-1.69-2.67-2.25-4.08 c-0.14-0.42-0.14-0.98,0.14-1.41c0-0.14,0.14-0.14,0.14-0.14l0,0l-0.42-1.12c7.17-4.36,12.65-11.1,15.18-19.11l1.12,0.14l0,0 c0.14,0,0.14-0.14,0.14-0.14c0.28-0.28,0.7-0.42,1.12-0.42l0.14,0c1.55,0.28,3.09,0.7,4.5,1.26h0.14c0.28,0.14,0.56,0.28,0.84,0.28 c0.56,0.28,0.98,0.56,1.55,0.7c0.14,0,0.28,0.14,0.56,0.14c0.14,0,0.14,0,0.28,0.14l0,0c0.28,0.14,0.42,0.14,0.7,0.14 c1.26,0,2.39-0.84,2.81-1.97C107.98,70.86,106.85,69.73,105.59,69.45L105.59,69.45L105.59,69.45z M64.98,65.09l-3.79,1.83 l-3.79-1.83l-0.98-4.08l2.67-3.37h4.22l2.67,3.37L64.98,65.09L64.98,65.09z M87.88,55.96c0.7,2.95,0.84,5.9,0.56,8.85l-13.35-3.79 l0,0c-1.26-0.28-1.97-1.55-1.69-2.81c0.14-0.42,0.28-0.7,0.56-0.98l10.54-9.56C86.05,50.2,87.18,53.01,87.88,55.96L87.88,55.96 L87.88,55.96z M80.29,42.47l-11.52,8.15c-0.98,0.56-2.39,0.42-3.09-0.56c-0.28-0.28-0.42-0.56-0.42-0.98l-0.84-14.19 C70.6,35.59,76.08,38.26,80.29,42.47L80.29,42.47L80.29,42.47L80.29,42.47z M54.86,35.3l2.81-0.56l-0.7,14.05l0,0 c0,1.26-1.12,2.25-2.39,2.25c-0.42,0-0.7-0.14-1.12-0.28l-11.66-8.29C45.44,38.96,49.94,36.43,54.86,35.3L54.86,35.3z M37.72,47.67 l10.4,9.27l0,0c0.98,0.84,1.12,2.25,0.28,3.23c-0.28,0.42-0.56,0.56-1.12,0.7l-13.63,3.93C33.22,58.91,34.62,52.87,37.72,47.67 L37.72,47.67z M35.33,71.42l13.91-2.39c1.12,0,2.25,0.7,2.39,1.83c0.14,0.42,0.14,0.98-0.14,1.41l0,0l-5.34,12.93 C41.23,81.96,37.29,77.04,35.33,71.42L35.33,71.42z M67.23,88.84c-1.97,0.42-3.93,0.7-6.04,0.7c-2.95,0-6.04-0.56-8.85-1.41 l6.89-12.51c0.7-0.84,1.83-1.12,2.81-0.56c0.42,0.28,0.7,0.56,1.12,0.98l0,0l6.75,12.23C69.05,88.42,68.21,88.56,67.23,88.84 L67.23,88.84L67.23,88.84z M84.37,76.62c-2.11,3.37-5.06,6.32-8.43,8.43l-5.48-13.21c-0.28-1.12,0.28-2.25,1.26-2.67 c0.42-0.14,0.84-0.28,1.26-0.28l14.05,2.39C86.34,73.24,85.49,75.07,84.37,76.62L84.37,76.62z"/></g></svg>
+                                                    <div class="w-full text-lg font-semibold">Standard</div>
+                                                    <div class="w-full text-sm">Everything in Core plus Kubernetes, K9s and EdgeVPN included.</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
-                            <div class="kubernetes_fields hidden">
-                                <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Kubernetes Distribution</h3>
-                                <ul class="grid w-full gap-6 md:grid-cols-2 k8s-list">
-                                    <li>
-                                        <input type="radio" name="kubernetes_distribution" id="k3s-option" value="k3s" class="hidden peer">
-                                        <label for="k3s-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
-                                            <div class="flex items-center space-x-3">
-                                                <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M114.434 11.875H13.547C6.074 11.898.023 17.949 0 25.422v77.719c.023 7.472 6.074 13.523 13.547 13.546h100.887c7.472-.023 13.523-6.074 13.546-13.546V25.42c-.023-7.472-6.074-13.523-13.546-13.546zM54.078 88.094l-24.621 14.308a6.592 6.592 0 01-9.008-2.386 6.59 6.59 0 012.387-9.008l24.621-14.309a6.587 6.587 0 019.012 2.383 6.593 6.593 0 01-2.39 9.012zm9.688-21.801h-.032a6.59 6.59 0 01-6.558-6.617l.125-28.364a6.587 6.587 0 016.586-6.562h.031a6.59 6.59 0 016.559 6.617l-.125 28.367a6.588 6.588 0 01-6.586 6.559zm43.562 33.703a6.585 6.585 0 01-9 2.41L73.672 88.172a6.589 6.589 0 116.59-11.41l24.656 14.234a6.586 6.586 0 012.41 9zm0 0" fill="#ffc519"/></svg>
-                                                <div class="w-full text-lg font-semibold">K3s</div>
-                                            </div>
-                                        </label>
-                                    </li>
-                                    <li>
-                                        <input type="radio" name="kubernetes_distribution" id="k0s-option" value="k0s" class="hidden peer">
-                                        <label for="k0s-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                            <div class="accordion-section kubernetes_fields hidden" data-section="kubernetes">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title">Kubernetes Distribution</span>
+                                        <span class="selected-option">K3s</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Kubernetes Distribution</h3>
+                                    <ul class="grid w-full gap-6 md:grid-cols-2 k8s-list">
+                                        <li>
+                                            <input type="radio" name="kubernetes_distribution" id="k3s-option" value="k3s" class="hidden peer">
+                                            <label for="k3s-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
+                                                <div class="flex items-center space-x-3">
+                                                    <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128"><path d="M114.434 11.875H13.547C6.074 11.898.023 17.949 0 25.422v77.719c.023 7.472 6.074 13.523 13.547 13.546h100.887c7.472-.023 13.523-6.074 13.546-13.546V25.42c-.023-7.472-6.074-13.523-13.546-13.546zM54.078 88.094l-24.621 14.308a6.592 6.592 0 01-9.008-2.386 6.59 6.59 0 012.387-9.008l24.621-14.309a6.587 6.587 0 019.012 2.383 6.593 6.593 0 01-2.39 9.012zm9.688-21.801h-.032a6.59 6.59 0 01-6.558-6.617l.125-28.364a6.587 6.587 0 016.586-6.562h.031a6.59 6.59 0 016.559 6.617l-.125 28.367a6.588 6.588 0 01-6.586 6.559zm43.562 33.703a6.585 6.585 0 01-9 2.41L73.672 88.172a6.589 6.589 0 116.59-11.41l24.656 14.234a6.586 6.586 0 012.41 9zm0 0" fill="#ffc519"/></svg>
+                                                    <div class="w-full text-lg font-semibold">K3s</div>
+                                                </div>
+                                            </label>
+                                        </li>
+                                        <li>
+                                            <input type="radio" name="kubernetes_distribution" id="k0s-option" value="k0s" class="hidden peer">
+                                            <label for="k0s-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
                                             <div class="flex items-center space-x-3">
                                                 <svg class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" xmlns="http://www.w3.org/2000/svg" width="55" height="55" viewBox="0 0 55 55" fill="none">
                                                     <path d="M34.6981 15.881V29.4409L20.8118 39.8652V26.3123L34.6981 15.881Z" fill="black"/>
@@ -279,17 +413,40 @@
                                                 </svg>
                                                 <div class="w-full text-lg font-semibold">K0s</div>
                                             </div>
-                                        </label>
-                                    </li>
-                                </ul>
+                                            </label>
+                                        </li>
+                                    </ul>
+                                </div>
                             </div>
-                            <div class="kubernetes_fields hidden">
-                                <label for="kubernetes_release" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"><span id="kubernetes_distro_name">K3s</span> Release</label>
-                                <input type="text" name="kubernetes_release" id="kubernetes_release" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v1.32.0"/>
+                            <div class="accordion-section kubernetes_fields hidden" data-section="kubernetes-release">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title"><span id="kubernetes_distro_name">K3s</span> Release</span>
+                                        <span class="selected-option">Latest</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <label for="kubernetes_release" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"><span id="kubernetes_distro_name">K3s</span> Release</label>
+                                    <input type="text" name="kubernetes_release" id="kubernetes_release" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v1.32.0"/>
+                                </div>
                             </div>
-                            <div>
-                                <label for="version" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Version</label>
-                                <input type="text" name="version" id="version" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v0.1.0-alpha" required/>
+                            <div class="accordion-section" data-section="version">
+                                <div class="accordion-header">
+                                    <div>
+                                        <span class="section-title">Version</span>
+                                        <span class="selected-option">Not set</span>
+                                    </div>
+                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
+                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
+                                    </svg>
+                                </div>
+                                <div class="accordion-content">
+                                    <label for="version" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Version</label>
+                                    <input type="text" name="version" id="version" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v0.1.0-alpha" required/>
+                                </div>
                             </div>
                             <button id="submit-button" type="submit" class="w-full px-5 py-3 text-base font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 sm:w-auto dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Build</button>
                         </form>
