@@ -26,24 +26,15 @@ export function initializeAccordion() {
                     const baseImageLabel = document.querySelector(`label[for="${value}-option"]`);
                     header.textContent = baseImageLabel ? baseImageLabel.querySelector('.text-m').textContent : value;
                     break;
-                case 'architecture':
-                    header.textContent = value === 'amd64' ? 'AMD64' : 'ARM64';
-                    break;
                 case 'model':
                     const modelLabel = document.querySelector(`label[for="${value}-option"]`);
                     header.textContent = modelLabel ? modelLabel.querySelector('.model-title').textContent : value;
                     break;
-                case 'variant':
-                    header.textContent = value === 'core' ? 'Core' : 'Standard';
-                    break;
-                case 'kubernetes':
-                    header.textContent = value === 'k3s' ? 'K3s' : 'K0s';
-                    break;
                 case 'kubernetes-release':
                     header.textContent = value || 'Latest';
                     break;
-                case 'version':
-                    header.textContent = value || 'Not set';
+                default:
+                    header.textContent = value;
                     break;
             }
         }
