@@ -22,27 +22,44 @@ export function initializeAccordion() {
             // e.g., "ubuntu:24.04" -> "ubuntu", "opensuse/leap:15.6" -> "opensuse"
             const baseValue = value.split(':')[0].split('/')[0];
             const baseImageLabel = document.querySelector(`label[for="${baseValue}-option"]`);
+            // Get the SVG icon from the selected option
+            let selectedIcon = null;
+            if (baseImageLabel) {
+                selectedIcon = baseImageLabel.querySelector('svg')?.cloneNode(true);
+            }
+            // Clear existing content and add icon if available
+            header.innerHTML = '';
+            header.style.display = 'flex';
+            header.style.alignItems = 'center';
+            header.style.gap = '0.5rem';
+            if (selectedIcon) {
+                selectedIcon.classList.add('w-4', 'h-4');
+                header.appendChild(selectedIcon);
+            }
+            // Add text content
+            const textSpan = document.createElement('span');
             switch(section.dataset.section) {
                 case 'base-image':
                     if (value === 'byoi') {
                         // For BYOI, show the text input value or a default message
                         const byoiInput = document.getElementById('byoi');
-                        header.textContent = byoiInput.value || 'Not set';
+                        textSpan.textContent = byoiInput.value || 'Not set';
                     } else {
-                        header.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
+                        textSpan.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
                     }
                     break;
                 case 'model':
                     const modelLabel = document.querySelector(`label[for="${value}-option"]`);
-                    header.textContent = modelLabel ? modelLabel.querySelector('.model-title').textContent : value;
+                    textSpan.textContent = modelLabel ? modelLabel.querySelector('.model-title').textContent : value;
                     break;
                 case 'kubernetes-release':
-                    header.textContent = value || 'Latest';
+                    textSpan.textContent = value || 'Latest';
                     break;
                 default:
-                    header.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
+                    textSpan.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
                     break;
             }
+            header.appendChild(textSpan);
         }
     }
     // Add change event listeners to all radio inputs
@@ -62,7 +79,6 @@ export function initializeAccordion() {
             }
         });
     });
-
     // Add change event listeners to text inputs
     document.querySelectorAll('input[type="text"]').forEach(input => {
         input.addEventListener('input', (e) => {
@@ -80,7 +96,6 @@ export function initializeAccordion() {
             }
         });
     });
-
     // Add special handling for BYOI text input
     const byoiInput = document.getElementById('byoi');
     if (byoiInput) {
@@ -98,4 +113,4 @@ export function initializeAccordion() {
             });
         });
     }
-} 
+}
