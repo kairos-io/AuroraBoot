@@ -1,6 +1,10 @@
 // Accordion functionality
 export function initializeAccordion() {
     const accordionSections = document.querySelectorAll('.accordion-section');
+    // Remove active class from all sections on initialization
+    accordionSections.forEach(section => {
+        section.classList.remove('active');
+    });
     accordionSections.forEach(section => {
         const header = section.querySelector('.accordion-header');
         header.addEventListener('click', () => {
@@ -16,7 +20,7 @@ export function initializeAccordion() {
     });
     // Update selected options in accordion headers
     function updateSelectedOption(section, value) {
-        const header = section.querySelector('.selected-option');
+        const header = section.querySelector('[data-js="selected-option"]');
         if (header) {
             // Extract base name before colon and before first slash
             // e.g., "ubuntu:24.04" -> "ubuntu", "opensuse/leap:15.6" -> "opensuse"
@@ -25,7 +29,15 @@ export function initializeAccordion() {
             // Get the SVG icon from the selected option
             let selectedIcon = null;
             if (baseImageLabel) {
-                selectedIcon = baseImageLabel.querySelector('svg')?.cloneNode(true);
+                // For kubernetes section, look for the icon inside the icon container
+                if (section.dataset.section === 'kubernetes') {
+                    const iconContainer = baseImageLabel.querySelector('[data-js="option-container"]');
+                    if (iconContainer) {
+                        selectedIcon = iconContainer.querySelector('svg')?.cloneNode(true);
+                    }
+                } else {
+                    selectedIcon = baseImageLabel.querySelector('svg')?.cloneNode(true);
+                }
             }
             // Clear existing content and add icon if available
             header.innerHTML = '';
@@ -45,23 +57,35 @@ export function initializeAccordion() {
                         const byoiInput = document.getElementById('byoi');
                         textSpan.textContent = byoiInput.value || 'Not set';
                     } else {
-                        textSpan.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
+                        textSpan.textContent = baseImageLabel ? baseImageLabel.querySelector('[data-js="option-label"]').textContent : value;
                     }
                     break;
                 case 'model':
                     const modelLabel = document.querySelector(`label[for="${value}-option"]`);
-                    textSpan.textContent = modelLabel ? modelLabel.querySelector('.model-title').textContent : value;
+                    textSpan.textContent = modelLabel ? modelLabel.querySelector('[data-js="model-title"]').textContent : value;
+                    break;
+                case 'kubernetes':
+                    const k8sLabel = document.querySelector(`label[for="${value}-option"]`);
+                    textSpan.textContent = k8sLabel ? k8sLabel.querySelector('[data-js="option-label"]').textContent : value;
                     break;
                 case 'kubernetes-release':
                     textSpan.textContent = value || 'Latest';
                     break;
                 default:
-                    textSpan.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
+                    textSpan.textContent = baseImageLabel ? baseImageLabel.querySelector('[data-js="option-label"]').textContent : value;
                     break;
             }
             header.appendChild(textSpan);
         }
     }
+    // Initialize icons for all sections, including hidden ones
+    accordionSections.forEach(section => {
+        const selectedRadio = section.querySelector('input[type="radio"]:checked');
+        if (selectedRadio) {
+            const value = selectedRadio.id === 'byoi-option' ? 'byoi' : selectedRadio.value;
+            updateSelectedOption(section, value);
+        }
+    });
     // Add change event listeners to all radio inputs
     document.querySelectorAll('input[type="radio"]').forEach(radio => {
         radio.addEventListener('change', (e) => {
@@ -74,6 +98,23 @@ export function initializeAccordion() {
                     // Only collapse if the change wasn't triggered by clicking the text input
                     if (!e.byoiTextInput) {
                         section.classList.remove('active');
+                    }
+                    // Special handling for variant selection
+                    if (section.dataset.section === 'variant' && value === 'standard') {
+                        // Show kubernetes fields
+                        document.querySelectorAll('.kubernetes_fields').forEach(field => {
+                            field.classList.remove('hidden');
+                            // Initialize kubernetes distribution selection if it exists
+                            const k8sRadio = field.querySelector('input[type="radio"]:checked');
+                            if (k8sRadio) {
+                                updateSelectedOption(field, k8sRadio.value);
+                            }
+                        });
+                    } else if (section.dataset.section === 'variant' && value === 'core') {
+                        // Hide kubernetes fields
+                        document.querySelectorAll('.kubernetes_fields').forEach(field => {
+                            field.classList.add('hidden');
+                        });
                     }
                 }
             }
