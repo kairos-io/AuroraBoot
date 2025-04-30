@@ -95,14 +95,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   });
 
-  // Add event listener for version input
-  const versionInput = document.getElementById('version');
-  const versionSection = versionInput.closest('.accordion-section');
-  versionInput.addEventListener('input', function() {
-    const selectedOption = versionSection.querySelector('.selected-option');
-    selectedOption.textContent = this.value || 'Not set';
-  });
-
   const logsToggle = document.getElementById('logs-toggle');
   const logs = document.getElementById('output');
   logsToggle.addEventListener('change', function() {

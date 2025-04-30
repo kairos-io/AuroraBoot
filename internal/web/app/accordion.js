@@ -84,6 +84,14 @@ export function initializeAccordion() {
         if (selectedRadio) {
             const value = selectedRadio.id === 'byoi-option' ? 'byoi' : selectedRadio.value;
             updateSelectedOption(section, value);
+
+            // Initialize kubernetes distro name for the default selection
+            if (section.dataset.section === 'kubernetes') {
+                const distroName = value.toUpperCase();
+                document.querySelectorAll('#kubernetes_distro_name').forEach(span => {
+                    span.textContent = distroName;
+                });
+            }
         }
     });
     // Add change event listeners to all radio inputs
@@ -99,6 +107,15 @@ export function initializeAccordion() {
                     if (!e.byoiTextInput) {
                         section.classList.remove('active');
                     }
+
+                    // Update kubernetes distro name when distribution changes
+                    if (section.dataset.section === 'kubernetes') {
+                        const distroName = value.toUpperCase();
+                        document.querySelectorAll('#kubernetes_distro_name').forEach(span => {
+                            span.textContent = distroName;
+                        });
+                    }
+
                     // Special handling for variant selection
                     if (section.dataset.section === 'variant' && value === 'standard') {
                         // Show kubernetes fields
@@ -130,6 +147,12 @@ export function initializeAccordion() {
                     const byoiRadio = document.getElementById('byoi-option');
                     if (byoiRadio.checked) {
                         updateSelectedOption(section, 'byoi');
+                    }
+                } else if (e.target.id === 'version') {
+                    // For version input, update the selected option directly
+                    const header = section.querySelector('[data-js="selected-option"]');
+                    if (header) {
+                        header.textContent = e.target.value || 'Not set';
                     }
                 } else {
                     updateSelectedOption(section, e.target.value);
