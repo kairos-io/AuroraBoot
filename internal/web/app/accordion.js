@@ -21,10 +21,13 @@ export function initializeAccordion() {
     function updateSelectedOption(section, value) {
         const header = section.querySelector('.selected-option');
         if (header) {
+            // Extract base name before colon and before first slash
+            // e.g., "ubuntu:24.04" -> "ubuntu", "opensuse/leap:15.6" -> "opensuse"
+            const baseValue = value.split(':')[0].split('/')[0];
+            const baseImageLabel = document.querySelector(`label[for="${baseValue}-option"]`);
             switch(section.dataset.section) {
                 case 'base-image':
-                    const baseImageLabel = document.querySelector(`label[for="${value}-option"]`);
-                    header.textContent = baseImageLabel ? baseImageLabel.querySelector('.text-m').textContent : value;
+                    header.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
                     break;
                 case 'model':
                     const modelLabel = document.querySelector(`label[for="${value}-option"]`);
@@ -34,7 +37,7 @@ export function initializeAccordion() {
                     header.textContent = value || 'Latest';
                     break;
                 default:
-                    header.textContent = value;
+                    header.textContent = baseImageLabel ? baseImageLabel.querySelector('.option-label').textContent : value;
                     break;
             }
         }
