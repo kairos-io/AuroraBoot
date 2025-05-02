@@ -1,12 +1,9 @@
 import { initializeAccordion } from './accordion.js';
 import Convert from 'ansi-to-html';
-
 const convert = new Convert();
-
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize accordion functionality
   initializeAccordion();
-
   const byoi = document.getElementById('byoi');
   // when byoi is clicked on, select the base_image radio button that has the value byoi
   byoi.addEventListener('click', function() {
@@ -16,7 +13,6 @@ document.addEventListener('DOMContentLoaded', () => {
   const amd64 = document.getElementById('amd64-option');
   const armOnlyElements = document.querySelectorAll('.arm-only');
   const modelOptions = document.querySelectorAll('.model-option input');
-
   arm64.addEventListener('change', function() {
     if (this.checked) {
       // uncheck amd64
@@ -43,7 +39,6 @@ document.addEventListener('DOMContentLoaded', () => {
       document.getElementById('generic-option').checked = true;
     }
   });
-
   // whenever a model options changes, uncheck all other model options
   modelOptions.forEach(function(element) {
     element.addEventListener('change', function() {
@@ -56,7 +51,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   });
-
   const coreOption = document.getElementById('core-option');
   const standardOption = document.getElementById('standard-option');
   const kubernetesFields = document.querySelectorAll('.kubernetes_fields');
@@ -81,7 +75,6 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
-
   k3sOption.addEventListener('change', function() {
     if (this.checked) {
       k0sOption.checked = false;
@@ -94,7 +87,6 @@ document.addEventListener('DOMContentLoaded', () => {
       kubernetesDistroName.innerText = 'K0s';
     }
   });
-
   const logsToggle = document.getElementById('logs-toggle');
   const logs = document.getElementById('output');
   logsToggle.addEventListener('change', function() {
@@ -104,11 +96,9 @@ document.addEventListener('DOMContentLoaded', () => {
       logs.style.display = 'none';
     }
   });
-
   const restartButton = document.getElementById('restart-button');
   const staticModal = document.getElementById('static-modal');
   const modalBackdrop = document.getElementById('modal-backdrop');
-
   restartButton.addEventListener('click', function() {
     logs.innerHTML = "";
     const downloads = document.getElementById('downloads');
@@ -125,14 +115,31 @@ document.addEventListener('DOMContentLoaded', () => {
       element.classList.add("hidden");
     });
   });
-
   document.getElementById('process-form').addEventListener('submit', function(event) {
-    event.preventDefault();
+    event.preventDefault(); // Always prevent default submission
+    // First check if the form is valid
+    if (!event.target.checkValidity()) {
+      // Find all invalid fields
+      const invalidFields = event.target.querySelectorAll(':invalid');
+      // Open accordion sections containing invalid fields
+      invalidFields.forEach(field => {
+        const section = field.closest('.accordion-section');
+        if (section && !section.classList.contains('active')) {
+          section.classList.add('active');
+        }
+      });
+      // Show validation message and focus on first invalid field
+      const firstInvalid = invalidFields[0];
+      if (firstInvalid) {
+        firstInvalid.focus();
+        firstInvalid.reportValidity();
+      }
+      return;
+    }
+
     modalBackdrop.classList.remove("hidden");
     staticModal.classList.remove("hidden");
-
     const formData = new FormData(event.target);
-
     fetch('/start', {
       method: 'POST',
       body: formData
@@ -141,9 +148,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const socket = new WebSocket("ws://" + window.location.host + "/ws/" + result.uuid);
         const outputElement = document.getElementById('output');
         const linkElement = document.getElementById('links');
-
         outputElement.innerHTML = "";
-
         socket.onmessage = function(event) {
           try {
             const data = JSON.parse(event.data);
@@ -153,19 +158,16 @@ document.addEventListener('DOMContentLoaded', () => {
               }
             }
           } catch (e) {}
-
           const message = event.data;
           updateStatus(message);
           outputElement.innerHTML += `${convert.toHtml(message)}\n`;
           outputElement.scrollTop = outputElement.scrollHeight;
         };
-
         const buildingContainerImage = document.getElementById('building-container-image');
         const generatingTarball = document.getElementById('generating-tarball');
         const generatingRawImage = document.getElementById('generating-raw-image');
         const generatingISO = document.getElementById('generating-iso');
         const generatingDownloadLinks = document.getElementById('generating-download-links');
-
         function updateStatus(message) {
           if (message.includes("Building container image")) {
             buildingContainerImage.classList.remove("hidden");
@@ -187,7 +189,6 @@ document.addEventListener('DOMContentLoaded', () => {
             generatingISO.querySelector('.done').classList.remove("hidden");
           }
         }
-
         socket.onclose = function() {
           restartButton.classList.remove("hidden");
           generatingDownloadLinks.querySelector('.spinner').classList.add("hidden");
@@ -200,4 +201,3 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   });
 });
-
