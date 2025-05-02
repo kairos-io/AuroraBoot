@@ -48,21 +48,18 @@ func buildRawDisk(containerImage, outputDir string, ws io.Writer) error {
 		DisableNetboot:    true,
 	}
 
-	// Create the deployer
+	// Create the deployer with proper initialization
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
 
-	// Register the necessary steps
-	for _, step := range []func() error{
-		d.StepPrepNetbootDir,
-		d.StepPrepTmpRootDir,
-		d.StepDumpSource,
-		d.StepGenRawDisk,
-	} {
-		if err := step(); err != nil {
-			fmt.Fprintf(wsWriter, "Error registering step: %v\n", err)
-			return fmt.Errorf("error registering step: %v", err)
-		}
+	// Register all steps
+	err := deployer.RegisterAll(d)
+	if err != nil {
+		fmt.Fprintf(wsWriter, "Error registering steps: %v\n", err)
+		return fmt.Errorf("error registering steps: %v", err)
 	}
+
+	// Write the DAG for debugging
+	d.WriteDag()
 
 	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
@@ -98,27 +95,24 @@ func buildISO(containerImage, outputDir, artifactName string, ws io.Writer) erro
 		return fmt.Errorf("error reading config: %v", err)
 	}
 
-	// Override the state and ISO name
+	// Override the state and ISO name, and ensure netboot is disabled
 	config.State = outputDir
 	config.ISO.OverrideName = artifactName
+	config.DisableNetboot = true
+	config.DisableHTTPServer = true
 
-	// Create the deployer
+	// Create the deployer with proper initialization
 	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
 
-	// Register the necessary steps
-	for _, step := range []func() error{
-		d.StepPrepNetbootDir,
-		d.StepPrepTmpRootDir,
-		d.StepPrepISODir,
-		d.StepCopyCloudConfig,
-		d.StepDumpSource,
-		d.StepGenISO,
-	} {
-		if err := step(); err != nil {
-			fmt.Fprintf(wsWriter, "Error registering step: %v\n", err)
-			return fmt.Errorf("error registering step: %v", err)
-		}
+	// Register all steps
+	err = deployer.RegisterAll(d)
+	if err != nil {
+		fmt.Fprintf(wsWriter, "Error registering steps: %v\n", err)
+		return fmt.Errorf("error registering steps: %v", err)
 	}
+
+	// Write the DAG for debugging
+	d.WriteDag()
 
 	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
