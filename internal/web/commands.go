@@ -8,6 +8,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 )
@@ -90,16 +91,19 @@ func buildISO(containerImage, outputDir, artifactName string, ws io.Writer) erro
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Create the config
-	config := schema.Config{
-		State: outputDir,
-		ISO: schema.ISO{
-			OverrideName: artifactName,
-		},
+	// Read the config using the shared config package
+	config, _, err := config.ReadConfig("", "", nil)
+	if err != nil {
+		fmt.Fprintf(wsWriter, "Error reading config: %v\n", err)
+		return fmt.Errorf("error reading config: %v", err)
 	}
 
+	// Override the state and ISO name
+	config.State = outputDir
+	config.ISO.OverrideName = artifactName
+
 	// Create the deployer
-	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
 
 	// Register the necessary steps
 	for _, step := range []func() error{

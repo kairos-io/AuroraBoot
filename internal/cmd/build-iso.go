@@ -3,11 +3,13 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
-	"os"
 )
 
 var BuildISOCmd = cli.Command{
@@ -68,7 +70,7 @@ var BuildISOCmd = cli.Command{
 		if ctx.String("cloud-config") != "" {
 			// we don't allow templating in this command (like we do at the top level one)
 			// TODO: Should we allow it?
-			cloudConfig, err = readCloudConfig(ctx.String("cloud-config"), map[string]interface{}{})
+			cloudConfig, err = config.ReadCloudConfig(ctx.String("cloud-config"), map[string]interface{}{})
 			if err != nil {
 				return fmt.Errorf("reading cloud config: %w", err)
 			}
