@@ -9,6 +9,7 @@ RUN rm -rf node_modules package-lock.json
 ADD ./internal/web/app/package.json .
 ADD ./internal/web/app/package-lock.json .
 ADD ./internal/web/app/index.js .
+ADD ./internal/web/app/accordion.js .
 RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
 
 FROM golang AS builder
