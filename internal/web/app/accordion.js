@@ -133,6 +133,38 @@ export function initializeAccordion() {
                             field.classList.add('hidden');
                         });
                     }
+
+                    // Special handling for architecture selection
+                    if (section.dataset.section === 'architecture') {
+                        const modelSection = document.querySelector('.accordion-section[data-section="model"]');
+                        if (modelSection) {
+                            const modelOptions = modelSection.querySelectorAll('.model-option');
+                            modelOptions.forEach(option => {
+                                if (value === 'amd64') {
+                                    // For AMD64, hide ARM-specific models
+                                    if (option.classList.contains('arm-only')) {
+                                        option.classList.add('hidden');
+                                        // Uncheck the radio if it was selected
+                                        const radio = option.querySelector('input[type="radio"]');
+                                        if (radio && radio.checked) {
+                                            radio.checked = false;
+                                            // Select the first visible model
+                                            const firstVisibleModel = modelSection.querySelector('.model-option:not(.hidden) input[type="radio"]');
+                                            if (firstVisibleModel) {
+                                                firstVisibleModel.checked = true;
+                                                updateSelectedOption(modelSection, firstVisibleModel.value);
+                                            }
+                                        }
+                                    } else {
+                                        option.classList.remove('hidden');
+                                    }
+                                } else if (value === 'arm64') {
+                                    // For ARM64, show all models
+                                    option.classList.remove('hidden');
+                                }
+                            });
+                        }
+                    }
                 }
             }
         });
