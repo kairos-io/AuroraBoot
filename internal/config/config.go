@@ -1,4 +1,4 @@
-package cmd
+package config
 
 import (
 	"bytes"
@@ -14,11 +14,13 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos-sdk/unstructured"
-	"gopkg.in/yaml.v1"
+	"gopkg.in/yaml.v3"
 )
 
-const delimLeft = "[[["
-const delimright = "]]]"
+const (
+	delimLeft  = "[[["
+	delimRight = "]]]"
+)
 
 func isUrl(s string) bool {
 	u, err := url.Parse(s)
@@ -26,7 +28,6 @@ func isUrl(s string) bool {
 }
 
 func downloadFile(url string) (content string, err error) {
-
 	b := bytes.NewBuffer([]byte{})
 	// Get the data
 	resp, err := http.Get(url)
@@ -50,10 +51,10 @@ func downloadFile(url string) (content string, err error) {
 }
 
 func render(data string, foo any) (string, error) {
-	t, err := template.New("cloudConfig template").Delims(delimLeft, delimright).Option("missingkey=zero").Parse(data)
+	t, err := template.New("cloudConfig template").Delims(delimLeft, delimRight).Option("missingkey=zero").Parse(data)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("Parsing data")
-		internal.Log.Logger.Debug().Err(err).Str("data", data).Str("Left delimiter", delimLeft).Str("Right delimiter", delimright).Msg("Parsing data")
+		internal.Log.Logger.Debug().Err(err).Str("data", data).Str("Left delimiter", delimLeft).Str("Right delimiter", delimRight).Msg("Parsing data")
 		return "", err
 	}
 	b := bytes.NewBuffer([]byte{})
@@ -64,6 +65,7 @@ func render(data string, foo any) (string, error) {
 	return b.String(), nil
 }
 
+// ReadConfig reads and parses configuration from various sources
 func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Config, *schema.ReleaseArtifact, error) {
 	c := &schema.Config{}
 	r := &schema.ReleaseArtifact{}
@@ -119,7 +121,8 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 	yaml.Unmarshal(y, &templateValues)
 
 	if cloudConfig != "" {
-		c.CloudConfig, err = readCloudConfig(cloudConfig, templateValues)
+		var err error
+		c.CloudConfig, err = ReadCloudConfig(cloudConfig, templateValues)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -129,7 +132,8 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 	return c, r, nil
 }
 
-func readCloudConfig(cloudConfig string, templateValues map[string]interface{}) (string, error) {
+// ReadCloudConfig reads and processes cloud configuration from various sources
+func ReadCloudConfig(cloudConfig string, templateValues map[string]interface{}) (string, error) {
 	result := ""
 	if cloudConfig == "-" {
 		d, err := io.ReadAll(os.Stdin)

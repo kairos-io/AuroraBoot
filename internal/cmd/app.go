@@ -8,6 +8,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
@@ -48,7 +49,7 @@ func GetApp(version string) *cli.App {
 			if ctx.Bool("debug") {
 				internal.Log.SetLevel("debug")
 			}
-			c, r, err := ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
+			c, r, err := config.ReadConfig(ctx.Args().First(), ctx.String("cloud-config"), ctx.StringSlice("set"))
 			if err != nil {
 				return err
 			}

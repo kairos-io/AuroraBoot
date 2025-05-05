@@ -3,6 +3,11 @@ package ops
 import (
 	"bytes"
 	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+
 	"github.com/diskfs/go-diskfs"
 	fileBackend "github.com/diskfs/go-diskfs/backend/file"
 	"github.com/diskfs/go-diskfs/partition"
@@ -20,10 +25,6 @@ import (
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/twpayne/go-vfs/v5"
 	"golang.org/x/sys/unix"
-	"os"
-	"os/exec"
-	"path/filepath"
-	"strings"
 )
 
 // What it does

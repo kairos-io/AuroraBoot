@@ -2,12 +2,13 @@ package deployer
 
 import (
 	"context"
-	"github.com/hashicorp/go-multierror"
-	"github.com/kairos-io/AuroraBoot/internal"
-	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"os"
 	"path/filepath"
 	"strconv"
+
+	"github.com/hashicorp/go-multierror"
+	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/spectrocloud-labs/herd"
@@ -61,6 +62,7 @@ func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(constants.OpCopyCloudConfig,
 		herd.WithDeps(constants.OpPrepareISO),
 		herd.WithCallback(func(ctx context.Context) error {
+			internal.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
 			return os.WriteFile(d.cloudConfigPath(), []byte(d.Config.CloudConfig), 0600)
 		}))
 }
