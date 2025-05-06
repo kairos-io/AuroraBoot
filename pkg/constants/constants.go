@@ -152,11 +152,11 @@ const (
 	OpDownloadSquashFS = "download-squashfs"
 	OpPrepareNetboot   = "prepare-netboot"
 	OpStartNetboot     = "start-netboot"
-
-	OpDumpSource     = "dump-source"
-	OpGenISO         = "gen-iso"
-	OpPreparetmproot = "prepare-temp"
-	OpExtractNetboot = "extract-netboot"
+	OpStartNetbootUKI  = "start-netboot-uki"
+	OpDumpSource       = "dump-source"
+	OpGenISO           = "gen-iso"
+	OpPreparetmproot   = "prepare-temp"
+	OpExtractNetboot   = "extract-netboot"
 
 	OpGenEFIRawDisk  = "gen-raw-efi-disk"
 	OpGenBIOSRawDisk = "gen-raw-bios-disk"

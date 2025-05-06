@@ -11,6 +11,9 @@ type Config struct {
 	// Disable Netboot
 	DisableNetboot bool `yaml:"disable_netboot"`
 
+	// Netboot type
+	NetbootType string `yaml:"netboot_type"`
+
 	// Disable HTTP Server
 	DisableHTTPServer bool `yaml:"disable_http_server"`
 

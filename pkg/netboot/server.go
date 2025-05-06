@@ -12,13 +12,26 @@ import (
 // Server starts a netboot server which takes over and start to serve off booting in the same network
 // It doesn't need any special configuration, however, requires binding to low ports.
 func Server(kernel, cmdline string, address, httpPort, initrd string, nobind bool) error {
-
 	spec := &types.Spec{
 		Kernel:  types.ID(kernel),
 		Cmdline: cmdline,
 		Initrd:  []types.ID{types.ID(initrd)},
 	}
 
+	return serve(spec, address, httpPort, nobind)
+}
+
+// ServerUKI starts a netboot server which takes over and start to serve off booting in the same network
+// It doesn't need any special configuration, however, requires binding to low ports.
+func ServerUKI(ukiFile, address, httpPort string, nobind bool) error {
+	spec := &types.Spec{
+		Efi: types.ID(ukiFile),
+	}
+
+	return serve(spec, address, httpPort, nobind)
+}
+
+func serve(spec *types.Spec, address, httpPort string, nobind bool) error {
 	booter, err := booters.StaticBooter(spec)
 	if err != nil {
 		return err

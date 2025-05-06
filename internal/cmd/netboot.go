@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/kairos-sdk/types"
@@ -18,8 +19,18 @@ var NetBootCmd = cli.Command{
 			Name:  "debug",
 			Usage: "Enable debug logging",
 		},
+		&cli.StringFlag{
+			Name:  "netboot-type",
+			Usage: "Netboot type to use (kernel or uki)",
+			Value: "kernel",
+		},
 	},
 	Action: func(c *cli.Context) error {
+		netbootType := c.String("netboot-type")
+		if netbootType != "kernel" && netbootType != "uki" {
+			return fmt.Errorf("netboot-type must be either kernel or uki")
+		}
+
 		iso := c.Args().Get(0)
 		if iso == "" {
 			c.Command.Subcommands = nil
@@ -48,7 +59,7 @@ var NetBootCmd = cli.Command{
 		}
 		internal.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
 
-		f := ops.ExtractNetboot(iso, output, name)
+		f := ops.ExtractNetboot(iso, output, name, netbootType)
 		return f(c.Context)
 	},
 }

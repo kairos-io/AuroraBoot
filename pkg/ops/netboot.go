@@ -11,32 +11,59 @@ import (
 	"github.com/kairos-io/kairos-sdk/iso"
 )
 
+// extractUKIArtifact extracts the UKI EFI file from the ISO
+func extractUKIArtifact(src, dst, prefix string) error {
+	artifact := filepath.Join(dst, fmt.Sprintf("%s.uki.efi", prefix))
+	err := iso.ExtractFileFromIso("/norole.efi", src, artifact, &internal.Log)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artifact")
+		return err
+	}
+	return nil
+}
+
+// extractTraditionalArtifacts extracts the traditional netboot artifacts (squashfs, kernel, initrd)
+func extractTraditionalArtifacts(src, dst, prefix string) error {
+	artifacts := map[string]string{
+		"squashfs": "/rootfs.squashfs",
+		"kernel":   "/boot/kernel",
+		"initrd":   "/boot/initrd",
+	}
+
+	for artifactType, isoPath := range artifacts {
+		artifactName := fmt.Sprintf("%s.%s", prefix, artifactType)
+		if artifactType != "squashfs" {
+			artifactName = fmt.Sprintf("%s-%s", prefix, artifactType)
+		}
+
+		artifact := filepath.Join(dst, artifactName)
+		err := iso.ExtractFileFromIso(isoPath, src, artifact, &internal.Log)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artifact")
+			return err
+		}
+	}
+	return nil
+}
+
 // ExtractNetboot extracts all the required netbooting artifacts
-func ExtractNetboot(src, dst, prefix string) func(ctx context.Context) error {
+func ExtractNetboot(src, dst, prefix, netbootType string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		internal.Log.Logger.Info().Str("prefix", prefix).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
 
-		artifact := filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix))
-		err := iso.ExtractFileFromIso("/rootfs.squashfs", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
+		var err error
+		if netbootType == "uki" {
+			err = extractUKIArtifact(src, dst, prefix)
+		} else {
+			err = extractTraditionalArtifacts(src, dst, prefix)
 		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix))
-		err = iso.ExtractFileFromIso("/boot/kernel", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
-		err = iso.ExtractFileFromIso("/boot/initrd", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		internal.Log.Logger.Info().Msg("Artifacts extracted")
 
-		return err
+		if err != nil {
+			return err
+		}
+
+		internal.Log.Logger.Info().Msg("Artifacts extracted")
+		return nil
 	}
 }
 
@@ -53,5 +80,13 @@ func StartPixiecore(cloudConfigFile, squashFSfile, address, netbootPort, initrdF
 		}
 
 		return netboot.Server(kernelFile, fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, initrdFile, true)
+	}
+}
+
+func StartPixiecoreUKI(address, netbootPort, ukiFile string, nb schema.NetBoot) func(ctx context.Context) error {
+	return func(ctx context.Context) error {
+		internal.Log.Logger.Info().Msgf("Start UKI pixiecore")
+
+		return netboot.ServerUKI(ukiFile, address, netbootPort, true)
 	}
 }
