@@ -33,3 +33,23 @@ or using docker (from within this directory):
 ```bash
 docker run --rm -v $PWD/app:/work --workdir /work node:23 /bin/bash -c 'npm ci && pwd && echo 'y' | npx esbuild index.js --bundle --outfile=bundle.js'
 ```
+
+### Running locally
+
+You can easily start the web UI locally using docker:
+
+```bash
+go build -o build/auroraboot . && \
+docker run --privileged --net host \
+  -p 8080:8080 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v $PWD/build/auroraboot:/bin/auroraboot \
+  --entrypoint /bin/auroraboot \
+  quay.io/kairos/auroraboot:latest web
+```
+
+After running the above command, you can trigger the cypress tests from within the `e2e/web` directory with:
+
+```
+npx cypress run
+```
