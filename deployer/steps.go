@@ -2,6 +2,7 @@ package deployer
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -82,8 +83,8 @@ func (d *Deployer) StepGenISO() error {
 
 func (d *Deployer) StepExtractNetboot() error {
 	return d.Add(constants.OpExtractNetboot,
-		herd.EnableIf(func() bool { return d.fromImage() && !d.Config.DisableNetboot }),
-		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.Config.ISO.Name)))
+		herd.EnableIf(func() bool { return d.fromLocalISO() || d.fromImage() && !d.Config.DisableNetboot }),
+		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.extractedFileName(), d.Config.NetbootType)))
 }
 
 func (d *Deployer) StepDownloadInitrd() error {
@@ -117,6 +118,15 @@ func (d *Deployer) StepExtractSquashFS() error {
 	return d.Add(constants.OpExtractSquashFS,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
 		herd.WithDeps(constants.OpDownloadSquashFS), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile(), d.tmpRootFs())))
+}
+
+func (d *Deployer) extractedFileName() string {
+	name := d.Config.ISO.Name
+	if name == "" {
+		name = "kairos"
+	}
+
+	return name
 }
 
 // StepGenRawDisk Generate the raw disk image.
@@ -183,8 +193,22 @@ func (d *Deployer) StepStartNetboot() error {
 	)
 }
 
+func (d *Deployer) StepStartNetbootUKI() error {
+	return d.Add(constants.OpStartNetbootUKI,
+		herd.EnableIf(func() bool { return d.netbootOption() && d.Config.NetbootType == "uki" }),
+		herd.ConditionalOption(d.fromLocalISO, herd.WithDeps(constants.OpExtractNetboot)),
+		herd.WithCallback(
+			ops.StartPixiecoreUKI(d.netBootListenAddr(), d.netbootPort(), d.ukiFile(), d.Config.NetBoot),
+		),
+	)
+}
+
 func (d *Deployer) fromImage() bool {
 	return d.Artifact.ContainerImage != ""
+}
+
+func (d *Deployer) fromLocalISO() bool {
+	return d.Artifact.LocalISO != ""
 }
 
 func (d *Deployer) tmpRootFs() string {
@@ -196,6 +220,9 @@ func (d *Deployer) destination() string {
 }
 
 func (d *Deployer) isoFile() string {
+	if d.fromLocalISO() {
+		return d.Artifact.LocalISO
+	}
 	return filepath.Join(d.destination(), "kairos.iso")
 }
 
@@ -209,7 +236,8 @@ func (d *Deployer) rawDiskIsSet() bool {
 }
 
 func (d *Deployer) netbootReleaseOption() bool {
-	return !d.Config.DisableNetboot && !d.fromImage()
+	fmt.Println("fromLocalISO", d.fromLocalISO())
+	return !d.Config.DisableNetboot && !d.fromImage() && !d.fromLocalISO()
 }
 
 func (d *Deployer) initrdFile() string {
@@ -222,6 +250,10 @@ func (d *Deployer) kernelFile() string {
 
 func (d *Deployer) squashFSfile() string {
 	return filepath.Join(d.dstNetboot(), "kairos.squashfs")
+}
+
+func (d *Deployer) ukiFile() string {
+	return filepath.Join(d.dstNetboot(), "kairos.uki.efi")
 }
 
 func (d *Deployer) isoOption() bool {

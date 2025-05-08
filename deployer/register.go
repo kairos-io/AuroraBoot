@@ -34,6 +34,7 @@ func RegisterAll(d *Deployer) error {
 		// Start servers
 		d.StepStartHTTPServer,
 		d.StepStartNetboot,
+		d.StepStartNetbootUKI,
 	} {
 		if err := step(); err != nil {
 			return err

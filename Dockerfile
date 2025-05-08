@@ -48,6 +48,8 @@ RUN dnf in -y bc \
               gdisk \
               genisoimage \
               grub2 \
+              grub2-efi-x64 \
+              grub2-efi-x64-modules \
               jq \
               kpartx \
               lvm2 \
@@ -60,8 +62,12 @@ RUN dnf in -y bc \
               sudo \
               udev \
               util-linux \
+              wget \
               xorriso \
               zstd
+
+# Install ipxe for netboot
+RUN wget https://boot.ipxe.org/ipxe.efi -O /boot/efi/EFI/fedora/ipxe.efi
 
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 # copy both arches

@@ -80,7 +80,7 @@ const (
 	ArchAmd64   = "amd64"
 	Archaarch64 = "aarch64"
 
-	UkiCmdline            = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
+	UkiCmdline            = "console=tty0 console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=1 rd.debug rd.immucore.debug systemd.crash_reboot=yes"
 	UkiCmdlineInstall     = "install-mode"
 	UkiSystemdBootx86     = "/amd/systemd-boot/systemd-bootx64.efi"
 	UkiSystemdBootStubx86 = "/amd/systemd-boot/linuxx64.efi.stub"
@@ -152,11 +152,11 @@ const (
 	OpDownloadSquashFS = "download-squashfs"
 	OpPrepareNetboot   = "prepare-netboot"
 	OpStartNetboot     = "start-netboot"
-
-	OpDumpSource     = "dump-source"
-	OpGenISO         = "gen-iso"
-	OpPreparetmproot = "prepare-temp"
-	OpExtractNetboot = "extract-netboot"
+	OpStartNetbootUKI  = "start-netboot-uki"
+	OpDumpSource       = "dump-source"
+	OpGenISO           = "gen-iso"
+	OpPreparetmproot   = "prepare-temp"
+	OpExtractNetboot   = "extract-netboot"
 
 	OpGenEFIRawDisk  = "gen-raw-efi-disk"
 	OpGenBIOSRawDisk = "gen-raw-bios-disk"

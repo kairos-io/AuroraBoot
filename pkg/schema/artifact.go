@@ -18,6 +18,7 @@ type ReleaseArtifact struct {
 	Variant         string `yaml:"variant"`
 
 	ContainerImage string `yaml:"container_image"`
+	LocalISO       string `yaml:"local_iso"`
 }
 
 func (a ReleaseArtifact) FileName() string {
