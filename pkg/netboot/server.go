@@ -23,9 +23,11 @@ func Server(kernel, cmdline string, address, httpPort, initrd string, nobind boo
 
 // ServerUKI starts a netboot server which takes over and start to serve off booting in the same network
 // It doesn't need any special configuration, however, requires binding to low ports.
-func ServerUKI(ukiFile, address, httpPort string, nobind bool) error {
+func ServerUKI(ukiFile, cmdline, address, httpPort string, nobind bool) error {
 	spec := &types.Spec{
-		Efi: types.ID(ukiFile),
+		Efi: types.ID("/boot/efi/EFI/fedora/grubx64.efi"),
+		//Efi:     types.ID("/boot/efi/EFI/fedora/ipxe.efi"),
+		Cmdline: cmdline,
 	}
 
 	return serve(spec, address, httpPort, nobind)

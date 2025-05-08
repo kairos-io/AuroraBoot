@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos-sdk/iso"
@@ -14,6 +15,7 @@ import (
 // extractUKIArtifact extracts the UKI EFI file from the ISO
 func extractUKIArtifact(src, dst, prefix string) error {
 	artifact := filepath.Join(dst, fmt.Sprintf("%s.uki.efi", prefix))
+	//err := iso.ExtractFileFromIso("/BOOTX64.EFI", src, artifact, &internal.Log)
 	err := iso.ExtractFileFromIso("/norole.efi", src, artifact, &internal.Log)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artifact")
@@ -87,6 +89,11 @@ func StartPixiecoreUKI(address, netbootPort, ukiFile string, nb schema.NetBoot) 
 	return func(ctx context.Context) error {
 		internal.Log.Logger.Info().Msgf("Start UKI pixiecore")
 
-		return netboot.ServerUKI(ukiFile, address, netbootPort, true)
+		cmdLine := constants.UkiCmdline
+		if nb.Cmdline != "" {
+			cmdLine = constants.UkiCmdline + " " + nb.Cmdline
+		}
+
+		return netboot.ServerUKI(ukiFile, cmdLine, address, netbootPort, true)
 	}
 }

@@ -59,6 +59,7 @@ var NetBootCmd = cli.Command{
 		}
 		internal.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
 
+		fmt.Println("netboot type", netbootType)
 		f := ops.ExtractNetboot(iso, output, name, netbootType)
 		return f(c.Context)
 	},
