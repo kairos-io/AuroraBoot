@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/kairos-io/AuroraBoot/internal/web"
+	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"golang.org/x/net/websocket"
 )
 
@@ -41,7 +41,7 @@ func (w *Worker) Start() error {
 		}
 
 		// Update status to running
-		if err := w.updateJobStatus(job.JobID, web.JobStatusRunning); err != nil {
+		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusRunning); err != nil {
 			fmt.Printf("Failed to update job status to running: %v\n", err)
 			continue
 		}
@@ -69,7 +69,7 @@ func (w *Worker) Start() error {
 		}
 
 		// Update status to complete
-		if err := w.updateJobStatus(job.JobID, web.JobStatusComplete); err != nil {
+		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusComplete); err != nil {
 			fmt.Printf("Failed to update job status to complete: %v\n", err)
 			continue
 		}
@@ -77,8 +77,8 @@ func (w *Worker) Start() error {
 }
 
 type bindResponse struct {
-	JobID string       `json:"job_id"`
-	Job   web.BuildJob `json:"job"`
+	JobID string              `json:"job_id"`
+	Job   jobstorage.BuildJob `json:"job"`
 }
 
 func (w *Worker) bindJob() (*bindResponse, error) {
@@ -105,7 +105,7 @@ func (w *Worker) bindJob() (*bindResponse, error) {
 	return &result, nil
 }
 
-func (w *Worker) updateJobStatus(jobID string, status web.JobStatus) error {
+func (w *Worker) updateJobStatus(jobID string, status jobstorage.JobStatus) error {
 	url := fmt.Sprintf("%s/api/v1/builds/%s/status?worker_id=%s", w.endpoint, jobID, w.workerID)
 
 	body := map[string]string{"status": string(status)}

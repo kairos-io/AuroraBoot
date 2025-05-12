@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"text/template"
+
+	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 )
 
-func prepareDockerfile(job JobData, tempdir string) error {
+func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 	// Create a Dockerfile from a template
 	tmpl := `FROM quay.io/kairos/kairos-init:v0.3.0 AS kairos-init
 

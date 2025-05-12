@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/gofrs/uuid"
+	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/net/websocket"
@@ -21,16 +22,13 @@ import (
 var staticFiles embed.FS
 
 var mu sync.Mutex
-var jobsData = map[string]BuildJob{} // Store the last submitted form data
 var artifactDir string
-var logsDir string
 
 //go:embed assets
 var assets embed.FS
 
 type AppConfig struct {
 	EnableLogger bool
-	LogsDir      string
 }
 
 func getFileSystem(useOS bool) http.FileSystem {
@@ -46,19 +44,9 @@ func getFileSystem(useOS bool) http.FileSystem {
 	return http.FS(fsys)
 }
 
-type JobData struct {
-	Variant                string `json:"variant"`
-	Model                  string `json:"model"`
-	TrustedBoot            bool   `json:"trusted_boot"`
-	KubernetesDistribution string `json:"kubernetes_distribution"`
-	KubernetesVersion      string `json:"kubernetes_version"`
-	Image                  string `json:"image"`
-	Version                string `json:"version"`
-}
-
-func App(listenAddr, outDir, logsDirectory string, config ...AppConfig) error {
+func App(listenAddr, outDir, buildsDirectory string, config ...AppConfig) error {
 	artifactDir = outDir
-	logsDir = logsDirectory
+	jobstorage.BuildsDir = buildsDirectory
 	e := echo.New()
 
 	// Only enable logger if not explicitly disabled
@@ -72,9 +60,9 @@ func App(listenAddr, outDir, logsDirectory string, config ...AppConfig) error {
 	}
 	e.Use(middleware.Recover())
 
-	// Ensure artifact directory exists
+	// Ensure directories exist
 	os.MkdirAll(artifactDir, os.ModePerm)
-	os.MkdirAll(logsDir, os.ModePerm)
+	os.MkdirAll(jobstorage.BuildsDir, os.ModePerm)
 
 	assetHandler := http.FileServer(getFileSystem(false))
 	e.GET("/*", echo.WrapHandler(assetHandler))
@@ -96,7 +84,7 @@ func App(listenAddr, outDir, logsDirectory string, config ...AppConfig) error {
 
 	// Serve static artifact files
 	e.Static("/artifacts", artifactDir)
-	e.Static("/logs", logsDir)
+	e.Static("/builds", jobstorage.BuildsDir)
 
 	e.Logger.Fatal(e.Start(listenAddr))
 
@@ -152,8 +140,8 @@ func buildHandler(c echo.Context) error {
 	}
 
 	// Collect job data
-	job := BuildJob{
-		JobData: JobData{
+	job := jobstorage.BuildJob{
+		JobData: jobstorage.JobData{
 			Variant:                variant,
 			Model:                  c.FormValue("model"),
 			TrustedBoot:            c.FormValue("trusted_boot") == "true",
@@ -162,9 +150,9 @@ func buildHandler(c echo.Context) error {
 			Image:                  image,
 			Version:                c.FormValue("version"),
 		},
-		Status:    JobStatusQueued,
-		CreatedAt: time.Now(),
-		UpdatedAt: time.Now(),
+		Status:    jobstorage.JobStatusQueued,
+		CreatedAt: time.Now().Format(time.RFC3339),
+		UpdatedAt: time.Now().Format(time.RFC3339),
 	}
 
 	id, err := uuid.NewV4()
@@ -172,7 +160,17 @@ func buildHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate UUID"})
 	}
 
-	jobsData[id.String()] = job
+	// Create job directory
+	jobPath := jobstorage.GetJobPath(id.String())
+	if err := os.MkdirAll(jobPath, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
+	}
+
+	// Write job metadata
+	if err := jobstorage.WriteJob(id.String(), job); err != nil {
+		os.RemoveAll(jobPath) // Clean up on error
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to write job metadata"})
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{"uuid": id.String()})
 }
@@ -181,9 +179,9 @@ func webSocketHandler(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
 		mu.Lock()
 		uuid := c.Param("uuid")
-		job, exists := jobsData[uuid]
+		job, err := jobstorage.ReadJob(uuid)
 		mu.Unlock()
-		if !exists {
+		if err != nil {
 			websocket.Message.Send(ws, "Job not found")
 			return
 		}

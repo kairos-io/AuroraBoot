@@ -25,9 +25,9 @@ var WebCMD = cli.Command{
 			Value: "/tmp/artifacts",
 		},
 		&cli.StringFlag{
-			Name:  "logs-dir",
-			Usage: "Directory to store build logs",
-			Value: "/tmp/build-logs",
+			Name:  "builds-dir",
+			Usage: "Directory to store build jobs and their artifacts",
+			Value: "/tmp/builds",
 		},
 		&cli.BoolFlag{
 			Name:  "create-worker",
@@ -37,7 +37,7 @@ var WebCMD = cli.Command{
 	},
 	Action: func(c *cli.Context) error {
 		os.MkdirAll(c.String("artifact-dir"), os.ModePerm)
-		os.MkdirAll(c.String("logs-dir"), os.ModePerm)
+		os.MkdirAll(c.String("builds-dir"), os.ModePerm)
 
 		// If create-worker flag is set, start a worker in a goroutine
 		if c.Bool("create-worker") {
@@ -51,6 +51,6 @@ var WebCMD = cli.Command{
 			}()
 		}
 
-		return web.App(c.String("address"), c.String("artifact-dir"), c.String("logs-dir"))
+		return web.App(c.String("address"), c.String("artifact-dir"), c.String("builds-dir"))
 	},
 }

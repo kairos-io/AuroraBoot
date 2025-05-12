@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/internal/web"
+	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/kairos-io/AuroraBoot/internal/worker"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -23,7 +24,7 @@ var _ = Describe("Worker", func() {
 
 	It("should process jobs successfully", func() {
 		// Create a test job
-		jobData := web.JobData{
+		jobData := jobstorage.JobData{
 			Variant:     "core",
 			Model:       "test-model",
 			Image:       "test-image",
@@ -51,7 +52,7 @@ var _ = Describe("Worker", func() {
 		}()
 
 		// Wait for the job to be processed
-		Eventually(func() web.JobStatus {
+		Eventually(func() jobstorage.JobStatus {
 			// Get the job status
 			resp, err := http.Get(serverURL + "/api/v1/builds/" + response.UUID)
 			if err != nil {
@@ -59,13 +60,13 @@ var _ = Describe("Worker", func() {
 			}
 			defer resp.Body.Close()
 
-			var job web.BuildJob
+			var job jobstorage.BuildJob
 			err = json.NewDecoder(resp.Body).Decode(&job)
 			if err != nil {
 				return ""
 			}
 
 			return job.Status
-		}, 5*time.Second, 100*time.Millisecond).Should(Equal(web.JobStatusComplete))
+		}, 5*time.Second, 100*time.Millisecond).Should(Equal(jobstorage.JobStatusComplete))
 	})
 })

@@ -5,10 +5,10 @@ import (
 	"io"
 	"net/http"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/gofrs/uuid"
+	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/labstack/echo/v4"
 	"golang.org/x/net/websocket"
 )
@@ -17,30 +17,12 @@ type BuildResponse struct {
 	UUID string `json:"uuid"`
 }
 
-type JobStatus string
-
-const (
-	JobStatusQueued   JobStatus = "queued"
-	JobStatusAssigned JobStatus = "assigned"
-	JobStatusRunning  JobStatus = "running"
-	JobStatusComplete JobStatus = "complete"
-	JobStatusFailed   JobStatus = "failed"
-)
-
-type BuildJob struct {
-	JobData
-	Status    JobStatus `json:"status"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	WorkerID  string    `json:"worker_id,omitempty"`
-}
-
 // HandleQueueBuild creates a new build job and adds it to the queue
 func HandleQueueBuild(c echo.Context) error {
 	mu.Lock()
 	defer mu.Unlock()
 
-	var req JobData
+	var req jobstorage.JobData
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
 	}
@@ -56,11 +38,23 @@ func HandleQueueBuild(c echo.Context) error {
 	}
 
 	now := time.Now()
-	jobsData[id.String()] = BuildJob{
+	job := jobstorage.BuildJob{
 		JobData:   req,
-		Status:    JobStatusQueued,
-		CreatedAt: now,
-		UpdatedAt: now,
+		Status:    jobstorage.JobStatusQueued,
+		CreatedAt: now.Format(time.RFC3339),
+		UpdatedAt: now.Format(time.RFC3339),
+	}
+
+	// Create job directory
+	jobPath := jobstorage.GetJobPath(id.String())
+	if err := os.MkdirAll(jobPath, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
+	}
+
+	// Write job metadata
+	if err := jobstorage.WriteJob(id.String(), job); err != nil {
+		os.RemoveAll(jobPath) // Clean up on error
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to write job metadata"})
 	}
 
 	return c.JSON(http.StatusOK, BuildResponse{UUID: id.String()})
@@ -78,11 +72,22 @@ func HandleBindBuildJob(c echo.Context) error {
 
 	// Find a queued job
 	var jobID string
-	var job BuildJob
-	for id, j := range jobsData {
-		if j.Status == JobStatusQueued {
-			jobID = id
-			job = j
+	var job jobstorage.BuildJob
+	entries, err := os.ReadDir(jobstorage.BuildsDir)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read builds directory"})
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		job, err = jobstorage.ReadJob(entry.Name())
+		if err != nil {
+			continue
+		}
+		if job.Status == jobstorage.JobStatusQueued {
+			jobID = entry.Name()
 			break
 		}
 	}
@@ -92,10 +97,12 @@ func HandleBindBuildJob(c echo.Context) error {
 	}
 
 	// Update job status
-	job.Status = JobStatusAssigned
+	job.Status = jobstorage.JobStatusAssigned
 	job.WorkerID = workerID
-	job.UpdatedAt = time.Now()
-	jobsData[jobID] = job
+	job.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := jobstorage.WriteJob(jobID, job); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update job status"})
+	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
 		"job_id": jobID,
@@ -114,9 +121,12 @@ func HandleUpdateJobStatus(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "worker_id is required"})
 	}
 
-	job, exists := jobsData[jobID]
-	if !exists {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	job, err := jobstorage.ReadJob(jobID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
 	}
 
 	if job.WorkerID != workerID {
@@ -124,20 +134,22 @@ func HandleUpdateJobStatus(c echo.Context) error {
 	}
 
 	var statusUpdate struct {
-		Status JobStatus `json:"status"`
+		Status jobstorage.JobStatus `json:"status"`
 	}
 	if err := c.Bind(&statusUpdate); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid status update"})
 	}
 
 	// Validate status transition
-	if !isValidStatusTransition(job.Status, statusUpdate.Status) {
+	if !jobstorage.IsValidStatusTransition(job.Status, statusUpdate.Status) {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid status transition"})
 	}
 
 	job.Status = statusUpdate.Status
-	job.UpdatedAt = time.Now()
-	jobsData[jobID] = job
+	job.UpdatedAt = time.Now().Format(time.RFC3339)
+	if err := jobstorage.WriteJob(jobID, job); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update job status"})
+	}
 
 	return c.JSON(http.StatusOK, job)
 }
@@ -148,9 +160,12 @@ func HandleGetBuild(c echo.Context) error {
 	defer mu.Unlock()
 
 	jobID := c.Param("job_id")
-	job, exists := jobsData[jobID]
-	if !exists {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	job, err := jobstorage.ReadJob(jobID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
 	}
 
 	return c.JSON(http.StatusOK, job)
@@ -161,12 +176,15 @@ func HandleGetBuildLogs(c echo.Context) error {
 	jobID := c.Param("job_id")
 
 	// Verify the job exists
-	if _, exists := jobsData[jobID]; !exists {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	if _, err := jobstorage.ReadJob(jobID); err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
 	}
 
 	// Open the log file in read-only mode
-	logFile := filepath.Join(logsDir, jobID+".log")
+	logFile := jobstorage.GetJobLogPath(jobID)
 	file, err := os.OpenFile(logFile, os.O_RDONLY, 0644)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -217,9 +235,12 @@ func HandleWriteBuildLogs(c echo.Context) error {
 	}
 
 	// Verify the job exists and is assigned to this worker
-	job, exists := jobsData[jobID]
-	if !exists {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	job, err := jobstorage.ReadJob(jobID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
 	}
 
 	if job.WorkerID != workerID {
@@ -230,7 +251,7 @@ func HandleWriteBuildLogs(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
 		defer ws.Close()
 
-		logFile := filepath.Join(logsDir, jobID+".log")
+		logFile := jobstorage.GetJobLogPath(jobID)
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			websocket.Message.Send(ws, fmt.Sprintf("Error opening log file: %v", err))
@@ -259,17 +280,4 @@ func HandleWriteBuildLogs(c echo.Context) error {
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
-}
-
-func isValidStatusTransition(current, next JobStatus) bool {
-	switch current {
-	case JobStatusQueued:
-		return next == JobStatusAssigned
-	case JobStatusAssigned:
-		return next == JobStatusRunning
-	case JobStatusRunning:
-		return next == JobStatusComplete || next == JobStatusFailed
-	default:
-		return false
-	}
 }
