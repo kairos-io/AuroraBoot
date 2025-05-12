@@ -5,9 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/internal/web"
+	"golang.org/x/net/websocket"
 )
 
 const (
@@ -44,12 +46,27 @@ func (w *Worker) Start() error {
 			continue
 		}
 
+		// Connect to websocket for logging
+		// Convert http:// to ws:// for the websocket URL
+		wsEndpoint := strings.Replace(w.endpoint, "http://", "ws://", 1)
+		wsURL := fmt.Sprintf("%s/api/v1/builds/%s/logs/write?worker_id=%s", wsEndpoint, job.JobID, w.workerID)
+		ws, err := websocket.Dial(wsURL, "", w.endpoint)
+		if err != nil {
+			fmt.Printf("Failed to connect to websocket: %v\n", err)
+			continue
+		}
+		defer ws.Close()
+
 		// Process the job
-		fmt.Printf("Processing job %s:\n", job.JobID)
-		fmt.Printf("  Variant: %s\n", job.Job.JobData.Variant)
-		fmt.Printf("  Model: %s\n", job.Job.JobData.Model)
-		fmt.Printf("  Image: %s\n", job.Job.JobData.Image)
-		fmt.Printf("  Version: %s\n", job.Job.JobData.Version)
+		logMessage := fmt.Sprintf("Processing job %s:\n", job.JobID)
+		logMessage += fmt.Sprintf("  Variant: %s\n", job.Job.JobData.Variant)
+		logMessage += fmt.Sprintf("  Model: %s\n", job.Job.JobData.Model)
+		logMessage += fmt.Sprintf("  Image: %s\n", job.Job.JobData.Image)
+		logMessage += fmt.Sprintf("  Version: %s\n", job.Job.JobData.Version)
+
+		if err := websocket.Message.Send(ws, logMessage); err != nil {
+			fmt.Printf("Failed to send log message: %v\n", err)
+		}
 
 		// Update status to complete
 		if err := w.updateJobStatus(job.JobID, web.JobStatusComplete); err != nil {
