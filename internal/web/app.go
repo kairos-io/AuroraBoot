@@ -27,6 +27,10 @@ var artifactDir string
 //go:embed assets
 var assets embed.FS
 
+type AppConfig struct {
+	EnableLogger bool
+}
+
 func getFileSystem(useOS bool) http.FileSystem {
 	if useOS {
 		return http.FS(os.DirFS("app"))
@@ -50,10 +54,19 @@ type JobData struct {
 	Version                string `json:"version"`
 }
 
-func App(listenAddr, outDir string) error {
+func App(listenAddr, outDir string, config ...AppConfig) error {
 	artifactDir = outDir
 	e := echo.New()
-	e.Use(middleware.Logger())
+
+	// Only enable logger if not explicitly disabled
+	enableLogger := true
+	if len(config) > 0 {
+		enableLogger = config[0].EnableLogger
+	}
+
+	if enableLogger {
+		e.Use(middleware.Logger())
+	}
 	e.Use(middleware.Recover())
 
 	// Ensure artifact directory exists
@@ -73,6 +86,7 @@ func App(listenAddr, outDir string) error {
 	api.POST("/builds", HandleQueueBuild)
 	api.POST("/builds/bind", HandleBindBuildJob)
 	api.PUT("/builds/:job_id/status", HandleUpdateJobStatus)
+	api.GET("/builds/:job_id", HandleGetBuild)
 
 	// Serve static artifact files
 	e.Static("/artifacts", artifactDir)

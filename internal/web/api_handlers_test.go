@@ -236,4 +236,68 @@ var _ = Describe("API Handlers", func() {
 			})
 		})
 	})
+
+	Describe("GetBuild", func() {
+		Context("when job exists", func() {
+			var jobID string
+
+			BeforeEach(func() {
+				// Create a job first
+				buildReq := JobData{
+					Variant:     "core",
+					Model:       "test-model",
+					Image:       "test-image",
+					Version:     "1.0.0",
+					TrustedBoot: false,
+				}
+				json.NewEncoder(body).Encode(buildReq)
+				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
+				req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+				c := e.NewContext(req, rec)
+				HandleQueueBuild(c)
+
+				var response BuildResponse
+				json.Unmarshal(rec.Body.Bytes(), &response)
+				jobID = response.UUID
+
+				// Now try to get the job
+				rec = httptest.NewRecorder()
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds/"+jobID, nil)
+			})
+
+			It("should return the job", func() {
+				c := e.NewContext(req, rec)
+				c.SetParamNames("job_id")
+				c.SetParamValues(jobID)
+				err := HandleGetBuild(c)
+				Expect(err).To(BeNil(), fmt.Sprintf("Response body: %s", rec.Body.String()))
+				Expect(rec.Code).To(Equal(http.StatusOK), fmt.Sprintf("Response body: %s", rec.Body.String()))
+
+				var job BuildJob
+				err = json.Unmarshal(rec.Body.Bytes(), &job)
+				Expect(err).To(BeNil(), fmt.Sprintf("Response body: %s", rec.Body.String()))
+				Expect(job.JobData.Variant).To(Equal("core"))
+				Expect(job.JobData.Model).To(Equal("test-model"))
+				Expect(job.JobData.Image).To(Equal("test-image"))
+				Expect(job.JobData.Version).To(Equal("1.0.0"))
+				Expect(job.Status).To(Equal(JobStatusQueued))
+			})
+		})
+
+		Context("when job does not exist", func() {
+			BeforeEach(func() {
+				rec = httptest.NewRecorder()
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds/non-existent", nil)
+			})
+
+			It("should return not found", func() {
+				c := e.NewContext(req, rec)
+				c.SetParamNames("job_id")
+				c.SetParamValues("non-existent")
+				err := HandleGetBuild(c)
+				Expect(err).To(BeNil(), fmt.Sprintf("Response body: %s", rec.Body.String()))
+				Expect(rec.Code).To(Equal(http.StatusNotFound), fmt.Sprintf("Response body: %s", rec.Body.String()))
+			})
+		})
+	})
 })

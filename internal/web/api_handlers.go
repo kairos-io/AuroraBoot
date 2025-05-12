@@ -149,3 +149,17 @@ func isValidStatusTransition(current, next JobStatus) bool {
 		return false
 	}
 }
+
+// HandleGetBuild returns a job by ID
+func HandleGetBuild(c echo.Context) error {
+	mu.Lock()
+	defer mu.Unlock()
+
+	jobID := c.Param("job_id")
+	job, exists := jobsData[jobID]
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	}
+
+	return c.JSON(http.StatusOK, job)
+}
