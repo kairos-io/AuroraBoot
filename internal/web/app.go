@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
@@ -20,7 +21,7 @@ import (
 var staticFiles embed.FS
 
 var mu sync.Mutex
-var jobsData = map[string]JobData{} // Store the last submitted form data
+var jobsData = map[string]BuildJob{} // Store the last submitted form data
 var artifactDir string
 
 //go:embed assets
@@ -66,6 +67,12 @@ func App(listenAddr, outDir string) error {
 
 	// Handle WebSocket connection
 	e.GET("/ws/:uuid", webSocketHandler)
+
+	// API routes
+	api := e.Group("/api/v1")
+	api.POST("/builds", HandleQueueBuild)
+	api.POST("/builds/bind", HandleBindBuildJob)
+	api.PUT("/builds/:job_id/status", HandleUpdateJobStatus)
 
 	// Serve static artifact files
 	e.Static("/artifacts", artifactDir)
@@ -124,14 +131,19 @@ func buildHandler(c echo.Context) error {
 	}
 
 	// Collect job data
-	job := JobData{
-		Variant:                variant,
-		Model:                  c.FormValue("model"),
-		TrustedBoot:            c.FormValue("trusted_boot") == "true",
-		KubernetesDistribution: kubernetesDistribution,
-		KubernetesVersion:      kubernetesVersion,
-		Image:                  image,
-		Version:                c.FormValue("version"),
+	job := BuildJob{
+		JobData: JobData{
+			Variant:                variant,
+			Model:                  c.FormValue("model"),
+			TrustedBoot:            c.FormValue("trusted_boot") == "true",
+			KubernetesDistribution: kubernetesDistribution,
+			KubernetesVersion:      kubernetesVersion,
+			Image:                  image,
+			Version:                c.FormValue("version"),
+		},
+		Status:    JobStatusQueued,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
 	}
 
 	id, err := uuid.NewV4()
@@ -148,7 +160,7 @@ func webSocketHandler(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
 		mu.Lock()
 		uuid := c.Param("uuid")
-		jobData, exists := jobsData[uuid]
+		job, exists := jobsData[uuid]
 		mu.Unlock()
 		if !exists {
 			websocket.Message.Send(ws, "Job not found")
@@ -158,7 +170,7 @@ func webSocketHandler(c echo.Context) error {
 		defer ws.Close()
 
 		// Log the start of the process
-		websocket.Message.Send(ws, fmt.Sprintf("Starting process with data: %+v\n", jobData))
+		websocket.Message.Send(ws, fmt.Sprintf("Starting process with data: %+v\n", job.JobData))
 
 		tempdir, err := os.MkdirTemp("", "build")
 		if err != nil {
@@ -168,7 +180,7 @@ func webSocketHandler(c echo.Context) error {
 
 		defer os.RemoveAll(tempdir)
 
-		if err := prepareDockerfile(jobData, tempdir); err != nil {
+		if err := prepareDockerfile(job.JobData, tempdir); err != nil {
 			websocket.Message.Send(ws, fmt.Sprintf("Failed to prepare image: %v", err))
 			return
 		}
