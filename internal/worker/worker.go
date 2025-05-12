@@ -31,11 +31,11 @@ func NewWorker(endpoint, workerID string) *Worker {
 }
 
 func (w *Worker) Start() error {
+	fmt.Printf("Worker %s starting. Will poll for jobs at %s every %v\n", w.workerID, w.endpoint, retryInterval)
 	for {
 		// Try to bind a job
 		job, err := w.bindJob()
 		if err != nil {
-			fmt.Printf("No jobs available, retrying in %v...\n", retryInterval)
 			time.Sleep(retryInterval)
 			continue
 		}
