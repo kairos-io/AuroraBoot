@@ -1,11 +1,16 @@
 package web
 
 import (
+	"fmt"
+	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/net/websocket"
 )
 
 type BuildResponse struct {
@@ -137,19 +142,6 @@ func HandleUpdateJobStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, job)
 }
 
-func isValidStatusTransition(current, next JobStatus) bool {
-	switch current {
-	case JobStatusQueued:
-		return next == JobStatusAssigned
-	case JobStatusAssigned:
-		return next == JobStatusRunning
-	case JobStatusRunning:
-		return next == JobStatusComplete || next == JobStatusFailed
-	default:
-		return false
-	}
-}
-
 // HandleGetBuild returns a job by ID
 func HandleGetBuild(c echo.Context) error {
 	mu.Lock()
@@ -162,4 +154,122 @@ func HandleGetBuild(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, job)
+}
+
+// HandleGetBuildLogs returns the build logs for a job
+func HandleGetBuildLogs(c echo.Context) error {
+	jobID := c.Param("job_id")
+
+	// Verify the job exists
+	if _, exists := jobsData[jobID]; !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	}
+
+	// Open the log file in read-only mode
+	logFile := filepath.Join(logsDir, jobID+".log")
+	file, err := os.OpenFile(logFile, os.O_RDONLY, 0644)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Log file not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to open log file: %v", err)})
+	}
+	defer file.Close()
+
+	// Handle websocket upgrade
+	websocket.Handler(func(ws *websocket.Conn) {
+		defer ws.Close()
+
+		// Start from the beginning of the file
+		if _, err := file.Seek(0, 0); err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Error seeking to start of log file: %v", err))
+			return
+		}
+
+		// Read and send the logs
+		buf := make([]byte, 1024)
+		for {
+			n, err := file.Read(buf)
+			if err != nil {
+				// If we've reached the end of the file, wait for more data
+				if err == io.EOF {
+					time.Sleep(100 * time.Millisecond)
+					continue
+				}
+				break
+			}
+			if n > 0 {
+				if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
+					break
+				}
+			}
+		}
+	}).ServeHTTP(c.Response(), c.Request())
+	return nil
+}
+
+// HandleWriteBuildLogs handles streaming logs for a job via WebSocket
+func HandleWriteBuildLogs(c echo.Context) error {
+	jobID := c.Param("job_id")
+	workerID := c.QueryParam("worker_id")
+	if workerID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "worker_id is required"})
+	}
+
+	// Verify the job exists and is assigned to this worker
+	job, exists := jobsData[jobID]
+	if !exists {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+	}
+
+	if job.WorkerID != workerID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Job is assigned to a different worker"})
+	}
+
+	// Handle websocket upgrade
+	websocket.Handler(func(ws *websocket.Conn) {
+		defer ws.Close()
+
+		logFile := filepath.Join(logsDir, jobID+".log")
+		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Error opening log file: %v", err))
+			return
+		}
+		defer file.Close()
+
+		// Continuously read messages from the websocket and write them to the log file
+		for {
+			var message string
+			if err := websocket.Message.Receive(ws, &message); err != nil {
+				if err != io.EOF {
+					websocket.Message.Send(ws, fmt.Sprintf("Error receiving message: %v", err))
+				}
+				break
+			}
+
+			if message == "" {
+				continue
+			}
+
+			if _, err := file.WriteString(message); err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Error writing logs: %v", err))
+				break
+			}
+		}
+	}).ServeHTTP(c.Response(), c.Request())
+	return nil
+}
+
+func isValidStatusTransition(current, next JobStatus) bool {
+	switch current {
+	case JobStatusQueued:
+		return next == JobStatusAssigned
+	case JobStatusAssigned:
+		return next == JobStatusRunning
+	case JobStatusRunning:
+		return next == JobStatusComplete || next == JobStatusFailed
+	default:
+		return false
+	}
 }

@@ -6,10 +6,14 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"golang.org/x/net/websocket"
 )
 
 var _ = Describe("API Handlers", func() {
@@ -300,4 +304,257 @@ var _ = Describe("API Handlers", func() {
 			})
 		})
 	})
+
+	Describe("GetBuildLogs", func() {
+		Context("when job exists", func() {
+			var jobID string
+
+			BeforeEach(func() {
+				// Create a job first
+				buildReq := JobData{
+					Variant:     "core",
+					Model:       "test-model",
+					Image:       "test-image",
+					Version:     "1.0.0",
+					TrustedBoot: false,
+				}
+				jsonData, err := json.Marshal(buildReq)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := http.Post(serverURL+"/api/v1/builds", "application/json", bytes.NewBuffer(jsonData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var response BuildResponse
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).NotTo(HaveOccurred())
+				jobID = response.UUID
+
+				// Bind the job
+				resp, err = http.Post(serverURL+"/api/v1/builds/bind?worker_id=test-worker", "application/json", nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				// Write some logs via websocket
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write?worker_id=test-worker", port, jobID)
+				ws, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).NotTo(HaveOccurred())
+				defer ws.Close()
+
+				logs := "test log line 1\ntest log line 2\n"
+				err = websocket.Message.Send(ws, logs)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Wait a bit for the logs to be written
+				time.Sleep(100 * time.Millisecond)
+			})
+
+			It("should return the job logs", func() {
+				// Connect to the websocket endpoint
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs", port, jobID)
+				ws, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).NotTo(HaveOccurred())
+				defer ws.Close()
+
+				// Read the logs
+				var logs string
+				err = websocket.Message.Receive(ws, &logs)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(logs).To(Equal("test log line 1\ntest log line 2\n"))
+			})
+		})
+
+		Context("when job does not exist", func() {
+			It("should return not found", func() {
+				// Try to connect to a non-existent job's logs
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/non-existent/logs", port)
+				_, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).To(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("WriteBuildLogs", func() {
+		Context("when logs are written", func() {
+			var jobID string
+
+			BeforeEach(func() {
+				// Create and bind a job
+				buildReq := JobData{
+					Variant:     "core",
+					Model:       "test-model",
+					Image:       "test-image",
+					Version:     "1.0.0",
+					TrustedBoot: false,
+				}
+				jsonData, err := json.Marshal(buildReq)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := http.Post(serverURL+"/api/v1/builds", "application/json", bytes.NewBuffer(jsonData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var response BuildResponse
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).NotTo(HaveOccurred())
+				jobID = response.UUID
+
+				// Bind the job
+				resp, err = http.Post(serverURL+"/api/v1/builds/bind?worker_id=test-worker", "application/json", nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			})
+
+			It("should write the logs via websocket", func() {
+				// Connect to the websocket endpoint
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write?worker_id=test-worker", port, jobID)
+				ws, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).NotTo(HaveOccurred())
+				defer ws.Close()
+
+				// Send logs through websocket
+				logs := "test log line 1\ntest log line 2\n"
+				err = websocket.Message.Send(ws, logs)
+				Expect(err).NotTo(HaveOccurred())
+
+				// Wait a bit for the logs to be written
+				time.Sleep(100 * time.Millisecond)
+
+				// Verify the log file contents
+				logFile := filepath.Join(logsDir, jobID+".log")
+				content, err := os.ReadFile(logFile)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(content)).To(Equal("test log line 1\ntest log line 2\n"))
+			})
+
+			It("should handle multiple log messages", func() {
+				// Connect to the websocket endpoint
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write?worker_id=test-worker", port, jobID)
+				ws, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).NotTo(HaveOccurred())
+				defer ws.Close()
+
+				// Send multiple log messages
+				logs := []string{
+					"test log line 1\n",
+					"test log line 2\n",
+					"test log line 3\n",
+				}
+
+				for _, log := range logs {
+					err = websocket.Message.Send(ws, log)
+					Expect(err).NotTo(HaveOccurred())
+				}
+
+				// Wait a bit for the logs to be written
+				time.Sleep(100 * time.Millisecond)
+
+				// Verify the log file contents
+				logFile := filepath.Join(logsDir, jobID+".log")
+				content, err := os.ReadFile(logFile)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(content)).To(Equal("test log line 1\ntest log line 2\ntest log line 3\n"))
+			})
+
+			It("should handle empty log messages", func() {
+				// Connect to the websocket endpoint
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write?worker_id=test-worker", port, jobID)
+				ws, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).NotTo(HaveOccurred())
+				defer ws.Close()
+
+				// Send empty log message
+				err = websocket.Message.Send(ws, "")
+				Expect(err).NotTo(HaveOccurred())
+
+				// Wait a bit for the logs to be written
+				time.Sleep(100 * time.Millisecond)
+
+				// Verify the log file is empty
+				logFile := filepath.Join(logsDir, jobID+".log")
+				content, err := os.ReadFile(logFile)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(content)).To(BeEmpty())
+			})
+
+			It("should reject connection without worker_id", func() {
+				// Try to connect without worker_id
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write", port, jobID)
+				_, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).To(HaveOccurred())
+			})
+		})
+
+		Context("when invalid logs write is attempted", func() {
+			var jobID string
+
+			BeforeEach(func() {
+				// Create and bind a job
+				buildReq := JobData{
+					Variant:     "core",
+					Model:       "test-model",
+					Image:       "test-image",
+					Version:     "1.0.0",
+					TrustedBoot: false,
+				}
+				jsonData, err := json.Marshal(buildReq)
+				Expect(err).NotTo(HaveOccurred())
+				resp, err := http.Post(serverURL+"/api/v1/builds", "application/json", bytes.NewBuffer(jsonData))
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+
+				var response BuildResponse
+				err = json.NewDecoder(resp.Body).Decode(&response)
+				Expect(err).NotTo(HaveOccurred())
+				jobID = response.UUID
+
+				// Bind the job
+				resp, err = http.Post(serverURL+"/api/v1/builds/bind?worker_id=test-worker", "application/json", nil)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			})
+
+			It("should handle empty log messages", func() {
+				// Connect to the websocket endpoint
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write?worker_id=test-worker", port, jobID)
+				ws, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).NotTo(HaveOccurred())
+				defer ws.Close()
+
+				// Send empty log message
+				err = websocket.Message.Send(ws, "")
+				Expect(err).NotTo(HaveOccurred())
+
+				// Wait a bit for the logs to be written
+				time.Sleep(100 * time.Millisecond)
+
+				// Verify the log file is empty
+				logFile := filepath.Join(logsDir, jobID+".log")
+				content, err := os.ReadFile(logFile)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(string(content)).To(BeEmpty())
+			})
+
+			It("should reject connection without worker_id", func() {
+				// Try to connect without worker_id
+				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write", port, jobID)
+				_, err := websocket.Dial(wsURL, "", "http://localhost")
+				Expect(err).To(HaveOccurred())
+			})
+		})
+	})
 })
+
+// Mock websocket connection for testing
+type mockWebsocketConn struct {
+	messages []string
+}
+
+func (m *mockWebsocketConn) Send(v interface{}) error {
+	if msg, ok := v.(string); ok {
+		m.messages = append(m.messages, msg)
+	}
+	return nil
+}
+
+func (m *mockWebsocketConn) Close() error {
+	return nil
+}

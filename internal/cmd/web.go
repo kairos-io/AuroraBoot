@@ -22,9 +22,15 @@ var WebCMD = cli.Command{
 			Usage: "Artifact directory",
 			Value: "/tmp/artifacts",
 		},
+		&cli.StringFlag{
+			Name:  "logs-dir",
+			Usage: "Directory to store build logs",
+			Value: "/tmp/build-logs",
+		},
 	},
 	Action: func(c *cli.Context) error {
 		os.MkdirAll(c.String("artifact-dir"), os.ModePerm)
-		return web.App(c.String("address"), c.String("artifact-dir"))
+		os.MkdirAll(c.String("logs-dir"), os.ModePerm)
+		return web.App(c.String("address"), c.String("artifact-dir"), c.String("logs-dir"))
 	},
 }

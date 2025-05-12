@@ -23,12 +23,14 @@ var staticFiles embed.FS
 var mu sync.Mutex
 var jobsData = map[string]BuildJob{} // Store the last submitted form data
 var artifactDir string
+var logsDir string
 
 //go:embed assets
 var assets embed.FS
 
 type AppConfig struct {
 	EnableLogger bool
+	LogsDir      string
 }
 
 func getFileSystem(useOS bool) http.FileSystem {
@@ -54,8 +56,9 @@ type JobData struct {
 	Version                string `json:"version"`
 }
 
-func App(listenAddr, outDir string, config ...AppConfig) error {
+func App(listenAddr, outDir, logsDirectory string, config ...AppConfig) error {
 	artifactDir = outDir
+	logsDir = logsDirectory
 	e := echo.New()
 
 	// Only enable logger if not explicitly disabled
@@ -71,6 +74,7 @@ func App(listenAddr, outDir string, config ...AppConfig) error {
 
 	// Ensure artifact directory exists
 	os.MkdirAll(artifactDir, os.ModePerm)
+	os.MkdirAll(logsDir, os.ModePerm)
 
 	assetHandler := http.FileServer(getFileSystem(false))
 	e.GET("/*", echo.WrapHandler(assetHandler))
@@ -87,9 +91,12 @@ func App(listenAddr, outDir string, config ...AppConfig) error {
 	api.POST("/builds/bind", HandleBindBuildJob)
 	api.PUT("/builds/:job_id/status", HandleUpdateJobStatus)
 	api.GET("/builds/:job_id", HandleGetBuild)
+	api.GET("/builds/:job_id/logs", HandleGetBuildLogs)
+	api.GET("/builds/:job_id/logs/write", HandleWriteBuildLogs)
 
 	// Serve static artifact files
 	e.Static("/artifacts", artifactDir)
+	e.Static("/logs", logsDir)
 
 	e.Logger.Fatal(e.Start(listenAddr))
 
