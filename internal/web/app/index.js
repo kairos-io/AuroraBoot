@@ -154,7 +154,13 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!message.trim()) return; // Skip empty messages
 
           updateStatus(message);
-          outputElement.innerHTML += `${convert.toHtml(message)}\n`;
+          // Split message by newlines and wrap each line in a div
+          const lines = message.split('\n');
+          for (const line of lines) {
+            if (line.trim()) { // Only add non-empty lines
+              outputElement.innerHTML += `<div>${convert.toHtml(line)}</div>`;
+            }
+          }
           outputElement.scrollTop = outputElement.scrollHeight;
         };
         const buildingContainerImage = document.getElementById('building-container-image');

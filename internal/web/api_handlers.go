@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -218,7 +219,7 @@ func HandleWriteBuildLogs(c echo.Context) error {
 		logFile := jobstorage.GetJobLogPath(jobID)
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Error opening log file: %v", err))
+			websocket.Message.Send(ws, fmt.Sprintf("Error opening log file: %v\n", err))
 			return
 		}
 		defer file.Close()
@@ -228,7 +229,7 @@ func HandleWriteBuildLogs(c echo.Context) error {
 			var message string
 			if err := websocket.Message.Receive(ws, &message); err != nil {
 				if err != io.EOF {
-					websocket.Message.Send(ws, fmt.Sprintf("Error receiving message: %v", err))
+					websocket.Message.Send(ws, fmt.Sprintf("Error receiving message: %v\n", err))
 				}
 				break
 			}
@@ -237,8 +238,13 @@ func HandleWriteBuildLogs(c echo.Context) error {
 				continue
 			}
 
+			// Ensure the message ends with a newline
+			if !strings.HasSuffix(message, "\n") {
+				message += "\n"
+			}
+
 			if _, err := file.WriteString(message); err != nil {
-				websocket.Message.Send(ws, fmt.Sprintf("Error writing logs: %v", err))
+				websocket.Message.Send(ws, fmt.Sprintf("Error writing logs: %v\n", err))
 				break
 			}
 		}

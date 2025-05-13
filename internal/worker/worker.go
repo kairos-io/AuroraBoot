@@ -61,15 +61,21 @@ func (w *WebsocketWriter) Write(p []byte) (n int, err error) {
 		Message string `json:"message"`
 	}
 
-	if err := json.Unmarshal(p, &logMsg); err == nil && logMsg.Level != "" && logMsg.Message != "" {
+	if err := json.Unmarshal(p, &logMsg); err == nil {
 		// If it's a JSON log message, convert to plain text
-		message := fmt.Sprintf("[%s] %s", strings.ToUpper(logMsg.Level), logMsg.Message)
+		// Ensure the message ends with a newline
+		message := fmt.Sprintf("[%s] %s\n", strings.ToUpper(logMsg.Level), strings.TrimSpace(logMsg.Message))
 		if err := websocket.Message.Send(w.ws, message); err != nil {
 			return 0, err
 		}
 	} else {
 		// If not a JSON log message, send as plain text
-		if err := websocket.Message.Send(w.ws, string(p)); err != nil {
+		// Ensure the message ends with a newline if it doesn't already
+		message := string(p)
+		if !strings.HasSuffix(message, "\n") {
+			message += "\n"
+		}
+		if err := websocket.Message.Send(w.ws, message); err != nil {
 			return 0, err
 		}
 	}
