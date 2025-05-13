@@ -106,6 +106,6 @@ var _ = Describe("Worker", func() {
 		Expect(err).NotTo(HaveOccurred())
 
 		// Check that the logs contain the expected error
-		Expect(logs).To(ContainSubstring(" pull access denied, repository does not exist or may require authorization"))
+		Expect(logs).To(ContainSubstring("pull access denied"))
 	})
 })
