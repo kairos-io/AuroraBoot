@@ -27,7 +27,7 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{
 			Name:  "builds-dir",
 			Usage: "Directory to store build jobs and their artifacts",
-			Value: "/tmp/builds",
+			Value: "/tmp/kairos-builds",
 		},
 		&cli.BoolFlag{
 			Name:  "create-worker",

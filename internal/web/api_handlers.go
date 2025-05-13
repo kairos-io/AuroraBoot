@@ -45,7 +45,10 @@ func HandleQueueBuild(c echo.Context) error {
 	}
 
 	// Create job directory
-	jobPath := jobstorage.GetJobPath(id.String())
+	jobPath, err := jobstorage.GetJobPath(id.String())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
+	}
 	if err := os.MkdirAll(jobPath, 0755); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
 	}
@@ -127,7 +130,8 @@ func HandleGetBuild(c echo.Context) error {
 	jobID := c.Param("job_id")
 	job, err := jobstorage.ReadJob(jobID)
 	if err != nil {
-		if os.IsNotExist(err) {
+		// Check if it's a not found error (either invalid job ID or job doesn't exist)
+		if os.IsNotExist(err) || strings.Contains(err.Error(), "invalid job ID format") {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
@@ -149,7 +153,10 @@ func HandleGetBuildLogs(c echo.Context) error {
 	}
 
 	// Open the log file in read-only mode
-	logFile := jobstorage.GetJobLogPath(jobID)
+	logFile, err := jobstorage.GetJobLogPath(jobID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
 	file, err := os.OpenFile(logFile, os.O_RDONLY, 0644)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -216,7 +223,11 @@ func HandleWriteBuildLogs(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
 		defer ws.Close()
 
-		logFile := jobstorage.GetJobLogPath(jobID)
+		logFile, err := jobstorage.GetJobLogPath(jobID)
+		if err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Error getting log file path: %v\n", err))
+			return
+		}
 		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
 		if err != nil {
 			websocket.Message.Send(ws, fmt.Sprintf("Error opening log file: %v\n", err))
@@ -280,7 +291,11 @@ func HandleUploadArtifact(c echo.Context) error {
 	}
 
 	// Create the job's artifacts directory if it doesn't exist
-	artifactsDir := filepath.Join(jobstorage.GetJobPath(jobID), "artifacts")
+	jobPath, err := jobstorage.GetJobPath(jobID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	artifactsDir := filepath.Join(jobPath, "artifacts")
 	if err := os.MkdirAll(artifactsDir, 0755); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create artifacts directory"})
 	}
@@ -315,7 +330,11 @@ func HandleGetArtifacts(c echo.Context) error {
 	}
 
 	// Get the artifacts directory
-	artifactsDir := filepath.Join(jobstorage.GetJobPath(jobID), "artifacts")
+	jobPath, err := jobstorage.GetJobPath(jobID)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	artifactsDir := filepath.Join(jobPath, "artifacts")
 
 	// List all files in the artifacts directory
 	files, err := os.ReadDir(artifactsDir)

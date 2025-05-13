@@ -475,7 +475,8 @@ var _ = Describe("API Handlers", func() {
 				time.Sleep(100 * time.Millisecond)
 
 				// Verify the log file contents
-				logFile := jobstorage.GetJobLogPath(jobID)
+				logFile, err := jobstorage.GetJobLogPath(jobID)
+				Expect(err).NotTo(HaveOccurred())
 				content, err := os.ReadFile(logFile)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(string(content)).To(Equal("test log line 1\ntest log line 2\n"))
@@ -504,7 +505,8 @@ var _ = Describe("API Handlers", func() {
 				time.Sleep(100 * time.Millisecond)
 
 				// Verify the log file contents
-				logFile := jobstorage.GetJobLogPath(jobID)
+				logFile, err := jobstorage.GetJobLogPath(jobID)
+				Expect(err).NotTo(HaveOccurred())
 				content, err := os.ReadFile(logFile)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(string(content)).To(Equal("test log line 1\ntest log line 2\ntest log line 3\n"))
@@ -525,7 +527,8 @@ var _ = Describe("API Handlers", func() {
 				time.Sleep(100 * time.Millisecond)
 
 				// Verify the log file is empty
-				logFile := jobstorage.GetJobLogPath(jobID)
+				logFile, err := jobstorage.GetJobLogPath(jobID)
+				Expect(err).NotTo(HaveOccurred())
 				content, err := os.ReadFile(logFile)
 				Expect(err).NotTo(HaveOccurred())
 				Expect(string(content)).To(BeEmpty())

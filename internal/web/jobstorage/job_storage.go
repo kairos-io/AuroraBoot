@@ -2,10 +2,13 @@ package jobstorage
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
+
+	"github.com/gofrs/uuid"
 )
 
 // BuildsDir is the directory where all build jobs are stored
@@ -15,18 +18,31 @@ var BuildsDir string
 var jobMutex sync.Mutex
 
 // getJobPath returns the path to a job's directory
-func GetJobPath(jobID string) string {
-	return filepath.Join(BuildsDir, jobID)
+func GetJobPath(jobID string) (string, error) {
+	// Validate that jobID is a valid UUID.
+	// Also ensure that user provided input is not trying to traverse the file system.
+	if _, err := uuid.FromString(jobID); err != nil {
+		return "", fmt.Errorf("invalid job ID format: %v", err)
+	}
+	return filepath.Join(BuildsDir, jobID), nil
 }
 
 // getJobMetadataPath returns the path to a job's metadata file
-func GetJobMetadataPath(jobID string) string {
-	return filepath.Join(GetJobPath(jobID), "job.json")
+func GetJobMetadataPath(jobID string) (string, error) {
+	jobPath, err := GetJobPath(jobID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(jobPath, "job.json"), nil
 }
 
 // getJobLogPath returns the path to a job's log file
-func GetJobLogPath(jobID string) string {
-	return filepath.Join(GetJobPath(jobID), "build.log")
+func GetJobLogPath(jobID string) (string, error) {
+	jobPath, err := GetJobPath(jobID)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(jobPath, "build.log"), nil
 }
 
 // BuildJob represents a build job in the system
@@ -63,7 +79,11 @@ const (
 // ReadJob reads a job's metadata from the filesystem
 func ReadJob(jobID string) (BuildJob, error) {
 	var job BuildJob
-	data, err := os.ReadFile(GetJobMetadataPath(jobID))
+	metadataPath, err := GetJobMetadataPath(jobID)
+	if err != nil {
+		return job, err
+	}
+	data, err := os.ReadFile(metadataPath)
 	if err != nil {
 		return job, err
 	}
@@ -73,11 +93,15 @@ func ReadJob(jobID string) (BuildJob, error) {
 
 // WriteJob writes a job's metadata to the filesystem
 func WriteJob(jobID string, job BuildJob) error {
+	metadataPath, err := GetJobMetadataPath(jobID)
+	if err != nil {
+		return err
+	}
 	data, err := json.MarshalIndent(job, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(GetJobMetadataPath(jobID), data, 0644)
+	return os.WriteFile(metadataPath, data, 0644)
 }
 
 // IsValidStatusTransition checks if a status transition is valid

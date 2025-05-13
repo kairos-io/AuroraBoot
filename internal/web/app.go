@@ -163,7 +163,10 @@ func buildHandler(c echo.Context) error {
 	}
 
 	// Create job directory
-	jobPath := jobstorage.GetJobPath(id.String())
+	jobPath, err := jobstorage.GetJobPath(id.String())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
+	}
 	if err := os.MkdirAll(jobPath, 0755); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
 	}
@@ -194,7 +197,11 @@ func webSocketHandler(c echo.Context) error {
 		}()
 
 		// Get the job's build directory
-		jobPath := jobstorage.GetJobPath(uuid)
+		jobPath, err := jobstorage.GetJobPath(uuid)
+		if err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Error getting job path: %v", err))
+			return
+		}
 		buildLogPath := filepath.Join(jobPath, "build.log")
 
 		// Check if build.log exists
