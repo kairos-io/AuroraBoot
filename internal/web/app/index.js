@@ -172,19 +172,23 @@ document.addEventListener('DOMContentLoaded', () => {
         function updateStatus(message) {
           if (message.includes("Building container image")) {
             buildingContainerImage.classList.remove("hidden");
-          } else if (message.includes("Generating tarball")) {
+          }
+          if (message.includes("Generating tarball")) {
             generatingTarball.classList.remove("hidden");
             buildingContainerImage.querySelector('.spinner').classList.add("hidden");
             buildingContainerImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating raw image")) {
+          }
+          if (message.includes("Generating raw image")) {
             generatingRawImage.classList.remove("hidden");
             generatingTarball.querySelector('.spinner').classList.add("hidden");
             generatingTarball.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating ISO")) {
+          }
+          if (message.includes("Generating ISO")) {
             generatingISO.classList.remove("hidden");
             generatingRawImage.querySelector('.spinner').classList.add("hidden");
             generatingRawImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating download links")) {
+          }
+          if (message.includes("Generating download links")) {
             generatingDownloadLinks.classList.remove("hidden");
             generatingISO.querySelector('.spinner').classList.add("hidden");
             generatingISO.querySelector('.done').classList.remove("hidden");
