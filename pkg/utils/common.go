@@ -398,7 +398,25 @@ func NameFromRootfs(rootfs string) string {
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image version")
 		}
-		return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
+		// Add the k8s version and provider if present
+		if variant == "standard" {
+			k8sprovider, err := sdkUtils.OSRelease("KAIROS_SOFTWARE_VERSION_PREFIX", filepath.Join(rootfs, "etc/kairos-release"))
+			if err != nil {
+				internal.Log.Logger.Error().Err(err).Msg("failed to get image k8s provider")
+				// return normal name without k8s stuff
+				return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
+			}
+			k8sversion, err := sdkUtils.OSRelease("KAIROS_SOFTWARE_VERSION", filepath.Join(rootfs, "etc/kairos-release"))
+			if err != nil {
+				internal.Log.Logger.Error().Err(err).Msg("failed to get image k8s version")
+				// return normal name without k8s stuff
+				return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
+			}
+			return fmt.Sprintf("%s-%s-%s-%s-%s-%s%s", flavor, flavorVersion, variant, arch, model, k8sversion, k8sprovider)
+
+		} else {
+			return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
+		}
 	} else {
 		// Before 3.2.x the kairos info was in /etc/os-release
 		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
