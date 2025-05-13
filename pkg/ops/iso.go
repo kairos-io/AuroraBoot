@@ -323,7 +323,7 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 	return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
 }
 
-func (b *BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
+func (b BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
 	kernel, initrd, err := b.e.FindKernelInitrd(rootDir)
 	if err != nil {
 		b.cfg.Logger.Error("Could not find kernel and/or initrd")
@@ -365,7 +365,7 @@ func (b *BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
 // it searches the rootfs for the shim/grub.efi file and copies it into a directory with the proper EFI structure
 // then it generates a grub.cfg that chainloads into the grub.cfg of the livecd (which is the normal livecd grub config from luet packages)
 // then it calculates the size of the EFI image based on the files copied and creates the image
-func (b *BuildISOAction) createEFI(rootdir string, isoDir string) error {
+func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	var err error
 
 	// rootfs /efi dir
@@ -494,7 +494,7 @@ func (b *BuildISOAction) writeUbuntuGrubEfiCfg(path string) error {
 // copyShim copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
 // rootdir is the rootfs where the shim files are searched for
-func (b *BuildISOAction) copyShim(tempdir, rootdir string) error {
+func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	var fallBackShim string
 	var err error
 	var arch string
@@ -568,7 +568,7 @@ func (b *BuildISOAction) copyShim(tempdir, rootdir string) error {
 // copyGrub copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
 // rootdir is the rootfs where the shim files are searched for
-func (b *BuildISOAction) copyGrub(tempdir, rootdir string) error {
+func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	var fallBackGrub string
 	var err error
 
@@ -636,7 +636,7 @@ func (b *BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	return err
 }
 
-func (b *BuildISOAction) burnISO(root string) error {
+func (b BuildISOAction) burnISO(root string) error {
 	cmd := "xorriso"
 	var outputFile string
 	var isoFileName string
@@ -687,7 +687,7 @@ func (b *BuildISOAction) burnISO(root string) error {
 	return nil
 }
 
-func (b *BuildISOAction) applySources(target string, sources ...*v1types.ImageSource) error {
+func (b BuildISOAction) applySources(target string, sources ...*v1types.ImageSource) error {
 	for _, src := range sources {
 		_, err := b.e.DumpSource(target, src)
 		if err != nil {
