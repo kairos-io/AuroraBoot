@@ -2,8 +2,8 @@ package web
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -81,6 +81,7 @@ func App(listenAddr, outDir, buildsDirectory string, config ...AppConfig) error 
 	api.GET("/builds/:job_id", HandleGetBuild)
 	api.GET("/builds/:job_id/logs", HandleGetBuildLogs)
 	api.GET("/builds/:job_id/logs/write", HandleWriteBuildLogs)
+	api.POST("/builds/:job_id/artifacts/:filename", HandleUploadArtifact)
 
 	// Serve static artifact files
 	e.Static("/artifacts", artifactDir)
@@ -179,7 +180,7 @@ func webSocketHandler(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
 		mu.Lock()
 		uuid := c.Param("uuid")
-		job, err := jobstorage.ReadJob(uuid)
+		_, err := jobstorage.ReadJob(uuid)
 		mu.Unlock()
 		if err != nil {
 			websocket.Message.Send(ws, "Job not found")
@@ -188,87 +189,46 @@ func webSocketHandler(c echo.Context) error {
 
 		defer ws.Close()
 
-		// Log the start of the process
-		websocket.Message.Send(ws, fmt.Sprintf("Starting process with data: %+v\n", job.JobData))
+		// Get the job's build directory
+		jobPath := jobstorage.GetJobPath(uuid)
+		buildLogPath := filepath.Join(jobPath, "build.log")
 
-		tempdir, err := os.MkdirTemp("", "build")
+		// Check if build.log exists
+		if _, err := os.Stat(buildLogPath); os.IsNotExist(err) {
+			websocket.Message.Send(ws, "Waiting for worker to pick up the job...")
+
+			// Wait for the file to appear
+			for {
+				time.Sleep(1 * time.Second)
+				if _, err := os.Stat(buildLogPath); err == nil {
+					break
+				}
+			}
+		}
+
+		// Open the log file
+		file, err := os.Open(buildLogPath)
 		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to create temp dir: %v", err))
+			websocket.Message.Send(ws, fmt.Sprintf("Failed to open build log: %v", err))
 			return
 		}
+		defer file.Close()
 
-		defer os.RemoveAll(tempdir)
-
-		if err := prepareDockerfile(job.JobData, tempdir); err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to prepare image: %v", err))
-			return
+		// Create a buffer for reading
+		buf := make([]byte, 1024)
+		for {
+			n, err := file.Read(buf)
+			if err != nil && err != io.EOF {
+				websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))
+				return
+			}
+			if n > 0 {
+				if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
+					return
+				}
+			}
+			time.Sleep(100 * time.Millisecond)
 		}
-
-		websocket.Message.Send(ws, "Building container image...")
-
-		err = runBashProcessWithOutput(ws,
-			buildOCI(
-				tempdir,
-				"my-image",
-			))
-
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to build image: %v", err))
-			return
-		}
-
-		// Create the output dir for the job
-		jobOutputDir := filepath.Join(artifactDir, uuid)
-		os.MkdirAll(jobOutputDir, os.ModePerm)
-
-		websocket.Message.Send(ws, "Generating tarball...")
-
-		err = runBashProcessWithOutput(
-			ws,
-			saveOCI(filepath.Join(jobOutputDir, "image.tar"), "my-image"),
-		)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, "Generating raw image...")
-		if err := buildRawDisk("my-image", jobOutputDir, ws); err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to generate raw image: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, "Generating ISO...")
-		if err := buildISO("my-image", jobOutputDir, "custom-kairos", ws); err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to generate ISO: %v", err))
-			return
-		}
-
-		type Link struct {
-			Name string `json:"name"`
-			URL  string `json:"url"`
-		}
-
-		rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to find raw disk image: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, "Generating download links...")
-		links := []Link{
-			{Name: "Container image", URL: "/artifacts/" + uuid + "/image.tar"},
-			{Name: "Raw disk image", URL: "/artifacts/" + uuid + "/" + filepath.Base(rawImage)},
-			{Name: "ISO image", URL: "/artifacts/" + uuid + "/custom-kairos.iso"},
-		}
-
-		dat, err := json.Marshal(links)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to marshal links: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, string(dat))
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
 }

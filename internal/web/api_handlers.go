@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -243,4 +244,54 @@ func HandleWriteBuildLogs(c echo.Context) error {
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
+}
+
+// HandleUploadArtifact handles uploading build artifacts from workers
+func HandleUploadArtifact(c echo.Context) error {
+	jobID := c.Param("job_id")
+	workerID := c.QueryParam("worker_id")
+	if workerID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "worker_id is required"})
+	}
+
+	// Verify the job exists and is assigned to this worker
+	job, err := jobstorage.ReadJob(jobID)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
+	}
+
+	if job.WorkerID != workerID {
+		return c.JSON(http.StatusForbidden, map[string]string{"error": "Job is assigned to a different worker"})
+	}
+
+	// Get the filename from the URL
+	filename := c.Param("filename")
+	if filename == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "filename is required"})
+	}
+
+	// Create the job's artifacts directory if it doesn't exist
+	artifactsDir := filepath.Join(jobstorage.GetJobPath(jobID), "artifacts")
+	if err := os.MkdirAll(artifactsDir, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create artifacts directory"})
+	}
+
+	// Create the destination file
+	dstPath := filepath.Join(artifactsDir, filename)
+	dst, err := os.Create(dstPath)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create destination file"})
+	}
+	defer dst.Close()
+
+	// Copy the uploaded file to the destination
+	if _, err := io.Copy(dst, c.Request().Body); err != nil {
+		os.Remove(dstPath) // Clean up on error
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to save uploaded file"})
+	}
+
+	return c.JSON(http.StatusOK, map[string]string{"message": "Artifact uploaded successfully"})
 }
