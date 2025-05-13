@@ -4,10 +4,15 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
+	"time"
 )
 
 // BuildsDir is the directory where all build jobs are stored
 var BuildsDir string
+
+// jobMutex protects concurrent access to job operations
+var jobMutex sync.Mutex
 
 // getJobPath returns the path to a job's directory
 func GetJobPath(jobID string) string {
@@ -87,4 +92,43 @@ func IsValidStatusTransition(current, next JobStatus) bool {
 	default:
 		return false
 	}
+}
+
+// BindNextAvailableJob attempts to bind the next available queued job to a worker
+// Returns the job ID and job data if successful, or empty values if no job is available
+func BindNextAvailableJob(workerID string) (string, BuildJob, error) {
+	jobMutex.Lock()
+	defer jobMutex.Unlock()
+
+	entries, err := os.ReadDir(BuildsDir)
+	if err != nil {
+		return "", BuildJob{}, err
+	}
+
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		jobID := entry.Name()
+		job, err := ReadJob(jobID)
+		if err != nil {
+			continue
+		}
+
+		if job.Status == JobStatusQueued {
+			// Update job status atomically
+			job.Status = JobStatusAssigned
+			job.WorkerID = workerID
+			job.UpdatedAt = time.Now().Format(time.RFC3339)
+
+			if err := WriteJob(jobID, job); err != nil {
+				return "", BuildJob{}, err
+			}
+
+			return jobID, job, nil
+		}
+	}
+
+	return "", BuildJob{}, nil
 }

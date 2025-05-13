@@ -19,9 +19,6 @@ type BuildResponse struct {
 
 // HandleQueueBuild creates a new build job and adds it to the queue
 func HandleQueueBuild(c echo.Context) error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	var req jobstorage.JobData
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid request body"})
@@ -62,46 +59,18 @@ func HandleQueueBuild(c echo.Context) error {
 
 // HandleBindBuildJob allows a worker to claim a queued job
 func HandleBindBuildJob(c echo.Context) error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	workerID := c.QueryParam("worker_id")
 	if workerID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "worker_id is required"})
 	}
 
-	// Find a queued job
-	var jobID string
-	var job jobstorage.BuildJob
-	entries, err := os.ReadDir(jobstorage.BuildsDir)
+	jobID, job, err := jobstorage.BindNextAvailableJob(workerID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read builds directory"})
-	}
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-		job, err = jobstorage.ReadJob(entry.Name())
-		if err != nil {
-			continue
-		}
-		if job.Status == jobstorage.JobStatusQueued {
-			jobID = entry.Name()
-			break
-		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to bind job"})
 	}
 
 	if jobID == "" {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "No queued jobs available"})
-	}
-
-	// Update job status
-	job.Status = jobstorage.JobStatusAssigned
-	job.WorkerID = workerID
-	job.UpdatedAt = time.Now().Format(time.RFC3339)
-	if err := jobstorage.WriteJob(jobID, job); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to update job status"})
 	}
 
 	return c.JSON(http.StatusOK, map[string]interface{}{
@@ -112,9 +81,6 @@ func HandleBindBuildJob(c echo.Context) error {
 
 // HandleUpdateJobStatus allows a worker to update the status of their assigned job
 func HandleUpdateJobStatus(c echo.Context) error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	jobID := c.Param("job_id")
 	workerID := c.QueryParam("worker_id")
 	if workerID == "" {
@@ -156,9 +122,6 @@ func HandleUpdateJobStatus(c echo.Context) error {
 
 // HandleGetBuild returns a job by ID
 func HandleGetBuild(c echo.Context) error {
-	mu.Lock()
-	defer mu.Unlock()
-
 	jobID := c.Param("job_id")
 	job, err := jobstorage.ReadJob(jobID)
 	if err != nil {
