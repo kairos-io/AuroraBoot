@@ -55,8 +55,23 @@ func NewWebsocketWriter(w io.Writer) (*WebsocketWriter, error) {
 }
 
 func (w *WebsocketWriter) Write(p []byte) (n int, err error) {
-	if err := websocket.Message.Send(w.ws, string(p)); err != nil {
-		return 0, err
+	// Try to parse as JSON log message
+	var logMsg struct {
+		Level   string `json:"level"`
+		Message string `json:"message"`
+	}
+
+	if err := json.Unmarshal(p, &logMsg); err == nil && logMsg.Level != "" && logMsg.Message != "" {
+		// If it's a JSON log message, convert to plain text
+		message := fmt.Sprintf("[%s] %s", strings.ToUpper(logMsg.Level), logMsg.Message)
+		if err := websocket.Message.Send(w.ws, message); err != nil {
+			return 0, err
+		}
+	} else {
+		// If not a JSON log message, send as plain text
+		if err := websocket.Message.Send(w.ws, string(p)); err != nil {
+			return 0, err
+		}
 	}
 	return len(p), nil
 }
@@ -210,31 +225,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws *websoc
 		}
 	}
 
-	// Send completion message with artifact URLs
-	if err := websocket.Message.Send(ws, "Generating download links...\n"); err != nil {
-		return fmt.Errorf("failed to send log message: %v", err)
-	}
-
-	links := []struct {
-		Name string `json:"name"`
-		URL  string `json:"url"`
-	}{
-		{Name: "Container image", URL: "image.tar"},
-		{Name: "Raw disk image", URL: filepath.Base(rawImage)},
-		{Name: "ISO image", URL: "custom-kairos.iso"},
-	}
-
-	dat, err := json.Marshal(links)
-	if err != nil {
-		return fmt.Errorf("failed to marshal links: %v", err)
-	}
-
-	// Send the links message
-	if err := websocket.Message.Send(ws, string(dat)); err != nil {
-		return fmt.Errorf("failed to send links: %v", err)
-	}
-
-	// Send a final message to indicate completion
+	// Send completion message
 	if err := websocket.Message.Send(ws, "Build complete. Download links are ready.\n"); err != nil {
 		return fmt.Errorf("failed to send completion message: %v", err)
 	}

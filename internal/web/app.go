@@ -82,6 +82,7 @@ func App(listenAddr, outDir, buildsDirectory string, config ...AppConfig) error 
 	api.GET("/builds/:job_id/logs", HandleGetBuildLogs)
 	api.GET("/builds/:job_id/logs/write", HandleWriteBuildLogs)
 	api.POST("/builds/:job_id/artifacts/:filename", HandleUploadArtifact)
+	api.GET("/builds/:job_id/artifacts", HandleGetArtifacts)
 
 	// Serve static artifact files
 	e.Static("/artifacts", artifactDir)

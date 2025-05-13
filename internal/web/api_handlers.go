@@ -295,3 +295,55 @@ func HandleUploadArtifact(c echo.Context) error {
 
 	return c.JSON(http.StatusOK, map[string]string{"message": "Artifact uploaded successfully"})
 }
+
+// HandleGetArtifacts returns the list of artifacts for a job
+func HandleGetArtifacts(c echo.Context) error {
+	jobID := c.Param("job_id")
+
+	// Verify the job exists
+	if _, err := jobstorage.ReadJob(jobID); err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
+	}
+
+	// Get the artifacts directory
+	artifactsDir := filepath.Join(jobstorage.GetJobPath(jobID), "artifacts")
+
+	// List all files in the artifacts directory
+	files, err := os.ReadDir(artifactsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return c.JSON(http.StatusOK, []interface{}{}) // Return empty list if no artifacts
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read artifacts directory"})
+	}
+
+	// Build the response with artifact information
+	artifacts := make([]map[string]string, 0)
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+
+		// Map file extensions to friendly names
+		name := file.Name()
+		friendlyName := name
+		switch filepath.Ext(name) {
+		case ".tar":
+			friendlyName = "Container image"
+		case ".iso":
+			friendlyName = "ISO image"
+		case ".raw":
+			friendlyName = "Raw disk image"
+		}
+
+		artifacts = append(artifacts, map[string]string{
+			"name": friendlyName,
+			"url":  name,
+		})
+	}
+
+	return c.JSON(http.StatusOK, artifacts)
+}
