@@ -118,7 +118,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Build container image
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Building container image..."); err != nil {
+	if err := websocket.Message.Send(ws.(*websocket.Conn), "Building container image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -134,7 +134,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Generate tarball
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating tarball..."); err != nil {
+	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating tarball...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -144,7 +144,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Generate raw image
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating raw image..."); err != nil {
+	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating raw image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -153,7 +153,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Generate ISO
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating ISO..."); err != nil {
+	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating ISO...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -162,7 +162,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Upload artifacts to server
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Uploading artifacts to server..."); err != nil {
+	if err := websocket.Message.Send(ws.(*websocket.Conn), "Uploading artifacts to server...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -191,9 +191,9 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 		Name string `json:"name"`
 		URL  string `json:"url"`
 	}{
-		{Name: "Container image", URL: "/builds/" + jobID + "/image.tar"},
-		{Name: "Raw disk image", URL: "/builds/" + jobID + "/" + filepath.Base(rawImage)},
-		{Name: "ISO image", URL: "/builds/" + jobID + "/custom-kairos.iso"},
+		{Name: "Container image", URL: "image.tar"},
+		{Name: "Raw disk image", URL: filepath.Base(rawImage)},
+		{Name: "ISO image", URL: "custom-kairos.iso"},
 	}
 
 	dat, err := json.Marshal(links)
