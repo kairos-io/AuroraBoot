@@ -178,16 +178,19 @@ func buildHandler(c echo.Context) error {
 
 func webSocketHandler(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
-		mu.Lock()
 		uuid := c.Param("uuid")
 		_, err := jobstorage.ReadJob(uuid)
-		mu.Unlock()
 		if err != nil {
 			websocket.Message.Send(ws, "Job not found")
 			return
 		}
 
-		defer ws.Close()
+		defer func() {
+			// Send a final message before closing
+			websocket.Message.Send(ws, "Connection closing...")
+			time.Sleep(1 * time.Second) // Give time for the final message to be sent
+			ws.Close()
+		}()
 
 		// Get the job's build directory
 		jobPath := jobstorage.GetJobPath(uuid)
@@ -217,6 +220,18 @@ func webSocketHandler(c echo.Context) error {
 		// Create a buffer for reading
 		buf := make([]byte, 1024)
 		for {
+			// Check job status
+			job, err := jobstorage.ReadJob(uuid)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Error reading job status: %v", err))
+				return
+			}
+
+			// If job is complete or failed, close the connection
+			if job.Status == jobstorage.JobStatusComplete || job.Status == jobstorage.JobStatusFailed {
+				return // Connection will be closed by defer with sleep
+			}
+
 			n, err := file.Read(buf)
 			if err != nil && err != io.EOF {
 				websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))

@@ -152,17 +152,28 @@ document.addEventListener('DOMContentLoaded', () => {
         socket.onmessage = function(event) {
           try {
             const data = JSON.parse(event.data);
+            console.log(data);
             if (data.length) {
+              linkElement.innerHTML = ""; // Clear existing links
               for (const link of data) {
                 const fullUrl = `/builds/${result.uuid}/artifacts/${link.url}`;
                 linkElement.innerHTML += `<a href="${fullUrl}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${link.name}</a>`;
               }
+              // Show the downloads section when links are received
+              const downloads = document.getElementById('downloads');
+              downloads.style.display = 'block';
             }
-          } catch (e) {}
-          const message = event.data;
-          updateStatus(message);
-          outputElement.innerHTML += `${convert.toHtml(message)}\n`;
-          outputElement.scrollTop = outputElement.scrollHeight;
+          } catch (e) {
+            console.log("non json data")
+            console.log(event.data)
+            console.log("non json data -- end")
+
+            // If parsing fails, treat it as a regular log message
+            const message = event.data;
+            updateStatus(message);
+            outputElement.innerHTML += `${convert.toHtml(message)}\n`;
+            outputElement.scrollTop = outputElement.scrollHeight;
+          }
         };
         const buildingContainerImage = document.getElementById('building-container-image');
         const generatingTarball = document.getElementById('generating-tarball');
@@ -172,23 +183,19 @@ document.addEventListener('DOMContentLoaded', () => {
         function updateStatus(message) {
           if (message.includes("Building container image")) {
             buildingContainerImage.classList.remove("hidden");
-          }
-          if (message.includes("Generating tarball")) {
+          } else if (message.includes("Generating tarball")) {
             generatingTarball.classList.remove("hidden");
             buildingContainerImage.querySelector('.spinner').classList.add("hidden");
             buildingContainerImage.querySelector('.done').classList.remove("hidden");
-          }
-          if (message.includes("Generating raw image")) {
+          } else if (message.includes("Generating raw image")) {
             generatingRawImage.classList.remove("hidden");
             generatingTarball.querySelector('.spinner').classList.add("hidden");
             generatingTarball.querySelector('.done').classList.remove("hidden");
-          }
-          if (message.includes("Generating ISO")) {
+          } else if (message.includes("Generating ISO")) {
             generatingISO.classList.remove("hidden");
             generatingRawImage.querySelector('.spinner').classList.add("hidden");
             generatingRawImage.querySelector('.done').classList.remove("hidden");
-          }
-          if (message.includes("Generating download links")) {
+          } else if (message.includes("Uploading artifacts to server")) {
             generatingDownloadLinks.classList.remove("hidden");
             generatingISO.querySelector('.spinner').classList.add("hidden");
             generatingISO.querySelector('.done').classList.remove("hidden");

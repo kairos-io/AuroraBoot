@@ -64,16 +64,15 @@ func NewBuildConfig(opts ...GenericOptions) *BuildConfig {
 }
 
 func NewConfig(opts ...GenericOptions) *agentconfig.Config {
-	log := sdkTypes.NewKairosLogger("auroraboot", "info", false)
 	arch, err := utils.GolangArchToArch(runtime.GOARCH)
 	if err != nil {
-		log.Errorf("invalid arch: %s", err.Error())
+		internal.Log.Logger.Error().Err(err).Msg("invalid arch")
 		return nil
 	}
 
 	c := &agentconfig.Config{
 		Fs:                    vfs.OSFS,
-		Logger:                log,
+		Logger:                internal.Log,
 		Syscall:               &v1types.RealSyscall{},
 		Client:                http.NewClient(),
 		Arch:                  arch,
@@ -82,7 +81,7 @@ func NewConfig(opts ...GenericOptions) *agentconfig.Config {
 	for _, o := range opts {
 		err := o(c)
 		if err != nil {
-			log.Errorf("error applying config option: %s", err.Error())
+			internal.Log.Logger.Error().Err(err).Msg("error applying config option")
 			return nil
 		}
 	}
@@ -136,7 +135,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 
 		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
 		cfg := NewBuildConfig(
-			WithLogger(sdkTypes.NewKairosLogger("auroraboot", "debug", false)),
+			WithLogger(internal.Log),
 		)
 		cfg.Name = i.Name
 		cfg.OutDir = dst
@@ -324,7 +323,7 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 	return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
 }
 
-func (b BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
+func (b *BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
 	kernel, initrd, err := b.e.FindKernelInitrd(rootDir)
 	if err != nil {
 		b.cfg.Logger.Error("Could not find kernel and/or initrd")
@@ -366,7 +365,7 @@ func (b BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
 // it searches the rootfs for the shim/grub.efi file and copies it into a directory with the proper EFI structure
 // then it generates a grub.cfg that chainloads into the grub.cfg of the livecd (which is the normal livecd grub config from luet packages)
 // then it calculates the size of the EFI image based on the files copied and creates the image
-func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
+func (b *BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	var err error
 
 	// rootfs /efi dir
@@ -495,7 +494,7 @@ func (b *BuildISOAction) writeUbuntuGrubEfiCfg(path string) error {
 // copyShim copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
 // rootdir is the rootfs where the shim files are searched for
-func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
+func (b *BuildISOAction) copyShim(tempdir, rootdir string) error {
 	var fallBackShim string
 	var err error
 	var arch string
@@ -569,7 +568,7 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 // copyGrub copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
 // rootdir is the rootfs where the shim files are searched for
-func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
+func (b *BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	var fallBackGrub string
 	var err error
 
@@ -637,7 +636,7 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	return err
 }
 
-func (b BuildISOAction) burnISO(root string) error {
+func (b *BuildISOAction) burnISO(root string) error {
 	cmd := "xorriso"
 	var outputFile string
 	var isoFileName string
@@ -688,7 +687,7 @@ func (b BuildISOAction) burnISO(root string) error {
 	return nil
 }
 
-func (b BuildISOAction) applySources(target string, sources ...*v1types.ImageSource) error {
+func (b *BuildISOAction) applySources(target string, sources ...*v1types.ImageSource) error {
 	for _, src := range sources {
 		_, err := b.e.DumpSource(target, src)
 		if err != nil {

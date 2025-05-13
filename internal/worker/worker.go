@@ -43,15 +43,22 @@ func NewWorker(endpoint, workerID string) *Worker {
 
 // WebsocketWriter wraps an io.Writer to write to a websocket
 type WebsocketWriter struct {
-	w io.Writer
+	ws *websocket.Conn
 }
 
-func NewWebsocketWriter(w io.Writer) *WebsocketWriter {
-	return &WebsocketWriter{w: w}
+func NewWebsocketWriter(w io.Writer) (*WebsocketWriter, error) {
+	ws, ok := w.(*websocket.Conn)
+	if !ok {
+		return nil, fmt.Errorf("writer is not a websocket connection")
+	}
+	return &WebsocketWriter{ws: ws}, nil
 }
 
 func (w *WebsocketWriter) Write(p []byte) (n int, err error) {
-	return w.w.Write(p)
+	if err := websocket.Message.Send(w.ws, string(p)); err != nil {
+		return 0, err
+	}
+	return len(p), nil
 }
 
 func (w *Worker) Start() error {
@@ -79,7 +86,6 @@ func (w *Worker) Start() error {
 			fmt.Printf("Failed to connect to websocket: %v\n", err)
 			continue
 		}
-		defer ws.Close()
 
 		// Process the job
 		if err := w.processJob(job.JobID, job.Job.JobData, ws); err != nil {
@@ -87,21 +93,35 @@ func (w *Worker) Start() error {
 			if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusFailed); err != nil {
 				fmt.Printf("Failed to update job status to failed: %v\n", err)
 			}
+			ws.Close()
 			continue
 		}
 
 		// Update status to complete
 		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusComplete); err != nil {
 			fmt.Printf("Failed to update job status to complete: %v\n", err)
+			ws.Close()
 			continue
 		}
+
+		// Close the websocket connection
+		ws.Close()
 	}
 }
 
-func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writer) error {
+func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws *websocket.Conn) error {
+	// Create a websocket writer
+	wsWriter, err := NewWebsocketWriter(ws)
+	if err != nil {
+		return fmt.Errorf("failed to create websocket writer: %v", err)
+	}
+
+	// Redirect all output to the websocket
+	internal.Log.Logger = internal.Log.Logger.Output(wsWriter)
+
 	// Log the start of the process
 	logMessage := fmt.Sprintf("Starting process with data: %+v\n", jobData)
-	if err := websocket.Message.Send(ws.(*websocket.Conn), logMessage); err != nil {
+	if err := websocket.Message.Send(ws, logMessage); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -118,12 +138,16 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Build container image
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Building container image...\n"); err != nil {
+	if err := websocket.Message.Send(ws, "Building container image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
 	imageName := fmt.Sprintf("build-%s", jobID)
-	if err := runBashProcessWithOutput(ws, buildOCI(tempdir, imageName)); err != nil {
+	wsWriter, err = NewWebsocketWriter(ws)
+	if err != nil {
+		return fmt.Errorf("failed to create websocket writer: %v", err)
+	}
+	if err := runBashProcessWithOutput(wsWriter, buildOCI(tempdir, imageName)); err != nil {
 		return fmt.Errorf("failed to build image: %v", err)
 	}
 
@@ -134,7 +158,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Generate tarball
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating tarball...\n"); err != nil {
+	if err := websocket.Message.Send(ws, "Generating tarball...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -144,7 +168,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Generate raw image
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating raw image...\n"); err != nil {
+	if err := websocket.Message.Send(ws, "Generating raw image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -153,7 +177,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Generate ISO
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Generating ISO...\n"); err != nil {
+	if err := websocket.Message.Send(ws, "Generating ISO...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -162,7 +186,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Upload artifacts to server
-	if err := websocket.Message.Send(ws.(*websocket.Conn), "Uploading artifacts to server...\n"); err != nil {
+	if err := websocket.Message.Send(ws, "Uploading artifacts to server...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -187,6 +211,10 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 	}
 
 	// Send completion message with artifact URLs
+	if err := websocket.Message.Send(ws, "Generating download links...\n"); err != nil {
+		return fmt.Errorf("failed to send log message: %v", err)
+	}
+
 	links := []struct {
 		Name string `json:"name"`
 		URL  string `json:"url"`
@@ -201,9 +229,18 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, ws io.Writ
 		return fmt.Errorf("failed to marshal links: %v", err)
 	}
 
-	if err := websocket.Message.Send(ws.(*websocket.Conn), string(dat)); err != nil {
+	// Send the links message
+	if err := websocket.Message.Send(ws, string(dat)); err != nil {
 		return fmt.Errorf("failed to send links: %v", err)
 	}
+
+	// Send a final message to indicate completion
+	if err := websocket.Message.Send(ws, "Build complete. Download links are ready.\n"); err != nil {
+		return fmt.Errorf("failed to send completion message: %v", err)
+	}
+
+	// Give the client time to receive all messages before closing
+	time.Sleep(1 * time.Second)
 
 	return nil
 }
@@ -341,7 +378,10 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 
 func buildRawDisk(containerImage, outputDir string, ws io.Writer) error {
 	// Create a websocket writer
-	wsWriter := NewWebsocketWriter(ws)
+	wsWriter, err := NewWebsocketWriter(ws)
+	if err != nil {
+		return fmt.Errorf("failed to create websocket writer: %v", err)
+	}
 
 	// Set the logger to use our websocket writer
 	internal.Log.Logger = internal.Log.Logger.Output(wsWriter)
@@ -365,7 +405,7 @@ func buildRawDisk(containerImage, outputDir string, ws io.Writer) error {
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
 
 	// Register all steps
-	err := deployer.RegisterAll(d)
+	err = deployer.RegisterAll(d)
 	if err != nil {
 		fmt.Fprintf(wsWriter, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
@@ -391,7 +431,10 @@ func buildRawDisk(containerImage, outputDir string, ws io.Writer) error {
 
 func buildISO(containerImage, outputDir, artifactName string, ws io.Writer) error {
 	// Create a websocket writer
-	wsWriter := NewWebsocketWriter(ws)
+	wsWriter, err := NewWebsocketWriter(ws)
+	if err != nil {
+		return fmt.Errorf("failed to create websocket writer: %v", err)
+	}
 
 	// Set the logger to use our websocket writer
 	internal.Log.Logger = internal.Log.Logger.Output(wsWriter)
