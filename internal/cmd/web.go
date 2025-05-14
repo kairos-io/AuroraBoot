@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"net"
 	"os"
 
 	"github.com/kairos-io/AuroraBoot/internal/web"
@@ -42,7 +43,15 @@ var WebCMD = cli.Command{
 		// If create-worker flag is set, start a worker in a goroutine
 		if c.Bool("create-worker") {
 			workerID := "local-worker"
-			w := worker.NewWorker("http://localhost"+c.String("address"), workerID)
+			// Extract just the port from the address for the worker connection
+			// The server might be listening on 0.0.0.0:port, but we need to connect to localhost:port
+			addr := c.String("address")
+			_, port, err := net.SplitHostPort(addr)
+			if err != nil {
+				return fmt.Errorf("invalid address format: %v", err)
+			}
+			workerAddr := "http://localhost:" + port
+			w := worker.NewWorker(workerAddr, workerID)
 			go func() {
 				if err := w.Start(); err != nil {
 					// Log error but don't exit - the web server should keep running
