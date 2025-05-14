@@ -35,7 +35,12 @@ var _ = BeforeSuite(func() {
 	// Start the web server
 	serverURL = fmt.Sprintf("http://localhost:%d", port)
 	go func() {
-		err := web.App(fmt.Sprintf(":%d", port), artifactDir, artifactDir, web.AppConfig{EnableLogger: false})
+		err := web.App(web.AppConfig{
+			EnableLogger: false,
+			ListenAddr:   fmt.Sprintf(":%d", port),
+			OutDir:       artifactDir,
+			BuildsDir:    artifactDir,
+		})
 		Expect(err).NotTo(HaveOccurred())
 	}()
 

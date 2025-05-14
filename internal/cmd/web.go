@@ -51,6 +51,11 @@ var WebCMD = cli.Command{
 			}()
 		}
 
-		return web.App(c.String("address"), c.String("artifact-dir"), c.String("builds-dir"))
+		return web.App(web.AppConfig{
+			EnableLogger: true,
+			ListenAddr:   c.String("address"),
+			OutDir:       c.String("artifact-dir"),
+			BuildsDir:    c.String("builds-dir"),
+		})
 	},
 }

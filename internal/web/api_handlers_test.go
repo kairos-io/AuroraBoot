@@ -51,7 +51,12 @@ var _ = Describe("API Handlers", func() {
 
 		// Start the test server
 		go func() {
-			err := App(fmt.Sprintf(":%d", port), filepath.Join(testDir, "artifacts"), testDir, AppConfig{EnableLogger: false})
+			err := App(AppConfig{
+				EnableLogger: false,
+				ListenAddr:   fmt.Sprintf(":%d", port),
+				OutDir:       filepath.Join(testDir, "artifacts"),
+				BuildsDir:    testDir,
+			})
 			Expect(err).NotTo(HaveOccurred())
 		}()
 

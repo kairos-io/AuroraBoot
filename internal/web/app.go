@@ -29,6 +29,9 @@ var assets embed.FS
 
 type AppConfig struct {
 	EnableLogger bool
+	ListenAddr   string
+	OutDir       string
+	BuildsDir    string
 }
 
 func getFileSystem(useOS bool) http.FileSystem {
@@ -44,25 +47,19 @@ func getFileSystem(useOS bool) http.FileSystem {
 	return http.FS(fsys)
 }
 
-func App(listenAddr, outDir, buildsDirectory string, config ...AppConfig) error {
-	artifactDir = outDir
-	jobstorage.BuildsDir = buildsDirectory
+func App(config AppConfig) error {
+	artifactDir = config.OutDir
+	jobstorage.BuildsDir = config.BuildsDir
 	e := echo.New()
 
-	// Only enable logger if not explicitly disabled
-	enableLogger := true
-	if len(config) > 0 {
-		enableLogger = config[0].EnableLogger
-	}
-
-	if enableLogger {
+	if config.EnableLogger {
 		e.Use(middleware.Logger())
 	}
 	e.Use(middleware.Recover())
 
 	// Ensure directories exist
-	os.MkdirAll(artifactDir, os.ModePerm)
-	os.MkdirAll(jobstorage.BuildsDir, os.ModePerm)
+	os.MkdirAll(config.OutDir, os.ModePerm)
+	os.MkdirAll(config.BuildsDir, os.ModePerm)
 
 	assetHandler := http.FileServer(getFileSystem(false))
 	e.GET("/*", echo.WrapHandler(assetHandler))
@@ -85,10 +82,10 @@ func App(listenAddr, outDir, buildsDirectory string, config ...AppConfig) error 
 	api.GET("/builds/:job_id/artifacts", HandleGetArtifacts)
 
 	// Serve static artifact files
-	e.Static("/artifacts", artifactDir)
-	e.Static("/builds", jobstorage.BuildsDir)
+	e.Static("/artifacts", config.OutDir)
+	e.Static("/builds", config.BuildsDir)
 
-	e.Logger.Fatal(e.Start(listenAddr))
+	e.Logger.Fatal(e.Start(config.ListenAddr))
 
 	return nil
 }
