@@ -157,9 +157,9 @@ document.addEventListener('DOMContentLoaded', () => {
           // Split message by newlines and wrap each line in a div
           const lines = message.split('\n');
           for (const line of lines) {
-            if (line.trim()) { // Only add non-empty lines
-              outputElement.innerHTML += `<div>${convert.toHtml(line)}</div>`;
-            }
+            const div = document.createElement('div');
+            div.textContent = convert.toHtml(line);
+            outputElement.appendChild(div);
           }
           outputElement.scrollTop = outputElement.scrollHeight;
         };
