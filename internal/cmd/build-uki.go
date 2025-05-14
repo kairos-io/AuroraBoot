@@ -133,6 +133,10 @@ var BuildUKICmd = cli.Command{
 			Name:  "splash",
 			Usage: "Path to the custom logo splash BMP file.",
 		},
+		&cli.BoolFlag{
+			Name:  "pxe",
+			Usage: "Server the generated EFI via PXE",
+		},
 	},
 	Before: func(ctx *cli.Context) error {
 		// // Mark flags as mutually exclusive
@@ -145,6 +149,10 @@ var BuildUKICmd = cli.Command{
 		artifact := ctx.String("output-type")
 		if artifact != string(constants.DefaultOutput) && artifact != string(constants.IsoOutput) && artifact != string(constants.ContainerOutput) {
 			return fmt.Errorf("invalid output type: %s", artifact)
+		}
+
+		if ctx.Bool("pxe") && ctx.String("output-type") != string(constants.DefaultOutput) {
+			return fmt.Errorf("pxe flag is only supported for uki artifacts")
 		}
 
 		if overlayRootfs := ctx.String("overlay-rootfs"); overlayRootfs != "" {
@@ -389,6 +397,10 @@ var BuildUKICmd = cli.Command{
 		}
 
 		logger.Infof("Done building %s at: %s", ctx.String("output-type"), ctx.String("output-dir"))
+
+		if ctx.Bool("pxe") {
+			return utils.ServeUkiPXE(logger)
+		}
 
 		return nil
 	},

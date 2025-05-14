@@ -21,6 +21,7 @@ func GetApp(version string) *cli.App {
 		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:   "auroraboot",
 		Commands: []*cli.Command{
+			&UkiPXECmd,
 			&BuildISOCmd,
 			&BuildUKICmd,
 			&GenKeyCmd,
