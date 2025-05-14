@@ -12,19 +12,8 @@ ADD ./internal/web/app/index.js .
 ADD ./internal/web/app/accordion.js .
 RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
 
-FROM golang AS builder
-ARG VERSION=v0.0.0
-WORKDIR /work
-ADD go.mod .
-ADD go.sum .
-RUN go mod download
-ADD . .
-COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
-ENV CGO_ENABLED=0
-ENV VERSION=$VERSION
-RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
-FROM fedora:$FEDORA_VERSION AS default
+FROM fedora:$FEDORA_VERSION AS base
 ARG TARGETARCH
 ENV BUILDKIT_PROGRESS=plain
 ENV LUET_NOLOCK=true
@@ -63,6 +52,26 @@ RUN dnf in -y bc \
               xorriso \
               zstd
 
+
+FROM base AS keyenroller
+ENV EFIKEY_VERSION=v0.1.0
+RUN curl -f -L https://github.com/kairos-io/efi-key-enroller/releases/download/$EFIKEY_VERSION/efi-key-enroller.efi -o /efi-key-enroller.efi && file /efi-key-enroller.efi | grep -q "EFI"
+
+FROM golang AS builder
+ARG VERSION=v0.0.0
+WORKDIR /work
+ADD go.mod .
+ADD go.sum .
+RUN go mod download
+ADD . .
+COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
+COPY --from=keyenroller /efi-key-enroller.efi ./pkg/constants/efi-key-enroller.efi
+ENV CGO_ENABLED=0
+ENV VERSION=$VERSION
+RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
+
+
+FROM base AS default
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 # copy both arches
 COPY image-assets/luet-arm64.yaml /tmp/luet-arm64.yaml
