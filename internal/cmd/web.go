@@ -53,7 +53,7 @@ var WebCMD = cli.Command{
 			workerAddr := "http://localhost:" + port
 			w := worker.NewWorker(workerAddr, workerID)
 			go func() {
-				if err := w.Start(); err != nil {
+				if err := w.Start(c.Context); err != nil {
 					// Log error but don't exit - the web server should keep running
 					fmt.Printf("Worker error: %v\n", err)
 				}

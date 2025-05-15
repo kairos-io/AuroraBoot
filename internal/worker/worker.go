@@ -127,62 +127,68 @@ func (m *MultiWriterWithWebsocket) WriteStr(s string) (n int, err error) {
 	return m.Write([]byte(s))
 }
 
-func (w *Worker) Start() error {
+func (w *Worker) Start(ctx context.Context) error {
 	// Create writer at the start
 	writer := NewMultiWriterWithWebsocket(os.Stdout, "")
 	writer.WriteStr(fmt.Sprintf("Worker %s starting. Will poll for jobs at %s every %v\n", w.workerID, w.endpoint, retryInterval))
 
 	for {
-		// Try to bind a job
-		job, err := w.bindJob()
-		if err != nil {
-			time.Sleep(retryInterval)
-			continue
-		}
-
-		// Connect to websocket for logging
-		// Convert http:// to ws:// for the websocket URL
-		wsEndpoint := strings.Replace(w.endpoint, "http://", "ws://", 1)
-		wsURL := fmt.Sprintf("%s/api/v1/builds/%s/logs/write?worker_id=%s", wsEndpoint, job.JobID, w.workerID)
-		ws, err := websocket.Dial(wsURL, "", w.endpoint)
-		if err != nil {
-			writer.WriteStr(fmt.Sprintf("Failed to connect to websocket: %v\n", err))
-			continue
-		}
-		writer.SetWebsocket(ws) // Set the websocket in our writer
-
-		// Let the client know which worker is processing the job
-		writer.WriteStr(fmt.Sprintf("Job %s bound by worker %s\n", job.JobID, w.workerID))
-
-		// Update status to running
-		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusRunning); err != nil {
-			writer.WriteStr(fmt.Sprintf("Failed to update job status to running: %v\n", err))
-			continue
-		}
-		writer.WriteStr("Updated job status to running\n")
-
-		writer.WriteStr("Starting job\n")
-		// Process the job
-		if err := w.processJob(job.JobID, job.Job.JobData, writer); err != nil {
-			writer.WriteStr(fmt.Sprintf("Failed to process job: %v\n", err))
-			if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusFailed); err != nil {
-				writer.WriteStr(fmt.Sprintf("Failed to update job status to failed: %v\n", err))
+		select {
+		case <-ctx.Done():
+			writer.WriteStr("Worker shutting down...\n")
+			return ctx.Err()
+		default:
+			// Try to bind a job
+			job, err := w.bindJob()
+			if err != nil {
+				time.Sleep(retryInterval)
+				continue
 			}
-			writer.WriteStr("Updated job status to failed\n")
-			ws.Close()
-			continue
-		}
 
-		// Update status to complete
-		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusComplete); err != nil {
-			writer.WriteStr(fmt.Sprintf("Failed to update job status to complete: %v\n", err))
-			ws.Close()
-			continue
-		}
-		writer.WriteStr("Updated job status to completed\n")
+			// Connect to websocket for logging
+			// Convert http:// to ws:// for the websocket URL
+			wsEndpoint := strings.Replace(w.endpoint, "http://", "ws://", 1)
+			wsURL := fmt.Sprintf("%s/api/v1/builds/%s/logs/write?worker_id=%s", wsEndpoint, job.JobID, w.workerID)
+			ws, err := websocket.Dial(wsURL, "", w.endpoint)
+			if err != nil {
+				writer.WriteStr(fmt.Sprintf("Failed to connect to websocket: %v\n", err))
+				continue
+			}
+			writer.SetWebsocket(ws) // Set the websocket in our writer
 
-		// Close the websocket connection
-		ws.Close()
+			// Let the client know which worker is processing the job
+			writer.WriteStr(fmt.Sprintf("Job %s bound by worker %s\n", job.JobID, w.workerID))
+
+			// Update status to running
+			if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusRunning); err != nil {
+				writer.WriteStr(fmt.Sprintf("Failed to update job status to running: %v\n", err))
+				continue
+			}
+			writer.WriteStr("Updated job status to running\n")
+
+			writer.WriteStr("Starting job\n")
+			// Process the job
+			if err := w.processJob(job.JobID, job.Job.JobData, writer); err != nil {
+				writer.WriteStr(fmt.Sprintf("Failed to process job: %v\n", err))
+				if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusFailed); err != nil {
+					writer.WriteStr(fmt.Sprintf("Failed to update job status to failed: %v\n", err))
+				}
+				writer.WriteStr("Updated job status to failed\n")
+				ws.Close()
+				continue
+			}
+
+			// Update status to complete
+			if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusComplete); err != nil {
+				writer.WriteStr(fmt.Sprintf("Failed to update job status to complete: %v\n", err))
+				ws.Close()
+				continue
+			}
+			writer.WriteStr("Updated job status to completed\n")
+
+			// Close the websocket connection
+			ws.Close()
+		}
 	}
 }
 

@@ -2,10 +2,13 @@ package worker_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/internal/web"
@@ -85,14 +88,21 @@ var _ = Describe("Worker", func() {
 		Expect(response.UUID).NotTo(BeEmpty())
 
 		// Start the worker in a goroutine
+		ctx, cancel := context.WithCancel(context.Background())
+		var wg sync.WaitGroup
+		wg.Add(1)
 		go func() {
-			err := w.Start()
-			Expect(err).NotTo(HaveOccurred())
+			defer wg.Done()
+			err := w.Start(ctx)
+			Expect(err).To(Or(BeNil(), MatchError(context.Canceled)))
 		}()
 
 		By("waiting for the job to reach a terminal state")
 		finalStatus := waitForTerminalStatus(response.UUID)
 		Expect(finalStatus).To(Equal(jobstorage.JobStatusFailed))
+
+		By("stopping the worker")
+		cancel()
 
 		// Get the job logs
 		wsURL := fmt.Sprintf("ws://%s/api/v1/builds/%s/logs", strings.TrimPrefix(serverURL, "http://"), response.UUID)
@@ -101,11 +111,26 @@ var _ = Describe("Worker", func() {
 		defer ws.Close()
 
 		// Read the logs
-		var logs string
-		err = websocket.Message.Receive(ws, &logs)
-		Expect(err).NotTo(HaveOccurred())
+		var logs strings.Builder
+		for {
+			var logChunk string
+			err = websocket.Message.Receive(ws, &logChunk)
+			if err != nil {
+				// Check if this is a normal connection closure (EOF)
+				if err == io.EOF {
+					break
+				}
+				// Log the error but don't fail the test
+				fmt.Printf("Websocket error: %v\n", err)
+				break
+			}
+			logs.WriteString(logChunk)
+		}
 
 		// Check that the logs contain the expected error
-		Expect(logs).To(ContainSubstring("pull access denied"))
+		Expect(logs.String()).To(ContainSubstring("pull access denied"))
+
+		// Wait for the worker to shut down
+		wg.Wait()
 	})
 })

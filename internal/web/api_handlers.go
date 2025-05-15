@@ -179,20 +179,38 @@ func HandleGetBuildLogs(c echo.Context) error {
 		// Read and send the logs
 		buf := make([]byte, 1024)
 		for {
-			n, err := file.Read(buf)
-			if err != nil {
-				// If we've reached the end of the file, wait for more data
-				if err == io.EOF {
-					time.Sleep(100 * time.Millisecond)
-					continue
+			// Read all currently available data from the file
+			for {
+				n, err := file.Read(buf)
+				if err != nil && err != io.EOF {
+					websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))
+					return
 				}
-				break
-			}
-			if n > 0 {
-				if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
+				if n > 0 {
+					if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
+						return
+					}
+				}
+				// If we got no data, break the inner loop to check job status
+				if n == 0 {
 					break
 				}
 			}
+
+			// Check job status after reading all currently available data
+			job, err := jobstorage.ReadJob(jobID)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Error reading job status: %v", err))
+				return
+			}
+
+			// If job is complete or failed, close the connection
+			if job.Status == jobstorage.JobStatusComplete || job.Status == jobstorage.JobStatusFailed {
+				websocket.Message.Send(ws, "Job complete, closing connection.")
+				return // Connection will be closed by defer
+			}
+
+			time.Sleep(100 * time.Millisecond)
 		}
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
