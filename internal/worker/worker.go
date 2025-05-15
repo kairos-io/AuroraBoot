@@ -45,13 +45,23 @@ func NewWorker(endpoint, workerID string) *Worker {
 type MultiWriterWithWebsocket struct {
 	writer io.Writer
 	ws     *websocket.Conn
+	prefix string
 }
 
-func NewMultiWriterWithWebsocket(writer io.Writer, ws *websocket.Conn) *MultiWriterWithWebsocket {
+func NewMultiWriterWithWebsocket(writer io.Writer, prefix string) *MultiWriterWithWebsocket {
 	return &MultiWriterWithWebsocket{
 		writer: writer,
-		ws:     ws,
+		prefix: prefix,
 	}
+}
+
+func (m *MultiWriterWithWebsocket) SetWebsocket(ws *websocket.Conn) {
+	m.ws = ws
+}
+
+// SetPrefix sets the prefix for the writer
+func (m *MultiWriterWithWebsocket) SetPrefix(prefix string) {
+	m.prefix = prefix
 }
 
 func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
@@ -64,6 +74,9 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 	if err := json.Unmarshal(p, &logMsg); err == nil {
 		// If it's a JSON log message, convert to plain text
 		message := fmt.Sprintf("[%s] %s\n", strings.ToUpper(logMsg.Level), strings.TrimSpace(logMsg.Message))
+		if m.prefix != "" {
+			message = fmt.Sprintf("[%s] %s", m.prefix, message)
+		}
 
 		// Write to the regular writer
 		n, err = m.writer.Write([]byte(message))
@@ -71,11 +84,14 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 			return n, err
 		}
 
-		// Send to the websocket
-		if err := websocket.Message.Send(m.ws, message); err != nil {
-			// We've already written to the regular writer, so we can't return 0
-			// Instead, we'll return the number of bytes written to the regular writer
-			return n, err
+		// Send to the websocket with retry if available
+		if m.ws != nil {
+			for i := 0; i < 3; i++ {
+				if err := websocket.Message.Send(m.ws, message); err == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 	} else {
 		// If not a JSON log message, send as plain text
@@ -83,6 +99,9 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 		if !strings.HasSuffix(message, "\n") {
 			message += "\n"
 		}
+		if m.prefix != "" {
+			message = fmt.Sprintf("[%s] %s", m.prefix, message)
+		}
 
 		// Write to the regular writer
 		n, err = m.writer.Write([]byte(message))
@@ -90,17 +109,28 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 			return n, err
 		}
 
-		if err := websocket.Message.Send(m.ws, message); err != nil {
-			// We've already written to the regular writer, so we can't return 0
-			// Instead, we'll return the number of bytes written to the regular writer
-			return n, err
+		// Send to the websocket with retry if available
+		if m.ws != nil {
+			for i := 0; i < 3; i++ {
+				if err := websocket.Message.Send(m.ws, message); err == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 	}
 	return n, nil
 }
 
+// WriteStr writes a string to the writer, handling the byte conversion internally
+func (m *MultiWriterWithWebsocket) WriteStr(s string) (n int, err error) {
+	return m.Write([]byte(s))
+}
+
 func (w *Worker) Start() error {
-	fmt.Printf("Worker %s starting. Will poll for jobs at %s every %v\n", w.workerID, w.endpoint, retryInterval)
+	// Create writer at the start
+	writer := NewMultiWriterWithWebsocket(os.Stdout, "")
+	writer.WriteStr(fmt.Sprintf("Worker %s starting. Will poll for jobs at %s every %v\n", w.workerID, w.endpoint, retryInterval))
 
 	for {
 		// Try to bind a job
@@ -110,48 +140,46 @@ func (w *Worker) Start() error {
 			continue
 		}
 
-		fmt.Printf("[%s] Bound job\n", job.JobID)
-
-		// Update status to running
-		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusRunning); err != nil {
-			fmt.Printf("Failed to update job status to running: %v\n", err)
-			continue
-		}
-
-		fmt.Printf("[%s] Updated job status to running\n", job.JobID)
-
 		// Connect to websocket for logging
 		// Convert http:// to ws:// for the websocket URL
 		wsEndpoint := strings.Replace(w.endpoint, "http://", "ws://", 1)
 		wsURL := fmt.Sprintf("%s/api/v1/builds/%s/logs/write?worker_id=%s", wsEndpoint, job.JobID, w.workerID)
 		ws, err := websocket.Dial(wsURL, "", w.endpoint)
 		if err != nil {
-			fmt.Printf("Failed to connect to websocket: %v\n", err)
+			writer.WriteStr(fmt.Sprintf("Failed to connect to websocket: %v\n", err))
 			continue
 		}
+		writer.SetWebsocket(ws) // Set the websocket in our writer
 
-		// Create our custom writer that combines stdout with websocket functionality
-		writer := NewMultiWriterWithWebsocket(os.Stdout, ws)
+		// Let the client know which worker is processing the job
+		writer.WriteStr(fmt.Sprintf("Job %s bound by worker %s\n", job.JobID, w.workerID))
 
-		fmt.Printf("[%s] Starting job\n", job.JobID)
+		// Update status to running
+		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusRunning); err != nil {
+			writer.WriteStr(fmt.Sprintf("Failed to update job status to running: %v\n", err))
+			continue
+		}
+		writer.WriteStr("Updated job status to running\n")
+
+		writer.WriteStr("Starting job\n")
 		// Process the job
 		if err := w.processJob(job.JobID, job.Job.JobData, writer); err != nil {
-			fmt.Printf("Failed to process job: %v\n", err)
+			writer.WriteStr(fmt.Sprintf("Failed to process job: %v\n", err))
 			if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusFailed); err != nil {
-				fmt.Printf("Failed to update job status to failed: %v\n", err)
+				writer.WriteStr(fmt.Sprintf("Failed to update job status to failed: %v\n", err))
 			}
-			fmt.Printf("[%s] Updated job status to failed\n", job.JobID)
+			writer.WriteStr("Updated job status to failed\n")
 			ws.Close()
 			continue
 		}
 
 		// Update status to complete
 		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusComplete); err != nil {
-			fmt.Printf("Failed to update job status to complete: %v\n", err)
+			writer.WriteStr(fmt.Sprintf("Failed to update job status to complete: %v\n", err))
 			ws.Close()
 			continue
 		}
-		fmt.Printf("[%s] Updated job status to completed\n", job.JobID)
+		writer.WriteStr("Updated job status to completed\n")
 
 		// Close the websocket connection
 		ws.Close()
@@ -164,7 +192,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 
 	// Log the start of the process
 	logMessage := fmt.Sprintf("Starting process with data: %+v\n", jobData)
-	if _, err := writer.Write([]byte(logMessage)); err != nil {
+	if _, err := writer.WriteStr(logMessage); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -181,7 +209,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// Build container image
-	if _, err := writer.Write([]byte("Building container image...\n")); err != nil {
+	if _, err := writer.WriteStr("Building container image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -197,7 +225,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// Generate tarball
-	if _, err := writer.Write([]byte("Generating tarball...\n")); err != nil {
+	if _, err := writer.WriteStr("Generating tarball...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -207,7 +235,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// Generate raw image
-	if _, err := writer.Write([]byte("Generating raw image...\n")); err != nil {
+	if _, err := writer.WriteStr("Generating raw image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -216,7 +244,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// Generate ISO
-	if _, err := writer.Write([]byte("Generating ISO...\n")); err != nil {
+	if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -225,7 +253,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// Upload artifacts to server
-	if _, err := writer.Write([]byte("Uploading artifacts to server...\n")); err != nil {
+	if _, err := writer.WriteStr("Uploading artifacts to server...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
@@ -250,7 +278,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// Send completion message
-	if _, err := writer.Write([]byte("Build complete. Download links are ready.\n")); err != nil {
+	if _, err := writer.WriteStr("Build complete. Download links are ready.\n"); err != nil {
 		return fmt.Errorf("failed to send completion message: %v", err)
 	}
 

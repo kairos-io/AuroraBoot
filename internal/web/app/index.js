@@ -154,13 +154,10 @@ document.addEventListener('DOMContentLoaded', () => {
           if (!message.trim()) return; // Skip empty messages
 
           updateStatus(message);
-          // Split message by newlines and wrap each line in a div
-          const lines = message.split('\n');
-          for (const line of lines) {
-            const div = document.createElement('div');
-            div.textContent = convert.toHtml(line);
-            outputElement.appendChild(div);
-          }
+          // Create a pre element to preserve whitespace and prevent wrapping
+          const pre = document.createElement('pre');
+          pre.textContent = convert.toHtml(message);
+          outputElement.appendChild(pre);
           outputElement.scrollTop = outputElement.scrollHeight;
         };
         const buildingContainerImage = document.getElementById('building-container-image');
