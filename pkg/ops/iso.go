@@ -64,16 +64,15 @@ func NewBuildConfig(opts ...GenericOptions) *BuildConfig {
 }
 
 func NewConfig(opts ...GenericOptions) *agentconfig.Config {
-	log := sdkTypes.NewKairosLogger("auroraboot", "info", false)
 	arch, err := utils.GolangArchToArch(runtime.GOARCH)
 	if err != nil {
-		log.Errorf("invalid arch: %s", err.Error())
+		internal.Log.Logger.Error().Err(err).Msg("invalid arch")
 		return nil
 	}
 
 	c := &agentconfig.Config{
 		Fs:                    vfs.OSFS,
-		Logger:                log,
+		Logger:                internal.Log,
 		Syscall:               &v1types.RealSyscall{},
 		Client:                http.NewClient(),
 		Arch:                  arch,
@@ -82,7 +81,7 @@ func NewConfig(opts ...GenericOptions) *agentconfig.Config {
 	for _, o := range opts {
 		err := o(c)
 		if err != nil {
-			log.Errorf("error applying config option: %s", err.Error())
+			internal.Log.Logger.Error().Err(err).Msg("error applying config option")
 			return nil
 		}
 	}
@@ -136,7 +135,7 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 
 		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
 		cfg := NewBuildConfig(
-			WithLogger(sdkTypes.NewKairosLogger("auroraboot", "debug", false)),
+			WithLogger(internal.Log),
 		)
 		cfg.Name = i.Name
 		cfg.OutDir = dst
