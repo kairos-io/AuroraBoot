@@ -92,11 +92,15 @@ func (w *Worker) Start() error {
 			continue
 		}
 
+		fmt.Printf("[%s] Bound job\n", job.JobID)
+
 		// Update status to running
 		if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusRunning); err != nil {
 			fmt.Printf("Failed to update job status to running: %v\n", err)
 			continue
 		}
+
+		fmt.Printf("[%s] Updated job status to running\n", job.JobID)
 
 		// Connect to websocket for logging
 		// Convert http:// to ws:// for the websocket URL
@@ -108,12 +112,14 @@ func (w *Worker) Start() error {
 			continue
 		}
 
+		fmt.Printf("[%s] Starting job\n", job.JobID)
 		// Process the job
 		if err := w.processJob(job.JobID, job.Job.JobData, ws); err != nil {
 			fmt.Printf("Failed to process job: %v\n", err)
 			if err := w.updateJobStatus(job.JobID, jobstorage.JobStatusFailed); err != nil {
 				fmt.Printf("Failed to update job status to failed: %v\n", err)
 			}
+			fmt.Printf("[%s] Updated job status to failed\n", job.JobID)
 			ws.Close()
 			continue
 		}
@@ -124,6 +130,7 @@ func (w *Worker) Start() error {
 			ws.Close()
 			continue
 		}
+		fmt.Printf("[%s] Updated job status to completed\n", job.JobID)
 
 		// Close the websocket connection
 		ws.Close()
