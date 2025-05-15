@@ -15,11 +15,26 @@ import (
 	"golang.org/x/net/websocket"
 )
 
+// @title AuroraBoot API
+// @version 1.0
+// @description API for managing build jobs and artifacts in AuroraBoot
+// @host localhost:8080
+// @BasePath /api/v1
+
 type BuildResponse struct {
 	UUID string `json:"uuid"`
 }
 
-// HandleQueueBuild creates a new build job and adds it to the queue
+// @Summary Queue a new build job
+// @Description Creates a new build job and adds it to the queue
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param job body jobstorage.JobData true "Build job data"
+// @Success 200 {object} BuildResponse
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds [post]
 func HandleQueueBuild(c echo.Context) error {
 	var req jobstorage.JobData
 	if err := c.Bind(&req); err != nil {
@@ -62,7 +77,17 @@ func HandleQueueBuild(c echo.Context) error {
 	return c.JSON(http.StatusOK, BuildResponse{UUID: id.String()})
 }
 
-// HandleBindBuildJob allows a worker to claim a queued job
+// @Summary Bind a queued build job to a worker
+// @Description Allows a worker to claim a queued job
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param worker_id query string true "Worker ID"
+// @Success 200 {object} object{job_id=string,job=jobstorage.BuildJob} "Job ID and job details"
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/bind [get]
 func HandleBindBuildJob(c echo.Context) error {
 	workerID := c.QueryParam("worker_id")
 	if workerID == "" {
@@ -84,7 +109,27 @@ func HandleBindBuildJob(c echo.Context) error {
 	})
 }
 
-// HandleUpdateJobStatus allows a worker to update the status of their assigned job
+// StatusUpdateRequest represents a request to update the status of a job
+// @Description Request body for updating job status
+// @Example {"status": "running"}
+type StatusUpdateRequest struct {
+	Status jobstorage.JobStatus `json:"status" example:"running"`
+}
+
+// @Summary Update build job status
+// @Description Allows a worker to update the status of their assigned job
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param job_id path string true "Job ID"
+// @Param worker_id query string true "Worker ID"
+// @Param status body web.StatusUpdateRequest true "Status update"
+// @Success 200 {object} jobstorage.BuildJob
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/{job_id}/status [put]
 func HandleUpdateJobStatus(c echo.Context) error {
 	jobID := c.Param("job_id")
 	workerID := c.QueryParam("worker_id")
@@ -104,9 +149,7 @@ func HandleUpdateJobStatus(c echo.Context) error {
 		return c.JSON(http.StatusForbidden, map[string]string{"error": "Job is assigned to a different worker"})
 	}
 
-	var statusUpdate struct {
-		Status jobstorage.JobStatus `json:"status"`
-	}
+	var statusUpdate StatusUpdateRequest
 	if err := c.Bind(&statusUpdate); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Invalid status update"})
 	}
@@ -125,7 +168,16 @@ func HandleUpdateJobStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, job)
 }
 
-// HandleGetBuild returns a job by ID
+// @Summary Get build job details
+// @Description Returns a job by ID
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param job_id path string true "Job ID"
+// @Success 200 {object} jobstorage.BuildJob
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/{job_id} [get]
 func HandleGetBuild(c echo.Context) error {
 	jobID := c.Param("job_id")
 	job, err := jobstorage.ReadJob(jobID)
@@ -140,7 +192,16 @@ func HandleGetBuild(c echo.Context) error {
 	return c.JSON(http.StatusOK, job)
 }
 
-// HandleGetBuildLogs returns the build logs for a job
+// @Summary Get build logs
+// @Description Returns the build logs for a job via WebSocket connection
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param job_id path string true "Job ID"
+// @Success 101 {string} string "Switching to WebSocket protocol"
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/{job_id}/logs [get]
 func HandleGetBuildLogs(c echo.Context) error {
 	jobID := c.Param("job_id")
 
@@ -216,7 +277,19 @@ func HandleGetBuildLogs(c echo.Context) error {
 	return nil
 }
 
-// HandleWriteBuildLogs handles streaming logs for a job via WebSocket
+// @Summary Write build logs
+// @Description Handles streaming logs for a job via WebSocket connection
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param job_id path string true "Job ID"
+// @Param worker_id query string true "Worker ID"
+// @Success 101 {string} string "Switching to WebSocket protocol"
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/{job_id}/logs/write [get]
 func HandleWriteBuildLogs(c echo.Context) error {
 	jobID := c.Param("job_id")
 	workerID := c.QueryParam("worker_id")
@@ -281,7 +354,21 @@ func HandleWriteBuildLogs(c echo.Context) error {
 	return nil
 }
 
-// HandleUploadArtifact handles uploading build artifacts from workers
+// @Summary Upload build artifact
+// @Description Handles uploading build artifacts from workers
+// @Tags builds
+// @Accept multipart/form-data
+// @Produce json
+// @Param job_id path string true "Job ID"
+// @Param worker_id query string true "Worker ID"
+// @Param filename path string true "Artifact filename"
+// @Param file formData file true "Artifact file"
+// @Success 200 {object} map[string]string
+// @Failure 400 {object} map[string]string
+// @Failure 403 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/{job_id}/artifacts/{filename} [post]
 func HandleUploadArtifact(c echo.Context) error {
 	jobID := c.Param("job_id")
 	workerID := c.QueryParam("worker_id")
@@ -335,7 +422,16 @@ func HandleUploadArtifact(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"message": "Artifact uploaded successfully"})
 }
 
-// HandleGetArtifacts returns the list of artifacts for a job
+// @Summary List build artifacts
+// @Description Returns the list of artifacts for a job
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param job_id path string true "Job ID"
+// @Success 200 {array} object{name=string,url=string} "List of artifacts with friendly names and URLs"
+// @Failure 404 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds/{job_id}/artifacts [get]
 func HandleGetArtifacts(c echo.Context) error {
 	jobID := c.Param("job_id")
 
