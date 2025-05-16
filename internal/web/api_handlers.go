@@ -206,7 +206,7 @@ func HandleGetBuildLogs(c echo.Context) error {
 
 			// If job is complete or failed, close the connection
 			if job.Status == jobstorage.JobStatusComplete || job.Status == jobstorage.JobStatusFailed {
-				websocket.Message.Send(ws, "Job complete, closing connection.")
+				websocket.Message.Send(ws, fmt.Sprintf("Job reached status: %s, closing connection.", job.Status))
 				return // Connection will be closed by defer
 			}
 
