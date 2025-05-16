@@ -34,7 +34,7 @@ var WorkerCmd = cli.Command{
 	Action: func(ctx *cli.Context) error {
 		w := worker.NewWorker(ctx.String("endpoint"), ctx.String("worker-id"))
 		fmt.Printf("Starting worker %s, connecting to %s\n", ctx.String("worker-id"), ctx.String("endpoint"))
-		return w.Start()
+		return w.Start(ctx.Context)
 	},
 }
 

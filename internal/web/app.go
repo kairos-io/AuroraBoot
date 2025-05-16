@@ -225,7 +225,25 @@ func webSocketHandler(c echo.Context) error {
 		// Create a buffer for reading
 		buf := make([]byte, 1024)
 		for {
-			// Check job status
+			// Read all currently available data from the file
+			for {
+				n, err := file.Read(buf)
+				if err != nil && err != io.EOF {
+					websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))
+					return
+				}
+				if n > 0 {
+					if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
+						return
+					}
+				}
+				// If we got no data, break the inner loop to check job status
+				if n == 0 {
+					break
+				}
+			}
+
+			// Check job status after reading all currently available data
 			job, err := jobstorage.ReadJob(uuid)
 			if err != nil {
 				websocket.Message.Send(ws, fmt.Sprintf("Error reading job status: %v", err))
@@ -237,16 +255,6 @@ func webSocketHandler(c echo.Context) error {
 				return // Connection will be closed by defer with sleep
 			}
 
-			n, err := file.Read(buf)
-			if err != nil && err != io.EOF {
-				websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))
-				return
-			}
-			if n > 0 {
-				if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
-					return
-				}
-			}
 			time.Sleep(100 * time.Millisecond)
 		}
 	}).ServeHTTP(c.Response(), c.Request())

@@ -33,10 +33,10 @@ export function initializeAccordion() {
                 if (section.dataset.section === 'kubernetes') {
                     const iconContainer = baseImageLabel.querySelector('[data-js="option-container"]');
                     if (iconContainer) {
-                        selectedIcon = iconContainer.querySelector('svg')?.cloneNode(true);
+                        selectedIcon = iconContainer.querySelector('img')?.cloneNode(true);
                     }
                 } else {
-                    selectedIcon = baseImageLabel.querySelector('svg')?.cloneNode(true);
+                    selectedIcon = baseImageLabel.querySelector('img')?.cloneNode(true);
                 }
             }
             // Clear existing content and add icon if available
