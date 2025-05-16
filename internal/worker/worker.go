@@ -37,7 +37,7 @@ func NewWorker(endpoint, workerID string) *Worker {
 	return &Worker{
 		endpoint: endpoint,
 		workerID: workerID,
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   &http.Client{Timeout: 0 * time.Second}, // No timeout
 	}
 }
 
@@ -96,9 +96,6 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 	} else {
 		// If not a JSON log message, send as plain text
 		message := string(p)
-		if !strings.HasSuffix(message, "\n") {
-			message += "\n"
-		}
 		if m.prefix != "" {
 			message = fmt.Sprintf("[%s] %s", m.prefix, message)
 		}
@@ -106,7 +103,7 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 		// Write to the regular writer
 		n, err = m.writer.Write([]byte(message))
 		if err != nil {
-			return n, err
+			return n, fmt.Errorf("error while trying to write message %s: %v", message, err)
 		}
 
 		// Send to the websocket with retry if available
@@ -381,7 +378,7 @@ func (w *Worker) updateJobStatus(jobID string, status jobstorage.JobStatus) erro
 
 func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 	// Create a Dockerfile from a template
-	tmpl := `FROM quay.io/kairos/kairos-init:v0.3.0 AS kairos-init
+	tmpl := `FROM quay.io/kairos/kairos-init:v0.4.3 AS kairos-init
 
 FROM {{.Image}} AS base
 
@@ -411,7 +408,7 @@ RUN rm /kairos-init`
 }
 
 func buildOCI(contextDir, image string) string {
-	return fmt.Sprintf(`docker build %s -t %s`, contextDir, image)
+	return fmt.Sprintf(`docker buildx build --load --progress=plain %s -t %s`, contextDir, image)
 }
 
 func saveOCI(dst, image string) string {

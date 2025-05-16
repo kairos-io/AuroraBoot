@@ -22,10 +22,6 @@ import (
 var staticFiles embed.FS
 
 var mu sync.Mutex
-var artifactDir string
-
-//go:embed assets
-var assets embed.FS
 
 type AppConfig struct {
 	EnableLogger bool
@@ -48,7 +44,6 @@ func getFileSystem(useOS bool) http.FileSystem {
 }
 
 func App(config AppConfig) error {
-	artifactDir = config.OutDir
 	jobstorage.BuildsDir = config.BuildsDir
 	e := echo.New()
 

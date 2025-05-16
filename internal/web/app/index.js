@@ -1,6 +1,4 @@
 import { initializeAccordion } from './accordion.js';
-import Convert from 'ansi-to-html';
-const convert = new Convert();
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize accordion functionality
   initializeAccordion();
@@ -156,7 +154,9 @@ document.addEventListener('DOMContentLoaded', () => {
           updateStatus(message);
           // Create a pre element to preserve whitespace and prevent wrapping
           const pre = document.createElement('pre');
-          pre.textContent = convert.toHtml(message);
+          // Strip ANSI color codes using regex
+          const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
+          pre.textContent = strippedMessage;
           outputElement.appendChild(pre);
           outputElement.scrollTop = outputElement.scrollHeight;
         };

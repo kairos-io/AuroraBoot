@@ -12,7 +12,13 @@ ADD ./internal/web/app/index.js .
 ADD ./internal/web/app/accordion.js .
 RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
 
-FROM golang AS builder
+FROM golang:1.24 AS swagger
+WORKDIR /app
+COPY . .
+RUN go install github.com/swaggo/swag/cmd/swag@latest && \
+    swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+
+FROM golang:1.24 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
 ADD go.mod .
@@ -20,6 +26,8 @@ ADD go.sum .
 RUN go mod download
 ADD . .
 COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
+COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
+COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
