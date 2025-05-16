@@ -37,7 +37,7 @@ func NewWorker(endpoint, workerID string) *Worker {
 	return &Worker{
 		endpoint: endpoint,
 		workerID: workerID,
-		client:   &http.Client{Timeout: 10 * time.Second},
+		client:   &http.Client{Timeout: 0 * time.Second}, // No timeout
 	}
 }
 
