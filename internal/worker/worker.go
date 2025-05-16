@@ -96,9 +96,6 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 	} else {
 		// If not a JSON log message, send as plain text
 		message := string(p)
-		if !strings.HasSuffix(message, "\n") {
-			message += "\n"
-		}
 		if m.prefix != "" {
 			message = fmt.Sprintf("[%s] %s", m.prefix, message)
 		}
@@ -106,7 +103,7 @@ func (m *MultiWriterWithWebsocket) Write(p []byte) (n int, err error) {
 		// Write to the regular writer
 		n, err = m.writer.Write([]byte(message))
 		if err != nil {
-			return n, err
+			return n, fmt.Errorf("error while trying to write message %s: %v", message, err)
 		}
 
 		// Send to the websocket with retry if available
