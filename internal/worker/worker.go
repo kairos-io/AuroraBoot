@@ -378,7 +378,7 @@ func (w *Worker) updateJobStatus(jobID string, status jobstorage.JobStatus) erro
 
 func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 	// Create a Dockerfile from a template
-	tmpl := `FROM quay.io/kairos/kairos-init:v0.3.0 AS kairos-init
+	tmpl := `FROM quay.io/kairos/kairos-init:v0.4.3 AS kairos-init
 
 FROM {{.Image}} AS base
 
@@ -408,7 +408,7 @@ RUN rm /kairos-init`
 }
 
 func buildOCI(contextDir, image string) string {
-	return fmt.Sprintf(`docker build %s -t %s`, contextDir, image)
+	return fmt.Sprintf(`docker buildx build --load --progress=plain %s -t %s`, contextDir, image)
 }
 
 func saveOCI(dst, image string) string {
