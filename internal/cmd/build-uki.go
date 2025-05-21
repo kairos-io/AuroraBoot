@@ -928,7 +928,7 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, logg
 	arch := "amd64"
 	os := "linux"
 	// Build imageTar from normal tar
-	tarName := fmt.Sprintf("%s-%s-uki.tar", constants.KairosDefaultArtifactName, outputName)
+	tarName := "kairos.tar"
 	if artifactName != "" {
 		tarName = fmt.Sprintf("%s.tar", artifactName)
 	}
