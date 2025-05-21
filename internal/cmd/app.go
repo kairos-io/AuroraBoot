@@ -44,16 +44,17 @@ func GetApp(version string) *cli.App {
 		Version: version,
 		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:   "auroraboot",
-		Commands: []*cli.Command{
-			&BuildISOCmd,
-			&BuildUKICmd,
-			&GenKeyCmd,
-			&SysextCmd,
-			&NetBootCmd,
-			&WebCMD,
-			&RedFishDeployCmd,
-			&WorkerCmd,
-		},
+        Commands: []*cli.Command{
+            &BuildISOCmd,
+            &BuildUKICmd,
+            &GenKeyCmd,
+            &SysextCmd,
+            &NetBootCmd,
+            &StartPixieCmd,
+            &WebCMD,
+            &RedFishDeployCmd,
+            &WorkerCmd,
+        },
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "set",
