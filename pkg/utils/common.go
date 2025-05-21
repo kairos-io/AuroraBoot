@@ -4,13 +4,14 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"fmt"
-	"github.com/joho/godotenv"
 	"io"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/joho/godotenv"
 
 	containerdCompression "github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -369,7 +370,8 @@ func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
 // its the callers responsibility to add the rest of the name if its building an iso or raw image
 // also, no extension is added to the name, so its up to the caller to add it
 func NameFromRootfs(rootfs string) string {
-	if _, ok := os.Stat(filepath.Join(rootfs, "etc/kairos-release")); ok == nil {
+	// print the contents of the /etc/kairos-release file
+	if _, err := os.Stat(filepath.Join(rootfs, "etc/kairos-release")); err == nil {
 		flavor, err := sdkUtils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/kairos-release"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
@@ -412,7 +414,7 @@ func NameFromRootfs(rootfs string) string {
 				// return normal name without k8s stuff
 				return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
 			}
-			return fmt.Sprintf("%s-%s-%s-%s-%s-%s%s", flavor, flavorVersion, variant, arch, model, k8sversion, k8sprovider)
+			return fmt.Sprintf("%s-%s-%s-%s-%s-%s-%sv%s", flavor, flavorVersion, variant, arch, model, version, k8sprovider, k8sversion)
 
 		} else {
 			return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
