@@ -360,11 +360,14 @@ var BuildUKICmd = cli.Command{
 
 		switch ctx.String("output-type") {
 		case string(constants.IsoOutput):
-			absolutePath, err := filepath.Abs(ctx.String("overlay-iso"))
-			if err != nil {
-				return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
+			var absolutePathIso string
+			if overlayIsoDir := ctx.String("overlay-iso"); overlayIsoDir != "" {
+				absolutePathIso, err = filepath.Abs(overlayIsoDir)
+				if err != nil {
+					return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
+				}
 			}
-			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePath, ctx.String("keys"), outputName, ctx.String("name"), entries, logger); err != nil {
+			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePathIso, ctx.String("keys"), outputName, ctx.String("name"), entries, logger); err != nil {
 				return err
 			}
 		case string(constants.ContainerOutput):
@@ -734,6 +737,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	}
 
 	if overlayISO != "" {
+		logger.Infof("Overlay dir is set, copying files from %s", overlayISO)
 		logger.Infof("Adding files from %s to iso", overlayISO)
 		overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", overlayISO))
 		if err != nil {
