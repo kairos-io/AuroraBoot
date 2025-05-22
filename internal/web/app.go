@@ -2,15 +2,17 @@ package web
 
 import (
 	"embed"
-	"encoding/json"
 	"fmt"
+	"io"
 	"io/fs"
 	"net/http"
 	"os"
 	"path/filepath"
 	"sync"
+	"time"
 
 	"github.com/gofrs/uuid"
+	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
 	"golang.org/x/net/websocket"
@@ -20,11 +22,13 @@ import (
 var staticFiles embed.FS
 
 var mu sync.Mutex
-var jobsData = map[string]JobData{} // Store the last submitted form data
-var artifactDir string
 
-//go:embed assets
-var assets embed.FS
+type AppConfig struct {
+	EnableLogger bool
+	ListenAddr   string
+	OutDir       string
+	BuildsDir    string
+}
 
 func getFileSystem(useOS bool) http.FileSystem {
 	if useOS {
@@ -39,24 +43,18 @@ func getFileSystem(useOS bool) http.FileSystem {
 	return http.FS(fsys)
 }
 
-type JobData struct {
-	Variant                string `json:"variant"`
-	Model                  string `json:"model"`
-	TrustedBoot            bool   `json:"trusted_boot"`
-	KubernetesDistribution string `json:"kubernetes_distribution"`
-	KubernetesVersion      string `json:"kubernetes_version"`
-	Image                  string `json:"image"`
-	Version                string `json:"version"`
-}
-
-func App(listenAddr, outDir string) error {
-	artifactDir = outDir
+func App(config AppConfig) error {
+	jobstorage.BuildsDir = config.BuildsDir
 	e := echo.New()
-	e.Use(middleware.Logger())
+
+	if config.EnableLogger {
+		e.Use(middleware.Logger())
+	}
 	e.Use(middleware.Recover())
 
-	// Ensure artifact directory exists
-	os.MkdirAll(artifactDir, os.ModePerm)
+	// Ensure directories exist
+	os.MkdirAll(config.OutDir, os.ModePerm)
+	os.MkdirAll(config.BuildsDir, os.ModePerm)
 
 	assetHandler := http.FileServer(getFileSystem(false))
 	e.GET("/*", echo.WrapHandler(assetHandler))
@@ -67,10 +65,22 @@ func App(listenAddr, outDir string) error {
 	// Handle WebSocket connection
 	e.GET("/ws/:uuid", webSocketHandler)
 
-	// Serve static artifact files
-	e.Static("/artifacts", artifactDir)
+	// API routes
+	api := e.Group("/api/v1")
+	api.POST("/builds", HandleQueueBuild)
+	api.POST("/builds/bind", HandleBindBuildJob)
+	api.PUT("/builds/:job_id/status", HandleUpdateJobStatus)
+	api.GET("/builds/:job_id", HandleGetBuild)
+	api.GET("/builds/:job_id/logs", HandleGetBuildLogs)
+	api.GET("/builds/:job_id/logs/write", HandleWriteBuildLogs)
+	api.POST("/builds/:job_id/artifacts/:filename", HandleUploadArtifact)
+	api.GET("/builds/:job_id/artifacts", HandleGetArtifacts)
 
-	e.Logger.Fatal(e.Start(listenAddr))
+	// Serve static artifact files
+	e.Static("/artifacts", config.OutDir)
+	e.Static("/builds", config.BuildsDir)
+
+	e.Logger.Fatal(e.Start(config.ListenAddr))
 
 	return nil
 }
@@ -124,14 +134,19 @@ func buildHandler(c echo.Context) error {
 	}
 
 	// Collect job data
-	job := JobData{
-		Variant:                variant,
-		Model:                  c.FormValue("model"),
-		TrustedBoot:            c.FormValue("trusted_boot") == "true",
-		KubernetesDistribution: kubernetesDistribution,
-		KubernetesVersion:      kubernetesVersion,
-		Image:                  image,
-		Version:                c.FormValue("version"),
+	job := jobstorage.BuildJob{
+		JobData: jobstorage.JobData{
+			Variant:                variant,
+			Model:                  c.FormValue("model"),
+			TrustedBoot:            c.FormValue("trusted_boot") == "true",
+			KubernetesDistribution: kubernetesDistribution,
+			KubernetesVersion:      kubernetesVersion,
+			Image:                  image,
+			Version:                c.FormValue("version"),
+		},
+		Status:    jobstorage.JobStatusQueued,
+		CreatedAt: time.Now().Format(time.RFC3339),
+		UpdatedAt: time.Now().Format(time.RFC3339),
 	}
 
 	id, err := uuid.NewV4()
@@ -139,105 +154,104 @@ func buildHandler(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to generate UUID"})
 	}
 
-	jobsData[id.String()] = job
+	// Create job directory
+	jobPath, err := jobstorage.GetJobPath(id.String())
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
+	}
+	if err := os.MkdirAll(jobPath, 0755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to create job directory"})
+	}
+
+	// Write job metadata
+	if err := jobstorage.WriteJob(id.String(), job); err != nil {
+		os.RemoveAll(jobPath) // Clean up on error
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to write job metadata"})
+	}
 
 	return c.JSON(http.StatusOK, map[string]string{"uuid": id.String()})
 }
 
 func webSocketHandler(c echo.Context) error {
 	websocket.Handler(func(ws *websocket.Conn) {
-		mu.Lock()
 		uuid := c.Param("uuid")
-		jobData, exists := jobsData[uuid]
-		mu.Unlock()
-		if !exists {
+		_, err := jobstorage.ReadJob(uuid)
+		if err != nil {
 			websocket.Message.Send(ws, "Job not found")
 			return
 		}
 
-		defer ws.Close()
+		defer func() {
+			// Send a final message before closing
+			websocket.Message.Send(ws, "Connection closing...")
+			time.Sleep(1 * time.Second) // Give time for the final message to be sent
+			ws.Close()
+		}()
 
-		// Log the start of the process
-		websocket.Message.Send(ws, fmt.Sprintf("Starting process with data: %+v\n", jobData))
-
-		tempdir, err := os.MkdirTemp("", "build")
+		// Get the job's build directory
+		jobPath, err := jobstorage.GetJobPath(uuid)
 		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to create temp dir: %v", err))
+			websocket.Message.Send(ws, fmt.Sprintf("Error getting job path: %v", err))
 			return
 		}
+		buildLogPath := filepath.Join(jobPath, "build.log")
 
-		defer os.RemoveAll(tempdir)
+		// Check if build.log exists
+		if _, err := os.Stat(buildLogPath); os.IsNotExist(err) {
+			websocket.Message.Send(ws, "Waiting for worker to pick up the job...")
 
-		if err := prepareDockerfile(jobData, tempdir); err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to prepare image: %v", err))
-			return
+			// Wait for the file to appear
+			for {
+				time.Sleep(1 * time.Second)
+				if _, err := os.Stat(buildLogPath); err == nil {
+					break
+				}
+			}
 		}
 
-		websocket.Message.Send(ws, "Building container image...")
-
-		err = runBashProcessWithOutput(ws,
-			buildOCI(
-				tempdir,
-				"my-image",
-			))
-
+		// Open the log file
+		file, err := os.Open(buildLogPath)
 		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to build image: %v", err))
+			websocket.Message.Send(ws, fmt.Sprintf("Failed to open build log: %v", err))
 			return
 		}
+		defer file.Close()
 
-		// Create the output dir for the job
-		jobOutputDir := filepath.Join(artifactDir, uuid)
-		os.MkdirAll(jobOutputDir, os.ModePerm)
+		// Create a buffer for reading
+		buf := make([]byte, 1024)
+		for {
+			// Read all currently available data from the file
+			for {
+				n, err := file.Read(buf)
+				if err != nil && err != io.EOF {
+					websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))
+					return
+				}
+				if n > 0 {
+					if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
+						return
+					}
+				}
+				// If we got no data, break the inner loop to check job status
+				if n == 0 {
+					break
+				}
+			}
 
-		websocket.Message.Send(ws, "Generating tarball...")
+			// Check job status after reading all currently available data
+			job, err := jobstorage.ReadJob(uuid)
+			if err != nil {
+				websocket.Message.Send(ws, fmt.Sprintf("Error reading job status: %v", err))
+				return
+			}
 
-		err = runBashProcessWithOutput(
-			ws,
-			saveOCI(filepath.Join(jobOutputDir, "image.tar"), "my-image"),
-		)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to save image: %v", err))
-			return
+			// If job is complete or failed, close the connection
+			if job.Status == jobstorage.JobStatusComplete || job.Status == jobstorage.JobStatusFailed {
+				return // Connection will be closed by defer with sleep
+			}
+
+			time.Sleep(100 * time.Millisecond)
 		}
-
-		websocket.Message.Send(ws, "Generating raw image...")
-		if err := buildRawDisk("my-image", jobOutputDir, ws); err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to generate raw image: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, "Generating ISO...")
-		if err := buildISO("my-image", jobOutputDir, "custom-kairos", ws); err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to generate ISO: %v", err))
-			return
-		}
-
-		type Link struct {
-			Name string `json:"name"`
-			URL  string `json:"url"`
-		}
-
-		rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to find raw disk image: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, "Generating download links...")
-		links := []Link{
-			{Name: "Container image", URL: "/artifacts/" + uuid + "/image.tar"},
-			{Name: "Raw disk image", URL: "/artifacts/" + uuid + "/" + filepath.Base(rawImage)},
-			{Name: "ISO image", URL: "/artifacts/" + uuid + "/custom-kairos.iso"},
-		}
-
-		dat, err := json.Marshal(links)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to marshal links: %v", err))
-			return
-		}
-
-		websocket.Message.Send(ws, string(dat))
 	}).ServeHTTP(c.Response(), c.Request())
 	return nil
 }

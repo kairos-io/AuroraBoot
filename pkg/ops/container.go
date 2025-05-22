@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 )
 
 // DumpSource pulls a container image either remotely or locally from a docker daemon
@@ -17,7 +17,7 @@ func DumpSource(image, dst string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		cfg := NewConfig(
 			WithImageExtractor(v1.OCIImageExtractor{}),
-			WithLogger(sdkTypes.NewKairosLogger("auroraboot-dump-source", "debug", false)),
+			WithLogger(internal.Log),
 		)
 		e := elemental.NewElemental(cfg)
 

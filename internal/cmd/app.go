@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
 	"os"
 
 	"github.com/hashicorp/go-multierror"
@@ -9,10 +10,33 @@ import (
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/internal/config"
+	"github.com/kairos-io/AuroraBoot/internal/worker"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
 )
+
+var WorkerCmd = cli.Command{
+	Name:  "worker",
+	Usage: "Start a build worker",
+	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:     "endpoint",
+			Usage:    "API endpoint URL (e.g., http://localhost:8080)",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "worker-id",
+			Usage:    "Unique worker identifier",
+			Required: true,
+		},
+	},
+	Action: func(ctx *cli.Context) error {
+		w := worker.NewWorker(ctx.String("endpoint"), ctx.String("worker-id"))
+		fmt.Printf("Starting worker %s, connecting to %s\n", ctx.String("worker-id"), ctx.String("endpoint"))
+		return w.Start(ctx.Context)
+	},
+}
 
 func GetApp(version string) *cli.App {
 	return &cli.App{
@@ -29,6 +53,7 @@ func GetApp(version string) *cli.App {
 			&NetBootCmd,
 			&WebCMD,
 			&RedFishDeployCmd,
+			&WorkerCmd,
 		},
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{

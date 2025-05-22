@@ -1,6 +1,4 @@
 import { initializeAccordion } from './accordion.js';
-import Convert from 'ansi-to-html';
-const convert = new Convert();
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize accordion functionality
   initializeAccordion();
@@ -150,17 +148,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const linkElement = document.getElementById('links');
         outputElement.innerHTML = "";
         socket.onmessage = function(event) {
-          try {
-            const data = JSON.parse(event.data);
-            if (data.length) {
-              for (const link of data) {
-                linkElement.innerHTML += `<a href="${link.url}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${link.name}</a>`;
-              }
-            }
-          } catch (e) {}
           const message = event.data;
+          if (!message.trim()) return; // Skip empty messages
+
           updateStatus(message);
-          outputElement.innerHTML += `${convert.toHtml(message)}\n`;
+          // Create a pre element to preserve whitespace and prevent wrapping
+          const pre = document.createElement('pre');
+          // Strip ANSI color codes using regex
+          const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
+          pre.textContent = strippedMessage;
+          outputElement.appendChild(pre);
           outputElement.scrollTop = outputElement.scrollHeight;
         };
         const buildingContainerImage = document.getElementById('building-container-image');
@@ -183,7 +180,7 @@ document.addEventListener('DOMContentLoaded', () => {
             generatingISO.classList.remove("hidden");
             generatingRawImage.querySelector('.spinner').classList.add("hidden");
             generatingRawImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating download links")) {
+          } else if (message.includes("Uploading artifacts to server")) {
             generatingDownloadLinks.classList.remove("hidden");
             generatingISO.querySelector('.spinner').classList.add("hidden");
             generatingISO.querySelector('.done').classList.remove("hidden");
@@ -197,6 +194,23 @@ document.addEventListener('DOMContentLoaded', () => {
           outputElement.scrollTop = outputElement.scrollHeight;
           const downloads = document.getElementById('downloads');
           downloads.style.display = 'block';
+
+          // Fetch artifacts from the server
+          fetch(`/api/v1/builds/${result.uuid}/artifacts`)
+            .then(response => response.json())
+            .then(artifacts => {
+              const linkElement = document.getElementById('links');
+              linkElement.innerHTML = ""; // Clear existing links
+              for (const artifact of artifacts) {
+                const fullUrl = `/builds/${result.uuid}/artifacts/${artifact.url}`;
+                linkElement.innerHTML += `<a href="${fullUrl}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${artifact.name}</a>`;
+              }
+            })
+            .catch(error => {
+              console.error('Error fetching artifacts:', error);
+              outputElement.innerHTML += "Error fetching download links. Please try refreshing the page.\n";
+              outputElement.scrollTop = outputElement.scrollHeight;
+            });
         };
       });
   });
