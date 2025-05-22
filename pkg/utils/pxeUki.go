@@ -45,10 +45,10 @@ func ServeUkiPXE(keydir, isoFile string, log types.KairosLogger) error {
 
 	internal.Log.Logger.Debug().Str("subsystem", "Init").Msgf("Starting Pixiecore goroutines")
 
-	// DHCP helps clients searching for ipxe servers find the right one
-	// PXE I guess serves the pxe request to point tot he tftp sxerver
+	// DHCP helps clients searching for iPXE servers find the right one
+	// PXE serves the PXE request to point to the TFTP server
 	// TFTP serves the files to the clients
-	// HTTP I guess its for plain http boot and htt requests
+	// HTTP is used for plain HTTP boot and HTTP requests
 
 	go func() { errs <- serveDHCP(dhcp, log) }()
 	go func() { errs <- servePXE(pxe, log) }()
@@ -166,6 +166,7 @@ func servePXE(conn net.PacketConn, log types.KairosLogger) error {
 
 		if err = isBootDHCP(pkt); err != nil {
 			log.Logger.Debug().Str("subsystem", "PXE").Msgf("Ignoring packet from %s (%s): %s", pkt.HardwareAddr, addr, err)
+			continue
 		}
 
 		intf, err := net.InterfaceByIndex(msg.IfIndex)
@@ -227,7 +228,7 @@ func offerDhcpPackage(pkt *dhcp4.Packet, t dhcp4.MessageType, serverIP net.IP, l
 		resp.Options[dhcp4.OptVendorIdentifier] = []byte("PXEClient")
 	}
 
-	fmt.Println(string(pkt.Options[dhcp4.OptVendorIdentifier]))
+	log.Logger.Debug().Str("subsystem", "PXE").Str("VendorIdentifier", string(pkt.Options[dhcp4.OptVendorIdentifier])).Msg("Processed Vendor Identifier")
 
 	log.Logger.Debug().Str("BootServerName", resp.BootServerName).Str("BootFilename", resp.BootFilename).Msgf("Sending ProxyDHCP offer to %s on %s", pkt.HardwareAddr, serverIP)
 	return resp, nil
@@ -249,8 +250,8 @@ func serveTFTP(conn net.PacketConn, log types.KairosLogger) error {
 	return nil
 }
 
-// handleTFTP handles TFTP requests. It serves the EFI key enroller file.
-// It does nothing else. Sucker.
+// handleTFTP handles TFTP requests. It serves the EFI key enroller file
+// and does not process other types of requests.
 func handleTFTP(_ string, _ net.Addr) (io.ReadCloser, int64, error) {
 	return io.NopCloser(bytes.NewBuffer(constants.EfiKeyEnroller)), int64(len(constants.EfiKeyEnroller)), nil
 }
@@ -299,8 +300,12 @@ func serveHTTP(keydir string, isoFile string, log types.KairosLogger) error {
 	})
 
 	http.Handle("/", handler)
-	log.Logger.Info().Str("subsystem", "HTTP").Msgf("Listening for requests on :80")
-	err = http.ListenAndServe(":80", nil)
+	listenAddr := os.Getenv("HTTP_LISTEN_ADDR")
+	if listenAddr == "" {
+		listenAddr = ":80"
+	}
+	log.Logger.Info().Str("subsystem", "HTTP").Msgf("Listening for requests on %s", listenAddr)
+	err = http.ListenAndServe(listenAddr, nil)
 	if err != nil {
 		log.Logger.Error().Err(err).Msg("Error starting HTTP server")
 	}

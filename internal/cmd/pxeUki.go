@@ -9,7 +9,7 @@ import (
 
 var UkiPXECmd = cli.Command{
 	Name:  "uki-pxe",
-	Usage: "",
+	Usage: "Serve PXE boot files using a specified ISO file and key directory",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:     "key-dir",
@@ -39,7 +39,7 @@ var UkiPXECmd = cli.Command{
 		return nil
 	},
 	Action: func(context *cli.Context) error {
-		log := types.NewKairosLogger("pxe", "debug", false)
+		log := types.NewKairosLogger("pxe", context.String("loglevel"), false)
 		return utils.ServeUkiPXE(context.String("key-dir"), context.String("iso-file"), log)
 	},
 }
