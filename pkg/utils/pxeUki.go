@@ -166,11 +166,6 @@ func servePXE(conn net.PacketConn, log types.KairosLogger) error {
 			continue
 		}
 
-		if err = isBootDHCP(pkt); err != nil {
-			log.Logger.Debug().Str("subsystem", "PXE").Msgf("Ignoring packet from %s (%s): %s", pkt.HardwareAddr, addr, err)
-			continue
-		}
-
 		intf, err := net.InterfaceByIndex(msg.IfIndex)
 		if err != nil {
 			log.Logger.Debug().Str("subsystem", "PXE").Msgf("Couldn't get information about local network interface %d: %s", msg.IfIndex, err)
@@ -212,7 +207,7 @@ func offerDhcpPackage(pkt *dhcp4.Packet, t dhcp4.MessageType, serverIP net.IP, l
 		RelayAddr:      pkt.RelayAddr,
 		ServerAddr:     serverIP,
 		BootServerName: serverIP.String(),
-		BootFilename:   fmt.Sprintf("%s/booter.efi", serverIP),
+		BootFilename:   "booter.efi",
 		Options: dhcp4.Options{
 			dhcp4.OptServerIdentifier: serverIP,
 		},
