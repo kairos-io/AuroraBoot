@@ -36,6 +36,14 @@ var UkiPXECmd = cli.Command{
 			}
 			return cli.Exit("error checking iso file: "+err.Error(), 1)
 		}
+
+		keyDir := c.String("key-dir")
+		if _, err := os.Stat(keyDir); err != nil {
+			if os.IsNotExist(err) {
+				return cli.Exit("key directory does not exist", 1)
+			}
+			return cli.Exit("error checking key directory: "+err.Error(), 1)
+		}
 		return nil
 	},
 	Action: func(context *cli.Context) error {

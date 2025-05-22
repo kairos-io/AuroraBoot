@@ -4,6 +4,13 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
+	"strings"
+
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/kairos-sdk/types"
@@ -11,11 +18,6 @@ import (
 	"github.com/kairos-io/netboot/dhcp4"
 	"github.com/kairos-io/netboot/tftp"
 	"golang.org/x/net/ipv4"
-	"io"
-	"net"
-	"net/http"
-	"os"
-	"strings"
 )
 
 func ServeUkiPXE(keydir, isoFile string, log types.KairosLogger) error {
