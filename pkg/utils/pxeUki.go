@@ -120,7 +120,7 @@ func interfaceIP(intf *net.Interface) (net.IP, error) {
 	// Try to find an IPv4 address to use, in the following order:
 	// global unicast (includes rfc1918), link-local unicast,
 	// loopback.
-	fs := [](func(net.IP) bool){
+	fs := []func(net.IP) bool{
 		net.IP.IsGlobalUnicast,
 		net.IP.IsLinkLocalUnicast,
 		net.IP.IsLoopback,
@@ -289,7 +289,7 @@ func serveHTTP(keydir string, isoFile string, log types.KairosLogger) error {
 		requested := strings.TrimPrefix(r.URL.Path, "/")
 		actual, ok := filesMap[strings.ToLower(requested)]
 		if ok {
-			filePath := keydir + actual
+			filePath := filepath.Join(keydir, actual)
 			log.Logger.Info().Str("method", r.Method).Str("url", r.URL.Path).Str("file", filePath).Msg("Serving file from keys dir (case-insensitive)")
 			http.ServeFile(w, r, filePath)
 			return
