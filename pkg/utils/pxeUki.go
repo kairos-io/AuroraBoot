@@ -217,8 +217,8 @@ func offerDhcpPackage(pkt *dhcp4.Packet, t dhcp4.MessageType, serverIP net.IP, l
 			dhcp4.OptServerIdentifier: serverIP,
 		},
 	}
-	if pkt.Options[97] != nil {
-		resp.Options[97] = pkt.Options[97]
+	if pkt.Options[dhcp4.OptUidGuidClientIdentifier] != nil {
+		resp.Options[dhcp4.OptUidGuidClientIdentifier] = pkt.Options[dhcp4.OptUidGuidClientIdentifier]
 	}
 
 	if strings.Contains(strings.ToLower(string(pkt.Options[dhcp4.OptVendorIdentifier])), "httpclient") {
@@ -240,7 +240,7 @@ func serveTFTP(conn net.PacketConn, log types.KairosLogger) error {
 	log.Logger.Info().Str("subsystem", "TFTP").Msgf("Listening for requests on :%d", nbConstants.PortTFTP)
 	ts := tftp.Server{
 		Handler: handleTFTP,
-		InfoLog: func(msg string) { log.Logger.Info().Str("subsystem", "TFTP").Msgf(msg) },
+		InfoLog: func(msg string) { log.Logger.Info().Str("subsystem", "TFTP").Msg(msg) },
 		TransferLog: func(clientAddr net.Addr, path string, err error) {
 			log.Logger.Debug().Str("subsystem", "TFTP").Str("path", path).Err(err).Str("client", clientAddr.String()).Msgf("Transfer")
 		},
