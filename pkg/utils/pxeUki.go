@@ -38,12 +38,8 @@ func ServeUkiPXE(keydir, isoFile string, log types.KairosLogger) error {
 		tftp.Close()
 		return err
 	}
-	// 5 buffer slots, one for each goroutine, plus one for
-	// Shutdown(). We only ever pull the first error out, but shutdown
-	// will likely generate some spurious errors from the other
-	// goroutines, and we want them to be able to dump them without
-	// blocking.
-	errs := make(chan error, 6)
+	// 4 buffer slots, one for each goroutine
+	errs := make(chan error, 4)
 
 	internal.Log.Logger.Debug().Str("subsystem", "Init").Msgf("Starting Pixiecore goroutines")
 
