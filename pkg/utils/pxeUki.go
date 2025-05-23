@@ -293,12 +293,8 @@ func serveHTTP(keydir string, isoFile string, log types.KairosLogger) error {
 	})
 
 	http.Handle("/", handler)
-	listenAddr := os.Getenv("HTTP_LISTEN_ADDR")
-	if listenAddr == "" {
-		listenAddr = ":80"
-	}
-	log.Logger.Info().Str("subsystem", "HTTP").Msgf("Listening for requests on %s", listenAddr)
-	err = http.ListenAndServe(listenAddr, nil)
+	log.Logger.Info().Str("subsystem", "HTTP").Msg("Listening for requests on :80")
+	err = http.ListenAndServe(":80", nil)
 	if err != nil {
 		log.Logger.Error().Err(err).Msg("Error starting HTTP server")
 	}
