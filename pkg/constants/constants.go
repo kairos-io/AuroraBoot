@@ -37,6 +37,12 @@ var BootHybrid []byte
 //go:embed grub_live_bios.cfg
 var GrubLiveBiosCfg []byte
 
+// EfiKeyEnroller is the key enroller for the efi image which gets the keys from the ipxe server and enrolls them
+// source at https://github.com/kairos-io/efi-key-enroller/
+//
+//go:embed efi-key-enroller.efi
+var EfiKeyEnroller []byte
+
 type UkiOutput string
 
 const (
