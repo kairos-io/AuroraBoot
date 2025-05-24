@@ -53,7 +53,7 @@ RUN dnf in -y bc \
 
 
 FROM base AS keyenroller
-ENV EFIKEY_VERSION=v0.1.0
+ENV EFIKEY_VERSION=v0.1.1
 RUN curl -f -L https://github.com/kairos-io/efi-key-enroller/releases/download/$EFIKEY_VERSION/efi-key-enroller.efi -o /efi-key-enroller.efi && file /efi-key-enroller.efi | grep -q "EFI"
 
 FROM golang:1.24 AS swagger
