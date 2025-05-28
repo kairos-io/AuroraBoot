@@ -36,7 +36,7 @@ func ServeUkiPXE(isoFile string, log types.KairosLogger) error {
 
 	internal.Log.Logger.Debug().Str("subsystem", "Init").Msgf("Starting Pixiecore goroutines")
 
-	// DHCP helps clients searching for HTTP Boot servers find the right one witht he rigth filename
+	// DHCP helps clients searching for HTTP Boot servers find the right one with the right filename
 	// HTTP is used for plain HTTP requests serving the ISO file.
 
 	go func() { errs <- serveDHCP(dhcp, log) }()
