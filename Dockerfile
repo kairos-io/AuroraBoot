@@ -52,10 +52,6 @@ RUN dnf in -y bc \
               zstd
 
 
-FROM base AS keyenroller
-ENV EFIKEY_VERSION=v0.1.1
-RUN curl -f -L https://github.com/kairos-io/efi-key-enroller/releases/download/$EFIKEY_VERSION/efi-key-enroller.efi -o /efi-key-enroller.efi && file /efi-key-enroller.efi | grep -q "EFI"
-
 FROM golang:1.24 AS swagger
 WORKDIR /app
 COPY . .
@@ -72,7 +68,6 @@ ADD . .
 COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
 COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
 COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
-COPY --from=keyenroller /efi-key-enroller.efi ./pkg/constants/efi-key-enroller.efi
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot

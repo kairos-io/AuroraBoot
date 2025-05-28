@@ -8,19 +8,10 @@ import (
 )
 
 var UkiPXECmd = cli.Command{
-	Name:  "uki-pxe",
-	Usage: "Serve PXE boot files using a specified ISO file and key directory",
+	Name:      "uki-pxe",
+	Usage:     "Serve PXE boot files using a specified ISO file",
+	ArgsUsage: "ISO_FILE",
 	Flags: []cli.Flag{
-		&cli.StringFlag{
-			Name:     "key-dir",
-			Usage:    "Directory containing the keys",
-			Required: true,
-		},
-		&cli.StringFlag{
-			Name:     "iso-file",
-			Usage:    "Iso file to use",
-			Required: true,
-		},
 		&cli.StringFlag{
 			Name:    "loglevel",
 			Aliases: []string{"l"},
@@ -29,25 +20,22 @@ var UkiPXECmd = cli.Command{
 		},
 	},
 	Before: func(c *cli.Context) error {
-		isoFile := c.String("iso-file")
+		// Ensure we have exactly one argument (the ISO file)
+		if c.NArg() != 1 {
+			return cli.Exit("exactly one argument required: the path to the ISO file", 1)
+		}
+
+		isoFile := c.Args().First()
 		if _, err := os.Stat(isoFile); err != nil {
 			if os.IsNotExist(err) {
 				return cli.Exit("iso file does not exist", 1)
 			}
 			return cli.Exit("error checking iso file: "+err.Error(), 1)
 		}
-
-		keyDir := c.String("key-dir")
-		if _, err := os.Stat(keyDir); err != nil {
-			if os.IsNotExist(err) {
-				return cli.Exit("key directory does not exist", 1)
-			}
-			return cli.Exit("error checking key directory: "+err.Error(), 1)
-		}
 		return nil
 	},
 	Action: func(context *cli.Context) error {
 		log := types.NewKairosLogger("pxe", context.String("loglevel"), false)
-		return utils.ServeUkiPXE(context.String("key-dir"), context.String("iso-file"), log)
+		return utils.ServeUkiPXE(context.Args().First(), log)
 	},
 }
