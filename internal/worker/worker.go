@@ -19,6 +19,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/spectrocloud-labs/herd"
 	"golang.org/x/net/websocket"
 )
@@ -246,12 +247,20 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to generate raw image: %v", err)
 	}
 
+	// Find the raw image file first to get the base name
+	rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
+	if err != nil {
+		return fmt.Errorf("failed to find raw disk image: %v", err)
+	}
+
+	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
+
 	// Generate ISO
 	if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	if err := buildISO(imageName, jobOutputDir, "custom-kairos", writer); err != nil {
+	if err := buildISO(imageName, jobOutputDir, baseName, writer); err != nil {
 		return fmt.Errorf("failed to generate ISO: %v", err)
 	}
 
@@ -260,23 +269,29 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	// Upload each artifact
-	artifacts := []string{
-		"image.tar",
-		"custom-kairos.iso",
+	// Rename artifacts before upload
+	artifacts := []struct {
+		src  string
+		dest string
+	}{
+		{src: "image.tar", dest: fmt.Sprintf("%s.tar", utils.SafeFilename(baseName))},
+		{src: fmt.Sprintf("%s.iso", baseName), dest: fmt.Sprintf("%s.iso", baseName)},
+		{src: filepath.Base(rawImage), dest: filepath.Base(rawImage)},
 	}
-
-	// Find the raw image file
-	rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
-	if err != nil {
-		return fmt.Errorf("failed to find raw disk image: %v", err)
-	}
-	artifacts = append(artifacts, filepath.Base(rawImage))
 
 	for _, artifact := range artifacts {
-		artifactPath := filepath.Join(jobOutputDir, artifact)
-		if err := w.uploadArtifact(jobID, artifactPath, artifact); err != nil {
-			return fmt.Errorf("failed to upload artifact %s: %v", artifact, err)
+		srcPath := filepath.Join(jobOutputDir, artifact.src)
+		destPath := filepath.Join(jobOutputDir, artifact.dest)
+
+		// Only rename if source and destination are different
+		if artifact.src != artifact.dest {
+			if err := os.Rename(srcPath, destPath); err != nil {
+				return fmt.Errorf("failed to rename artifact %s to %s: %v", artifact.src, artifact.dest, err)
+			}
+		}
+
+		if err := w.uploadArtifact(jobID, destPath, artifact.dest); err != nil {
+			return fmt.Errorf("failed to upload artifact %s: %v", artifact.dest, err)
 		}
 	}
 
@@ -481,7 +496,9 @@ func buildISO(containerImage, outputDir, artifactName string, writer io.Writer) 
 
 	// Override the state and ISO name, and ensure netboot is disabled
 	config.State = outputDir
-	config.ISO.OverrideName = artifactName
+	config.ISO = schema.ISO{
+		OverrideName: artifactName,
+	}
 	config.DisableNetboot = true
 	config.DisableHTTPServer = true
 
