@@ -432,3 +432,8 @@ func NameFromRootfs(rootfs string) string {
 		return fmt.Sprintf("%s-%s", flavor, label)
 	}
 }
+
+// SafeOCIName returns a string version of the artifact name without + which are invalid in labels
+func SafeOCIName(name string) string {
+	return strings.ReplaceAll(name, "+", "-")
+}
