@@ -198,7 +198,7 @@ func webSocketHandler(c echo.Context) error {
 
 		// Check if build.log exists
 		if _, err := os.Stat(buildLogPath); os.IsNotExist(err) {
-			websocket.Message.Send(ws, "Waiting for worker to pick up the job...")
+			websocket.Message.Send(ws, "Waiting for worker to pick up the job.\nIf you're running locally, make sure to pass the --create-worker to get a worker running.")
 
 			// Wait for the file to appear
 			for {
