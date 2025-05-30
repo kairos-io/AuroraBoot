@@ -19,7 +19,6 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/spectrocloud-labs/herd"
 	"golang.org/x/net/websocket"
 )
@@ -254,6 +253,9 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
+	if _, err := writer.WriteStr(fmt.Sprintf("Base name: %s\n", baseName)); err != nil {
+		return fmt.Errorf("failed to send log message: %v", err)
+	}
 
 	// Generate ISO
 	if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
@@ -269,29 +271,23 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
+	// Move image.tar to the base name
+	if err := os.Rename(filepath.Join(jobOutputDir, "image.tar"), filepath.Join(jobOutputDir, fmt.Sprintf("%s.tar", baseName))); err != nil {
+		return fmt.Errorf("failed to rename image.tar to %s.tar: %v", baseName, err)
+	}
+
 	// Rename artifacts before upload
-	artifacts := []struct {
-		src  string
-		dest string
-	}{
-		{src: "image.tar", dest: fmt.Sprintf("%s.tar", utils.SafeFilename(baseName))},
-		{src: fmt.Sprintf("%s.iso", baseName), dest: fmt.Sprintf("%s.iso", baseName)},
-		{src: filepath.Base(rawImage), dest: filepath.Base(rawImage)},
+	artifacts := []string{
+		fmt.Sprintf("%s.tar", baseName),
+		fmt.Sprintf("%s.iso", baseName),
+		filepath.Base(rawImage),
 	}
 
 	for _, artifact := range artifacts {
-		srcPath := filepath.Join(jobOutputDir, artifact.src)
-		destPath := filepath.Join(jobOutputDir, artifact.dest)
+		destPath := filepath.Join(jobOutputDir, artifact)
 
-		// Only rename if source and destination are different
-		if artifact.src != artifact.dest {
-			if err := os.Rename(srcPath, destPath); err != nil {
-				return fmt.Errorf("failed to rename artifact %s to %s: %v", artifact.src, artifact.dest, err)
-			}
-		}
-
-		if err := w.uploadArtifact(jobID, destPath, artifact.dest); err != nil {
-			return fmt.Errorf("failed to upload artifact %s: %v", artifact.dest, err)
+		if err := w.uploadArtifact(jobID, destPath, artifact); err != nil {
+			return fmt.Errorf("failed to upload artifact %s: %v", artifact, err)
 		}
 	}
 

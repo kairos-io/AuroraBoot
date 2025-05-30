@@ -433,10 +433,7 @@ func NameFromRootfs(rootfs string) string {
 	}
 }
 
-// SafeFilename returns a filename-safe version of the artifact name
-// This replaces characters that might cause issues in filenames while preserving the semantic meaning
-func SafeFilename(name string) string {
-	// Replace + with - in version strings to make them safe for filenames
-	// This preserves the semantic meaning while making it filesystem-safe
+// SafeOCIName returns a string version of the artifact name without + which are invalid in labels
+func SafeOCIName(name string) string {
 	return strings.ReplaceAll(name, "+", "-")
 }
