@@ -3,6 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/kairos-io/AuroraBoot/internal"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"os"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
@@ -50,9 +52,16 @@ var BuildISOCmd = cli.Command{
 			Name:  "overlay-iso",
 			Usage: "Path of the overlayed iso data",
 		},
+		&cli.StringFlag{
+			Name:    "loglevel",
+			Aliases: []string{"l"},
+			Usage:   "Set the log level",
+			Value:   "info",
+		},
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
+		internal.Log = sdkTypes.NewKairosLogger("aurora", ctx.String("loglevel"), false)
 		source := ctx.Args().Get(0)
 		if source == "" {
 			// Hack to prevent ShowAppHelpAndExit from checking only subcommands.
