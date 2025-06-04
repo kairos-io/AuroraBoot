@@ -113,6 +113,28 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.done').forEach(function(element) {
       element.classList.add("hidden");
     });
+    // Hide all status steps except the first one
+    const statusSteps = [
+      document.getElementById('building-container-image'),
+      document.getElementById('generating-tarball'),
+      document.getElementById('generating-raw-image'),
+      document.getElementById('generating-iso'),
+      document.getElementById('generating-download-links')
+    ];
+    statusSteps.forEach((el, idx) => {
+      if (el) {
+        if (idx === 0) {
+          el.classList.remove('hidden'); // Only show the first step at the start
+        } else {
+          el.classList.add('hidden');
+        }
+        // Also reset spinners and checkmarks for all
+        const spinner = el.querySelector('.spinner');
+        const done = el.querySelector('.done');
+        if (spinner) spinner.classList.remove('hidden');
+        if (done) done.classList.add('hidden');
+      }
+    });
   });
   document.getElementById('process-form').addEventListener('submit', function(event) {
     event.preventDefault(); // Always prevent default submission
