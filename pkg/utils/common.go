@@ -414,7 +414,7 @@ func NameFromRootfs(rootfs string) string {
 				// return normal name without k8s stuff
 				return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)
 			}
-			return fmt.Sprintf("%s-%s-%s-%s-%s-%s-%sv%s", flavor, flavorVersion, variant, arch, model, version, k8sprovider, k8sversion)
+			return fmt.Sprintf("%s-%s-%s-%s-%s-%s-%s%s", flavor, flavorVersion, variant, arch, model, version, k8sprovider, k8sversion)
 
 		} else {
 			return fmt.Sprintf("%s-%s-%s-%s-%s-%s", flavor, flavorVersion, variant, arch, model, version)

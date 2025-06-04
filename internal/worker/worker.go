@@ -253,9 +253,6 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
-	if _, err := writer.WriteStr(fmt.Sprintf("Base name: %s\n", baseName)); err != nil {
-		return fmt.Errorf("failed to send log message: %v", err)
-	}
 
 	// Generate ISO
 	if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
