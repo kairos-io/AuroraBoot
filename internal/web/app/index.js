@@ -1,3 +1,4 @@
+import 'flowbite';
 import { initializeAccordion } from './accordion.js';
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize accordion functionality

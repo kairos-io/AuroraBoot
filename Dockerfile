@@ -6,11 +6,10 @@ FROM quay.io/luet/base:$LUET_VERSION AS luet
 FROM node:23 AS js
 WORKDIR /work
 RUN rm -rf node_modules package-lock.json 
-ADD ./internal/web/app/package.json .
-ADD ./internal/web/app/package-lock.json .
-ADD ./internal/web/app/index.js .
-ADD ./internal/web/app/accordion.js .
-RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
+COPY . .
+RUN npm install tailwindcss @tailwindcss/cli --save-dev
+RUN npx esbuild ./internal/web/app/index.js --bundle --outfile=bundle.js
+RUN npx tailwindcss -i ./internal/web/app/tailwind.css -o output.css --minify
 
 FROM fedora:$FEDORA_VERSION AS base
 ARG TARGETARCH
@@ -66,8 +65,9 @@ ADD go.sum .
 RUN go mod download
 ADD . .
 COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
-COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
-COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
+COPY --from=js /work/output.css ./internal/web/app/output.css
+# COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
+# COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
