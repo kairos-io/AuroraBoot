@@ -66,8 +66,8 @@ RUN go mod download
 ADD . .
 COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
 COPY --from=js /work/output.css ./internal/web/app/output.css
-# COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
-# COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
+COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
+COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
