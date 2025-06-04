@@ -61,8 +61,13 @@ export function initializeAccordion() {
             // For text input (kubernetes-release, version)
             const input = document.querySelector(section.inputSelector);
             if (input) {
-                selectedValue = input.value || input.placeholder || 'Not set';
-                selectedLabel = selectedValue;
+                if (section.name === 'kubernetes-release') {
+                    selectedLabel = input.value.trim() === '' ? 'Latest' : input.value;
+                } else if (section.name === 'version') {
+                    selectedLabel = input.value.trim() === '' ? 'Missing' : input.value;
+                } else {
+                    selectedLabel = input.value || input.placeholder || 'Not set';
+                }
             }
         } else {
             const checked = document.querySelector(section.inputSelector + ':checked');
@@ -95,12 +100,14 @@ export function initializeAccordion() {
         }
         // Create a container for the selected value
         const container = document.createElement('span');
-        container.className = 'selected-value flex items-center gap-2 ml-2 text-gray-900 dark:text-white';
+        // Use ml-auto to push the value toward the center/right, and min-w-0 to allow text truncation if needed
+        container.className = 'selected-value flex items-center gap-2 ml-auto min-w-0 text-gray-900 dark:text-white';
         if (selectedIcon) container.appendChild(selectedIcon);
         const textSpan = document.createElement('span');
         textSpan.textContent = selectedLabel;
+        textSpan.className = 'truncate';
         container.appendChild(textSpan);
-        // Insert after the section name span, before the SVG
+        // Insert before the SVG (accordion icon)
         const svg = button.querySelector('svg[data-accordion-icon]');
         if (svg) {
             button.insertBefore(container, svg);

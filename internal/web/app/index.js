@@ -116,24 +116,53 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   document.getElementById('process-form').addEventListener('submit', function(event) {
     event.preventDefault(); // Always prevent default submission
+
+    // Check if version is missing
+    const versionInput = document.getElementById('version');
+    if (versionInput && versionInput.value.trim() === '') {
+        // Open the Version accordion
+        const versionHeader = document.getElementById('accordion-heading-version');
+        const versionButton = versionHeader && versionHeader.querySelector('button');
+        const versionBody = document.getElementById('accordion-body-version');
+        if (versionButton && versionBody) {
+            // Use Flowbite's collapse API if available
+            if (window.collapse && typeof window.collapse.open === 'function') {
+                window.collapse.open('accordion-body-version');
+            } else {
+                // Fallback: set aria-expanded and show the body
+                versionButton.setAttribute('aria-expanded', 'true');
+                versionBody.classList.remove('hidden');
+            }
+        }
+        // Mark the field as required/invalid (Flowbite/Tailwind style)
+        versionInput.classList.add('border-red-500', 'focus:border-red-500', 'focus:ring-red-500');
+        // Optionally show a message
+        versionInput.reportValidity();
+        versionInput.focus();
+        return;
+    } else if (versionInput) {
+        // Remove error style if present
+        versionInput.classList.remove('border-red-500', 'focus:border-red-500', 'focus:ring-red-500');
+    }
+
     // First check if the form is valid
     if (!event.target.checkValidity()) {
-      // Find all invalid fields
-      const invalidFields = event.target.querySelectorAll(':invalid');
-      // Open accordion sections containing invalid fields
-      invalidFields.forEach(field => {
-        const section = field.closest('.accordion-section');
-        if (section && !section.classList.contains('active')) {
-          section.classList.add('active');
+        // Find all invalid fields
+        const invalidFields = event.target.querySelectorAll(':invalid');
+        // Open accordion sections containing invalid fields
+        invalidFields.forEach(field => {
+            const section = field.closest('.accordion-section');
+            if (section && !section.classList.contains('active')) {
+                section.classList.add('active');
+            }
+        });
+        // Show validation message and focus on first invalid field
+        const firstInvalid = invalidFields[0];
+        if (firstInvalid) {
+            firstInvalid.focus();
+            firstInvalid.reportValidity();
         }
-      });
-      // Show validation message and focus on first invalid field
-      const firstInvalid = invalidFields[0];
-      if (firstInvalid) {
-        firstInvalid.focus();
-        firstInvalid.reportValidity();
-      }
-      return;
+        return;
     }
 
     modalBackdrop.classList.remove("hidden");
