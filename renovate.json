@@ -52,6 +52,17 @@
       "matchStrings": [
         "\\s*#\\s*renovate:\\s*datasource=(?<datasource>.*?) depName=(?<depName>.*?)?\\s+reference:\\s(?<currentValue>.*?)\\s"
       ]
+    },
+    {
+      "customType": "regex",
+      "fileMatch": [
+        "internal/worker/worker.go$"
+      ],
+      "matchStrings": [
+        "FROM quay\\.io/kairos/kairos-init:v(?<currentValue>[0-9.]+) AS kairos-init"
+      ],
+      "datasourceTemplate": "docker",
+      "depNameTemplate": "quay.io/kairos/kairos-init"
     }
   ]
 }
