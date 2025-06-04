@@ -5,72 +5,12 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Kairos Factory</title>
         <link rel="stylesheet" href="/output.css">
+        <!-- Add Flowbite CSS -->
+        <link href="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.css" rel="stylesheet" />
         <script src="./bundle.js"></script>
+        <!-- Remove custom accordion CSS -->
         <style>
-            .accordion-section {
-                border: 1px solid #2c3c54;
-                border-radius: 0.5rem;
-                margin-bottom: 1rem;
-                overflow: hidden;
-            }
-            .accordion-header {
-                padding: 1rem;
-                background-color: #2c3c54;
-                cursor: pointer;
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-            }
-            .accordion-header:hover {
-                background-color: #374a68;
-            }
-            .accordion-header > div {
-                display: grid;
-                grid-template-columns: 180px 1fr;
-                align-items: center;
-                gap: 1rem;
-                width: 100%;
-            }
-            .accordion-content {
-                padding: 1rem;
-                display: none;
-            }
-            .accordion-section.active .accordion-content {
-                display: block;
-            }
-            .accordion-section.active .accordion-header .chevron-down {
-                transform: rotate(180deg);
-            }
-            .chevron-down {
-                width: 20px;
-                height: 20px;
-                transition: transform 0.2s ease-in-out;
-                color: #e5e7eb;
-            }
-            .section-title {
-                color: #e5e7eb;
-                font-weight: normal;
-                font-size: 0.875rem;
-            }
-            .selected-option {
-                margin-left: 0;
-                font-weight: 600;
-                color: #ffffff;
-                font-size: 1rem;
-            }
-            /* Update model and variant option titles */
-            .model-title, .w-full.text-lg {
-                font-weight: normal;
-                color: #6b7280;
-            }
-            /* Update model and variant option descriptions */
-            .model-description, .w-full.text-sm {
-                color: #9ca3af;
-            }
-            /* Make selected radio options more prominent */
-            .peer-checked\:border-blue-600:checked + label {
-                background-color: #f3f4f6;
-            }
+            /* Remove all custom accordion-section, accordion-header, accordion-content, chevron-down, section-title, selected-option, model-title, model-description, peer-checked:border-blue-600:checked + label, etc. */
         </style>
     </head>
     <body>
@@ -107,17 +47,16 @@
                     <div class="w-full p-6 space-y-8 bg-white rounded-lg shadow-xl dark:bg-gray-800">
                         <p class="text-gray-600 dark:text-gray-300 mb-6">Choose your desired configuration options below by selecting from each category. Once you've made your selections, click the "Build" button at the bottom to generate your custom Kairos image. The build process will create both an ISO and a raw disk image for your chosen configuration.</p>
                         <form id="process-form" class="mt-8 space-y-6" action="#" novalidate>
-                            <div class="accordion-section active" data-section="base-image">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title">Base Image</span>
-                                        <span class="selected-option" data-js="selected-option">Ubuntu 24.04 LTS</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                            <!-- Flowbite Accordion Start -->
+                            <div id="accordion-collapse" data-accordion="collapse">
+                                <!-- Base Image Section -->
+                                <h2 id="accordion-heading-base-image">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 rounded-t-xl focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-base-image" aria-expanded="true" aria-controls="accordion-body-base-image">
+                                        <span>Base Image</span>
+                                        <svg data-accordion-icon class="w-3 h-3 rotate-180 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-base-image" class="p-5 border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900" aria-labelledby="accordion-heading-base-image">
                                     <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Base Image</h3>
                                     <ul class="grid w-full gap-3 md:grid-cols-3 baseimage-list">
                                         <li>
@@ -186,18 +125,14 @@
                                         </li>
                                     </ul>
                                 </div>
-                            </div>
-                            <div class="accordion-section" data-section="architecture">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title">Architecture</span>
-                                        <span class="selected-option" data-js="selected-option">AMD64</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                                <!-- Architecture Section -->
+                                <h2 id="accordion-heading-architecture">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-architecture" aria-expanded="false" aria-controls="accordion-body-architecture">
+                                        <span>Architecture</span>
+                                        <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-architecture" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-architecture">
                                     <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Architecture</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 arch-list">
                                         <li>
@@ -220,18 +155,14 @@
                                         </li>
                                     </ul>
                                 </div>
-                            </div>
-                            <div class="accordion-section" data-section="model">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title">Model</span>
-                                        <span class="selected-option" data-js="selected-option">Generic</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                                <!-- Model Section -->
+                                <h2 id="accordion-heading-model">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-model" aria-expanded="false" aria-controls="accordion-body-model">
+                                        <span>Model</span>
+                                        <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-model" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-model">
                                     <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Model</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 model-list">
                                         <li class="model-option arm-only hidden">
@@ -277,18 +208,14 @@
                                         </li>
                                     </ul>
                                 </div>
-                            </div>
-                            <div class="accordion-section" data-section="variant">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title">Variant</span>
-                                        <span class="selected-option" data-js="selected-option">Core</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                                <!-- Variant Section -->
+                                <h2 id="accordion-heading-variant">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-variant" aria-expanded="false" aria-controls="accordion-body-variant">
+                                        <span>Variant</span>
+                                        <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-variant" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-variant">
                                     <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Variant</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 variant-list">
                                         <li>
@@ -313,18 +240,14 @@
                                         </li>
                                     </ul>
                                 </div>
-                            </div>
-                            <div class="accordion-section kubernetes_fields hidden" data-section="kubernetes">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title">Kubernetes Distribution</span>
-                                        <span class="selected-option" data-js="selected-option">K3s</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                                <!-- Kubernetes Distribution Section -->
+                                <h2 id="accordion-heading-kubernetes">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-kubernetes" aria-expanded="false" aria-controls="accordion-body-kubernetes">
+                                        <span>Kubernetes Distribution</span>
+                                        <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-kubernetes" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-kubernetes">
                                     <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Kubernetes Distribution</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 k8s-list">
                                         <li>
@@ -357,37 +280,30 @@
                                         </li>
                                     </ul>
                                 </div>
-                            </div>
-                            <div class="accordion-section kubernetes_fields hidden" data-section="kubernetes-release">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title"><span id="kubernetes_distro_name">K3s</span> Release</span>
-                                        <span class="selected-option" data-js="selected-option">Latest</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                                <!-- Kubernetes Release Section -->
+                                <h2 id="accordion-heading-kubernetes-release">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-kubernetes-release" aria-expanded="false" aria-controls="accordion-body-kubernetes-release">
+                                        <span>Kubernetes Release</span>
+                                        <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-kubernetes-release" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-kubernetes-release">
                                     <label for="kubernetes_release" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"><span id="kubernetes_distro_name">K3s</span> Release</label>
                                     <input type="text" name="kubernetes_release" id="kubernetes_release" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v1.32.0"/>
                                 </div>
-                            </div>
-                            <div class="accordion-section" data-section="version">
-                                <div class="accordion-header">
-                                    <div>
-                                        <span class="section-title">Version</span>
-                                        <span class="selected-option" data-js="selected-option">Not set</span>
-                                    </div>
-                                    <svg class="chevron-down" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                        <path fill-rule="evenodd" d="M5.293 7.293a1 1 0 011.414 0L10 10.586l3.293-3.293a1 1 0 111.414 1.414l-4 4a1 1 0 01-1.414 0l-4-4a1 1 0 010-1.414z" clip-rule="evenodd" />
-                                    </svg>
-                                </div>
-                                <div class="accordion-content">
+                                <!-- Version Section -->
+                                <h2 id="accordion-heading-version">
+                                    <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-version" aria-expanded="false" aria-controls="accordion-body-version">
+                                        <span>Version</span>
+                                        <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
+                                    </button>
+                                </h2>
+                                <div id="accordion-body-version" class="hidden p-5 border border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-version">
                                     <label for="version" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Version</label>
                                     <input type="text" name="version" id="version" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v0.1.0-alpha" required/>
                                 </div>
                             </div>
+                            <!-- Flowbite Accordion End -->
                             <button id="submit-button" type="submit" class="w-full px-5 py-3 text-base font-medium text-center text-white bg-blue-700 rounded-lg hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 sm:w-auto dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800">Build</button>
                         </form>
                         <div id="modal-backdrop" class="fixed inset-0 z-40 bg-black/75 h-screen hidden"></div>
@@ -480,5 +396,7 @@
                 </div>
             </div>
         </section>
+        <!-- Add Flowbite JS -->
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/flowbite/2.3.0/flowbite.min.js"></script>
     </body>
 </html>
