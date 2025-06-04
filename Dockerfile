@@ -1,5 +1,6 @@
 ARG FEDORA_VERSION=40
 ARG LUET_VERSION=0.36.2
+ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
@@ -51,11 +52,18 @@ RUN dnf in -y bc \
               zstd
 
 
-FROM golang:1.24 AS swagger
+FROM golang:1.24 AS with-swagger
 WORKDIR /app
 COPY . .
 RUN go install github.com/swaggo/swag/cmd/swag@latest && \
     swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+
+FROM golang:1.24 AS without-swagger
+WORKDIR /app
+RUN mkdir -p internal/web/app
+RUN touch internal/web/app/swagger.json internal/web/app/redoc.html
+
+FROM ${SWAGGER_STAGE} AS swagger
 
 FROM golang:1.24 AS builder
 ARG VERSION=v0.0.0
