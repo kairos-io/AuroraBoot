@@ -9,7 +9,7 @@ WORKDIR /work
 RUN rm -rf node_modules package-lock.json 
 COPY . .
 RUN npm install tailwindcss @tailwindcss/cli --save-dev
-RUN npm install
+RUN npm install --legacy-peer-deps
 RUN npx esbuild ./internal/web/app/index.js --bundle --outfile=bundle.js
 RUN npx tailwindcss -i ./internal/web/app/tailwind.css -o output.css --minify
 
