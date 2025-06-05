@@ -1,16 +1,17 @@
 ARG FEDORA_VERSION=40
 ARG LUET_VERSION=0.36.2
+ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM node:23 AS js
 WORKDIR /work
 RUN rm -rf node_modules package-lock.json 
-ADD ./internal/web/app/package.json .
-ADD ./internal/web/app/package-lock.json .
-ADD ./internal/web/app/index.js .
-ADD ./internal/web/app/accordion.js .
-RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
+COPY . .
+RUN npm install tailwindcss @tailwindcss/cli --save-dev
+RUN cd internal/web/app && npm install
+RUN npx esbuild ./internal/web/app/index.js --bundle --outfile=bundle.js
+RUN npx tailwindcss -i ./internal/web/app/tailwind.css -o output.css --minify
 
 FROM fedora:$FEDORA_VERSION AS base
 ARG TARGETARCH
@@ -52,11 +53,18 @@ RUN dnf in -y bc \
               zstd
 
 
-FROM golang:1.24 AS swagger
+FROM golang:1.24 AS with-swagger
 WORKDIR /app
 COPY . .
 RUN go install github.com/swaggo/swag/cmd/swag@latest && \
     swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+
+FROM golang:1.24 AS without-swagger
+WORKDIR /app
+RUN mkdir -p internal/web/app
+RUN touch internal/web/app/swagger.json internal/web/app/redoc.html
+
+FROM ${SWAGGER_STAGE} AS swagger
 
 FROM golang:1.24 AS builder
 ARG VERSION=v0.0.0
@@ -66,6 +74,7 @@ ADD go.sum .
 RUN go mod download
 ADD . .
 COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
+COPY --from=js /work/output.css ./internal/web/app/output.css
 COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
 COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ENV CGO_ENABLED=0

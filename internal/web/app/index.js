@@ -1,3 +1,4 @@
+import 'flowbite';
 import { initializeAccordion } from './accordion.js';
 document.addEventListener('DOMContentLoaded', () => {
   // Initialize accordion functionality
@@ -34,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // find the checkbox
         element.checked = false;
       });
-      document.getElementById('generic-option').checked = true;
+      document.getElementById('generic-option').click();
     }
   });
   // whenever a model options changes, uncheck all other model options
@@ -112,27 +113,91 @@ document.addEventListener('DOMContentLoaded', () => {
     document.querySelectorAll('.done').forEach(function(element) {
       element.classList.add("hidden");
     });
+    // Hide all status steps except the first one
+    const statusSteps = [
+      document.getElementById('building-container-image'),
+      document.getElementById('generating-tarball'),
+      document.getElementById('generating-raw-image'),
+      document.getElementById('generating-iso'),
+      document.getElementById('generating-download-links')
+    ];
+    statusSteps.forEach((el, idx) => {
+      if (el) {
+        if (idx === 0) {
+          el.classList.remove('hidden'); // Only show the first step at the start
+        } else {
+          el.classList.add('hidden');
+        }
+        // Also reset spinners and checkmarks for all
+        const spinner = el.querySelector('.spinner');
+        const done = el.querySelector('.done');
+        if (spinner) spinner.classList.remove('hidden');
+        if (done) done.classList.add('hidden');
+      }
+    });
   });
   document.getElementById('process-form').addEventListener('submit', function(event) {
     event.preventDefault(); // Always prevent default submission
+
+    // Check if version is missing
+    const versionInput = document.getElementById('version');
+    if (versionInput && versionInput.value.trim() === '') {
+        // Open the Version accordion
+        const versionHeader = document.getElementById('accordion-heading-version');
+        const versionButton = versionHeader && versionHeader.querySelector('button');
+        const versionBody = document.getElementById('accordion-body-version');
+        if (versionButton && versionBody) {
+            // Use Flowbite's collapse API if available
+            if (window.collapse && typeof window.collapse.open === 'function') {
+                window.collapse.open('accordion-body-version');
+            } else {
+                // Fallback: set aria-expanded and show the body
+                versionButton.setAttribute('aria-expanded', 'true');
+                versionBody.classList.remove('hidden');
+            }
+        }
+        // Mark the field as required/invalid (Flowbite/Tailwind style)
+        versionInput.classList.add('border-red-500', 'focus:border-red-500', 'focus:ring-red-500');
+        // Optionally show a message
+        versionInput.reportValidity();
+        versionInput.focus();
+        return;
+    } else if (versionInput) {
+        // Remove error style if present
+        versionInput.classList.remove('border-red-500', 'focus:border-red-500', 'focus:ring-red-500');
+    }
+
     // First check if the form is valid
     if (!event.target.checkValidity()) {
-      // Find all invalid fields
-      const invalidFields = event.target.querySelectorAll(':invalid');
-      // Open accordion sections containing invalid fields
-      invalidFields.forEach(field => {
-        const section = field.closest('.accordion-section');
-        if (section && !section.classList.contains('active')) {
-          section.classList.add('active');
+        // Find all invalid fields
+        const invalidFields = event.target.querySelectorAll(':invalid');
+        // Open accordion sections containing invalid fields
+        invalidFields.forEach(field => {
+            // Find the closest accordion body
+            const accordionBody = field.closest('[id^="accordion-body-"]');
+            if (accordionBody) {
+                const accordionId = accordionBody.id;
+                const accordionHeading = document.getElementById(accordionId.replace('body', 'heading'));
+                const accordionButton = accordionHeading?.querySelector('button');
+                if (accordionButton && accordionBody.classList.contains('hidden')) {
+                    // Use Flowbite's collapse API if available
+                    if (window.collapse && typeof window.collapse.open === 'function') {
+                        window.collapse.open(accordionId);
+                    } else {
+                        // Fallback: set aria-expanded and show the body
+                        accordionButton.setAttribute('aria-expanded', 'true');
+                        accordionBody.classList.remove('hidden');
+                    }
+                }
+            }
+        });
+        // Show validation message and focus on first invalid field
+        const firstInvalid = invalidFields[0];
+        if (firstInvalid) {
+            firstInvalid.focus();
+            firstInvalid.reportValidity();
         }
-      });
-      // Show validation message and focus on first invalid field
-      const firstInvalid = invalidFields[0];
-      if (firstInvalid) {
-        firstInvalid.focus();
-        firstInvalid.reportValidity();
-      }
-      return;
+        return;
     }
 
     modalBackdrop.classList.remove("hidden");
