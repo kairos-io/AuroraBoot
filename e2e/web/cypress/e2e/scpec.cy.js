@@ -71,29 +71,29 @@ describe('Kairos Factory Web Interface', () => {
         };
 
         // Select base image
-        cy.get('#ubuntu-option').click();
+        cy.get('label[for="ubuntu-option"]').click();
         checkRadioSelection('base_image', 'ubuntu:24.04');
 
         // Select architecture
         cy.get('#accordion-heading-architecture button').click();
-        cy.get('#amd64-option').click();
+        cy.get('label[for="amd64-option"]').click();
         checkRadioSelection('architecture', 'amd64');
 
         // Select model
         cy.get('#accordion-heading-model button').click();
-        cy.get('#generic-option').click();
+        cy.get('label[for="generic-option"]').click();
         checkRadioSelection('model', 'generic');
     });
 
     it('should handle form submission', () => {
         // Fill out required fields
-        cy.get('#ubuntu-option').click();
+        cy.get('label[for="ubuntu-option"]').click();
         cy.get('#accordion-heading-architecture button').click();
-        cy.get('#amd64-option').click();
+        cy.get('label[for="amd64-option"]').click();
         cy.get('#accordion-heading-model button').click();
-        cy.get('#generic-option').click();
+        cy.get('label[for="generic-option"]').click();
         cy.get('#accordion-heading-variant button').click();
-        cy.get('#core-option').click();
+        cy.get('label[for="core-option"]').click();
         cy.get('#accordion-heading-version button').click();
         cy.get('#version').type('v0.1.0-alpha');
 
@@ -108,19 +108,19 @@ describe('Kairos Factory Web Interface', () => {
     it('should show ARM-specific options when ARM64 is selected', () => {
         // Select ARM64 architecture
         cy.get('#accordion-heading-architecture button').click();
-        cy.get('#arm64-option').click();
-
+        cy.get('label[for="arm64-option"]').click();
+        // Open the model accordion section
+        cy.get('#accordion-heading-model button').click();
         // Check if ARM-specific model options are visible
-        cy.get('.model-option.arm-only').should('not.have.class', 'hidden');
-        cy.get('#rpi3-option').should('be.visible');
-        cy.get('#rpi4-option').should('be.visible');
-        cy.get('#nvidia-agx-orin-option').should('be.visible');
+        cy.get('.model-option.arm-only').each($el => {
+            cy.wrap($el).should('be.visible');
+          });
     });
 
     it('should hide ARM-specific options when AMD64 is selected', () => {
         // Select AMD64 architecture
         cy.get('#accordion-heading-architecture button').click();
-        cy.get('#amd64-option').click();
+        cy.get('label[for="amd64-option"]').click();
 
         // Check if ARM-specific model options are hidden
         cy.get('.model-option.arm-only').should('have.class', 'hidden');
@@ -128,7 +128,7 @@ describe('Kairos Factory Web Interface', () => {
 
     it('should handle BYOI (Bring Your Own Image) option', () => {
         // Select BYOI option
-        cy.get('#byoi-option').click();
+        cy.get('label[for="byoi-option"]').click();
 
         // Check if BYOI input field is visible and enabled
         cy.get('#byoi').should('be.visible').and('be.enabled');
