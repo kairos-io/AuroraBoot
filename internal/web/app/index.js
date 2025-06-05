@@ -173,9 +173,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const invalidFields = event.target.querySelectorAll(':invalid');
         // Open accordion sections containing invalid fields
         invalidFields.forEach(field => {
-            const section = field.closest('.accordion-section');
-            if (section && !section.classList.contains('active')) {
-                section.classList.add('active');
+            // Find the closest accordion body
+            const accordionBody = field.closest('[id^="accordion-body-"]');
+            if (accordionBody) {
+                const accordionId = accordionBody.id;
+                const accordionHeading = document.getElementById(accordionId.replace('body', 'heading'));
+                const accordionButton = accordionHeading?.querySelector('button');
+                if (accordionButton && accordionBody.classList.contains('hidden')) {
+                    // Use Flowbite's collapse API if available
+                    if (window.collapse && typeof window.collapse.open === 'function') {
+                        window.collapse.open(accordionId);
+                    } else {
+                        // Fallback: set aria-expanded and show the body
+                        accordionButton.setAttribute('aria-expanded', 'true');
+                        accordionBody.classList.remove('hidden');
+                    }
+                }
             }
         });
         // Show validation message and focus on first invalid field
