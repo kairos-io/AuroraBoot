@@ -35,7 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
         // find the checkbox
         element.checked = false;
       });
-      document.getElementById('generic-option').checked = true;
+      document.getElementById('generic-option').click();
     }
   });
   // whenever a model options changes, uncheck all other model options
