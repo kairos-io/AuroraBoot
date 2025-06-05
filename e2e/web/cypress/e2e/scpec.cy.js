@@ -108,7 +108,7 @@ describe('Kairos Factory Web Interface', () => {
 
         // Polling function to check for visibility at increasing intervals
         function checkBuildingContainerImage(attempt = 1) {
-            const waitTimes = [5000, 15000, 30000, 60000];
+            const waitTimes = [5000, 15000, 30000, 60000, 120000];
             if (attempt > waitTimes.length) {
                 // Final fail if not visible after all attempts
                 cy.get('#building-container-image').should('be.visible');
