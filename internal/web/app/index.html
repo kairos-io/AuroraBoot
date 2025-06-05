@@ -51,7 +51,6 @@
                                     </button>
                                 </h2>
                                 <div id="accordion-body-base-image" class="p-5 border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900" aria-labelledby="accordion-heading-base-image">
-                                    <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Base Image</h3>
                                     <ul class="grid w-full gap-3 md:grid-cols-3 baseimage-list">
                                         <li>
                                             <input type="radio" name="base_image" id="ubuntu-option" value="ubuntu:24.04" class="hidden peer" required="" checked>
@@ -127,7 +126,6 @@
                                     </button>
                                 </h2>
                                 <div id="accordion-body-architecture" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-architecture">
-                                    <h3 class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Architecture</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 arch-list">
                                         <li>
                                             <input type="radio" name="architecture" id="amd64-option" value="amd64" class="hidden peer" required="" checked>
@@ -153,11 +151,22 @@
                                 <h2 id="accordion-heading-model">
                                     <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-model" aria-expanded="false" aria-controls="accordion-body-model">
                                         <span>Model</span>
+                                        <a data-popover-target="model-popover-description" data-popover-placement="bottom-end" type="button"><svg class="w-4 h-4 ms-2 text-gray-400 hover:text-gray-500" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg><span class="sr-only">Show information</span></a>
                                         <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
                                     </button>
                                 </h2>
+
+                                <div data-popover id="model-popover-description" role="tooltip" class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400">
+                                    <div class="p-3 space-y-2">
+                                        <h3 class="font-semibold text-gray-900 dark:text-white">What is a model?</h3>
+                                        <p>Depending on the architecture you choose, you’ll be able to select from different models available under that architecture. If you’re not targeting a specific board like a Raspberry Pi and instead plan to install on generic hardware or a virtual machine, select Generic.</p>
+                                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 9 4-4-4-4"/>
+                                </svg></a>
+                                    </div>
+                                    <div data-popper-arrow></div>
+                                </div>
+
                                 <div id="accordion-body-model" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-model">
-                                    <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Model</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 model-list">
                                         <li class="model-option arm-only hidden">
                                             <input type="radio" name="model" id="rpi3-option" value="rpi3" class="hidden peer">
@@ -195,6 +204,7 @@
                                             <input type="radio" name="model" id="generic-option" value="generic" class="hidden peer" required="" checked>
                                             <label for="generic-option" class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700">
                                                 <div class="block">
+                                                    <img src="logos/cd.svg" alt="Company Logo" class="w-7 h-7">
                                                     <div class="w-full text-lg font-semibold" data-js="model-title">Generic</div>
                                                     <div class="w-full text-sm" data-js="model-description">For generic boards and virtualization.</div>
                                                 </div>
@@ -210,7 +220,6 @@
                                     </button>
                                 </h2>
                                 <div id="accordion-body-variant" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-variant">
-                                    <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Variant</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 variant-list">
                                         <li>
                                             <input type="radio" name="variant" id="core-option" value="core" class="hidden peer" checked>
@@ -238,11 +247,23 @@
                                 <h2 id="accordion-heading-kubernetes">
                                     <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-kubernetes" aria-expanded="false" aria-controls="accordion-body-kubernetes">
                                         <span>Kubernetes Distribution</span>
+                                        <a data-popover-target="kubernetes-distribution-popover-description" data-popover-placement="bottom-end" type="button"><svg class="w-4 h-4 ms-2 text-gray-400 hover:text-gray-500" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg><span class="sr-only">Show information</span></a>
                                         <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
                                     </button>
                                 </h2>
+
+                                <div data-popover id="kubernetes-distribution-popover-description" role="tooltip" class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400">
+                                    <div class="p-3 space-y-2">
+                                        <h3 class="font-semibold text-gray-900 dark:text-white">Provider Kairos</h3>
+                                        <p>The Kairos Factory uses a component called provider to extend the functionality of the core images. In the web version, it's only possible to use the default Provider Kairos, which has support for K3s and K0s distributions. There are other providers available by the community with different distributions but these don't include the p2p functionality.</p>
+                                        <a href="https://github.com/kairos-io/?q=provider&type=all&language=&sort=" class="flex items-center font-medium text-blue-600 dark:text-blue-500 dark:hover:text-blue-600 hover:text-blue-700 hover:underline">Read more <svg class="w-2 h-2 ms-1.5 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 6 10">
+                                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 9 4-4-4-4"/>
+                                </svg></a>
+                                    </div>
+                                    <div data-popper-arrow></div>
+                                </div>
+
                                 <div id="accordion-body-kubernetes" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-kubernetes">
-                                    <h3 class="mb-5 text-lg font-medium text-gray-900 dark:text-white">Kubernetes Distribution</h3>
                                     <ul class="grid w-full gap-6 md:grid-cols-2 k8s-list">
                                         <li>
                                             <input type="radio" name="kubernetes_distribution" id="k3s-option" value="k3s" class="hidden peer" checked>
@@ -277,23 +298,51 @@
                                 <!-- Kubernetes Release Section -->
                                 <h2 id="accordion-heading-kubernetes-release">
                                     <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-kubernetes-release" aria-expanded="false" aria-controls="accordion-body-kubernetes-release">
-                                        <span>Kubernetes Release</span>
+                                        <span><span id="kubernetes_distro_name">K3s</span> Release</span>
+                                        <a data-popover-target="kubernetes-release-popover-description" data-popover-placement="bottom-end" type="button"><svg class="w-4 h-4 ms-2 text-gray-400 hover:text-gray-500" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg><span class="sr-only">Show information</span></a>
                                         <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
                                     </button>
                                 </h2>
                                 <div id="accordion-body-kubernetes-release" class="hidden p-5 border border-b-0 border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-kubernetes-release">
-                                    <label for="kubernetes_release" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white"><span id="kubernetes_distro_name">K3s</span> Release</label>
                                     <input type="text" name="kubernetes_release" id="kubernetes_release" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v1.32.0"/>
                                 </div>
+
+                                <div data-popover id="kubernetes-release-popover-description" role="tooltip" class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400">
+                                    <div class="p-3 space-y-2">
+                                        <h3 class="font-semibold text-gray-900 dark:text-white">K3s</h3>
+                                        <p>K3s versions are the Kubernetes version plus the k3s patch version. For example, v1.32.0+k3s1 is the Kubernetes v1.32.0 plus the k3s patch v1.</p>
+                                        <h3 class="font-semibold text-gray-900 dark:text-white">K0s</h3>
+                                        <p>K0s versions are the Kubernetes version plus the k0s patch version. For example, v1.32.0+k0s.0 is the Kubernetes v1.32.0 plus the k0s patch v0.</p>
+                                        <h3 class="font-semibold text-gray-900 dark:text-white">Latest</h3>
+                                        <p>If no version is specified, the latest version of the selected Kubernetes distribution will be used.</p>
+                                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 9 4-4-4-4"/>
+                                </svg></a>
+                                    </div>
+                                    <div data-popper-arrow></div>
+                                </div>
+
                                 <!-- Version Section -->
-                                <h2 id="accordion-heading-version">
+                                <h2 id="accordion-heading-version"><!-- Modal toggle -->
                                     <button type="button" class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3" data-accordion-target="#accordion-body-version" aria-expanded="false" aria-controls="accordion-body-version">
                                         <span>Version</span>
+                                        <a data-popover-target="version-popover-description" data-popover-placement="bottom-end" type="button"><svg class="w-4 h-4 ms-2 text-gray-400 hover:text-gray-500" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg><span class="sr-only">Show information</span></a>
                                         <svg data-accordion-icon class="w-3 h-3 shrink-0" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 10 6"><path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5 5 1 1 5"/></svg>
                                     </button>
                                 </h2>
+
+
+                                <div data-popover id="version-popover-description" role="tooltip" class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400">
+                                    <div class="p-3 space-y-2">
+                                        <h3 class="font-semibold text-gray-900 dark:text-white">Semantic Versioning</h3>
+                                        <p>Kairos uses Semantic Versioning for its versioning scheme. This means that the version starts with the letter v followed by a three-part number, with the format MAJOR.MINOR.PATCH. The MAJOR version is incremented when there are breaking changes, the MINOR version is incremented when there are new features, and the PATCH version is incremented when there are bug fixes. Build numbers are also possible. Check the Semver website for more information.</p>
+                                        <a href="https://semver.org/" class="flex items-center font-medium text-blue-600 dark:text-blue-500 dark:hover:text-blue-600 hover:text-blue-700 hover:underline">Read more <svg class="w-2 h-2 ms-1.5 rtl:rotate-180" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 6 10">
+                                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 9 4-4-4-4"/>
+                                </svg></a>
+                                    </div>
+                                    <div data-popper-arrow></div>
+                                </div>
+
                                 <div id="accordion-body-version" class="hidden p-5 border border-gray-200 dark:border-gray-700" aria-labelledby="accordion-heading-version">
-                                    <label for="version" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">Version</label>
                                     <input type="text" name="version" id="version" class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500" placeholder="v0.1.0-alpha" required/>
                                 </div>
                             </div>
