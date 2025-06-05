@@ -222,7 +222,7 @@ jobs:
        uses: cypress-io/github-action@v6
        with:
          working-directory: e2e/web/
-         start: docker run --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web > /dev/null 2>&1
+         start: docker run --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web --create-worker > /dev/null 2>&1
      - name: Upload Cypress screenshots
        if: always()
        continue-on-error: true
