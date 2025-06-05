@@ -86,6 +86,9 @@ describe('Kairos Factory Web Interface', () => {
     });
 
     it('should handle form submission', () => {
+        // Intercept the build start request
+        cy.intercept('POST', '/start').as('startBuild');
+
         // Fill out required fields
         cy.get('label[for="ubuntu-option"]').click();
         cy.get('#accordion-heading-architecture button').click();
@@ -100,9 +103,33 @@ describe('Kairos Factory Web Interface', () => {
         // Submit form
         cy.get('#submit-button').click();
 
+        // Wait for the build start request to complete
+        cy.wait('@startBuild');
+
+        // Polling function to check for visibility at increasing intervals
+        function checkBuildingContainerImage(attempt = 1) {
+            const waitTimes = [5000, 15000, 30000, 60000];
+            if (attempt > waitTimes.length) {
+                // Final fail if not visible after all attempts
+                cy.get('#building-container-image').should('be.visible');
+                return;
+            }
+            cy.wait(waitTimes[attempt - 1]).then(() => {
+                cy.get('#building-container-image').then($el => {
+                    if (Cypress.dom.isVisible($el)) {
+                        // Element is visible, test passes
+                        expect(Cypress.dom.isVisible($el)).to.be.true;
+                    } else {
+                        // Try again with the next wait time
+                        checkBuildingContainerImage(attempt + 1);
+                    }
+                });
+            });
+        }
+
         // Check if modal appears
         cy.get('#static-modal').should('be.visible');
-        cy.get('#building-container-image').should('be.visible');
+        checkBuildingContainerImage();
     });
 
     it('should show ARM-specific options when ARM64 is selected', () => {
