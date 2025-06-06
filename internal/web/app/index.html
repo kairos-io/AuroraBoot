@@ -1494,24 +1494,24 @@
                 >
                   <ul class="grid w-full gap-6 md:grid-cols-3">
                     <li>
-                      <input type="checkbox" id="artifact-raw" name="artifact_raw" checked disabled class="peer" />
-                      <label for="artifact-raw" class="inline-flex items-center w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-not-allowed dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
-                        <span class="ml-2 text-lg font-semibold">Raw Image</span>
-                        <span class="ml-2 text-sm">(Always required)</span>
+                      <input type="checkbox" id="artifact-raw" name="artifact_raw" checked disabled class="hidden peer" />
+                      <label for="artifact-raw" class="flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-not-allowed dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
+                        <span class="text-lg font-bold mb-2">Raw Image</span>
+                        <span class="text-sm">(Always generated) Ready to copy to a USB, SD card or board</span>
                       </label>
                     </li>
                     <li>
-                      <input type="checkbox" id="artifact-iso" name="artifact_iso" checked class="peer" />
-                      <label for="artifact-iso" class="inline-flex items-center w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
-                        <span class="ml-2 text-lg font-semibold">ISO</span>
-                        <span class="ml-2 text-sm">(Bootable installer)</span>
+                      <input type="checkbox" id="artifact-iso" name="artifact_iso" checked class="hidden peer" />
+                      <label for="artifact-iso" class="flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
+                        <span class="text-lg font-bold mb-2">ISO</span>
+                        <span class="text-sm">Bootable installer for VMs and bare metal</span>
                       </label>
                     </li>
                     <li>
-                      <input type="checkbox" id="artifact-tar" name="artifact_tar" checked class="peer" />
-                      <label for="artifact-tar" class="inline-flex items-center w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
-                        <span class="ml-2 text-lg font-semibold">Container Image (tar file)</span>
-                        <span class="ml-2 text-sm">(For container-based deployment)</span>
+                      <input type="checkbox" id="artifact-tar" name="artifact_tar" checked class="hidden peer" />
+                      <label for="artifact-tar" class="flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
+                        <span class="text-lg font-bold mb-2">Container Image</span>
+                        <span class="text-sm">A tar file with the container image for upgrades</span>
                       </label>
                     </li>
                   </ul>
