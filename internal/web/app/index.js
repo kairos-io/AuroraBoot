@@ -281,4 +281,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
       });
   });
+  // --- Artifacts summary update logic ---
+  function updateArtifactsSummary() {
+    const summary = [];
+    summary.push('Raw Image');
+    if (document.getElementById('artifact-iso').checked) summary.push('ISO');
+    if (document.getElementById('artifact-tar').checked) summary.push('Container Image');
+    document.getElementById('artifacts-summary').textContent = summary.join(', ');
+  }
+  // Initial update
+  updateArtifactsSummary();
+  // Add listeners
+  document.getElementById('artifact-iso').addEventListener('change', updateArtifactsSummary);
+  document.getElementById('artifact-tar').addEventListener('change', updateArtifactsSummary);
 });
