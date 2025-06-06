@@ -661,6 +661,8 @@ github.com/kairos-io/go-ukify v0.2.5 h1:3ohFO1FhYKbeB/NSsgaq/05CHv1F+/SX1PGDNexL
 github.com/kairos-io/go-ukify v0.2.5/go.mod h1:xGAR9EDOo459L7g8AixVaZQHi9ctGy6/Qk44nXJ1TVw=
 github.com/kairos-io/kairos-agent/v2 v2.20.4 h1:CQ/gYUqbKZTC1EcZ/3Cv8+8fEpzza4exnFfQQXC8wPg=
 github.com/kairos-io/kairos-agent/v2 v2.20.4/go.mod h1:LnmQpvBuEtem2GKs1x6pFC7+ee1KMVfRxuNC+MrjtoM=
+github.com/kairos-io/kairos-agent/v2 v2.21.6 h1:MLx8+xy+zBAqmm+opM/jvgUumiqA/meSeMxX3rG0T24=
+github.com/kairos-io/kairos-agent/v2 v2.21.6/go.mod h1:r5Ot8nAXkkDyL+PjXPfMiZ30mLRqZPVUJlHm56RX0QM=
 github.com/kairos-io/kairos-sdk v0.9.3 h1:je3Q0mfm1p4y3jO3k0P/SUp4NEax8IwLveDlnZBB8Yc=
 github.com/kairos-io/kairos-sdk v0.9.3/go.mod h1:O3si3aCkYsOyjjLF2jKKTKUYW9948WcB7xR0ivKbB6M=
 github.com/kairos-io/netboot v0.0.0-20241104101831-1454e04fdb07 h1:cE0KsjMDuEkOMSOpRgkfGw7rT4Yk6io0V/3f/W1m2sY=
@@ -791,6 +793,8 @@ github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82 h1:FVT07E
 github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82/go.mod h1:Urp7LG5jylKoDq0663qeBh0pINGcRl35nXdKx82PSoU=
 github.com/mudler/yip v1.16.0 h1:TZr9zLghe5CJXRdvBK6f5uHe6RJtotweDU+m/GNT+gY=
 github.com/mudler/yip v1.16.0/go.mod h1:Wk3CIZCqdK58+1CzamA87atJD2y/dhDKXrguUyYipCc=
+github.com/mudler/yip v1.16.2 h1:NFgX4KQaMLb3PLN1R9IDj6xwRrUt4kwuoipKB3wa9D8=
+github.com/mudler/yip v1.16.2/go.mod h1:Wk3CIZCqdK58+1CzamA87atJD2y/dhDKXrguUyYipCc=
 github.com/mwitkow/go-conntrack v0.0.0-20161129095857-cc309e4a2223/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
 github.com/mwitkow/go-conntrack v0.0.0-20190716064945-2f068394615f/go.mod h1:qRWi+5nqEBWmkhHvq77mSJWrCKwh8bxhgT7d/eI7P4U=
 github.com/mwitkow/go-proto-validators v0.0.0-20180403085117-0950a7990007/go.mod h1:m2XC9Qq0AlmmVksL6FktJCdTYyLk7V3fKyp0sl1yWQo=
@@ -1822,6 +1826,8 @@ k8s.io/klog/v2 v2.130.1 h1:n9Xl7H1Xvksem4KFG4PYbdQCQxqc/tTUyrgXaOhHSzk=
 k8s.io/klog/v2 v2.130.1/go.mod h1:3Jpz1GvMt720eyJH1ckRHK1EDfpxISzJ7I9OYgaDtPE=
 k8s.io/mount-utils v0.32.3 h1:ZPXXHblfBhYP89OnaozpFg9Ojl6HhDfxBLcdWNkaxW8=
 k8s.io/mount-utils v0.32.3/go.mod h1:Kun5c2svjAPx0nnvJKYQWhfeNW+O0EpzHgRhDcYoSY0=
+k8s.io/mount-utils v0.33.1 h1:hodPhfyoK+gG0SgnYwx1iPrlnpaESZiJ9GFzF5V/imE=
+k8s.io/mount-utils v0.33.1/go.mod h1:1JR4rKymg8B8bCPo618hpSAdrpO6XLh0Acqok/xVwPE=
 k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738 h1:M3sRQVHv7vB20Xc2ybTt7ODCeFj6JSWYFzOFnYeS6Ro=
 k8s.io/utils v0.0.0-20241104100929-3ea5e8cea738/go.mod h1:OLgZIPagt7ERELqWJFomSt595RzquPNLL48iOWgYOg0=
 pack.ag/amqp v0.11.2/go.mod h1:4/cbmt4EJXSKlG6LCfWHoqmN0uFdy5i/+YFz+fTfhV4=
