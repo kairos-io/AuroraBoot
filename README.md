@@ -196,3 +196,13 @@ Building the swagger api can take a while, if you don't need it during developme
 ```
 docker build --build-arg=SWAGGER_STAGE=without-swagger -t quay.io/kairos/auroraboot:local .
 ```
+
+Then you can run one of AuroraBoot's different commands like for example the web UI
+
+```
+docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
+           --privileged \
+           -v $PWD/build/:/output \
+           -p 8080:8080 \
+           quay.io/kairos/auroraboot:local web --create-worker
+```
