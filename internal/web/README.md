@@ -16,7 +16,7 @@ npm install tailwindcss @tailwindcss/cli --save-dev
 
 To build the assets, run the following commands in the `web/app` directory.
 
-Install depencencies with
+Install dependencies with
 
 ```
 npm install
