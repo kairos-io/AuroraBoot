@@ -5,13 +5,13 @@ ARG SWAGGER_STAGE=with-swagger
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM node:23 AS js
-WORKDIR /work
+WORKDIR /app
 RUN rm -rf node_modules package-lock.json 
-COPY . .
+COPY internal/web/app .
 RUN npm install tailwindcss @tailwindcss/cli --save-dev
-RUN cd internal/web/app && npm install
-RUN npx esbuild ./internal/web/app/index.js --bundle --outfile=bundle.js
-RUN npx tailwindcss -i ./internal/web/app/tailwind.css -o output.css --minify
+RUN npm install
+RUN npx esbuild ./index.js --bundle --outfile=bundle.js
+RUN npx tailwindcss -i ./assets/css/tailwind.css -o output.css --minify
 
 FROM fedora:$FEDORA_VERSION AS base
 ARG TARGETARCH
@@ -73,8 +73,8 @@ ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
-COPY --from=js /work/output.css ./internal/web/app/output.css
+COPY --from=js /app/bundle.js ./internal/web/app/bundle.js
+COPY --from=js /app/output.css ./internal/web/app/output.css
 COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
 COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ENV CGO_ENABLED=0
