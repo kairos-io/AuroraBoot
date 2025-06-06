@@ -133,6 +133,13 @@ func buildHandler(c echo.Context) error {
 		kubernetesVersion = ""
 	}
 
+	// Collect artifact selection from form
+	artifacts := jobstorage.Artifacts{
+		RawImage:      true, // Always true
+		ISO:           c.FormValue("artifact_iso") == "on",
+		ContainerFile: c.FormValue("artifact_tar") == "on",
+	}
+
 	// Collect job data
 	job := jobstorage.BuildJob{
 		JobData: jobstorage.JobData{
@@ -143,6 +150,7 @@ func buildHandler(c echo.Context) error {
 			KubernetesVersion:      kubernetesVersion,
 			Image:                  image,
 			Version:                c.FormValue("version"),
+			Artifacts:              artifacts,
 		},
 		Status:    jobstorage.JobStatusQueued,
 		CreatedAt: time.Now().Format(time.RFC3339),
