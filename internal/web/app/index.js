@@ -203,6 +203,8 @@ document.addEventListener('DOMContentLoaded', () => {
     modalBackdrop.classList.remove("hidden");
     staticModal.classList.remove("hidden");
     const formData = new FormData(event.target);
+    // The artifact checkboxes (artifact_raw, artifact_iso, artifact_tar) are included in FormData by default.
+    // No extra JS is needed unless we want to enforce logic, but Raw is always checked+disabled in HTML.
     fetch('/start', {
       method: 'POST',
       body: formData

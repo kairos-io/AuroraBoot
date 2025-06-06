@@ -55,14 +55,22 @@ type BuildJob struct {
 }
 
 // JobData contains the build configuration
+// Artifacts specifies which artifacts to build
+type Artifacts struct {
+	RawImage      bool `json:"raw_image"`
+	ISO           bool `json:"iso"`
+	ContainerFile bool `json:"container_file"`
+}
+
 type JobData struct {
-	Variant                string `json:"variant"`
-	Model                  string `json:"model"`
-	TrustedBoot            bool   `json:"trusted_boot"`
-	KubernetesDistribution string `json:"kubernetes_distribution"`
-	KubernetesVersion      string `json:"kubernetes_version"`
-	Image                  string `json:"image"`
-	Version                string `json:"version"`
+	Variant                string    `json:"variant"`
+	Model                  string    `json:"model"`
+	TrustedBoot            bool      `json:"trusted_boot"`
+	KubernetesDistribution string    `json:"kubernetes_distribution"`
+	KubernetesVersion      string    `json:"kubernetes_version"`
+	Image                  string    `json:"image"`
+	Version                string    `json:"version"`
+	Artifacts              Artifacts `json:"artifacts"`
 }
 
 // JobStatus represents the current status of a build job
