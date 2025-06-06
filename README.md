@@ -177,7 +177,7 @@ EOF
 
 **Note**
 
-- Specyfing a `container_image` takes precedence over the specified artifacts.
+- Specifying a `container_image` takes precedence over the specified artifacts.
 
 ### Experimental
 
