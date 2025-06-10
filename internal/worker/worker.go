@@ -199,11 +199,6 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	// Log the cloud config value for debugging
-	if _, err := writer.WriteStr(fmt.Sprintf("[DEBUG] jobData.CloudConfig: %q\n", jobData.CloudConfig)); err != nil {
-		return fmt.Errorf("failed to send cloud config debug log: %v", err)
-	}
-
 	// Create temporary directory for build
 	tempdir, err := os.MkdirTemp("", "build")
 	if err != nil {
@@ -238,13 +233,6 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		cloudConfigPath = filepath.Join(jobOutputDir, "cloud-config.yaml")
 		if err := os.WriteFile(cloudConfigPath, []byte(jobData.CloudConfig), 0644); err != nil {
 			return fmt.Errorf("failed to write cloud config file: %v", err)
-		}
-		if _, err := writer.WriteStr(fmt.Sprintf("[DEBUG] Wrote persistent cloud config to: %s\n", cloudConfigPath)); err != nil {
-			return fmt.Errorf("failed to send cloud config file log: %v", err)
-		}
-		content, _ := os.ReadFile(cloudConfigPath)
-		if _, err := writer.WriteStr(fmt.Sprintf("[DEBUG] Persistent cloud config contents:\n%s\n", string(content))); err != nil {
-			return fmt.Errorf("failed to send cloud config file content log: %v", err)
 		}
 	}
 
@@ -480,9 +468,7 @@ func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfi
 			return err
 		}
 		config.CloudConfig = string(content)
-		fmt.Fprintf(writer, "[DEBUG] buildRawDisk using cloudConfigPath: %s\n", cloudConfigPath)
 	}
-	fmt.Fprintf(writer, "[DEBUG] config.CloudConfig: %q\n", config.CloudConfig)
 
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
 	if err := deployer.RegisterAll(d); err != nil {
@@ -525,9 +511,7 @@ func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, 
 			return err
 		}
 		config.CloudConfig = string(content)
-		fmt.Fprintf(writer, "[DEBUG] buildISO using cloudConfigPath: %s\n", cloudConfigPath)
 	}
-	fmt.Fprintf(writer, "[DEBUG] config.CloudConfig: %q\n", config.CloudConfig)
 
 	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
 	if err := deployer.RegisterAll(d); err != nil {
