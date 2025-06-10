@@ -203,6 +203,8 @@ document.addEventListener('DOMContentLoaded', () => {
     modalBackdrop.classList.remove("hidden");
     staticModal.classList.remove("hidden");
     const formData = new FormData(event.target);
+    // The artifact checkboxes (artifact_raw, artifact_iso, artifact_tar) are included in FormData by default.
+    // No extra JS is needed unless we want to enforce logic, but Raw is always checked+disabled in HTML.
     fetch('/start', {
       method: 'POST',
       body: formData
@@ -279,4 +281,17 @@ document.addEventListener('DOMContentLoaded', () => {
         };
       });
   });
+  // --- Artifacts summary update logic ---
+  function updateArtifactsSummary() {
+    const summary = [];
+    summary.push('Raw Image');
+    if (document.getElementById('artifact-iso').checked) summary.push('ISO');
+    if (document.getElementById('artifact-tar').checked) summary.push('Container Image');
+    document.getElementById('artifacts-summary').textContent = summary.join(', ');
+  }
+  // Initial update
+  updateArtifactsSummary();
+  // Add listeners
+  document.getElementById('artifact-iso').addEventListener('change', updateArtifactsSummary);
+  document.getElementById('artifact-tar').addEventListener('change', updateArtifactsSummary);
 });

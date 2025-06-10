@@ -1459,6 +1459,65 @@
                     required
                   />
                 </div>
+                <!-- Artifacts Section -->
+                <h2 id="accordion-heading-artifacts">
+                  <button
+                    type="button"
+                    class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b-0 border-gray-200 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3"
+                    data-accordion-target="#accordion-body-artifacts"
+                    aria-expanded="false"
+                    aria-controls="accordion-body-artifacts"
+                  >
+                    <span>Artifacts</span>
+                    <span class="flex-1"></span>
+                    <span id="artifacts-summary" class="text-gray-900 dark:text-white font-semibold text-right"></span>
+                    <svg
+                      data-accordion-icon
+                      class="w-3 h-3 shrink-0 ml-2"
+                      aria-hidden="true"
+                      xmlns="http://www.w3.org/2000/svg"
+                      fill="none"
+                      viewBox="0 0 10 6"
+                    >
+                      <path
+                        stroke="currentColor"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="2"
+                        d="M9 5 5 1 1 5"
+                      />
+                    </svg>
+                  </button>
+                </h2>
+                <div
+                  id="accordion-body-artifacts"
+                  class="hidden p-5 border border-gray-200 dark:border-gray-700"
+                  aria-labelledby="accordion-heading-artifacts"
+                >
+                  <ul class="grid w-full gap-6 md:grid-cols-3">
+                    <li>
+                      <input type="checkbox" id="artifact-raw" name="artifact_raw" checked disabled class="hidden peer" />
+                      <label for="artifact-raw" class="flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-not-allowed dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
+                        <span class="text-lg font-bold mb-2">Raw Image</span>
+                        <span class="text-sm">(Always generated) Ready to copy to a USB, SD card or board</span>
+                      </label>
+                    </li>
+                    <li>
+                      <input type="checkbox" id="artifact-iso" name="artifact_iso" checked class="hidden peer" />
+                      <label for="artifact-iso" class="flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
+                        <span class="text-lg font-bold mb-2">ISO</span>
+                        <span class="text-sm">Bootable installer for VMs and bare metal</span>
+                      </label>
+                    </li>
+                    <li>
+                      <input type="checkbox" id="artifact-tar" name="artifact_tar" checked class="hidden peer" />
+                      <label for="artifact-tar" class="flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800">
+                        <span class="text-lg font-bold mb-2">Container Image</span>
+                        <span class="text-sm">A tar file with the container image for upgrades</span>
+                      </label>
+                    </li>
+                  </ul>
+                </div>
               </div>
               <!-- Flowbite Accordion End -->
               <button

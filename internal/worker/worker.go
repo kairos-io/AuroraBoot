@@ -211,7 +211,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to prepare image: %v", err)
 	}
 
-	// Build container image
+	// Build container image (always needed for raw and ISO)
 	if _, err := writer.WriteStr("Building container image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
@@ -227,17 +227,19 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to create output directory: %v", err)
 	}
 
-	// Generate tarball
-	if _, err := writer.WriteStr("Generating tarball...\n"); err != nil {
-		return fmt.Errorf("failed to send log message: %v", err)
+	// Generate tarball if requested
+	var tarballPath string
+	if jobData.Artifacts.ContainerFile {
+		if _, err := writer.WriteStr("Generating tarball...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		tarballPath = filepath.Join(jobOutputDir, "image.tar")
+		if err := runBashProcessWithOutput(writer, saveOCI(tarballPath, imageName)); err != nil {
+			return fmt.Errorf("failed to save image: %v", err)
+		}
 	}
 
-	tarballPath := filepath.Join(jobOutputDir, "image.tar")
-	if err := runBashProcessWithOutput(writer, saveOCI(tarballPath, imageName)); err != nil {
-		return fmt.Errorf("failed to save image: %v", err)
-	}
-
-	// Generate raw image
+	// Generate raw image (temporarily a requirement because we use it to name the artifact)
 	if _, err := writer.WriteStr("Generating raw image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
@@ -254,13 +256,14 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 
 	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
 
-	// Generate ISO
-	if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
-		return fmt.Errorf("failed to send log message: %v", err)
-	}
-
-	if err := buildISO(imageName, jobOutputDir, baseName, writer); err != nil {
-		return fmt.Errorf("failed to generate ISO: %v", err)
+	// Generate ISO if requested
+	if jobData.Artifacts.ISO {
+		if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		if err := buildISO(imageName, jobOutputDir, baseName, writer); err != nil {
+			return fmt.Errorf("failed to generate ISO: %v", err)
+		}
 	}
 
 	// Upload artifacts to server
@@ -268,21 +271,21 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	// Move image.tar to the base name
-	if err := os.Rename(filepath.Join(jobOutputDir, "image.tar"), filepath.Join(jobOutputDir, fmt.Sprintf("%s.tar", baseName))); err != nil {
-		return fmt.Errorf("failed to rename image.tar to %s.tar: %v", baseName, err)
+	// Move and upload selected artifacts
+	artifacts := []string{}
+	if jobData.Artifacts.ContainerFile {
+		if err := os.Rename(filepath.Join(jobOutputDir, "image.tar"), filepath.Join(jobOutputDir, fmt.Sprintf("%s.tar", baseName))); err != nil {
+			return fmt.Errorf("failed to rename image.tar to %s.tar: %v", baseName, err)
+		}
+		artifacts = append(artifacts, fmt.Sprintf("%s.tar", baseName))
 	}
-
-	// Rename artifacts before upload
-	artifacts := []string{
-		fmt.Sprintf("%s.tar", baseName),
-		fmt.Sprintf("%s.iso", baseName),
-		filepath.Base(rawImage),
+	if jobData.Artifacts.ISO {
+		artifacts = append(artifacts, fmt.Sprintf("%s.iso", baseName))
 	}
+	artifacts = append(artifacts, filepath.Base(rawImage)) // Always upload raw image
 
 	for _, artifact := range artifacts {
 		destPath := filepath.Join(jobOutputDir, artifact)
-
 		if err := w.uploadArtifact(jobID, destPath, artifact); err != nil {
 			return fmt.Errorf("failed to upload artifact %s: %v", artifact, err)
 		}
