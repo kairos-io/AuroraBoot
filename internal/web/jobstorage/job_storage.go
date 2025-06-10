@@ -71,6 +71,7 @@ type JobData struct {
 	Image                  string    `json:"image"`
 	Version                string    `json:"version"`
 	Artifacts              Artifacts `json:"artifacts"`
+	CloudConfig            string    `json:"cloud_config,omitempty"`
 }
 
 // JobStatus represents the current status of a build job

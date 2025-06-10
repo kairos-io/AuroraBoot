@@ -63,6 +63,8 @@ func (d *Deployer) StepCopyCloudConfig() error {
 		herd.WithDeps(constants.OpPrepareISO),
 		herd.WithCallback(func(ctx context.Context) error {
 			internal.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
+			internal.Log.Logger.Info().Str("cloudConfigPath", d.cloudConfigPath()).Msg(d.cloudConfigPath())
+			internal.Log.Logger.Info().Str("cloudConfigPath", d.cloudConfigPath()).Msg(d.Config.CloudConfig)
 			return os.WriteFile(d.cloudConfigPath(), []byte(d.Config.CloudConfig), 0600)
 		}))
 }

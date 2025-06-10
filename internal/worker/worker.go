@@ -199,6 +199,11 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
+	// Log the cloud config value for debugging
+	if _, err := writer.WriteStr(fmt.Sprintf("[DEBUG] jobData.CloudConfig: %q\n", jobData.CloudConfig)); err != nil {
+		return fmt.Errorf("failed to send cloud config debug log: %v", err)
+	}
+
 	// Create temporary directory for build
 	tempdir, err := os.MkdirTemp("", "build")
 	if err != nil {
@@ -227,6 +232,22 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to create output directory: %v", err)
 	}
 
+	// If cloud config is provided, write it to a persistent file in the job output dir
+	var cloudConfigPath string
+	if jobData.CloudConfig != "" {
+		cloudConfigPath = filepath.Join(jobOutputDir, "cloud-config.yaml")
+		if err := os.WriteFile(cloudConfigPath, []byte(jobData.CloudConfig), 0644); err != nil {
+			return fmt.Errorf("failed to write cloud config file: %v", err)
+		}
+		if _, err := writer.WriteStr(fmt.Sprintf("[DEBUG] Wrote persistent cloud config to: %s\n", cloudConfigPath)); err != nil {
+			return fmt.Errorf("failed to send cloud config file log: %v", err)
+		}
+		content, _ := os.ReadFile(cloudConfigPath)
+		if _, err := writer.WriteStr(fmt.Sprintf("[DEBUG] Persistent cloud config contents:\n%s\n", string(content))); err != nil {
+			return fmt.Errorf("failed to send cloud config file content log: %v", err)
+		}
+	}
+
 	// Generate tarball if requested
 	var tarballPath string
 	if jobData.Artifacts.ContainerFile {
@@ -244,7 +265,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	if err := buildRawDisk(imageName, jobOutputDir, writer); err != nil {
+	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigPath); err != nil {
 		return fmt.Errorf("failed to generate raw image: %v", err)
 	}
 
@@ -261,7 +282,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
 			return fmt.Errorf("failed to send log message: %v", err)
 		}
-		if err := buildISO(imageName, jobOutputDir, baseName, writer); err != nil {
+		if err := buildISO(imageName, jobOutputDir, baseName, writer, cloudConfigPath); err != nil {
 			return fmt.Errorf("failed to generate ISO: %v", err)
 		}
 	}
@@ -298,6 +319,11 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 
 	// Give the client time to receive all messages before closing
 	time.Sleep(1 * time.Second)
+
+	// Clean up persistent cloud config file if it was written
+	if cloudConfigPath != "" {
+		os.Remove(cloudConfigPath)
+	}
 
 	return nil
 }
@@ -433,96 +459,90 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	return cmd.Run()
 }
 
-func buildRawDisk(containerImage, outputDir string, writer io.Writer) error {
-	// Create the release artifact
+func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigPath string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Create the config
 	config := schema.Config{
 		State: outputDir,
 		Disk: schema.Disk{
-			EFI: true, // This is what disk.raw=true maps to
+			EFI: true,
 		},
 		DisableHTTPServer: true,
 		DisableNetboot:    true,
 	}
 
-	// Create the deployer with proper initialization
-	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if cloudConfigPath != "" {
+		content, err := os.ReadFile(cloudConfigPath)
+		if err != nil {
+			fmt.Fprintf(writer, "[ERROR] Failed to read cloud config file: %v\n", err)
+			return err
+		}
+		config.CloudConfig = string(content)
+		fmt.Fprintf(writer, "[DEBUG] buildRawDisk using cloudConfigPath: %s\n", cloudConfigPath)
+	}
+	fmt.Fprintf(writer, "[DEBUG] config.CloudConfig: %q\n", config.CloudConfig)
 
-	// Register all steps
-	err := deployer.RegisterAll(d)
-	if err != nil {
+	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
 	}
-
-	// Write the DAG for debugging
 	d.WriteDag()
-
-	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
 		fmt.Fprintf(writer, "Error running deployer: %v\n", err)
 		return fmt.Errorf("error running deployer: %v", err)
 	}
-
-	// Collect any errors
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
 	}
-
 	return nil
 }
 
-func buildISO(containerImage, outputDir, artifactName string, writer io.Writer) error {
-	// Create the release artifact
+func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, cloudConfigPath string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Read the config using the shared config package
 	config, _, err := config.ReadConfig("", "", nil)
 	if err != nil {
 		fmt.Fprintf(writer, "Error reading config: %v\n", err)
 		return fmt.Errorf("error reading config: %v", err)
 	}
 
-	// Override the state and ISO name, and ensure netboot is disabled
 	config.State = outputDir
 	config.ISO = schema.ISO{
 		OverrideName: artifactName,
 	}
 	config.DisableNetboot = true
 	config.DisableHTTPServer = true
+	if cloudConfigPath != "" {
+		content, err := os.ReadFile(cloudConfigPath)
+		if err != nil {
+			fmt.Fprintf(writer, "[ERROR] Failed to read cloud config file: %v\n", err)
+			return err
+		}
+		config.CloudConfig = string(content)
+		fmt.Fprintf(writer, "[DEBUG] buildISO using cloudConfigPath: %s\n", cloudConfigPath)
+	}
+	fmt.Fprintf(writer, "[DEBUG] config.CloudConfig: %q\n", config.CloudConfig)
 
-	// Create the deployer with proper initialization
 	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
-
-	// Register all steps
-	err = deployer.RegisterAll(d)
-	if err != nil {
+	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
 	}
-
-	// Write the DAG for debugging
 	d.WriteDag()
-
-	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
 		fmt.Fprintf(writer, "Error running deployer: %v\n", err)
 		return fmt.Errorf("error running deployer: %v", err)
 	}
-
-	// Collect any errors
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
 	}
-
 	return nil
 }
 
