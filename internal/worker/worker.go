@@ -239,7 +239,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		}
 	}
 
-	// Generate raw image (always needed)
+	// Generate raw image (temporarily a requirement because we use it to name the artifact)
 	if _, err := writer.WriteStr("Generating raw image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
