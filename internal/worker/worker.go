@@ -228,12 +228,13 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	// If cloud config is provided, write it to a persistent file in the job output dir
-	var cloudConfigPath string
+	var cloudConfigContent string
 	if jobData.CloudConfig != "" {
-		cloudConfigPath = filepath.Join(jobOutputDir, "cloud-config.yaml")
+		cloudConfigPath := filepath.Join(jobOutputDir, "cloud-config.yaml")
 		if err := os.WriteFile(cloudConfigPath, []byte(jobData.CloudConfig), 0644); err != nil {
 			return fmt.Errorf("failed to write cloud config file: %v", err)
 		}
+		cloudConfigContent = jobData.CloudConfig
 	}
 
 	// Generate tarball if requested
@@ -253,7 +254,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigPath); err != nil {
+	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigContent); err != nil {
 		return fmt.Errorf("failed to generate raw image: %v", err)
 	}
 
@@ -270,7 +271,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
 			return fmt.Errorf("failed to send log message: %v", err)
 		}
-		if err := buildISO(imageName, jobOutputDir, baseName, writer, cloudConfigPath); err != nil {
+		if err := buildISO(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
 			return fmt.Errorf("failed to generate ISO: %v", err)
 		}
 	}
@@ -309,8 +310,8 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	time.Sleep(1 * time.Second)
 
 	// Clean up persistent cloud config file if it was written
-	if cloudConfigPath != "" {
-		os.Remove(cloudConfigPath)
+	if cloudConfigContent != "" {
+		os.Remove(filepath.Join(jobOutputDir, "cloud-config.yaml"))
 	}
 
 	return nil
@@ -447,7 +448,7 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	return cmd.Run()
 }
 
-func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigPath string) error {
+func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
@@ -461,13 +462,8 @@ func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfi
 		DisableNetboot:    true,
 	}
 
-	if cloudConfigPath != "" {
-		content, err := os.ReadFile(cloudConfigPath)
-		if err != nil {
-			fmt.Fprintf(writer, "[ERROR] Failed to read cloud config file: %v\n", err)
-			return err
-		}
-		config.CloudConfig = string(content)
+	if cloudConfigContent != "" {
+		config.CloudConfig = cloudConfigContent
 	}
 
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
@@ -487,7 +483,7 @@ func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfi
 	return nil
 }
 
-func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, cloudConfigPath string) error {
+func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
@@ -504,13 +500,8 @@ func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, 
 	}
 	config.DisableNetboot = true
 	config.DisableHTTPServer = true
-	if cloudConfigPath != "" {
-		content, err := os.ReadFile(cloudConfigPath)
-		if err != nil {
-			fmt.Fprintf(writer, "[ERROR] Failed to read cloud config file: %v\n", err)
-			return err
-		}
-		config.CloudConfig = string(content)
+	if cloudConfigContent != "" {
+		config.CloudConfig = cloudConfigContent
 	}
 
 	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
