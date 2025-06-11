@@ -301,12 +301,18 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   });
   // --- Artifacts summary update logic ---
+  function toggleArtifactIcon(checkboxId, iconId) {
+    const icon = document.getElementById(iconId);
+    if (document.getElementById(checkboxId).checked) {
+      icon.classList.remove('hidden');
+    } else {
+      icon.classList.add('hidden');
+    }
+  }
+
   function updateArtifactsSummary() {
-    const summary = [];
-    summary.push('Raw Image');
-    if (document.getElementById('artifact-iso').checked) summary.push('ISO');
-    if (document.getElementById('artifact-tar').checked) summary.push('Container Image');
-    document.getElementById('artifacts-summary').textContent = summary.join(', ');
+    toggleArtifactIcon('artifact-iso', 'iso-selected');
+    toggleArtifactIcon('artifact-tar', 'tar-selected');
   }
   // Initial update
   updateArtifactsSummary();
