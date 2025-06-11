@@ -301,19 +301,18 @@ document.addEventListener('DOMContentLoaded', () => {
       });
   });
   // --- Artifacts summary update logic ---
+  function toggleArtifactIcon(checkboxId, iconId) {
+    const icon = document.getElementById(iconId);
+    if (document.getElementById(checkboxId).checked) {
+      icon.classList.remove('hidden');
+    } else {
+      icon.classList.add('hidden');
+    }
+  }
+
   function updateArtifactsSummary() {
-    const isoSelected = document.getElementById('iso-selected');
-    const tarSelected = document.getElementById('tar-selected');
-    if (document.getElementById('artifact-iso').checked) {
-      isoSelected.classList.remove('hidden');
-    } else {
-      isoSelected.classList.add('hidden');
-    }
-    if (document.getElementById('artifact-tar').checked) {
-      tarSelected.classList.remove('hidden');
-    } else {
-      tarSelected.classList.add('hidden');
-    }
+    toggleArtifactIcon('artifact-iso', 'iso-selected');
+    toggleArtifactIcon('artifact-tar', 'tar-selected');
   }
   // Initial update
   updateArtifactsSummary();
