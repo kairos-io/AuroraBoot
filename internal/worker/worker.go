@@ -235,6 +235,8 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 			return fmt.Errorf("failed to write cloud config file: %v", err)
 		}
 		cloudConfigContent = jobData.CloudConfig
+
+		defer os.Remove(filepath.Join(jobOutputDir, "cloud-config.yaml"))
 	}
 
 	// Generate tarball if requested
@@ -308,11 +310,6 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 
 	// Give the client time to receive all messages before closing
 	time.Sleep(1 * time.Second)
-
-	// Clean up persistent cloud config file if it was written
-	if cloudConfigContent != "" {
-		os.Remove(filepath.Join(jobOutputDir, "cloud-config.yaml"))
-	}
 
 	return nil
 }
