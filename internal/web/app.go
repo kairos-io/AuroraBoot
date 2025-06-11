@@ -151,6 +151,7 @@ func buildHandler(c echo.Context) error {
 			Image:                  image,
 			Version:                c.FormValue("version"),
 			Artifacts:              artifacts,
+			CloudConfig:            c.FormValue("cloud_config"),
 		},
 		Status:    jobstorage.JobStatusQueued,
 		CreatedAt: time.Now().Format(time.RFC3339),

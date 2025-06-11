@@ -39,6 +39,12 @@ export function initializeAccordion() {
             inputSelector: 'input[name="version"]',
             isText: true,
         },
+        {
+            name: 'configuration',
+            headerId: 'accordion-heading-configuration',
+            inputSelector: 'textarea[name="cloud_config"]',
+            isText: true,
+        },
     ];
 
     // Helper to update a header with the selected value and logo
@@ -97,6 +103,11 @@ export function initializeAccordion() {
                     selectedLabel = byoiInput && byoiInput.value ? byoiInput.value : 'Not set';
                 }
             }
+        }
+        if (section.name === 'configuration') {
+            // For configuration, show 'none' if empty, 'added' if not
+            const input = document.querySelector(section.inputSelector);
+            selectedLabel = (input && input.value.trim() !== '') ? 'added' : 'none';
         }
         // Create a container for the selected value
         const container = document.createElement('span');

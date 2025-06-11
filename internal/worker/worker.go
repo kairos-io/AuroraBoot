@@ -227,6 +227,18 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to create output directory: %v", err)
 	}
 
+	// If cloud config is provided, write it to a persistent file in the job output dir
+	var cloudConfigContent string
+	if jobData.CloudConfig != "" {
+		cloudConfigPath := filepath.Join(jobOutputDir, "cloud-config.yaml")
+		if err := os.WriteFile(cloudConfigPath, []byte(jobData.CloudConfig), 0644); err != nil {
+			return fmt.Errorf("failed to write cloud config file: %v", err)
+		}
+		cloudConfigContent = jobData.CloudConfig
+
+		defer os.Remove(filepath.Join(jobOutputDir, "cloud-config.yaml"))
+	}
+
 	// Generate tarball if requested
 	var tarballPath string
 	if jobData.Artifacts.ContainerFile {
@@ -244,7 +256,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	if err := buildRawDisk(imageName, jobOutputDir, writer); err != nil {
+	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigContent); err != nil {
 		return fmt.Errorf("failed to generate raw image: %v", err)
 	}
 
@@ -261,7 +273,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
 			return fmt.Errorf("failed to send log message: %v", err)
 		}
-		if err := buildISO(imageName, jobOutputDir, baseName, writer); err != nil {
+		if err := buildISO(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
 			return fmt.Errorf("failed to generate ISO: %v", err)
 		}
 	}
@@ -433,96 +445,76 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	return cmd.Run()
 }
 
-func buildRawDisk(containerImage, outputDir string, writer io.Writer) error {
-	// Create the release artifact
+func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Create the config
 	config := schema.Config{
 		State: outputDir,
 		Disk: schema.Disk{
-			EFI: true, // This is what disk.raw=true maps to
+			EFI: true,
 		},
 		DisableHTTPServer: true,
 		DisableNetboot:    true,
 	}
 
-	// Create the deployer with proper initialization
-	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if cloudConfigContent != "" {
+		config.CloudConfig = cloudConfigContent
+	}
 
-	// Register all steps
-	err := deployer.RegisterAll(d)
-	if err != nil {
+	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
 	}
-
-	// Write the DAG for debugging
 	d.WriteDag()
-
-	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
 		fmt.Fprintf(writer, "Error running deployer: %v\n", err)
 		return fmt.Errorf("error running deployer: %v", err)
 	}
-
-	// Collect any errors
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
 	}
-
 	return nil
 }
 
-func buildISO(containerImage, outputDir, artifactName string, writer io.Writer) error {
-	// Create the release artifact
+func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Read the config using the shared config package
 	config, _, err := config.ReadConfig("", "", nil)
 	if err != nil {
 		fmt.Fprintf(writer, "Error reading config: %v\n", err)
 		return fmt.Errorf("error reading config: %v", err)
 	}
 
-	// Override the state and ISO name, and ensure netboot is disabled
 	config.State = outputDir
 	config.ISO = schema.ISO{
 		OverrideName: artifactName,
 	}
 	config.DisableNetboot = true
 	config.DisableHTTPServer = true
+	if cloudConfigContent != "" {
+		config.CloudConfig = cloudConfigContent
+	}
 
-	// Create the deployer with proper initialization
 	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
-
-	// Register all steps
-	err = deployer.RegisterAll(d)
-	if err != nil {
+	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
 	}
-
-	// Write the DAG for debugging
 	d.WriteDag()
-
-	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
 		fmt.Fprintf(writer, "Error running deployer: %v\n", err)
 		return fmt.Errorf("error running deployer: %v", err)
 	}
-
-	// Collect any errors
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
 	}
-
 	return nil
 }
 
