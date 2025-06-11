@@ -58,7 +58,7 @@ require (
 	github.com/aybabtme/rgbterm v0.0.0-20170906152045-cc83f3b3ce59 // indirect
 	github.com/bramvdbogaerde/go-scp v1.2.0 // indirect
 	github.com/cavaliergopher/grab v2.0.0+incompatible // indirect
-	github.com/cloudflare/circl v1.6.0 // indirect
+	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/codingsince1985/checksum v1.2.4 // indirect
 	github.com/containerd/cgroups/v3 v3.0.5 // indirect
 	github.com/containerd/console v1.0.4 // indirect
