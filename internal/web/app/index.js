@@ -52,26 +52,45 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   const coreOption = document.getElementById('core-option');
   const standardOption = document.getElementById('standard-option');
-  const kubernetesFields = document.querySelectorAll('.kubernetes_fields');
+  // Get Kubernetes Distribution and Release accordion sections
+  const k8sHeading = document.getElementById('accordion-heading-kubernetes');
+  const k8sBody = document.getElementById('accordion-body-kubernetes');
+  const k8sReleaseHeading = document.getElementById('accordion-heading-kubernetes-release');
+  const k8sReleaseBody = document.getElementById('accordion-body-kubernetes-release');
   const k3sOption = document.getElementById('k3s-option');
   const k0sOption = document.getElementById('k0s-option');
   const kubernetesDistroName = document.getElementById('kubernetes_distro_name');
+
+  // Helper to show/hide k8s fields
+  function showK8sFields(show) {
+    if (show) {
+      k8sHeading.classList.remove('hidden');
+      k8sBody.classList.remove('hidden');
+      k8sReleaseHeading.classList.remove('hidden');
+      k8sReleaseBody.classList.remove('hidden');
+    } else {
+      k8sHeading.classList.add('hidden');
+      k8sBody.classList.add('hidden');
+      k8sReleaseHeading.classList.add('hidden');
+      k8sReleaseBody.classList.add('hidden');
+    }
+  }
+
+  // On load, set correct visibility
+  showK8sFields(standardOption.checked);
+
   standardOption.addEventListener('change', function() {
     if (this.checked) {
       coreOption.checked = false;
       k3sOption.checked = true;
       kubernetesDistroName.innerText = 'K3s';
-      kubernetesFields.forEach(function(element) {
-        element.style.display = 'block';
-      });
+      showK8sFields(true);
     }
   });
   coreOption.addEventListener('change', function() {
     if (this.checked) {
       standardOption.checked = false;
-      kubernetesFields.forEach(function(element) {
-        element.style.display = 'none';
-      });
+      showK8sFields(false);
     }
   });
   k3sOption.addEventListener('change', function() {
