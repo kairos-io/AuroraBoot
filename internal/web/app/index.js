@@ -305,7 +305,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const summary = [];
     summary.push('Raw Image');
     if (document.getElementById('artifact-iso').checked) summary.push('ISO');
-    if (document.getElementById('artifact-tar').checked) summary.push('Container Image');
+    if (document.getElementById('artifact-tar').checked) summary.push('Download Container Image');
     document.getElementById('artifacts-summary').textContent = summary.join(', ');
   }
   // Initial update
