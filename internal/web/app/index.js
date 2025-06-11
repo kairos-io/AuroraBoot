@@ -64,15 +64,15 @@ document.addEventListener('DOMContentLoaded', () => {
   // Helper to show/hide k8s fields
   function showK8sFields(show) {
     if (show) {
-      k8sHeading.style.display = '';
-      k8sBody.style.display = '';
-      k8sReleaseHeading.style.display = '';
-      k8sReleaseBody.style.display = '';
+      k8sHeading.classList.remove('hidden');
+      k8sBody.classList.remove('hidden');
+      k8sReleaseHeading.classList.remove('hidden');
+      k8sReleaseBody.classList.remove('hidden');
     } else {
-      k8sHeading.style.display = 'none';
-      k8sBody.style.display = 'none';
-      k8sReleaseHeading.style.display = 'none';
-      k8sReleaseBody.style.display = 'none';
+      k8sHeading.classList.add('hidden');
+      k8sBody.classList.add('hidden');
+      k8sReleaseHeading.classList.add('hidden');
+      k8sReleaseBody.classList.add('hidden');
     }
   }
 
