@@ -302,11 +302,18 @@ document.addEventListener('DOMContentLoaded', () => {
   });
   // --- Artifacts summary update logic ---
   function updateArtifactsSummary() {
-    const summary = [];
-    summary.push('Raw Image');
-    if (document.getElementById('artifact-iso').checked) summary.push('ISO');
-    if (document.getElementById('artifact-tar').checked) summary.push('Download Container Image');
-    document.getElementById('artifacts-summary').textContent = summary.join(', ');
+    const isoSelected = document.getElementById('iso-selected');
+    const tarSelected = document.getElementById('tar-selected');
+    if (document.getElementById('artifact-iso').checked) {
+      isoSelected.classList.remove('hidden');
+    } else {
+      isoSelected.classList.add('hidden');
+    }
+    if (document.getElementById('artifact-tar').checked) {
+      tarSelected.classList.remove('hidden');
+    } else {
+      tarSelected.classList.add('hidden');
+    }
   }
   // Initial update
   updateArtifactsSummary();
