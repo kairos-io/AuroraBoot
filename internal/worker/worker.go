@@ -279,11 +279,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		}
 	}
 
-	fmt.Println("[DEBUG] looking for files in:", jobOutputDir)
-	files, _ := os.ReadDir(jobOutputDir)
-	for _, f := range files {
-		fmt.Fprintf(writer, "[DEBUG] Found file: %s\n", f.Name())
-	}
+	fmt.Fprintf(writer, "Found file: %s\n", rawImage)
 
 	if jobData.Artifacts.GCP {
 		if _, err := writer.WriteStr("Generating GCP image...\n"); err != nil {
@@ -319,11 +315,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		artifacts = append(artifacts, fmt.Sprintf("%s.iso", baseName))
 	}
 
-	fmt.Println("[DEBUG] uploadArtifact looking for files in:", jobOutputDir)
-	files, _ = os.ReadDir(jobOutputDir)
-	for _, f := range files {
-		fmt.Fprintf(writer, "[DEBUG] Found file: %s\n", f.Name())
-	}
+	fmt.Fprintf(writer, "Found file: %s\n", rawImage)
 	artifacts = append(artifacts, filepath.Base(rawImage)) // Always upload raw image
 	if jobData.Artifacts.GCP {
 		gceFile, _ := searchFileByExtensionInDirectory(jobOutputDir, ".gce.tar.gz")

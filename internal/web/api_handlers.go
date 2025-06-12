@@ -470,8 +470,6 @@ func HandleGetArtifacts(c echo.Context) error {
 		name := file.Name()
 		friendlyName := name
 		description := ""
-		fmt.Println("name", name)
-		fmt.Println("filepath.Ext(name)", filepath.Ext(name))
 		switch filepath.Ext(name) {
 		case ".tar":
 			friendlyName = "OCI image"
