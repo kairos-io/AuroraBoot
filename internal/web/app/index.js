@@ -246,48 +246,63 @@ document.addEventListener('DOMContentLoaded', () => {
           outputElement.appendChild(pre);
           outputElement.scrollTop = outputElement.scrollHeight;
 
+        };
+        const generatingDownloadLinks = document.getElementById('generating-download-links');
+        function updateStatus(message) {
+          if (message.includes("Waiting for worker to pick up the job")) {
+            showStep("waiting-for-worker");
+            return;
+          }
+          if (message.includes("Building container image")) {
+            showStep("building-container-image");
+            return;
+          }
+          if (message.includes("Generating tarball")) {
+            showStep("generating-tarball");
+          }
+          if (message.includes("Generating raw image")) {
+            showStep("generating-raw-image");
+            return;
+          }
+          if (message.includes("Generating ISO")) {
+            showStep("generating-iso");
+            return;
+          }
           if (message.includes("Generating AWS image")) {
             showStep("generating-aws-image");
+            return;
           }
           if (message.includes("Generating GCP image")) {
             showStep("generating-gcp-image");
+            return;
           }
           if (message.includes("Generating Azure image")) {
             showStep("generating-azure-image");
+            return;
           }
-          if (message.includes("Waiting for worker to pick up the job.")) {
-            showStep("waiting-for-worker");
-          }
-          if (message.includes("Job ") && message.includes("bound by worker")) {
-            markStepDone("waiting-for-worker");
-          }
-        };
-        const buildingContainerImage = document.getElementById('building-container-image');
-        const generatingTarball = document.getElementById('generating-tarball');
-        const generatingRawImage = document.getElementById('generating-raw-image');
-        const generatingISO = document.getElementById('generating-iso');
-        const generatingDownloadLinks = document.getElementById('generating-download-links');
-        function updateStatus(message) {
-          if (message.includes("Building container image")) {
-            buildingContainerImage.classList.remove("hidden");
-          } else if (message.includes("Generating tarball")) {
-            generatingTarball.classList.remove("hidden");
-            buildingContainerImage.querySelector('.spinner').classList.add("hidden");
-            buildingContainerImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating raw image")) {
-            generatingRawImage.classList.remove("hidden");
-            generatingTarball.querySelector('.spinner').classList.add("hidden");
-            generatingTarball.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating ISO")) {
-            generatingISO.classList.remove("hidden");
-            generatingRawImage.querySelector('.spinner').classList.add("hidden");
-            generatingRawImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Uploading artifacts to server")) {
-            generatingDownloadLinks.classList.remove("hidden");
-            generatingISO.querySelector('.spinner').classList.add("hidden");
-            generatingISO.querySelector('.done').classList.remove("hidden");
+          if (message.includes("Uploading artifacts to server")) {
+            showStep("generating-download-links");
+            return;
           }
         }
+
+        function showStep(stepId) {
+          const step = document.getElementById(stepId);
+          if (step) {
+            step.classList.remove('hidden');
+          }
+          // find the previous li in the status-list
+          const statusList = document.querySelector('.status-list');
+          const steps = Array.from(statusList.querySelectorAll('li'));
+          const currentStep = document.getElementById(stepId);
+          const currentStepIndex = steps.indexOf(currentStep);
+          const previousStep = steps[currentStepIndex - 1];
+          if (previousStep) {
+            previousStep.querySelector('.spinner').classList.add('hidden');
+            previousStep.querySelector('.done').classList.remove('hidden');
+          }
+        }
+
         socket.onclose = function() {
           restartButton.classList.remove("hidden");
           generatingDownloadLinks.querySelector('.spinner').classList.add("hidden");
@@ -305,7 +320,11 @@ document.addEventListener('DOMContentLoaded', () => {
               linkElement.innerHTML = ""; // Clear existing links
               for (const artifact of artifacts) {
                 const fullUrl = `/builds/${result.uuid}/artifacts/${artifact.url}`;
-                linkElement.innerHTML += `<a href="${fullUrl}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${artifact.name}</a>`;
+                linkElement.innerHTML += `
+                  <a href="${fullUrl}" target="_blank" class="block text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg px-5 py-2.5 min-h-[8rem] h-full flex flex-col justify-between dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">
+                    <div class="text-lg font-semibold">${artifact.name}</div>
+                    <div class="text-sm opacity-80">${artifact.description}</div>
+                  </a>`;
               }
             })
             .catch(error => {
@@ -329,14 +348,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateArtifactsSummary() {
     toggleArtifactIcon('artifact-iso', 'iso-selected');
     toggleArtifactIcon('artifact-tar', 'tar-selected');
-    toggleArtifactIcon('artifact-aws', 'aws-selected');
     toggleArtifactIcon('artifact-gcp', 'gcp-selected');
     toggleArtifactIcon('artifact-azure', 'azure-selected');
   }
   // Initial update
   updateArtifactsSummary();
   // Add listeners
-  ['artifact-iso','artifact-tar','artifact-aws','artifact-gcp','artifact-azure'].forEach(id => {
+  ['artifact-iso','artifact-tar','artifact-gcp','artifact-azure'].forEach(id => {
     document.getElementById(id).addEventListener('change', updateArtifactsSummary);
   });
 });

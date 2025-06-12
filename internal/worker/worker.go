@@ -279,16 +279,6 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		}
 	}
 
-	// Generate cloud images if requested
-	if jobData.Artifacts.AWS {
-		if _, err := writer.WriteStr("Generating AWS image...\n"); err != nil {
-			return fmt.Errorf("failed to send log message: %v", err)
-		}
-		if err := buildAWS(imageName, jobOutputDir, writer, cloudConfigContent); err != nil {
-			return fmt.Errorf("failed to generate AWS image: %v", err)
-		}
-		// AWS uses the same .raw as baseName.raw (already handled)
-	}
 	fmt.Println("[DEBUG] looking for files in:", jobOutputDir)
 	files, _ := os.ReadDir(jobOutputDir)
 	for _, f := range files {
@@ -585,7 +575,7 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 
 	file := ""
 	for _, f := range filesInArtifactDir {
-		if filepath.Ext(f) == ext {
+		if strings.HasSuffix(f, ext) {
 			file = f
 			break
 		}
