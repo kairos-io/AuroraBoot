@@ -60,6 +60,9 @@ type Artifacts struct {
 	RawImage      bool `json:"raw_image"`
 	ISO           bool `json:"iso"`
 	ContainerFile bool `json:"container_file"`
+	AWS           bool `json:"aws"`
+	GCP           bool `json:"gcp"`
+	Azure         bool `json:"azure"`
 }
 
 type JobData struct {

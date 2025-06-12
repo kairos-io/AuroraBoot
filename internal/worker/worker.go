@@ -18,6 +18,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
+	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 	"golang.org/x/net/websocket"
@@ -278,6 +279,25 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		}
 	}
 
+	fmt.Fprintf(writer, "Found file: %s\n", rawImage)
+
+	if jobData.Artifacts.GCP {
+		if _, err := writer.WriteStr("Generating GCP image...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		if err := buildGCP(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
+			return fmt.Errorf("failed to generate GCP image: %v", err)
+		}
+	}
+	if jobData.Artifacts.Azure {
+		if _, err := writer.WriteStr("Generating Azure image...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		if err := buildAzure(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
+			return fmt.Errorf("failed to generate Azure image: %v", err)
+		}
+	}
+
 	// Upload artifacts to server
 	if _, err := writer.WriteStr("Uploading artifacts to server...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
@@ -294,7 +314,21 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	if jobData.Artifacts.ISO {
 		artifacts = append(artifacts, fmt.Sprintf("%s.iso", baseName))
 	}
+
+	fmt.Fprintf(writer, "Found file: %s\n", rawImage)
 	artifacts = append(artifacts, filepath.Base(rawImage)) // Always upload raw image
+	if jobData.Artifacts.GCP {
+		gceFile, _ := searchFileByExtensionInDirectory(jobOutputDir, ".gce.tar.gz")
+		if gceFile != "" {
+			artifacts = append(artifacts, filepath.Base(gceFile))
+		}
+	}
+	if jobData.Artifacts.Azure {
+		vhdFile, _ := searchFileByExtensionInDirectory(jobOutputDir, ".vhd")
+		if vhdFile != "" {
+			artifacts = append(artifacts, filepath.Base(vhdFile))
+		}
+	}
 
 	for _, artifact := range artifacts {
 		destPath := filepath.Join(jobOutputDir, artifact)
@@ -533,7 +567,7 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 
 	file := ""
 	for _, f := range filesInArtifactDir {
-		if filepath.Ext(f) == ext {
+		if strings.HasSuffix(f, ext) {
 			file = f
 			break
 		}
@@ -544,4 +578,94 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 	}
 
 	return file, nil
+}
+
+// --- Cloud image builders ---
+func buildAWS(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
+	// AWS uses the same as RAW
+	return buildRawDisk(containerImage, outputDir, writer, cloudConfigContent)
+}
+
+func buildGCP(containerImage, outputDir, artifactBaseName string, writer io.Writer, cloudConfigContent string) error {
+	// Find the raw image
+	rawImage, err := searchFileByExtensionInDirectory(outputDir, ".raw")
+	if err != nil {
+		return fmt.Errorf("failed to find raw disk image for GCP: %v", err)
+	}
+
+	// Copy the raw file to a temporary location
+	tmpRawFile := filepath.Join(outputDir, "tmp_"+filepath.Base(rawImage))
+	if err := copyFile(rawImage, tmpRawFile); err != nil {
+		return fmt.Errorf("failed to copy raw file for GCP: %v", err)
+	}
+	defer os.Remove(tmpRawFile) // Clean up the temporary file
+
+	// Convert to GCE format
+	if _, err := writer.Write([]byte("Converting to GCP image...\n")); err != nil {
+		return err
+	}
+	gceFile, err := ops.Raw2Gce(tmpRawFile)
+	if err != nil {
+		return fmt.Errorf("failed to convert to GCP image: %v", err)
+	}
+
+	// Rename the GCE file to remove tmp_ prefix and .raw from extension
+	baseName := strings.TrimSuffix(filepath.Base(gceFile)[4:], ".raw.gce.tar.gz") // Remove 'tmp_' prefix and '.raw.gce.tar.gz'
+	finalGceFile := filepath.Join(outputDir, baseName+".gce.tar.gz")
+	if err := os.Rename(gceFile, finalGceFile); err != nil {
+		return fmt.Errorf("failed to rename GCE file: %v", err)
+	}
+
+	return nil
+}
+
+func buildAzure(containerImage, outputDir, artifactBaseName string, writer io.Writer, cloudConfigContent string) error {
+	// Find the raw image
+	rawImage, err := searchFileByExtensionInDirectory(outputDir, ".raw")
+	if err != nil {
+		return fmt.Errorf("failed to find raw disk image for Azure: %v", err)
+	}
+
+	// Copy the raw file to a temporary location
+	tmpRawFile := filepath.Join(outputDir, "tmp_"+filepath.Base(rawImage))
+	if err := copyFile(rawImage, tmpRawFile); err != nil {
+		return fmt.Errorf("failed to copy raw file for Azure: %v", err)
+	}
+	defer os.Remove(tmpRawFile) // Clean up the temporary file
+
+	// Convert to VHD format
+	if _, err := writer.Write([]byte("Converting to Azure VHD...\n")); err != nil {
+		return err
+	}
+	vhdFile, err := ops.Raw2Azure(tmpRawFile)
+	if err != nil {
+		return fmt.Errorf("failed to convert to Azure VHD: %v", err)
+	}
+
+	// Rename the VHD file to remove tmp_ prefix and .raw from extension
+	baseName := strings.TrimSuffix(filepath.Base(vhdFile)[4:], ".raw.vhd") // Remove 'tmp_' prefix and '.raw.vhd'
+	finalVhdFile := filepath.Join(outputDir, baseName+".vhd")
+	if err := os.Rename(vhdFile, finalVhdFile); err != nil {
+		return fmt.Errorf("failed to rename VHD file: %v", err)
+	}
+
+	return nil
+}
+
+// Helper function to copy a file
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }

@@ -245,33 +245,65 @@ document.addEventListener('DOMContentLoaded', () => {
           pre.textContent = strippedMessage;
           outputElement.appendChild(pre);
           outputElement.scrollTop = outputElement.scrollHeight;
+
         };
-        const buildingContainerImage = document.getElementById('building-container-image');
-        const generatingTarball = document.getElementById('generating-tarball');
-        const generatingRawImage = document.getElementById('generating-raw-image');
-        const generatingISO = document.getElementById('generating-iso');
         const generatingDownloadLinks = document.getElementById('generating-download-links');
         function updateStatus(message) {
+          if (message.includes("Waiting for worker to pick up the job")) {
+            showStep("waiting-for-worker");
+            return;
+          }
           if (message.includes("Building container image")) {
-            buildingContainerImage.classList.remove("hidden");
-          } else if (message.includes("Generating tarball")) {
-            generatingTarball.classList.remove("hidden");
-            buildingContainerImage.querySelector('.spinner').classList.add("hidden");
-            buildingContainerImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating raw image")) {
-            generatingRawImage.classList.remove("hidden");
-            generatingTarball.querySelector('.spinner').classList.add("hidden");
-            generatingTarball.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Generating ISO")) {
-            generatingISO.classList.remove("hidden");
-            generatingRawImage.querySelector('.spinner').classList.add("hidden");
-            generatingRawImage.querySelector('.done').classList.remove("hidden");
-          } else if (message.includes("Uploading artifacts to server")) {
-            generatingDownloadLinks.classList.remove("hidden");
-            generatingISO.querySelector('.spinner').classList.add("hidden");
-            generatingISO.querySelector('.done').classList.remove("hidden");
+            showStep("building-container-image");
+            return;
+          }
+          if (message.includes("Generating tarball")) {
+            showStep("generating-tarball");
+          }
+          if (message.includes("Generating raw image")) {
+            showStep("generating-raw-image");
+            return;
+          }
+          if (message.includes("Generating ISO")) {
+            showStep("generating-iso");
+            return;
+          }
+          if (message.includes("Generating AWS image")) {
+            showStep("generating-aws-image");
+            return;
+          }
+          if (message.includes("Generating GCP image")) {
+            showStep("generating-gcp-image");
+            return;
+          }
+          if (message.includes("Generating Azure image")) {
+            showStep("generating-azure-image");
+            return;
+          }
+          if (message.includes("Uploading artifacts to server")) {
+            showStep("generating-download-links");
+            return;
           }
         }
+
+        function showStep(stepId) {
+          const step = document.getElementById(stepId);
+          if (step) {
+            step.classList.remove('hidden');
+          }
+          // find the previous li in the status-list
+          const statusList = document.querySelector('.status-list');
+          const steps = Array.from(statusList.querySelectorAll('li'));
+          const currentStep = document.getElementById(stepId);
+          const currentStepIndex = steps.indexOf(currentStep);
+          // find all previous steps and hide their spinners and show their done icons
+          for (let i = 0; i < currentStepIndex; i++) {
+            const previousStep = steps[i];
+            previousStep.querySelector('.spinner').classList.add('hidden');
+            previousStep.querySelector('.done').classList.remove('hidden');
+          }
+        }
+
         socket.onclose = function() {
           restartButton.classList.remove("hidden");
           generatingDownloadLinks.querySelector('.spinner').classList.add("hidden");
@@ -287,10 +319,28 @@ document.addEventListener('DOMContentLoaded', () => {
             .then(artifacts => {
               const linkElement = document.getElementById('links');
               linkElement.innerHTML = ""; // Clear existing links
-              for (const artifact of artifacts) {
+              for (const [i, artifact] of artifacts.entries()) {
                 const fullUrl = `/builds/${result.uuid}/artifacts/${artifact.url}`;
-                linkElement.innerHTML += `<a href="${fullUrl}" target="_blank" class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">${artifact.name}</a>`;
+                const popoverId = `artifact-popover-${i}`;
+                linkElement.innerHTML += `
+                  <a href="${fullUrl}" target="_blank" class="block text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-small rounded-lg px-5 py-2.5 h-full flex flex-col justify-between dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">
+                    <div class="text-sm font-semibold flex items-center gap-2">
+                      ${artifact.name}
+                      <button type="button" data-popover-target="${popoverId}" data-popover-placement="bottom-end" tabindex="0" class="ml-2 align-middle">
+                        <svg class="w-4 h-4 text-gray-200 hover:text-gray-100 dark:text-gray-400 dark:hover:text-gray-200" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
+                        <span class="sr-only">Show information</span>
+                      </button>
+                    </div>
+                  </a>
+                  <div data-popover id="${popoverId}" role="tooltip" class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400">
+                    <div class="p-3 space-y-2">
+                      <p>${artifact.description}</p>
+                    </div>
+                    <div data-popper-arrow></div>
+                  </div>
+                `;
               }
+              if (window.initPopovers) window.initPopovers();
             })
             .catch(error => {
               console.error('Error fetching artifacts:', error);
@@ -313,10 +363,13 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateArtifactsSummary() {
     toggleArtifactIcon('artifact-iso', 'iso-selected');
     toggleArtifactIcon('artifact-tar', 'tar-selected');
+    toggleArtifactIcon('artifact-gcp', 'gcp-selected');
+    toggleArtifactIcon('artifact-azure', 'azure-selected');
   }
   // Initial update
   updateArtifactsSummary();
   // Add listeners
-  document.getElementById('artifact-iso').addEventListener('change', updateArtifactsSummary);
-  document.getElementById('artifact-tar').addEventListener('change', updateArtifactsSummary);
+  ['artifact-iso','artifact-tar','artifact-gcp','artifact-azure'].forEach(id => {
+    document.getElementById(id).addEventListener('change', updateArtifactsSummary);
+  });
 });
