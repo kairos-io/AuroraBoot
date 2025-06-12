@@ -138,6 +138,9 @@ func buildHandler(c echo.Context) error {
 		RawImage:      true, // Always true
 		ISO:           c.FormValue("artifact_iso") == "on",
 		ContainerFile: c.FormValue("artifact_tar") == "on",
+		AWS:           c.FormValue("artifact_aws") == "on",
+		GCP:           c.FormValue("artifact_gcp") == "on",
+		Azure:         c.FormValue("artifact_azure") == "on",
 	}
 
 	// Collect job data

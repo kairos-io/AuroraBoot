@@ -245,6 +245,22 @@ document.addEventListener('DOMContentLoaded', () => {
           pre.textContent = strippedMessage;
           outputElement.appendChild(pre);
           outputElement.scrollTop = outputElement.scrollHeight;
+
+          if (message.includes("Generating AWS image")) {
+            showStep("generating-aws-image");
+          }
+          if (message.includes("Generating GCP image")) {
+            showStep("generating-gcp-image");
+          }
+          if (message.includes("Generating Azure image")) {
+            showStep("generating-azure-image");
+          }
+          if (message.includes("Waiting for worker to pick up the job.")) {
+            showStep("waiting-for-worker");
+          }
+          if (message.includes("Job ") && message.includes("bound by worker")) {
+            markStepDone("waiting-for-worker");
+          }
         };
         const buildingContainerImage = document.getElementById('building-container-image');
         const generatingTarball = document.getElementById('generating-tarball');
@@ -313,10 +329,14 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateArtifactsSummary() {
     toggleArtifactIcon('artifact-iso', 'iso-selected');
     toggleArtifactIcon('artifact-tar', 'tar-selected');
+    toggleArtifactIcon('artifact-aws', 'aws-selected');
+    toggleArtifactIcon('artifact-gcp', 'gcp-selected');
+    toggleArtifactIcon('artifact-azure', 'azure-selected');
   }
   // Initial update
   updateArtifactsSummary();
   // Add listeners
-  document.getElementById('artifact-iso').addEventListener('change', updateArtifactsSummary);
-  document.getElementById('artifact-tar').addEventListener('change', updateArtifactsSummary);
+  ['artifact-iso','artifact-tar','artifact-aws','artifact-gcp','artifact-azure'].forEach(id => {
+    document.getElementById(id).addEventListener('change', updateArtifactsSummary);
+  });
 });

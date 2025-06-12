@@ -475,7 +475,13 @@ func HandleGetArtifacts(c echo.Context) error {
 		case ".iso":
 			friendlyName = "ISO image"
 		case ".raw":
-			friendlyName = "Raw disk image"
+			friendlyName = "Raw disk image (AWS)"
+		case ".vhd":
+			friendlyName = "Azure VHD image"
+		case ".gz":
+			if len(name) > 11 && name[len(name)-11:] == ".gce.tar.gz" {
+				friendlyName = "Google Cloud image (GCP)"
+			}
 		}
 
 		artifacts = append(artifacts, map[string]string{
