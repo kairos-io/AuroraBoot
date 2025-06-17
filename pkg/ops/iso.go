@@ -109,8 +109,10 @@ func NewConfig(opts ...GenericOptions) *agentconfig.Config {
 }
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
+func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		dst := dstFunc()
+		src := srcFunc()
 		tmp, err := os.MkdirTemp("", "geniso")
 		if err != nil {
 			return err
@@ -168,8 +170,9 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 	}
 }
 
-func InjectISO(dst string, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
+func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		dst := dstFunc()
 		os.Chdir(dst)
 		isoFile := isoFunc() // call it just on time so we get the latest iso file path
 		injectedIso := isoFile + ".temp.iso"

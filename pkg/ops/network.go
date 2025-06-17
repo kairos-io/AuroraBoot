@@ -17,9 +17,9 @@ const (
 )
 
 // ServeArtifacts serve local artifacts as standard http server
-func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
+func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-
+		dir := dirFunc()
 		fs := http.FileServer(http.Dir(dir))
 		http.Handle("/", fs)
 		serverOne := &http.Server{

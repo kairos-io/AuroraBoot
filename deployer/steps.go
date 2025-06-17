@@ -60,6 +60,7 @@ func (d *Deployer) CleanTmpDirs() error {
 }
 
 // StepPrepDestination prepares the destination directory for the rest of the steps.
+// This is the first step always executed in the deployer, it creates the destination directory in which other build steps will operate.
 func (d *Deployer) StepPrepDestination() error {
 	return d.Add(constants.OpPrepareDestination, herd.WithCallback(func(ctx context.Context) error {
 		internal.Log.Logger.Info().Str("destination", d.destination()).Msg("Preparing destination temporal directory")
@@ -91,13 +92,13 @@ func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
 	return d.Add(constants.OpDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(constants.OpPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs())))
+		herd.WithDeps(constants.OpPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs)))
 }
 
 func (d *Deployer) StepGenISO() error {
 	return d.Add(constants.OpGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() }),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDestination), herd.WithCallback(ops.GenISO(d.tmpRootFs(), d.destination(), d.Config.ISO)))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDestination), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO)))
 }
 
 func (d *Deployer) StepDownloadISO() error {
@@ -123,7 +124,7 @@ func (d *Deployer) StepExtractNetboot() error {
 func (d *Deployer) StepExtractSquashFS() error {
 	return d.Add(constants.OpExtractSquashFS,
 		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
-		herd.WithDeps(), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile(), d.tmpRootFs())))
+		herd.WithDeps(), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile, d.tmpRootFs)))
 }
 
 // StepGenRawDisk Generate the raw disk image.
@@ -162,7 +163,7 @@ func (d *Deployer) StepInjectCC() error {
 		herd.WithDeps(constants.OpCopyCloudConfig),
 		herd.ConditionalOption(d.isoOption, herd.WithDeps(constants.OpDownloadISO)),
 		herd.ConditionalOption(d.fromImage, herd.WithDeps(constants.OpGenISO)),
-		herd.WithCallback(ops.InjectISO(d.destination(), d.getIsoFile, d.Config.ISO)))
+		herd.WithCallback(ops.InjectISO(d.destination, d.getIsoFile, d.Config.ISO)))
 }
 
 func (d *Deployer) StepStartHTTPServer() error {
@@ -174,7 +175,7 @@ func (d *Deployer) StepStartHTTPServer() error {
 			herd.WithDeps(constants.OpGenISO, constants.OpCopyCloudConfig, constants.OpInjectCC),
 			herd.WithDeps(constants.OpDownloadISO, constants.OpCopyCloudConfig, constants.OpInjectCC),
 		),
-		herd.WithCallback(ops.ServeArtifacts(d.listenAddr(), d.destination())),
+		herd.WithCallback(ops.ServeArtifacts(d.listenAddr(), d.destination)),
 	)
 }
 
