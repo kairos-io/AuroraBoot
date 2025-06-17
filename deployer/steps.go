@@ -74,7 +74,7 @@ func (d *Deployer) StepPrepDestination() error {
 
 func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(constants.OpCopyCloudConfig,
-		herd.WithDeps(constants.OpPrepareDestination),
+		herd.WithDeps(constants.OpPrepareDestination, constants.OpPrepareNetboot, constants.OpPreparetmproot),
 		herd.WithCallback(func(ctx context.Context) error {
 			internal.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
 			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
@@ -120,26 +120,19 @@ func (d *Deployer) StepExtractNetboot() error {
 		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.getIsoFile, d.dstNetboot, d.Config.ISO.Name)))
 }
 
-// StepExtractSquashFS Extract SquashFS from released asset to build the raw disk image if needed
-func (d *Deployer) StepExtractSquashFS() error {
-	return d.Add(constants.OpExtractSquashFS,
-		herd.EnableIf(func() bool { return d.rawDiskIsSet() && !d.fromImage() }),
-		herd.WithDeps(), herd.WithCallback(ops.ExtractSquashFS(d.squashFSfile, d.tmpRootFs)))
-}
-
 // StepGenRawDisk Generate the raw disk image.
 // Enabled if is explicitly set the disk.efi or disk.vhd or disk.gce as they depend on the efi disk
 func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(constants.OpGenEFIRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD }),
-		d.imageOrSquashFS(),
+		herd.WithDeps(constants.OpDumpSource),
 		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
-		d.imageOrSquashFS(),
+		herd.WithDeps(constants.OpDumpSource),
 		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize())))
 }
 
@@ -258,10 +251,6 @@ func (d *Deployer) squashFSfile() string {
 
 func (d *Deployer) isoOption() bool {
 	return !d.fromImage()
-}
-
-func (d *Deployer) imageOrSquashFS() herd.OpOption {
-	return herd.IfElse(d.fromImage(), herd.WithDeps(constants.OpDumpSource), herd.WithDeps(constants.OpExtractSquashFS))
 }
 
 func (d *Deployer) cloudConfigPath() string {

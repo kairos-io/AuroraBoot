@@ -19,7 +19,6 @@ func RegisterAll(d *Deployer) error {
 		d.StepDownloadISO,
 		d.StepExtractNetboot,
 		// Ops to generate RAW disk images
-		d.StepExtractSquashFS,
 		d.StepGenRawDisk,
 		d.StepGenMBRRawDisk,
 		d.StepConvertGCE,

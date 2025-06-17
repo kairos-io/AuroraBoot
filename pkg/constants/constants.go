@@ -158,8 +158,6 @@ const (
 	OpGenEFIRawDisk  = "gen-raw-efi-disk"
 	OpGenBIOSRawDisk = "gen-raw-bios-disk"
 
-	OpExtractSquashFS = "extract-squashfs"
-
 	OpConvertGCE = "convert-gce"
 	OpConvertVHD = "convert-vhd"
 )
