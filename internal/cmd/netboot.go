@@ -50,7 +50,10 @@ var NetBootCmd = cli.Command{
 		isoGet := func() string {
 			return iso
 		}
-		f := ops.ExtractNetboot(isoGet, output, name)
+		outputGet := func() string {
+			return output
+		}
+		f := ops.ExtractNetboot(isoGet, outputGet, name)
 		return f(c.Context)
 	},
 }
