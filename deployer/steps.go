@@ -83,7 +83,7 @@ func (d *Deployer) StepGenISO() error {
 func (d *Deployer) StepExtractNetboot() error {
 	return d.Add(constants.OpExtractNetboot,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.Config.DisableNetboot }),
-		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.isoFile(), d.dstNetboot(), d.Config.ISO.Name)))
+		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.getIsoFile, d.dstNetboot(), d.Config.ISO.Name)))
 }
 
 func (d *Deployer) StepDownloadInitrd() error {
@@ -109,7 +109,7 @@ func (d *Deployer) StepDownloadSquashFS() error {
 func (d *Deployer) StepDownloadISO() error {
 	return d.Add(constants.OpDownloadISO,
 		herd.EnableIf(func() bool { return !d.rawDiskIsSet() && d.isoOption() }),
-		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.isoFile())))
+		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.getIsoFile())))
 }
 
 // StepExtractSquashFS Extract SquashFS from released asset to build the raw disk image if needed
@@ -154,7 +154,7 @@ func (d *Deployer) StepInjectCC() error {
 		herd.EnableIf(func() bool { return !d.rawDiskIsSet() && d.isoOption() }),
 		herd.WithDeps(constants.OpCopyCloudConfig),
 		herd.ConditionalOption(d.isoOption, herd.WithDeps(constants.OpDownloadISO)),
-		herd.WithCallback(ops.InjectISO(d.destination(), d.isoFile(), d.Config.ISO)))
+		herd.WithCallback(ops.InjectISO(d.destination(), d.getIsoFile(), d.Config.ISO)))
 }
 
 func (d *Deployer) StepStartHTTPServer() error {
@@ -195,8 +195,33 @@ func (d *Deployer) destination() string {
 	return d.Config.State
 }
 
-func (d *Deployer) isoFile() string {
-	return filepath.Join(d.destination(), "kairos.iso")
+// getIsoFile returns the path to the ISO file.
+// It first checks for the default name in the destination directory,
+// and if not found, it searches for any ISO file in the destination directory.
+func (d *Deployer) getIsoFile() string {
+	defaultIsoPath := filepath.Join(d.destination(), "kairos.iso")
+	// This is to look for the ISO file in the destination directory
+	if _, err := os.Stat(defaultIsoPath); err == nil {
+		internal.Log.Logger.Info().Str("isoFile", defaultIsoPath).Msg("Found existing ISO file")
+		return defaultIsoPath
+	}
+	// If its not the default name, we search for the ISO file in the destination directory
+	files, err := os.ReadDir(d.destination())
+	if err != nil {
+		internal.Log.Logger.Debug().Err(err).Msg("Failed to read destination directory, falling back to default ISO name")
+		return defaultIsoPath // fallback to the default name
+	}
+	for _, file := range files {
+		if file.IsDir() {
+			continue
+		}
+		if filepath.Ext(file.Name()) == ".iso" {
+			internal.Log.Logger.Info().Str("isoFile", file.Name()).Msg("Found existing ISO file")
+			return filepath.Join(d.destination(), file.Name())
+		}
+	}
+	internal.Log.Logger.Info().Str("isoFile", defaultIsoPath).Msg("No ISO file found, falling back to default ISO name")
+	return defaultIsoPath
 }
 
 func (d *Deployer) dstNetboot() string {

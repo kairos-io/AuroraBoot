@@ -11,9 +11,15 @@ import (
 	"github.com/kairos-io/kairos-sdk/iso"
 )
 
+type isoGet func() string
+
 // ExtractNetboot extracts all the required netbooting artifacts
-func ExtractNetboot(src, dst, prefix string) func(ctx context.Context) error {
+// isoFunc is a function that returns the path to the ISO file
+// we need the function to be passed so its executed in the context of the deployer as otherwise
+// the ISO file might not be available at the time of the call
+func ExtractNetboot(isoFunc isoGet, dst, prefix string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		src := isoFunc()
 		internal.Log.Logger.Info().Str("prefix", prefix).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
 
 		artifact := filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix))
