@@ -111,9 +111,7 @@ var BuildISOCmd = cli.Command{
 
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
-			d.StepPrepDestination,
-			d.StepPrepNetbootDir,
-			d.StepPrepTmpRootDir,
+			d.PrepDirs,
 			d.StepCopyCloudConfig,
 			d.StepDumpSource,
 			d.StepGenISO,
