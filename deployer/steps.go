@@ -15,38 +15,6 @@ import (
 	"github.com/spectrocloud-labs/herd"
 )
 
-func (d *Deployer) StepPrepNetbootDir() error {
-	return d.Add(constants.OpPrepareNetboot,
-		herd.WithDeps(constants.OpPrepareDestination),
-		herd.WithCallback(
-			func(ctx context.Context) error {
-				internal.Log.Logger.Info().Str("destination", d.dstNetboot()).Msg("Preparing temp netboot directory")
-				err := os.RemoveAll(d.dstNetboot())
-				if err != nil {
-					internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
-					return err
-				}
-				return os.MkdirAll(d.dstNetboot(), 0755)
-			},
-		))
-}
-
-func (d *Deployer) StepPrepTmpRootDir() error {
-	return d.Add(constants.OpPreparetmproot,
-		herd.WithDeps(constants.OpPrepareDestination),
-		herd.WithCallback(
-			func(ctx context.Context) error {
-				internal.Log.Logger.Info().Str("destination", d.tmpRootFs()).Msg("Preparing temp rootfs directory")
-				err := os.RemoveAll(d.tmpRootFs())
-				if err != nil {
-					internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
-					return err
-				}
-				return os.MkdirAll(d.tmpRootFs(), 0755)
-			},
-		))
-}
-
 // CleanTmpDirs removes the temp rootfs and netboot directories when finished to not leave things around
 func (d *Deployer) CleanTmpDirs() error {
 	var err *multierror.Error
@@ -59,22 +27,51 @@ func (d *Deployer) CleanTmpDirs() error {
 	return err.ErrorOrNil()
 }
 
-// StepPrepDestination prepares the destination directory for the rest of the steps.
+// PrepDirs prepares the destination directory for the rest of the steps.
 // This is the first step always executed in the deployer, it creates the destination directory in which other build steps will operate.
-func (d *Deployer) StepPrepDestination() error {
-	return d.Add(constants.OpPrepareDestination, herd.WithCallback(func(ctx context.Context) error {
+func (d *Deployer) PrepDirs() error {
+	return d.Add(constants.OpPrepareDirs, herd.WithCallback(func(ctx context.Context) error {
 		internal.Log.Logger.Info().Str("destination", d.destination()).Msg("Preparing destination temporal directory")
 		if d.destination() == "" {
 			internal.Log.Logger.Error().Msg("Destination directory is not set, cannot prepare ISO directory")
 			return fmt.Errorf("destination directory is not set")
 		}
-		return os.MkdirAll(d.destination(), 0755)
+		err := os.MkdirAll(d.destination(), 0755)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("Failed to create destination directory")
+			return err
+		}
+		internal.Log.Logger.Info().Str("destination", d.tmpRootFs()).Msg("Preparing temp rootfs directory")
+		err = os.RemoveAll(d.tmpRootFs())
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+			return err
+		}
+		err = os.MkdirAll(d.tmpRootFs(), 0755)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("Failed to create temp rootfs directory")
+			return err
+		}
+
+		internal.Log.Logger.Info().Str("destination", d.dstNetboot()).Msg("Preparing temp netboot directory")
+		err = os.RemoveAll(d.dstNetboot())
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
+			return err
+		}
+		err = os.MkdirAll(d.dstNetboot(), 0755)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("Failed to create temp netboot directory")
+			return err
+		}
+
+		return nil
 	}))
 }
 
 func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(constants.OpCopyCloudConfig,
-		herd.WithDeps(constants.OpPrepareDestination, constants.OpPrepareNetboot, constants.OpPreparetmproot),
+		herd.WithDeps(constants.OpPrepareDirs),
 		herd.WithCallback(func(ctx context.Context) error {
 			internal.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
 			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
@@ -92,19 +89,19 @@ func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
 	return d.Add(constants.OpDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(constants.OpPreparetmproot), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs)))
+		herd.WithDeps(constants.OpPrepareDirs), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs)))
 }
 
 func (d *Deployer) StepGenISO() error {
 	return d.Add(constants.OpGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() }),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDestination), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO)))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO)))
 }
 
 func (d *Deployer) StepDownloadISO() error {
 	return d.Add(constants.OpDownloadISO,
 		herd.EnableIf(func() bool { return !d.rawDiskIsSet() && d.isoOption() }),
-		herd.WithDeps(constants.OpPrepareDestination),
+		herd.WithDeps(constants.OpPrepareDirs),
 		herd.WithCallback(ops.DownloadArtifact(d.Artifact.ISOUrl(), d.getIsoFile))) // This is okay to call the getIsoFile function here as we want a destination for the ISO file
 }
 

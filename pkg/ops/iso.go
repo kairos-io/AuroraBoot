@@ -173,9 +173,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
-		os.Chdir(dst)
 		isoFile := isoFunc() // call it just on time so we get the latest iso file path
-		injectedIso := isoFile + ".temp.iso"
 
 		tmp, err := os.MkdirTemp("", "injectiso")
 		if err != nil {
@@ -191,24 +189,44 @@ func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.C
 			}
 		}
 
-		internal.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
-		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
-		if err != nil {
-			return err
+		// Check if we actually have a cloud config and its not empty so we dont do extra work for nothing
+		if _, err := os.Stat(filepath.Join(dst, "config.yaml")); err == nil {
+			f, err := os.ReadFile(filepath.Join(dst, "config.yaml"))
+			if err == nil && f != nil && len(f) > 0 {
+				currentCWD, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("failed to get current working directory: %w", err)
+				}
+				// Go back to the original working directory after we are done
+				defer func() {
+					if err := os.Chdir(currentCWD); err != nil {
+						internal.Log.Logger.Error().Err(err).Msg("failed to change back to original working directory")
+					}
+				}()
+
+				// Change to the destination directory so we can run xorriso from there
+				err = os.Chdir(dst)
+				if err != nil {
+					return fmt.Errorf("failed to change to destination directory '%s': %w", dst, err)
+				}
+
+				internal.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
+				err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
+				if err != nil {
+					return err
+				}
+				out, err := sdkutils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s / -boot_image any replay", isoFile, isoFile, tmp))
+				internal.Log.Print(out)
+				if err != nil {
+					return err
+				}
+
+				internal.Log.Logger.Info().Msgf("Wrote '%s' with injected cloud-config", isoFile)
+			} else {
+				internal.Log.Logger.Warn().Msgf("No cloud config file found in '%s', skipping injection", filepath.Join(dst, "config.yaml"))
+			}
 		}
 
-		out, err := sdkutils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s / -boot_image any replay", isoFile, injectedIso, tmp))
-		internal.Log.Print(out)
-		if err != nil {
-			return err
-		}
-		os.Remove(isoFile)                    // remove the original iso file
-		err = os.Rename(injectedIso, isoFile) // rename the injected iso to the original name
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Failed renaming '%s' to '%s'. Error: %s", injectedIso, isoFile, err.Error())
-			return err
-		}
-		internal.Log.Logger.Info().Msgf("Wrote '%s' with injected cloud-config", isoFile)
 		return err
 	}
 }

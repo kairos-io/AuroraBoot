@@ -141,18 +141,17 @@ func GetDefaultSquashfsOptions() []string {
 
 // Ops constants
 const (
-	OpDownloadISO        = "download-iso"
-	OpCopyCloudConfig    = "copy-cloud-config"
-	OpPrepareDestination = "prepare-destination"
-	OpStartHTTPServer    = "start-httpserver"
-	OpInjectCC           = "inject-cloud-config"
+	OpPrepareDirs = "prepare-dirs"
 
-	OpPrepareNetboot = "prepare-netboot"
-	OpStartNetboot   = "start-netboot"
+	OpDownloadISO     = "download-iso"
+	OpCopyCloudConfig = "copy-cloud-config"
+	OpInjectCC        = "inject-cloud-config"
+
+	OpStartHTTPServer = "start-httpserver"
+	OpStartNetboot    = "start-netboot"
 
 	OpDumpSource     = "dump-source"
 	OpGenISO         = "gen-iso"
-	OpPreparetmproot = "prepare-temp"
 	OpExtractNetboot = "extract-netboot"
 
 	OpGenEFIRawDisk  = "gen-raw-efi-disk"
