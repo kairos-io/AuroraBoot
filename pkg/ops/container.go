@@ -13,8 +13,12 @@ import (
 // or simply copies the directory to the destination.
 // Supports these prefixes:
 // https://github.com/kairos-io/kairos-agent/blob/1e81cdef38677c8a36cae50d3334559976f66481/pkg/types/v1/common.go#L30-L33
-func DumpSource(image, dst string) func(ctx context.Context) error {
+func DumpSource(image string, dstFunc valueGetOnCall) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		dst := dstFunc()
+		if image == "" {
+			return fmt.Errorf("image source is empty, cannot dump to %s", dst)
+		}
 		cfg := NewConfig(
 			WithImageExtractor(v1.OCIImageExtractor{}),
 			WithLogger(internal.Log),

@@ -105,11 +105,15 @@ var BuildISOCmd = cli.Command{
 			CloudConfig: cloudConfig,
 		}
 
+		if c.State == "" {
+			c.State = "/tmp/auroraboot"
+		}
+
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
+			d.StepPrepDestination,
 			d.StepPrepNetbootDir,
 			d.StepPrepTmpRootDir,
-			d.StepPrepISODir,
 			d.StepCopyCloudConfig,
 			d.StepDumpSource,
 			d.StepGenISO,

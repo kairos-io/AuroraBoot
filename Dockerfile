@@ -55,9 +55,9 @@ RUN dnf in -y bc \
 
 FROM golang:1.24 AS with-swagger
 WORKDIR /app
+RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
-RUN go install github.com/swaggo/swag/cmd/swag@latest && \
-    swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+RUN swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
 
 FROM golang:1.24 AS without-swagger
 WORKDIR /app
@@ -69,14 +69,14 @@ FROM ${SWAGGER_STAGE} AS swagger
 FROM golang:1.24 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
-ADD go.mod .
-ADD go.sum .
-RUN go mod download
-ADD . .
 COPY --from=js /app/bundle.js ./internal/web/app/bundle.js
 COPY --from=js /app/output.css ./internal/web/app/output.css
 COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
 COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
+ADD go.mod .
+ADD go.sum .
+RUN go mod download
+ADD . .
 ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot

@@ -10,21 +10,15 @@ import (
 // This registers all steps for the top level Auroraboot command.
 func RegisterAll(d *Deployer) error {
 	for _, step := range []func() error{
+		d.StepPrepDestination,
 		d.StepPrepTmpRootDir,
 		d.StepPrepNetbootDir,
-		d.StepPrepISODir,
 		d.StepCopyCloudConfig,
 		d.StepDumpSource,
 		d.StepGenISO,
-		d.StepExtractNetboot,
-		//TODO: add Validate step
-		// Ops to download from releases
-		d.StepDownloadInitrd,
-		d.StepDownloadKernel,
-		d.StepDownloadSquashFS,
 		d.StepDownloadISO,
+		d.StepExtractNetboot,
 		// Ops to generate RAW disk images
-		d.StepExtractSquashFS,
 		d.StepGenRawDisk,
 		d.StepGenMBRRawDisk,
 		d.StepConvertGCE,

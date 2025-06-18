@@ -109,8 +109,10 @@ func NewConfig(opts ...GenericOptions) *agentconfig.Config {
 }
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
+func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		dst := dstFunc()
+		src := srcFunc()
 		tmp, err := os.MkdirTemp("", "geniso")
 		if err != nil {
 			return err
@@ -168,11 +170,12 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 	}
 }
 
-func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) error {
+func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		dst := dstFunc()
 		os.Chdir(dst)
-		injectedIso := isoFile + ".custom.iso"
-		os.Remove(injectedIso)
+		isoFile := isoFunc() // call it just on time so we get the latest iso file path
+		injectedIso := isoFile + ".temp.iso"
 
 		tmp, err := os.MkdirTemp("", "injectiso")
 		if err != nil {
@@ -199,7 +202,13 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 		if err != nil {
 			return err
 		}
-		internal.Log.Logger.Info().Msgf("Wrote '%s'", injectedIso)
+		os.Remove(isoFile)                    // remove the original iso file
+		err = os.Rename(injectedIso, isoFile) // rename the injected iso to the original name
+		if err != nil {
+			internal.Log.Logger.Error().Msgf("Failed renaming '%s' to '%s'. Error: %s", injectedIso, isoFile, err.Error())
+			return err
+		}
+		internal.Log.Logger.Info().Msgf("Wrote '%s' with injected cloud-config", isoFile)
 		return err
 	}
 }
