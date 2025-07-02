@@ -166,6 +166,11 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		if err != nil {
 			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
 		}
+
+		if err := cleanupTempFiles(dst); err != nil {
+			internal.Log.Logger.Error().Msgf("Failed cleaning up temporary files. Error: %s", err.Error())
+		}
+
 		return err
 	}
 }
@@ -750,4 +755,20 @@ func WithImageExtractor(extractor v1types.ImageExtractor) func(r *agentconfig.Co
 		r.ImageExtractor = extractor
 		return nil
 	}
+}
+
+func cleanupTempFiles(dst string) error {
+	if err := os.RemoveAll(filepath.Join(dst, "temp-rootfs")); err != nil {
+		return fmt.Errorf("cleanining up directory temp-rootfs: %w", err)
+	}
+
+	if err := os.RemoveAll(filepath.Join(dst, "netboot")); err != nil {
+		return fmt.Errorf("cleanining up directory netboot: %w", err)
+	}
+
+	if err := os.RemoveAll(filepath.Join(dst, "config.yaml")); err != nil {
+		return fmt.Errorf("cleanining up config.yaml: %w", err)
+	}
+
+	return nil
 }
