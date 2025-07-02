@@ -758,17 +758,12 @@ func WithImageExtractor(extractor v1types.ImageExtractor) func(r *agentconfig.Co
 }
 
 func cleanupTempFiles(dst string) error {
-	if err := os.RemoveAll(filepath.Join(dst, "temp-rootfs")); err != nil {
-		return fmt.Errorf("cleanining up directory temp-rootfs: %w", err)
+	paths := []string{"temp-rootfs", "netboot", "config.yaml"}
+	for _, path := range paths {
+		fullPath := filepath.Join(dst, path)
+		if err := os.RemoveAll(fullPath); err != nil {
+			return fmt.Errorf("cleaning up %s: %w", path, err)
+		}
 	}
-
-	if err := os.RemoveAll(filepath.Join(dst, "netboot")); err != nil {
-		return fmt.Errorf("cleanining up directory netboot: %w", err)
-	}
-
-	if err := os.RemoveAll(filepath.Join(dst, "config.yaml")); err != nil {
-		return fmt.Errorf("cleanining up config.yaml: %w", err)
-	}
-
 	return nil
 }
