@@ -18,12 +18,20 @@ import (
 // CleanTmpDirs removes the temp rootfs and netboot directories when finished to not leave things around
 func (d *Deployer) CleanTmpDirs() error {
 	var err *multierror.Error
+	internal.Log.Logger.Debug().Str("tmpRootFs", d.tmpRootFs()).Msg("Cleaning up temp rootfs directory")
 	err = multierror.Append(err, os.RemoveAll(d.tmpRootFs()))
 	if err.ErrorOrNil() != nil {
 		internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
 	}
 
+	internal.Log.Logger.Debug().Str("dstNetboot", d.dstNetboot()).Msg("Cleaning up temp netboot directory")
 	err = multierror.Append(err, os.RemoveAll(d.dstNetboot()))
+
+	if _, err2 := os.Stat(d.cloudConfigPath()); err2 == nil {
+		internal.Log.Logger.Debug().Str("config", d.cloudConfigPath()).Msg("Cleaning up config.yaml")
+		err = multierror.Append(err, os.RemoveAll(d.cloudConfigPath()))
+	}
+
 	return err.ErrorOrNil()
 }
 
@@ -31,7 +39,7 @@ func (d *Deployer) CleanTmpDirs() error {
 // This is the first step always executed in the deployer, it creates the destination directory in which other build steps will operate.
 func (d *Deployer) PrepDirs() error {
 	return d.Add(constants.OpPrepareDirs, herd.WithCallback(func(ctx context.Context) error {
-		internal.Log.Logger.Info().Str("destination", d.destination()).Msg("Preparing destination temporal directory")
+		internal.Log.Logger.Debug().Str("destination", d.destination()).Msg("Preparing destination temporal directory")
 		if d.destination() == "" {
 			internal.Log.Logger.Error().Msg("Destination directory is not set, cannot prepare ISO directory")
 			return fmt.Errorf("destination directory is not set")
@@ -41,7 +49,7 @@ func (d *Deployer) PrepDirs() error {
 			internal.Log.Logger.Error().Err(err).Msg("Failed to create destination directory")
 			return err
 		}
-		internal.Log.Logger.Info().Str("destination", d.tmpRootFs()).Msg("Preparing temp rootfs directory")
+		internal.Log.Logger.Debug().Str("destination", d.tmpRootFs()).Msg("Preparing temp rootfs directory")
 		err = os.RemoveAll(d.tmpRootFs())
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
@@ -53,7 +61,7 @@ func (d *Deployer) PrepDirs() error {
 			return err
 		}
 
-		internal.Log.Logger.Info().Str("destination", d.dstNetboot()).Msg("Preparing temp netboot directory")
+		internal.Log.Logger.Debug().Str("destination", d.dstNetboot()).Msg("Preparing temp netboot directory")
 		err = os.RemoveAll(d.dstNetboot())
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
