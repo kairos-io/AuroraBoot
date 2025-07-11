@@ -3,6 +3,7 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"os"
@@ -105,11 +106,13 @@ var BuildISOCmd = cli.Command{
 			CloudConfig: cloudConfig,
 		}
 
+		if c.State == "" {
+			c.State = "/tmp/auroraboot"
+		}
+
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
-			d.StepPrepNetbootDir,
-			d.StepPrepTmpRootDir,
-			d.StepPrepISODir,
+			d.PrepDirs,
 			d.StepCopyCloudConfig,
 			d.StepDumpSource,
 			d.StepGenISO,
@@ -123,7 +126,15 @@ var BuildISOCmd = cli.Command{
 			return err
 		}
 
-		return d.CollectErrors()
+		err = d.CollectErrors()
+
+		errCleanup := d.CleanTmpDirs()
+		if errCleanup != nil {
+			// Append the cleanup error to the main errors if any
+			err = multierror.Append(err, errCleanup)
+		}
+
+		return err
 	},
 }
 

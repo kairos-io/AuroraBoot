@@ -86,6 +86,10 @@ func GetApp(version string) *cli.App {
 				return err
 			}
 
+			if d.Config.State == "" {
+				d.Config.State = "/tmp/auroraboot"
+			}
+
 			d.WriteDag()
 			if err := d.Run(ctx.Context); err != nil {
 				return err
@@ -93,12 +97,15 @@ func GetApp(version string) *cli.App {
 
 			err = d.CollectErrors()
 			errCleanup := d.CleanTmpDirs()
-			if err != nil {
-				internal.Log.Logger.Error().Err(err).Msg("Failed to clean up tmp root dir")
+			if errCleanup != nil {
 				// Append the cleanup error to the main errors if any
 				err = multierror.Append(err, errCleanup)
 			}
 
+			// If there are errors, write the DAG to help debugging
+			if err != nil {
+				d.WriteDag()
+			}
 			return err
 
 		},

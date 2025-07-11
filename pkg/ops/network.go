@@ -17,9 +17,9 @@ const (
 )
 
 // ServeArtifacts serve local artifacts as standard http server
-func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
+func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-
+		dir := dirFunc()
 		fs := http.FileServer(http.Dir(dir))
 		http.Handle("/", fs)
 		serverOne := &http.Server{
@@ -36,10 +36,14 @@ func ServeArtifacts(listenAddr, dir string) func(ctx context.Context) error {
 }
 
 // DownloadArtifact downloads artifacts remotely (e.g. http(s), ...)
-func DownloadArtifact(url, dst string) func(ctx context.Context) error {
+func DownloadArtifact(url string, isoFunc valueGetOnCall) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		// https://github.com/kairos-io/kairos/releases/download/v1.5.0/kairos-alpine-ubuntu-v1.5.0.iso
+		dst := isoFunc()
 		_, err := download(ctx, url, dst)
+		if err == nil {
+			internal.Log.Logger.Info().Str("artifact", url).Str("destination", dst).Msg("Artifact downloaded successfully")
+		}
 		return err
 	}
 }
@@ -67,7 +71,7 @@ Loop:
 			defer os.RemoveAll(dstFile)
 			return dst, fmt.Errorf("context canceled")
 		case <-t.C:
-			internal.Log.Logger.Printf("%s: transferred %v / %v bytes (%.2f%%)",
+			internal.Log.Printf("%s: transferred %v / %v bytes (%.2f%%)",
 				url,
 				resp.BytesComplete(),
 				resp.Size(),
@@ -75,6 +79,7 @@ Loop:
 
 		case <-resp.Done:
 			// download is complete
+			fmt.Printf("transferred %v / %v bytes (%.2f%%)    \n", resp.BytesComplete(), resp.Size(), 100*resp.Progress())
 			break Loop
 		}
 	}

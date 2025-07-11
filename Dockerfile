@@ -1,16 +1,17 @@
-ARG FEDORA_VERSION=40
+ARG FEDORA_VERSION=42
 ARG LUET_VERSION=0.36.2
+ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM node:23 AS js
-WORKDIR /work
+WORKDIR /app
 RUN rm -rf node_modules package-lock.json 
-ADD ./internal/web/app/package.json .
-ADD ./internal/web/app/package-lock.json .
-ADD ./internal/web/app/index.js .
-ADD ./internal/web/app/accordion.js .
-RUN npm ci && npx esbuild index.js --bundle --outfile=bundle.js
+COPY internal/web/app .
+RUN npm install tailwindcss @tailwindcss/cli --save-dev
+RUN npm install
+RUN npx esbuild ./index.js --bundle --outfile=bundle.js
+RUN npx tailwindcss -i ./assets/css/tailwind.css -o output.css --minify
 
 FROM fedora:$FEDORA_VERSION AS base
 ARG TARGETARCH
@@ -23,6 +24,7 @@ ENV CONTAINERD_DISABLE_PIGZ=1
 RUN dnf -y update
 RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
+# opensc is needed for the pkcs11 module to work
 RUN dnf in -y bc \
               binutils \
               containerd.io \
@@ -41,6 +43,7 @@ RUN dnf in -y bc \
               lvm2 \
               mtools \
               openssl \
+              opensc \
               parted \
               rsync \
               sbsigntools \
@@ -52,23 +55,30 @@ RUN dnf in -y bc \
               zstd
 
 
-FROM golang:1.24 AS swagger
+FROM golang:1.24 AS with-swagger
 WORKDIR /app
+RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
-RUN go install github.com/swaggo/swag/cmd/swag@latest && \
-    swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+RUN swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+
+FROM golang:1.24 AS without-swagger
+WORKDIR /app
+RUN mkdir -p internal/web/app
+RUN touch internal/web/app/swagger.json internal/web/app/redoc.html
+
+FROM ${SWAGGER_STAGE} AS swagger
 
 FROM golang:1.24 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
+COPY --from=js /app/bundle.js ./internal/web/app/bundle.js
+COPY --from=js /app/output.css ./internal/web/app/output.css
+COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
+COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-COPY --from=js /work/bundle.js ./internal/web/app/bundle.js
-COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
-COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
-ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 

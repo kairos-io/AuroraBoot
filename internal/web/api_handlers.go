@@ -469,18 +469,31 @@ func HandleGetArtifacts(c echo.Context) error {
 		// Map file extensions to friendly names
 		name := file.Name()
 		friendlyName := name
+		description := ""
 		switch filepath.Ext(name) {
 		case ".tar":
-			friendlyName = "Container image"
+			friendlyName = "OCI image"
+			description = "(.tar) For use with Docker or other OCI compatible container runtimes"
 		case ".iso":
 			friendlyName = "ISO image"
+			description = "For generic installations (USB, VM, bare metal)"
 		case ".raw":
-			friendlyName = "Raw disk image"
+			friendlyName = "RAW image"
+			description = "For AWS, Raspberry Pi, and any platform that supports RAW images"
+		case ".vhd":
+			friendlyName = "VHD image"
+			description = "For use with Microsoft Azure"
+		case ".gz":
+			if len(name) > 11 && name[len(name)-11:] == ".gce.tar.gz" {
+				friendlyName = "GCE image"
+				description = "(.tar.gz) For use with Google Compute Engine"
+			}
 		}
 
 		artifacts = append(artifacts, map[string]string{
-			"name": friendlyName,
-			"url":  name,
+			"name":        friendlyName,
+			"description": description,
+			"url":         name,
 		})
 	}
 
