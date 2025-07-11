@@ -39,16 +39,10 @@ var BuildUKICmd = cli.Command{
 		"SourceImage - should be provided as uri in following format <sourceType>:<sourceName>\n" +
 		"    * <sourceType> - might be [\"dir\", \"file\", \"oci\", \"docker\"], as default is \"docker\"\n" +
 		"    * <sourceName> - is path to file or directory, image name with tag version\n" +
-		"The following files are expected inside the keys directory:\n" +
-		"    - DB.crt\n" +
-		"    - DB.der\n" +
-		"    - DB.key\n" +
-		"    - DB.auth\n" +
-		"    - KEK.der\n" +
+		"The following files are expected inside the public keys directory for SecureBoot auto enroll:\n" +
+		"    - db.auth\n" +
 		"    - KEK.auth\n" +
-		"    - PK.der\n" +
-		"    - PK.auth\n" +
-		"    - tpm2-pcr-private.pem\n",
+		"    - PK.auth\n",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:    "name",
@@ -109,9 +103,23 @@ var BuildUKICmd = cli.Command{
 			Usage:   "Add one extra efi file with the default+provided cmdline. The syntax is '--single-efi-cmdline \"My Entry: cmdline,options,here\"'. The boot entry name is the text under which it appears in systemd-boot menu.",
 		},
 		&cli.StringFlag{
-			Name:     "keys",
-			Aliases:  []string{"k"},
-			Usage:    "Directory with the signing keys",
+			Name:     "public-keys",
+			Usage:    "Directory with the public keys for auto enrolling them under Secure Boot",
+			Required: false,
+		},
+		&cli.StringFlag{
+			Name:     "tpm-pcr-private-key",
+			Usage:    "Private key for signing the EFI PCR policy, Can be a PKCS11 URI or a PEM file",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "sb-key",
+			Usage:    "Private key to sign the EFI files for SecureBoot",
+			Required: true,
+		},
+		&cli.StringFlag{
+			Name:     "sb-cert",
+			Usage:    "Certificate to sign the EFI files for SecureBoot",
 			Required: true,
 		},
 		&cli.StringFlag{
@@ -173,19 +181,47 @@ var BuildUKICmd = cli.Command{
 		}
 
 		// Check if the keys directory exists
-		keysDir := ctx.String("keys")
-		_, err := os.Stat(keysDir)
-		if err != nil {
-			return fmt.Errorf("keys directory does not exist: %s", keysDir)
-		}
-		// Check if the keys directory contains the required files
-		requiredFiles := []string{"db.der", "db.key", "db.auth", "KEK.der", "KEK.auth", "PK.der", "PK.auth", "tpm2-pcr-private.pem"}
-		for _, file := range requiredFiles {
-			_, err = os.Stat(filepath.Join(keysDir, file))
+		keysDir := ctx.String("public-keys")
+		if keysDir != "" {
+			_, err := os.Stat(keysDir)
 			if err != nil {
-				return fmt.Errorf("keys directory does not contain required file: %s", file)
+				return fmt.Errorf("keys directory does not exist: %s", keysDir)
+			}
+			// Check if the keys directory contains the required files
+			requiredFiles := []string{"db.auth", "KEK.auth", "PK.auth"}
+			// Check if they exists without caring about the uppercase/lowercase
+			for _, file := range requiredFiles {
+				_, err = os.Stat(filepath.Join(keysDir, file))
+				if err != nil {
+					return fmt.Errorf("keys directory does not contain required file: %s", file)
+				}
+			}
+		} else {
+			fmt.Println("Warning: public-keys directory is not set, Secure Boot auto enroll will not work. You can set it with --public-keys flag.")
+		}
+
+		// Check if the tpm-pcr-private-key is set
+		tpmPCRPrivateKey := ctx.String("tpm-pcr-private-key")
+		_, err := os.Stat(tpmPCRPrivateKey)
+		if err != nil {
+			return fmt.Errorf("tpm-pcr-private-key does not exist: %s", tpmPCRPrivateKey)
+		}
+
+		// Check if the sb-key and sb-cert are set
+		sbKey := ctx.String("sb-key")
+		// If its a file, check if it exists
+		if !strings.Contains(sbKey, "pkcs11") {
+			_, err = os.Stat(sbKey)
+			if err != nil {
+				return fmt.Errorf("sb-key does not exist: %s", sbKey)
 			}
 		}
+		sbCert := ctx.String("sb-cert")
+		_, err = os.Stat(sbCert)
+		if err != nil {
+			return fmt.Errorf("sb-cert does not exist: %s", sbCert)
+		}
+
 		return CheckRoot()
 	},
 	Action: func(ctx *cli.Context) error {
@@ -194,7 +230,7 @@ var BuildUKICmd = cli.Command{
 			return errors.New("no image provided")
 		}
 
-		logLevel := "warn"
+		logLevel := "info"
 		if ctx.Bool("debug") {
 			logLevel = "debug"
 		}
@@ -332,9 +368,9 @@ var BuildUKICmd = cli.Command{
 				Cmdline:       entry.Cmdline,
 				OsRelease:     filepath.Join(sourceDir, "etc/os-release"),
 				OutUKIPath:    entry.FileName + ".efi",
-				PCRKey:        filepath.Join(ctx.String("keys"), "tpm2-pcr-private.pem"),
-				SBKey:         filepath.Join(ctx.String("keys"), "db.key"),
-				SBCert:        filepath.Join(ctx.String("keys"), "db.pem"),
+				PCRKey:        ctx.String("tpm-pcr-private-key"),
+				SBKey:         ctx.String("sb-key"),
+				SBCert:        ctx.String("sb-cert"),
 				SdBootPath:    systemdBoot,
 				OutSdBootPath: outputSystemdBootEfi,
 				Splash:        ctx.String("splash"),
@@ -367,7 +403,7 @@ var BuildUKICmd = cli.Command{
 					return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
 				}
 			}
-			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePathIso, ctx.String("keys"), outputName, ctx.String("name"), entries, logger); err != nil {
+			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePathIso, ctx.String("public-keys"), outputName, ctx.String("name"), entries, logger); err != nil {
 				return err
 			}
 		case string(constants.ContainerOutput):
@@ -378,7 +414,7 @@ var BuildUKICmd = cli.Command{
 			}
 			defer os.RemoveAll(temp)
 			// First create the files
-			if err := createArtifact(sourceDir, temp, ctx.String("keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, temp, ctx.String("public-keys"), entries, logger); err != nil {
 				return err
 			}
 			// Then build the image
@@ -386,7 +422,7 @@ var BuildUKICmd = cli.Command{
 				return err
 			}
 		case string(constants.DefaultOutput):
-			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("public-keys"), entries, logger); err != nil {
 				return err
 			}
 		}
@@ -782,9 +818,6 @@ func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry) (map[strin
 		"loader/entries": {},
 		"loader/keys":    {},
 		"loader/keys/auto": {
-			filepath.Join(keysDir, "PK.der"),
-			filepath.Join(keysDir, "KEK.der"),
-			filepath.Join(keysDir, "db.der"),
 			filepath.Join(keysDir, "PK.auth"),
 			filepath.Join(keysDir, "KEK.auth"),
 			filepath.Join(keysDir, "db.auth")},
