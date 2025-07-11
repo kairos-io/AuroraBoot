@@ -89,7 +89,7 @@ func buildISO(auroraboot *Auroraboot, image, keysDir, resultDir, resultFile stri
 		"build-uki",
 		"--output-dir", resultDir,
 		"--public-keys", keysDir,
-		"--tpm-pcr-private-key", filepath.Join(keysDir, "tpm2-pcr-private.key"),
+		"--tpm-pcr-private-key", filepath.Join(keysDir, "tpm2-pcr-private.pem"),
 		"--sb-key", filepath.Join(keysDir, "db.key"),
 		"--sb-cert", filepath.Join(keysDir, "db.pem"),
 		"--output-type", "iso",
