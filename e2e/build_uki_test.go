@@ -85,7 +85,15 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 
 func buildISO(auroraboot *Auroraboot, image, keysDir, resultDir, resultFile string, additionalArgs ...string) string {
 	By(fmt.Sprintf("building the iso from %s", image))
-	args := []string{"build-uki", "--output-dir", resultDir, "-k", keysDir, "--output-type", "iso"}
+	args := []string{
+		"build-uki",
+		"--output-dir", resultDir,
+		"--public-keys", keysDir,
+		"--tpm-pcr-private-key", filepath.Join(keysDir, "tpm2-pcr-private.key"),
+		"--sb-key", filepath.Join(keysDir, "db.key"),
+		"--sb-cert", filepath.Join(keysDir, "db.pem"),
+		"--output-type", "iso",
+	}
 	args = append(args, additionalArgs...)
 	args = append(args, image)
 	out, err := auroraboot.Run(args...)
