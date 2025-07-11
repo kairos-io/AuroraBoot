@@ -664,6 +664,8 @@ github.com/kairos-io/kairos-sdk v0.9.4 h1:cN4IVEPzNFHbu2/cTyX5CDtL+IGJdw7wSNLTrW
 github.com/kairos-io/kairos-sdk v0.9.4/go.mod h1:O3si3aCkYsOyjjLF2jKKTKUYW9948WcB7xR0ivKbB6M=
 github.com/kairos-io/netboot v0.0.0-20250425084630-8e4ac64d0d9f h1:wlm+yzjuuasj1FOKxEcTVpA8CJi57Z7U2V2Y9GU0rDg=
 github.com/kairos-io/netboot v0.0.0-20250425084630-8e4ac64d0d9f/go.mod h1:mgbnaigmETHI/ht5HcCA0JZ0dWB17S/NHnqitw9YRpA=
+github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba h1:6mivQTeKV3aF14wyOfREenk8axO9DS1it1quCR4Hzb4=
+github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba/go.mod h1:gMg6AXfBz7FwiixrPbwTtz9FvhCuFQP7Qclo3EBQkxY=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767/go.mod h1:VOfm8h1NySetVlpHDSnbpCMsvCgYaU+YDn4XezUy2+4=
 github.com/kevinburke/ssh_config v0.0.0-20190725054713-01f96b0aa0cd/go.mod h1:CT57kijsi8u/K/BOFA39wgDQJ9CxiF4nAY/ojJ6r6mM=
