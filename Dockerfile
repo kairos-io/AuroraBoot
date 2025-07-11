@@ -77,7 +77,6 @@ ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
