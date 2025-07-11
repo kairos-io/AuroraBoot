@@ -34,13 +34,15 @@ require (
 	github.com/stretchr/testify v1.10.0
 	github.com/twpayne/go-vfs/v5 v5.0.4
 	github.com/u-root/u-root v0.14.0
-	github.com/urfave/cli/v2 v2.27.7
+	github.com/urfave/cli/v3 v3.3.8
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 	golang.org/x/mod v0.25.0
 	golang.org/x/net v0.41.0
 	golang.org/x/sys v0.33.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+require github.com/urfave/cli/v2 v2.27.7
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
