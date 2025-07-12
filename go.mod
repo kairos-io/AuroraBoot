@@ -10,7 +10,7 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/containerd/containerd/v2 v2.1.3
 	github.com/diskfs/go-diskfs v1.6.0
-	github.com/foxboron/go-uefi v0.0.0-20250207204325-69fb7dba244f
+	github.com/foxboron/go-uefi v0.0.0-20250625111927-a3183a1bfc84
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.20.6
