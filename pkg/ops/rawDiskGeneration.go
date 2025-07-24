@@ -103,7 +103,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	}
 
 	// Set the grubenv to boot into recovery
-	err = agentUtils.SetPersistentVariables(filepath.Join(tmpDirOem, "grubenv"), map[string]string{"next_entry": "recovery"}, r.config.Fs)
+	err = agentUtils.SetPersistentVariables(filepath.Join(tmpDirOem, "grubenv"), map[string]string{"next_entry": "recovery"}, r.config)
 	if err != nil {
 		return "", err
 	}

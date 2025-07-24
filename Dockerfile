@@ -1,4 +1,4 @@
-ARG FEDORA_VERSION=40
+ARG FEDORA_VERSION=42
 ARG LUET_VERSION=0.36.2
 ARG SWAGGER_STAGE=with-swagger
 
@@ -24,6 +24,7 @@ ENV CONTAINERD_DISABLE_PIGZ=1
 RUN dnf -y update
 RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
+# opensc is needed for the pkcs11 module to work
 RUN dnf in -y bc \
               binutils \
               containerd.io \
@@ -42,6 +43,7 @@ RUN dnf in -y bc \
               lvm2 \
               mtools \
               openssl \
+              opensc \
               parted \
               rsync \
               sbsigntools \
@@ -77,7 +79,6 @@ ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-ENV CGO_ENABLED=0
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
