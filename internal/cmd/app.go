@@ -44,17 +44,18 @@ func GetApp(version string) *cli.App {
 		Version: version,
 		Authors: []*cli.Author{{Name: "Kairos authors", Email: "members@kairos.io"}},
 		Usage:   "auroraboot",
-        Commands: []*cli.Command{
-            &BuildISOCmd,
-            &BuildUKICmd,
-            &GenKeyCmd,
-            &SysextCmd,
-            &NetBootCmd,
-            &StartPixieCmd,
-            &WebCMD,
-            &RedFishDeployCmd,
-            &WorkerCmd,
-        },
+		Commands: []*cli.Command{
+			&UkiPXECmd,
+			&BuildISOCmd,
+			&BuildUKICmd,
+			&GenKeyCmd,
+			&SysextCmd,
+			&NetBootCmd,
+      &StartPixieCmd,
+			&WebCMD,
+			&RedFishDeployCmd,
+			&WorkerCmd,
+		},
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
 				Name: "set",
@@ -86,6 +87,10 @@ func GetApp(version string) *cli.App {
 				return err
 			}
 
+			if d.Config.State == "" {
+				d.Config.State = "/tmp/auroraboot"
+			}
+
 			d.WriteDag()
 			if err := d.Run(ctx.Context); err != nil {
 				return err
@@ -93,12 +98,15 @@ func GetApp(version string) *cli.App {
 
 			err = d.CollectErrors()
 			errCleanup := d.CleanTmpDirs()
-			if err != nil {
-				internal.Log.Logger.Error().Err(err).Msg("Failed to clean up tmp root dir")
+			if errCleanup != nil {
 				// Append the cleanup error to the main errors if any
 				err = multierror.Append(err, errCleanup)
 			}
 
+			// If there are errors, write the DAG to help debugging
+			if err != nil {
+				d.WriteDag()
+			}
 			return err
 
 		},

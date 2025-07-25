@@ -38,8 +38,10 @@ func GenBiosRawDisk(src, dst string, size uint64, stateSize int64) func(ctx cont
 	}
 }
 
-func ExtractSquashFS(src, dst string) func(ctx context.Context) error {
+func ExtractSquashFS(srcFunc, dstFunc valueGetOnCall) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		src := srcFunc()
+		dst := dstFunc()
 		tmp, err := os.MkdirTemp("", "gendisk")
 		if err != nil {
 			return err

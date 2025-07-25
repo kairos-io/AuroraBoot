@@ -109,8 +109,10 @@ func NewConfig(opts ...GenericOptions) *agentconfig.Config {
 }
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
+func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
+		dst := dstFunc()
+		src := srcFunc()
 		tmp, err := os.MkdirTemp("", "geniso")
 		if err != nil {
 			return err
@@ -168,11 +170,10 @@ func GenISO(src, dst string, i schema.ISO) func(ctx context.Context) error {
 	}
 }
 
-func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) error {
+func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		os.Chdir(dst)
-		injectedIso := isoFile + ".custom.iso"
-		os.Remove(injectedIso)
+		dst := dstFunc()
+		isoFile := isoFunc() // call it just on time so we get the latest iso file path
 
 		tmp, err := os.MkdirTemp("", "injectiso")
 		if err != nil {
@@ -188,18 +189,44 @@ func InjectISO(dst, isoFile string, i schema.ISO) func(ctx context.Context) erro
 			}
 		}
 
-		internal.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
-		err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
-		if err != nil {
-			return err
+		// Check if we actually have a cloud config and its not empty so we dont do extra work for nothing
+		if _, err := os.Stat(filepath.Join(dst, "config.yaml")); err == nil {
+			f, err := os.ReadFile(filepath.Join(dst, "config.yaml"))
+			if err == nil && f != nil && len(f) > 0 {
+				currentCWD, err := os.Getwd()
+				if err != nil {
+					return fmt.Errorf("failed to get current working directory: %w", err)
+				}
+				// Go back to the original working directory after we are done
+				defer func() {
+					if err := os.Chdir(currentCWD); err != nil {
+						internal.Log.Logger.Error().Err(err).Msg("failed to change back to original working directory")
+					}
+				}()
+
+				// Change to the destination directory so we can run xorriso from there
+				err = os.Chdir(dst)
+				if err != nil {
+					return fmt.Errorf("failed to change to destination directory '%s': %w", dst, err)
+				}
+
+				internal.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
+				err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
+				if err != nil {
+					return err
+				}
+				out, err := sdkutils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s / -boot_image any replay", isoFile, isoFile, tmp))
+				internal.Log.Print(out)
+				if err != nil {
+					return err
+				}
+
+				internal.Log.Logger.Info().Msgf("Wrote '%s' with injected cloud-config", isoFile)
+			} else {
+				internal.Log.Logger.Warn().Msgf("No cloud config file found in '%s', skipping injection", filepath.Join(dst, "config.yaml"))
+			}
 		}
 
-		out, err := sdkutils.SH(fmt.Sprintf("xorriso -indev %s -outdev %s -map %s / -boot_image any replay", isoFile, injectedIso, tmp))
-		internal.Log.Print(out)
-		if err != nil {
-			return err
-		}
-		internal.Log.Logger.Info().Msgf("Wrote '%s'", injectedIso)
 		return err
 	}
 }
@@ -320,7 +347,12 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
+	if _, exist := os.Stat(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg)); os.IsNotExist(exist) {
+		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
+	} else {
+		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
+	}
+	return nil
 }
 
 func (b BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {

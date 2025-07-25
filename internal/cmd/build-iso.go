@@ -3,6 +3,9 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"github.com/hashicorp/go-multierror"
+	"github.com/kairos-io/AuroraBoot/internal"
+	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"os"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
@@ -50,9 +53,16 @@ var BuildISOCmd = cli.Command{
 			Name:  "overlay-iso",
 			Usage: "Path of the overlayed iso data",
 		},
+		&cli.StringFlag{
+			Name:    "loglevel",
+			Aliases: []string{"l"},
+			Usage:   "Set the log level",
+			Value:   "info",
+		},
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
+		internal.Log = sdkTypes.NewKairosLogger("aurora", ctx.String("loglevel"), false)
 		source := ctx.Args().Get(0)
 		if source == "" {
 			// Hack to prevent ShowAppHelpAndExit from checking only subcommands.
@@ -96,11 +106,13 @@ var BuildISOCmd = cli.Command{
 			CloudConfig: cloudConfig,
 		}
 
+		if c.State == "" {
+			c.State = "/tmp/auroraboot"
+		}
+
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		for _, step := range []func() error{
-			d.StepPrepNetbootDir,
-			d.StepPrepTmpRootDir,
-			d.StepPrepISODir,
+			d.PrepDirs,
 			d.StepCopyCloudConfig,
 			d.StepDumpSource,
 			d.StepGenISO,
@@ -114,7 +126,15 @@ var BuildISOCmd = cli.Command{
 			return err
 		}
 
-		return d.CollectErrors()
+		err = d.CollectErrors()
+
+		errCleanup := d.CleanTmpDirs()
+		if errCleanup != nil {
+			// Append the cleanup error to the main errors if any
+			err = multierror.Append(err, errCleanup)
+		}
+
+		return err
 	},
 }
 

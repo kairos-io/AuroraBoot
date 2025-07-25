@@ -6,25 +6,24 @@ import (
 	"os"
 )
 
+// Rework this
+
+// There should be an inputs part, that is the input for the artifact, be it download, generate whatever and that gives us a rootfs with the files on it
+// then a process part, which process the rootfs and add stuff, like clouud config
+// then an output part which transforms that rootfs into an artifact, be it an ISO, a disk image, netboot files, etc.
+// then a run part, which is the netboot server, the http server, etc.
+
 // RegisterAll registers the op dag based on the configuration and the artifact wanted.
 // This registers all steps for the top level Auroraboot command.
 func RegisterAll(d *Deployer) error {
 	for _, step := range []func() error{
-		d.StepPrepTmpRootDir,
-		d.StepPrepNetbootDir,
-		d.StepPrepISODir,
+		d.PrepDirs,
 		d.StepCopyCloudConfig,
 		d.StepDumpSource,
 		d.StepGenISO,
-		d.StepExtractNetboot,
-		//TODO: add Validate step
-		// Ops to download from releases
-		d.StepDownloadInitrd,
-		d.StepDownloadKernel,
-		d.StepDownloadSquashFS,
 		d.StepDownloadISO,
+		d.StepExtractNetboot,
 		// Ops to generate RAW disk images
-		d.StepExtractSquashFS,
 		d.StepGenRawDisk,
 		d.StepGenMBRRawDisk,
 		d.StepConvertGCE,

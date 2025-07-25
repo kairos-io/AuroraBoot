@@ -20,6 +20,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
@@ -241,6 +242,198 @@ var _ = Describe("Utils", Label("utils"), func() {
 			Expect(entries[0].Cmdline).To(MatchRegexp(defaultCmdline + "  key=value"))
 			Expect(entries[0].Title).To(ContainSubstring("Kairos (My Entry)"))
 			Expect(entries[0].FileName).To(Equal("My_Entry"))
+		})
+	})
+
+	Describe("NameFromRootfs", Label("NameFromRootfs"), func() {
+		var fs vfs.FS
+		var cleanup func()
+
+		BeforeEach(func() {
+			fs, cleanup, _ = vfst.NewTestFS(nil)
+			fs.Mkdir("/etc", constants.DirPerm)
+		})
+
+		AfterEach(func() {
+			cleanup()
+		})
+
+		It("correctly formats name for standard variant with k8s", func() {
+			// Create a temporary directory for our test
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			// Create the etc directory
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a test kairos-release file with k8s information
+			kairosRelease := `KAIROS_ARCH="amd64"
+KAIROS_BUG_REPORT_URL="https://github.com/kairos-io/kairos/issues"
+KAIROS_FAMILY="debian"
+KAIROS_FIPS="false"
+KAIROS_FLAVOR="ubuntu"
+KAIROS_FLAVOR_RELEASE="24.04"
+KAIROS_FRAMEWORK_VERSION="v2.22.0"
+KAIROS_HOME_URL="https://github.com/kairos-io/kairos"
+KAIROS_ID="kairos"
+KAIROS_ID_LIKE="kairos-standard-ubuntu-24.04"
+KAIROS_IMAGE_LABEL="24.04-standard-amd64-generic-v3.4.2"
+KAIROS_MODEL="generic"
+KAIROS_NAME="kairos-standard-ubuntu-24.04"
+KAIROS_REGISTRY_AND_ORG="quay.io/kairos"
+KAIROS_RELEASE="v3.4.2"
+KAIROS_SOFTWARE_VERSION="v1.32.4+k3s1"
+KAIROS_SOFTWARE_VERSION_PREFIX="k3s"
+KAIROS_TARGETARCH="amd64"
+KAIROS_VARIANT="standard"
+KAIROS_VERSION="v3.4.2"`
+
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/kairos-release"), []byte(kairosRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+
+			Expect(name).To(Equal("ubuntu-24.04-standard-amd64-generic-v3.4.2-k3sv1.32.4+k3s1"))
+		})
+
+		It("correctly formats name for core variant without k8s", func() {
+			// Create a temporary directory for our test
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			// Create the etc directory
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Create a test kairos-release file without k8s information
+			kairosRelease := `KAIROS_ARCH="amd64"
+KAIROS_BUG_REPORT_URL="https://github.com/kairos-io/kairos/issues"
+KAIROS_FAMILY="debian"
+KAIROS_FIPS="false"
+KAIROS_FLAVOR="ubuntu"
+KAIROS_FLAVOR_RELEASE="24.04"
+KAIROS_FRAMEWORK_VERSION="v2.22.0"
+KAIROS_HOME_URL="https://github.com/kairos-io/kairos"
+KAIROS_ID="kairos"
+KAIROS_ID_LIKE="kairos-core-ubuntu-24.04"
+KAIROS_IMAGE_LABEL="24.04-core-amd64-generic-v3.4.2"
+KAIROS_MODEL="generic"
+KAIROS_NAME="kairos-core-ubuntu-24.04"
+KAIROS_REGISTRY_AND_ORG="quay.io/kairos"
+KAIROS_RELEASE="v3.4.2"
+KAIROS_TARGETARCH="amd64"
+KAIROS_VARIANT="core"
+KAIROS_VERSION="v3.4.2"`
+
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/kairos-release"), []byte(kairosRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+			Expect(name).To(Equal("ubuntu-24.04-core-amd64-generic-v3.4.2"))
+		})
+
+		It("falls back to TARGETARCH if ARCH is missing", func() {
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			kairosRelease := `KAIROS_FLAVOR="ubuntu"
+KAIROS_FLAVOR_RELEASE="24.04"
+KAIROS_VARIANT="core"
+KAIROS_MODEL="generic"
+KAIROS_VERSION="v3.4.2"
+KAIROS_TARGETARCH="amd64"`
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/kairos-release"), []byte(kairosRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+			// ARCH is missing, should use TARGETARCH
+			Expect(name).To(ContainSubstring("amd64"))
+		})
+
+		It("falls back to non-k8s name if k8s provider is missing", func() {
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			kairosRelease := `KAIROS_FLAVOR="ubuntu"
+KAIROS_FLAVOR_RELEASE="24.04"
+KAIROS_VARIANT="standard"
+KAIROS_MODEL="generic"
+KAIROS_VERSION="v3.4.2"
+KAIROS_ARCH="amd64"`
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/kairos-release"), []byte(kairosRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+			// Should fall back to non-k8s name
+			Expect(name).To(Equal("ubuntu-24.04-standard-amd64-generic-v3.4.2"))
+		})
+
+		It("falls back to non-k8s name if k8s version is missing", func() {
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			kairosRelease := `KAIROS_FLAVOR="ubuntu"
+KAIROS_FLAVOR_RELEASE="24.04"
+KAIROS_VARIANT="standard"
+KAIROS_MODEL="generic"
+KAIROS_VERSION="v3.4.2"
+KAIROS_ARCH="amd64"
+KAIROS_SOFTWARE_VERSION_PREFIX="k3s"`
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/kairos-release"), []byte(kairosRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+			// Should fall back to non-k8s name
+			Expect(name).To(Equal("ubuntu-24.04-standard-amd64-generic-v3.4.2"))
+		})
+
+		It("falls back to os-release if kairos-release does not exist", func() {
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			osRelease := `FLAVOR=ubuntu
+IMAGE_LABEL=custom-label`
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/os-release"), []byte(osRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+			Expect(name).To(Equal("ubuntu-custom-label"))
+		})
+
+		It("handles missing fields gracefully", func() {
+			tmpDir, err := os.MkdirTemp("", "kairos-test-*")
+			Expect(err).ToNot(HaveOccurred())
+			defer os.RemoveAll(tmpDir)
+
+			err = os.MkdirAll(filepath.Join(tmpDir, "etc"), 0755)
+			Expect(err).ToNot(HaveOccurred())
+
+			kairosRelease := `KAIROS_FLAVOR="ubuntu"`
+			err = os.WriteFile(filepath.Join(tmpDir, "etc/kairos-release"), []byte(kairosRelease), 0644)
+			Expect(err).ToNot(HaveOccurred())
+
+			name := utils.NameFromRootfs(tmpDir)
+			// Should not panic, may return incomplete name
+			Expect(name).To(ContainSubstring("ubuntu"))
 		})
 	})
 })

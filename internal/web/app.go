@@ -133,6 +133,15 @@ func buildHandler(c echo.Context) error {
 		kubernetesVersion = ""
 	}
 
+	// Collect artifact selection from form
+	artifacts := jobstorage.Artifacts{
+		RawImage:      true, // Always true
+		ISO:           c.FormValue("artifact_iso") == "on",
+		ContainerFile: c.FormValue("artifact_tar") == "on",
+		GCP:           c.FormValue("artifact_gcp") == "on",
+		Azure:         c.FormValue("artifact_azure") == "on",
+	}
+
 	// Collect job data
 	job := jobstorage.BuildJob{
 		JobData: jobstorage.JobData{
@@ -143,6 +152,8 @@ func buildHandler(c echo.Context) error {
 			KubernetesVersion:      kubernetesVersion,
 			Image:                  image,
 			Version:                c.FormValue("version"),
+			Artifacts:              artifacts,
+			CloudConfig:            c.FormValue("cloud_config"),
 		},
 		Status:    jobstorage.JobStatusQueued,
 		CreatedAt: time.Now().Format(time.RFC3339),
@@ -198,7 +209,7 @@ func webSocketHandler(c echo.Context) error {
 
 		// Check if build.log exists
 		if _, err := os.Stat(buildLogPath); os.IsNotExist(err) {
-			websocket.Message.Send(ws, "Waiting for worker to pick up the job...")
+			websocket.Message.Send(ws, "Waiting for worker to pick up the job.\nIf you're running locally, make sure to pass the --create-worker to get a worker running.")
 
 			// Wait for the file to appear
 			for {

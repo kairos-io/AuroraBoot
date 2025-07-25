@@ -48,8 +48,13 @@ var NetBootCmd = cli.Command{
 			loglevel = "debug"
 		}
 		internal.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
-
-		f := ops.ExtractNetboot(iso, output, name)
+		isoGet := func() string {
+			return iso
+		}
+		outputGet := func() string {
+			return output
+		}
+		f := ops.ExtractNetboot(isoGet, outputGet, name)
 		return f(c.Context)
 	},
 }

@@ -18,6 +18,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
+	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 	"golang.org/x/net/websocket"
@@ -211,7 +212,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to prepare image: %v", err)
 	}
 
-	// Build container image
+	// Build container image (always needed for raw and ISO)
 	if _, err := writer.WriteStr("Building container image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
@@ -227,32 +228,74 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to create output directory: %v", err)
 	}
 
-	// Generate tarball
-	if _, err := writer.WriteStr("Generating tarball...\n"); err != nil {
-		return fmt.Errorf("failed to send log message: %v", err)
+	// If cloud config is provided, write it to a persistent file in the job output dir
+	var cloudConfigContent string
+	if jobData.CloudConfig != "" {
+		cloudConfigPath := filepath.Join(jobOutputDir, "cloud-config.yaml")
+		if err := os.WriteFile(cloudConfigPath, []byte(jobData.CloudConfig), 0644); err != nil {
+			return fmt.Errorf("failed to write cloud config file: %v", err)
+		}
+		cloudConfigContent = jobData.CloudConfig
+
+		defer os.Remove(filepath.Join(jobOutputDir, "cloud-config.yaml"))
 	}
 
-	tarballPath := filepath.Join(jobOutputDir, "image.tar")
-	if err := runBashProcessWithOutput(writer, saveOCI(tarballPath, imageName)); err != nil {
-		return fmt.Errorf("failed to save image: %v", err)
+	// Generate tarball if requested
+	var tarballPath string
+	if jobData.Artifacts.ContainerFile {
+		if _, err := writer.WriteStr("Generating tarball...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		tarballPath = filepath.Join(jobOutputDir, "image.tar")
+		if err := runBashProcessWithOutput(writer, saveOCI(tarballPath, imageName)); err != nil {
+			return fmt.Errorf("failed to save image: %v", err)
+		}
 	}
 
-	// Generate raw image
+	// Generate raw image (temporarily a requirement because we use it to name the artifact)
 	if _, err := writer.WriteStr("Generating raw image...\n"); err != nil {
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	if err := buildRawDisk(imageName, jobOutputDir, writer); err != nil {
+	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigContent); err != nil {
 		return fmt.Errorf("failed to generate raw image: %v", err)
 	}
 
-	// Generate ISO
-	if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
-		return fmt.Errorf("failed to send log message: %v", err)
+	// Find the raw image file first to get the base name
+	rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
+	if err != nil {
+		return fmt.Errorf("failed to find raw disk image: %v", err)
 	}
 
-	if err := buildISO(imageName, jobOutputDir, "custom-kairos", writer); err != nil {
-		return fmt.Errorf("failed to generate ISO: %v", err)
+	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
+
+	// Generate ISO if requested
+	if jobData.Artifacts.ISO {
+		if _, err := writer.WriteStr("Generating ISO...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		if err := buildISO(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
+			return fmt.Errorf("failed to generate ISO: %v", err)
+		}
+	}
+
+	fmt.Fprintf(writer, "Found file: %s\n", rawImage)
+
+	if jobData.Artifacts.GCP {
+		if _, err := writer.WriteStr("Generating GCP image...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		if err := buildGCP(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
+			return fmt.Errorf("failed to generate GCP image: %v", err)
+		}
+	}
+	if jobData.Artifacts.Azure {
+		if _, err := writer.WriteStr("Generating Azure image...\n"); err != nil {
+			return fmt.Errorf("failed to send log message: %v", err)
+		}
+		if err := buildAzure(imageName, jobOutputDir, baseName, writer, cloudConfigContent); err != nil {
+			return fmt.Errorf("failed to generate Azure image: %v", err)
+		}
 	}
 
 	// Upload artifacts to server
@@ -260,22 +303,36 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	// Upload each artifact
-	artifacts := []string{
-		"image.tar",
-		"custom-kairos.iso",
+	// Move and upload selected artifacts
+	artifacts := []string{}
+	if jobData.Artifacts.ContainerFile {
+		if err := os.Rename(filepath.Join(jobOutputDir, "image.tar"), filepath.Join(jobOutputDir, fmt.Sprintf("%s.tar", baseName))); err != nil {
+			return fmt.Errorf("failed to rename image.tar to %s.tar: %v", baseName, err)
+		}
+		artifacts = append(artifacts, fmt.Sprintf("%s.tar", baseName))
+	}
+	if jobData.Artifacts.ISO {
+		artifacts = append(artifacts, fmt.Sprintf("%s.iso", baseName))
 	}
 
-	// Find the raw image file
-	rawImage, err := searchFileByExtensionInDirectory(jobOutputDir, ".raw")
-	if err != nil {
-		return fmt.Errorf("failed to find raw disk image: %v", err)
+	fmt.Fprintf(writer, "Found file: %s\n", rawImage)
+	artifacts = append(artifacts, filepath.Base(rawImage)) // Always upload raw image
+	if jobData.Artifacts.GCP {
+		gceFile, _ := searchFileByExtensionInDirectory(jobOutputDir, ".gce.tar.gz")
+		if gceFile != "" {
+			artifacts = append(artifacts, filepath.Base(gceFile))
+		}
 	}
-	artifacts = append(artifacts, filepath.Base(rawImage))
+	if jobData.Artifacts.Azure {
+		vhdFile, _ := searchFileByExtensionInDirectory(jobOutputDir, ".vhd")
+		if vhdFile != "" {
+			artifacts = append(artifacts, filepath.Base(vhdFile))
+		}
+	}
 
 	for _, artifact := range artifacts {
-		artifactPath := filepath.Join(jobOutputDir, artifact)
-		if err := w.uploadArtifact(jobID, artifactPath, artifact); err != nil {
+		destPath := filepath.Join(jobOutputDir, artifact)
+		if err := w.uploadArtifact(jobID, destPath, artifact); err != nil {
 			return fmt.Errorf("failed to upload artifact %s: %v", artifact, err)
 		}
 	}
@@ -378,7 +435,7 @@ func (w *Worker) updateJobStatus(jobID string, status jobstorage.JobStatus) erro
 
 func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 	// Create a Dockerfile from a template
-	tmpl := `FROM quay.io/kairos/kairos-init:v0.4.3 AS kairos-init
+	tmpl := `FROM quay.io/kairos/kairos-init:v0.4.9 AS kairos-init
 
 FROM {{.Image}} AS base
 
@@ -422,94 +479,76 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	return cmd.Run()
 }
 
-func buildRawDisk(containerImage, outputDir string, writer io.Writer) error {
-	// Create the release artifact
+func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Create the config
 	config := schema.Config{
 		State: outputDir,
 		Disk: schema.Disk{
-			EFI: true, // This is what disk.raw=true maps to
+			EFI: true,
 		},
 		DisableHTTPServer: true,
 		DisableNetboot:    true,
 	}
 
-	// Create the deployer with proper initialization
-	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if cloudConfigContent != "" {
+		config.CloudConfig = cloudConfigContent
+	}
 
-	// Register all steps
-	err := deployer.RegisterAll(d)
-	if err != nil {
+	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
 	}
-
-	// Write the DAG for debugging
 	d.WriteDag()
-
-	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
 		fmt.Fprintf(writer, "Error running deployer: %v\n", err)
 		return fmt.Errorf("error running deployer: %v", err)
 	}
-
-	// Collect any errors
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
 	}
-
 	return nil
 }
 
-func buildISO(containerImage, outputDir, artifactName string, writer io.Writer) error {
-	// Create the release artifact
+func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
 
-	// Read the config using the shared config package
 	config, _, err := config.ReadConfig("", "", nil)
 	if err != nil {
 		fmt.Fprintf(writer, "Error reading config: %v\n", err)
 		return fmt.Errorf("error reading config: %v", err)
 	}
 
-	// Override the state and ISO name, and ensure netboot is disabled
 	config.State = outputDir
-	config.ISO.OverrideName = artifactName
+	config.ISO = schema.ISO{
+		OverrideName: artifactName,
+	}
 	config.DisableNetboot = true
 	config.DisableHTTPServer = true
+	if cloudConfigContent != "" {
+		config.CloudConfig = cloudConfigContent
+	}
 
-	// Create the deployer with proper initialization
 	d := deployer.NewDeployer(*config, artifact, herd.EnableInit)
-
-	// Register all steps
-	err = deployer.RegisterAll(d)
-	if err != nil {
+	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
 		return fmt.Errorf("error registering steps: %v", err)
 	}
-
-	// Write the DAG for debugging
 	d.WriteDag()
-
-	// Run the deployer
 	if err := d.Run(context.Background()); err != nil {
 		fmt.Fprintf(writer, "Error running deployer: %v\n", err)
 		return fmt.Errorf("error running deployer: %v", err)
 	}
-
-	// Collect any errors
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
 	}
-
 	return nil
 }
 
@@ -528,7 +567,7 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 
 	file := ""
 	for _, f := range filesInArtifactDir {
-		if filepath.Ext(f) == ext {
+		if strings.HasSuffix(f, ext) {
 			file = f
 			break
 		}
@@ -539,4 +578,94 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 	}
 
 	return file, nil
+}
+
+// --- Cloud image builders ---
+func buildAWS(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
+	// AWS uses the same as RAW
+	return buildRawDisk(containerImage, outputDir, writer, cloudConfigContent)
+}
+
+func buildGCP(containerImage, outputDir, artifactBaseName string, writer io.Writer, cloudConfigContent string) error {
+	// Find the raw image
+	rawImage, err := searchFileByExtensionInDirectory(outputDir, ".raw")
+	if err != nil {
+		return fmt.Errorf("failed to find raw disk image for GCP: %v", err)
+	}
+
+	// Copy the raw file to a temporary location
+	tmpRawFile := filepath.Join(outputDir, "tmp_"+filepath.Base(rawImage))
+	if err := copyFile(rawImage, tmpRawFile); err != nil {
+		return fmt.Errorf("failed to copy raw file for GCP: %v", err)
+	}
+	defer os.Remove(tmpRawFile) // Clean up the temporary file
+
+	// Convert to GCE format
+	if _, err := writer.Write([]byte("Converting to GCP image...\n")); err != nil {
+		return err
+	}
+	gceFile, err := ops.Raw2Gce(tmpRawFile)
+	if err != nil {
+		return fmt.Errorf("failed to convert to GCP image: %v", err)
+	}
+
+	// Rename the GCE file to remove tmp_ prefix and .raw from extension
+	baseName := strings.TrimSuffix(filepath.Base(gceFile)[4:], ".raw.gce.tar.gz") // Remove 'tmp_' prefix and '.raw.gce.tar.gz'
+	finalGceFile := filepath.Join(outputDir, baseName+".gce.tar.gz")
+	if err := os.Rename(gceFile, finalGceFile); err != nil {
+		return fmt.Errorf("failed to rename GCE file: %v", err)
+	}
+
+	return nil
+}
+
+func buildAzure(containerImage, outputDir, artifactBaseName string, writer io.Writer, cloudConfigContent string) error {
+	// Find the raw image
+	rawImage, err := searchFileByExtensionInDirectory(outputDir, ".raw")
+	if err != nil {
+		return fmt.Errorf("failed to find raw disk image for Azure: %v", err)
+	}
+
+	// Copy the raw file to a temporary location
+	tmpRawFile := filepath.Join(outputDir, "tmp_"+filepath.Base(rawImage))
+	if err := copyFile(rawImage, tmpRawFile); err != nil {
+		return fmt.Errorf("failed to copy raw file for Azure: %v", err)
+	}
+	defer os.Remove(tmpRawFile) // Clean up the temporary file
+
+	// Convert to VHD format
+	if _, err := writer.Write([]byte("Converting to Azure VHD...\n")); err != nil {
+		return err
+	}
+	vhdFile, err := ops.Raw2Azure(tmpRawFile)
+	if err != nil {
+		return fmt.Errorf("failed to convert to Azure VHD: %v", err)
+	}
+
+	// Rename the VHD file to remove tmp_ prefix and .raw from extension
+	baseName := strings.TrimSuffix(filepath.Base(vhdFile)[4:], ".raw.vhd") // Remove 'tmp_' prefix and '.raw.vhd'
+	finalVhdFile := filepath.Join(outputDir, baseName+".vhd")
+	if err := os.Rename(vhdFile, finalVhdFile); err != nil {
+		return fmt.Errorf("failed to rename VHD file: %v", err)
+	}
+
+	return nil
+}
+
+// Helper function to copy a file
+func copyFile(src, dst string) error {
+	sourceFile, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer sourceFile.Close()
+
+	destFile, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	defer destFile.Close()
+
+	_, err = io.Copy(destFile, sourceFile)
+	return err
 }
