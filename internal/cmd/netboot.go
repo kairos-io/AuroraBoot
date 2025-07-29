@@ -60,8 +60,8 @@ var NetBootCmd = cli.Command{
 }
 
 var StartPixieCmd = cli.Command{
-    Name:      "boot",
-    Usage:     "Start the Pixiecore netboot server",
+    Name:      "start-pixie",
+    Usage:     "Start the Pixiecore netboot server and custom server PXE Files.",
     ArgsUsage: "<cloud-config-file> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
     Flags: []cli.Flag{
         &cli.BoolFlag{
@@ -94,7 +94,16 @@ var StartPixieCmd = cli.Command{
         // Optionally parse NetBoot from flags here if desired
         nb := schema.NetBoot{} // Use defaults, or parse from CLI flags
 
-        f := ops.StartPixiecore(cloudConfigFile, squashFSfile, address, netbootPort, initrdFile, kernelFile, nb)
+        f := ops.StartPixiecore(
+            cloudConfigFile,
+            address,
+            netbootPort,
+            func() string { return squashFSfile }, // Wrap squashFSfile in a function
+            func() string { return initrdFile },    // Wrap initrdFile in a function
+            func() string { return kernelFile },     // Wrap kernelFile in a function
+            nb,
+        )
+
         return f(c.Context)
     },
 }
