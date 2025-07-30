@@ -347,7 +347,12 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
+	if _, exist := os.Stat(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg)); os.IsNotExist(exist) {
+		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
+	} else {
+		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
+	}
+	return nil
 }
 
 func (b BuildISOAction) prepareISORoot(isoDir string, rootDir string) error {
