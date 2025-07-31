@@ -1,2 +1,2 @@
-# .github/CODEOWNERS
+# This CODEOWNERS file is used to automatically assign maintainers as reviewers for all pull requests.
 * @kairos-io/maintainers
