@@ -52,7 +52,8 @@ jobs:
       - name: Build and push Docker image
         uses: docker/build-push-action@v6
         with:
-          push: true
+          push: false
+          load: true
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
@@ -60,6 +61,9 @@ jobs:
             quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
           labels: |
             quay.expires-after=6h
+      - name: Push
+        run: |
+          docker push quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
   e2e-tests:
     runs-on: kvm
     steps:
