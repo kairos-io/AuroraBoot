@@ -6,7 +6,6 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/kairos-sdk/types"
 	"github.com/urfave/cli/v2"
-	 "github.com/kairos-io/AuroraBoot/pkg/schema"
 )
 
 var NetBootCmd = cli.Command{
@@ -57,53 +56,4 @@ var NetBootCmd = cli.Command{
 		f := ops.ExtractNetboot(isoGet, outputGet, name)
 		return f(c.Context)
 	},
-}
-
-var StartPixieCmd = cli.Command{
-    Name:      "start-pixie",
-    Usage:     "Start the Pixiecore netboot server and custom server PXE Files.",
-    ArgsUsage: "<cloud-config-file> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
-    Flags: []cli.Flag{
-        &cli.BoolFlag{
-            Name:  "debug",
-            Usage: "Enable debug logging",
-        },
-        // Add more flags for optional NetBoot struct fields as needed
-    },
-    Action: func(c *cli.Context) error {
-        cloudConfigFile := c.Args().Get(0)
-        squashFSfile := c.Args().Get(1)
-        address := c.Args().Get(2)
-        netbootPort := c.Args().Get(3)
-        initrdFile := c.Args().Get(4)
-        kernelFile := c.Args().Get(5)
-
-        // Simple argument validation
-        if cloudConfigFile == "" || squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
-            cli.ShowCommandHelp(c, c.Command.Name)
-            fmt.Println("")
-            return fmt.Errorf("all arguments are required")
-        }
-
-        loglevel := "info"
-        if c.Bool("debug") {
-            loglevel = "debug"
-        }
-        internal.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
-
-        // Optionally parse NetBoot from flags here if desired
-        nb := schema.NetBoot{} // Use defaults, or parse from CLI flags
-
-        f := ops.StartPixiecore(
-            cloudConfigFile,
-            address,
-            netbootPort,
-            func() string { return squashFSfile }, // Wrap squashFSfile in a function
-            func() string { return initrdFile },    // Wrap initrdFile in a function
-            func() string { return kernelFile },     // Wrap kernelFile in a function
-            nb,
-        )
-
-        return f(c.Context)
-    },
 }
