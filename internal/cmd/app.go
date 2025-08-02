@@ -51,6 +51,7 @@ func GetApp(version string) *cli.App {
 			&GenKeyCmd,
 			&SysextCmd,
 			&NetBootCmd,
+			&StartPixieCmd,
 			&WebCMD,
 			&RedFishDeployCmd,
 			&WorkerCmd,
