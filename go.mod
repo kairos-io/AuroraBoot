@@ -41,7 +41,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/urfave/cli/v2 v2.27.7
+require (
+	github.com/chasefleming/elem-go v0.31.0
+	github.com/urfave/cli/v2 v2.27.7
+)
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect

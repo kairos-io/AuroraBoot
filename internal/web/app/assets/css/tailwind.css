@@ -1,2 +1,49 @@
 @import "tailwindcss";
 @import "flowbite/src/themes/default";
+
+/* Custom styles for htmx form */
+.form-container {
+    @apply w-full p-6 space-y-8 bg-white rounded-lg shadow-xl dark:bg-gray-800;
+}
+
+.form-header {
+    @apply flex items-center justify-between mb-6;
+}
+
+.form-header h3 {
+    @apply text-lg font-semibold text-gray-900 dark:text-white;
+}
+
+.htmx-indicator {
+    @apply flex items-center space-x-2 text-sm text-gray-500 dark:text-gray-400;
+}
+
+.htmx-indicator .spinner {
+    @apply w-4 h-4 animate-spin;
+}
+
+.form-loading {
+    @apply relative;
+}
+
+/* Accordion styles */
+.accordion-section {
+    @apply mb-4;
+}
+
+/* Ensure proper spacing and styling for the generated form */
+#build-form {
+    @apply space-y-6;
+}
+
+#build-form .accordion-section {
+    @apply border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden;
+}
+
+#build-form .accordion-section:first-child {
+    @apply rounded-t-xl;
+}
+
+#build-form .accordion-section:last-child {
+    @apply rounded-b-xl;
+}

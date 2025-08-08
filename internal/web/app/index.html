@@ -216,6 +216,19 @@
               build process will create both an ISO and a raw disk image for
               your chosen configuration.
             </p>
+            <div class="form-container">
+                <div class="form-header">
+                    <h3>Build Configuration</h3>
+                    <div class="htmx-indicator">
+                        <span class="spinner"></span>
+                        <span>Updating...</span>
+                    </div>
+                </div>
+                <div class="form-loading">
+                    {{.formHTML}}
+                </div>
+            </div>
+
             <form
               id="process-form"
               class="mt-8 space-y-6"

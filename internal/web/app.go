@@ -3,6 +3,7 @@ package web
 import (
 	"embed"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"net/http"
@@ -56,6 +57,35 @@ func App(config AppConfig) error {
 	os.MkdirAll(config.OutDir, os.ModePerm)
 	os.MkdirAll(config.BuildsDir, os.ModePerm)
 
+	// Handle main page with template processing
+	e.GET("/", func(c echo.Context) error {
+		// Create initial form data - empty to use defaults
+		initialFormData := map[string]string{}
+
+		// Generate initial form HTML
+		buildForm := NewBuildForm(initialFormData)
+		formHTML := buildForm.Render()
+
+		// Read the template file
+		tmplContent, err := staticFiles.ReadFile("app/index.html")
+		if err != nil {
+			return err
+		}
+
+		// Parse and execute template
+		tmpl, err := template.New("index").Parse(string(tmplContent))
+		if err != nil {
+			return err
+		}
+
+		data := map[string]interface{}{
+			"formHTML": template.HTML(formHTML),
+		}
+
+		return tmpl.Execute(c.Response().Writer, data)
+	})
+
+	// Serve other static files
 	assetHandler := http.FileServer(getFileSystem(false))
 	e.GET("/*", echo.WrapHandler(assetHandler))
 
@@ -79,6 +109,47 @@ func App(config AppConfig) error {
 	// Serve static artifact files
 	e.Static("/artifacts", config.OutDir)
 	e.Static("/builds", config.BuildsDir)
+
+	e.POST("/changed-option", func(c echo.Context) error {
+		// Parse all form fields
+		formData := make(map[string]string)
+		if err := c.Request().ParseForm(); err != nil {
+			return err
+		}
+
+		// Get all form values from URL-encoded form data
+		for key, values := range c.Request().Form {
+			if len(values) > 0 {
+				formData[key] = values[0]
+			}
+		}
+
+		// Handle missing checkbox fields - if they're not in the form data, they're unchecked
+		// This is important for checkboxes since unchecked checkboxes don't send any data
+		checkboxFields := []string{"artifact_raw", "artifact_iso", "artifact_tar"}
+		for _, field := range checkboxFields {
+			if _, exists := formData[field]; !exists {
+				formData[field] = "" // Explicitly set to empty string for unchecked checkboxes
+			}
+		}
+
+		// Get the changed field from HTMX args
+		changedField := c.FormValue("changed")
+
+		// Generate form HTML using BuildForm
+		buildForm := NewBuildForm(formData)
+
+		// Adapt the form based on the changed field
+		if changedField != "" {
+			buildForm.AdaptTo(changedField)
+		}
+
+		fmt.Printf("Form data: %+v\n", buildForm)
+		formHTML := buildForm.Render()
+
+		// Return the generated HTML directly
+		return c.HTML(http.StatusOK, formHTML)
+	})
 
 	e.Logger.Fatal(e.Start(config.ListenAddr))
 
