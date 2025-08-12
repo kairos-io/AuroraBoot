@@ -171,7 +171,8 @@ export function createAccordionView() {
             if (this.openSections.includes(sectionName)) {
                 this.openSections = this.openSections.filter(s => s !== sectionName);
             } else {
-                this.openSections.push(sectionName);
+                // Close all other sections and open this one
+                this.openSections = [sectionName];
             }
         },
 
@@ -222,11 +223,6 @@ export function createAccordionView() {
         handleArchitectureChange() {
             // Call the parent method
             buildForm.handleArchitectureChange.call(this);
-            
-            // Auto-open model section when architecture changes
-            if (!this.openSections.includes('model')) {
-                this.openSections.push('model');
-            }
         },
 
         handleVariantChange() {
