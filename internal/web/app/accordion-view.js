@@ -188,6 +188,10 @@ export function createAccordionView() {
             return this.formData[section.conditional.dependsOn] === section.conditional.showWhen;
         },
 
+        get visibleSections() {
+            return this.sections.filter(s => this.shouldShowSection(s));
+        },
+
         getSelectedValue(section) {
             if (section.getSelectedLabel) {
                 return this[section.getSelectedLabel]();
