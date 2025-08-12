@@ -33,10 +33,10 @@ export function createBuildForm() {
 
         // Available models with their compatible architectures
         models: [
-            { value: 'generic', label: 'Generic', archs: ['amd64', 'arm64'], description: 'For generic boards and virtualization.' },
-            { value: 'rpi3', label: 'Raspberry Pi 3', archs: ['arm64'], description: 'For Raspberry Pi 3 boards' },
-            { value: 'rpi4', label: 'Raspberry Pi 4', archs: ['arm64'], description: 'For Raspberry Pi 4 boards' },
-            { value: 'nvidia-agx-orin', label: 'Nvidia AGX Orin', archs: ['arm64'], description: 'For Nvidia AGX Orin boards.' }
+            { value: 'generic', label: 'Generic', icon: 'assets/img/cd.svg', archs: ['amd64', 'arm64'], description: 'For generic boards and virtualization.' },
+            { value: 'rpi3', label: 'Raspberry Pi 3', icon: 'assets/img/raspberry-pi.svg', archs: ['arm64'], description: 'For Raspberry Pi 3 boards' },
+            { value: 'rpi4', label: 'Raspberry Pi 4', icon: 'assets/img/raspberry-pi.svg', archs: ['arm64'], description: 'For Raspberry Pi 4 boards' },
+            { value: 'nvidia-agx-orin', label: 'Nvidia AGX Orin', icon: 'assets/img/nvidia.svg', archs: ['arm64'], description: 'For Nvidia AGX Orin boards.' }
         ],
 
         // Available architectures
@@ -47,8 +47,8 @@ export function createBuildForm() {
 
         // Available variants
         variants: [
-            { value: 'core', label: 'Core', description: 'Immutable, A/B Upgrades and cloud-init based configuration.' },
-            { value: 'standard', label: 'Standard', description: 'Everything in Core plus Kubernetes, K9s and EdgeVPN included.' }
+            { value: 'core', label: 'Core', icon: 'assets/img/kairos-core.svg', description: 'Immutable, A/B Upgrades and cloud-init based configuration.' },
+            { value: 'standard', label: 'Standard', icon: 'assets/img/kairos-standard.svg', description: 'Everything in Core plus Kubernetes, K9s and EdgeVPN included.' }
         ],
 
         // Available Kubernetes distributions
@@ -113,9 +113,19 @@ export function createBuildForm() {
             return selected?.label || 'Not selected';
         },
 
+        getSelectedModelIcon() {
+            const selected = this.models.find(m => m.value === this.formData.model);
+            return selected?.icon;
+        },
+
         getSelectedArchitectureLabel() {
             const selected = this.architectures.find(a => a.value === this.formData.architecture);
             return selected?.label || 'Not selected';
+        },
+
+        getSelectedArchitectureIcon() {
+            const selected = this.architectures.find(a => a.value === this.formData.architecture);
+            return selected?.icon;
         },
 
         getSelectedVariantLabel() {
@@ -123,9 +133,19 @@ export function createBuildForm() {
             return selected?.label || 'Not selected';
         },
 
+        getSelectedVariantIcon() {
+            const selected = this.variants.find(v => v.value === this.formData.variant);
+            return selected?.icon;
+        },
+
         getSelectedK8sLabel() {
             const selected = this.kubernetesDistributions.find(k => k.value === this.formData.kubernetes_distribution);
             return selected?.label || 'Not selected';
+        },
+
+        getSelectedK8sIcon() {
+            const selected = this.kubernetesDistributions.find(k => k.value === this.formData.kubernetes_distribution);
+            return selected?.icon;
         },
 
         getK8sReleaseLabel() {
