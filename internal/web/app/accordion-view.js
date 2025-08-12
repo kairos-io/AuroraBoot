@@ -39,7 +39,8 @@ export function createAccordionView() {
                 gridCols: 'md:grid-cols-2',
                 showIcon: true,
                 onChange: 'handleArchitectureChange',
-                getSelectedLabel: 'getSelectedArchitectureLabel'
+                getSelectedLabel: 'getSelectedArchitectureLabel',
+                getSelectedIcon: 'getSelectedArchitectureIcon'
             },
             {
                 id: 'model',
@@ -56,7 +57,8 @@ export function createAccordionView() {
                     title: 'What is a model?',
                     content: 'Depending on the architecture you choose, you\'ll be able to select from different models available under that architecture. If you\'re not targeting a specific board like a Raspberry Pi and instead plan to install on generic hardware or a virtual machine, select Generic.'
                 },
-                getSelectedLabel: 'getSelectedModelLabel'
+                getSelectedLabel: 'getSelectedModelLabel',
+                getSelectedIcon: 'getSelectedModelIcon'
             },
             {
                 id: 'variant',
@@ -68,7 +70,8 @@ export function createAccordionView() {
                 showIcon: true,
                 showDescription: true,
                 onChange: 'handleVariantChange',
-                getSelectedLabel: 'getSelectedVariantLabel'
+                getSelectedLabel: 'getSelectedVariantLabel',
+                getSelectedIcon: 'getSelectedVariantIcon'
             },
             {
                 id: 'kubernetes',
@@ -91,7 +94,8 @@ export function createAccordionView() {
                         text: 'Read more'
                     }
                 },
-                getSelectedLabel: 'getSelectedK8sLabel'
+                getSelectedLabel: 'getSelectedK8sLabel',
+                getSelectedIcon: 'getSelectedK8sIcon'
             },
             {
                 id: 'kubernetes-release',
