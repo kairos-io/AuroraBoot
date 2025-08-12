@@ -12,6 +12,13 @@ Alpine.data('createAccordionView', createAccordionView);
 window.Alpine = Alpine;
 Alpine.start();
 
+// Initialize Flowbite components after Alpine.js starts
+Alpine.nextTick(() => {
+  if (typeof window.initFlowbite === 'function') {
+    window.initFlowbite();
+  }
+});
+
 document.addEventListener('DOMContentLoaded', () => {
   // Alpine.js now handles all the form logic, so we only need to keep the modal and submission logic
   

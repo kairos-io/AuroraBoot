@@ -48,7 +48,7 @@ export function createAccordionView() {
                 type: 'radio-grid',
                 dataKey: 'getCompatibleModels',
                 formField: 'model',
-                gridCols: 'md:grid-cols-1',
+                gridCols: 'md:grid-cols-2',
                 showIcon: true,
                 showDescription: true,
                 customIcons: true, // Special handling for model icons
@@ -174,6 +174,13 @@ export function createAccordionView() {
                 // Close all other sections and open this one
                 this.openSections = [sectionName];
             }
+
+            // Reinitialize Flowbite components (including popovers) after DOM changes
+            this.$nextTick(() => {
+                if (typeof window.initFlowbite === 'function') {
+                    window.initFlowbite();
+                }
+            });
         },
 
         isSectionOpen(sectionName) {
@@ -241,6 +248,13 @@ export function createAccordionView() {
                 this.openSections = this.openSections.filter(s => s !== 'kubernetes');
                 this.openSections = this.openSections.filter(s => s !== 'kubernetes-release');
             }
+
+            // Reinitialize Flowbite components after changing section visibility
+            this.$nextTick(() => {
+                if (typeof window.initFlowbite === 'function') {
+                    window.initFlowbite();
+                }
+            });
         },
 
         // Form validation with accordion behavior
