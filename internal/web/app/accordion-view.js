@@ -162,7 +162,9 @@ export function createAccordionView() {
                 gridCols: 'md:grid-cols-3',
                 showIcon: true,
                 showDescription: true,
-                customDisplay: true // Special handling for artifacts display
+                customDisplay: true, // Special handling for artifacts display
+                getSelectedLabel: 'getArtifactsLabel',
+                getSelectedIcons: 'getSelectedArtifactIcons' // Multiple icons for artifacts
             }
         ],
         
@@ -216,6 +218,13 @@ export function createAccordionView() {
                 return this[section.getSelectedIcon]();
             }
             return null;
+        },
+
+        getSelectedIcons(section) {
+            if (section.getSelectedIcons) {
+                return this[section.getSelectedIcons]();
+            }
+            return [];
         },
 
         handleSectionChange(section, value) {
