@@ -169,6 +169,12 @@ export function createBuildForm() {
             return this.getSelectedArtifacts().map(artifact => artifact.icon);
         },
 
+        getArtifactsLabel() {
+            const selected = this.getSelectedArtifacts();
+            if (selected.length === 0) return 'None selected';
+            return `${selected.length} artifact${selected.length > 1 ? 's' : ''}`;
+        },
+
         // Form validation
         validateForm() {
             const errors = [];

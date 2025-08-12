@@ -116,10 +116,21 @@
                       </div>
                       
                     <span class="flex items-center gap-2">
-                        <!-- Selected Icon Display (left of selected value) -->
-                        <span x-show="getSelectedIcon(section)" class="text-gray-900 dark:text-white">
-                          <img :src="getSelectedIcon(section)" class="w-7 h-7" />
-                        </span>
+                        <!-- Multiple Icons Display (for artifacts) -->
+                        <template x-if="section.getSelectedIcons">
+                          <span class="text-gray-900 dark:text-white flex gap-2">
+                            <template x-for="iconSrc in getSelectedIcons(section)" :key="iconSrc">
+                              <img :src="iconSrc" class="w-7 h-7" />
+                            </template>
+                          </span>
+                        </template>
+
+                        <!-- Single Icon Display (for other sections) -->
+                        <template x-if="!section.getSelectedIcons">
+                          <span x-show="getSelectedIcon(section)" class="text-gray-900 dark:text-white">
+                            <img :src="getSelectedIcon(section)" class="w-7 h-7" />
+                          </span>
+                        </template>
                         
                         <!-- Selected Value Display -->
                         <span class="text-gray-900 dark:text-white" x-text="getSelectedValue(section)"></span>
