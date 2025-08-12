@@ -1,6 +1,6 @@
 // Accordion View Component - UI implementation using the BuildForm model
 // This is the "view" layer that renders the form as an accordion
-import { createBuildForm } from './build-form.js';
+import { createBuildForm, VALIDATION_ERRORS } from './build-form.js';
 
 export function createAccordionView() {
     const buildForm = createBuildForm();
@@ -9,6 +9,9 @@ export function createAccordionView() {
         // Import the BuildForm model
         ...buildForm,
         
+        // Expose validation error constants for use in templates
+        VALIDATION_ERRORS,
+
         // Accordion-specific state
         openSections: ['base-image'], // Start with base-image open
         
@@ -230,9 +233,17 @@ export function createAccordionView() {
         handleSectionChange(section, value) {
             this.formData[section.formField] = value;
             
+            // Clear validation errors when user makes changes
+            this.clearValidationErrors();
+
             if (section.onChange) {
                 this[section.onChange]();
             }
+        },
+
+        // Clear validation errors to reset UI state
+        clearValidationErrors() {
+            this.lastValidationResult = null;
         },
 
         // Override form methods to add accordion behavior
@@ -270,23 +281,48 @@ export function createAccordionView() {
         validateForm() {
             const validation = buildForm.validateForm.call(this);
             
+            // Store validation result for UI feedback
+            this.lastValidationResult = validation;
+
             if (!validation.isValid) {
-                // Open sections with errors
-                if (validation.errors.includes('Version is required')) {
+                // Open sections with errors and add error highlighting
+                if (validation.errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED)) {
                     if (!this.openSections.includes('version')) {
                         this.openSections.push('version');
                     }
                 }
-                if (validation.errors.includes('Kubernetes distribution is required for Standard variant')) {
+                if (validation.errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED)) {
                     if (!this.openSections.includes('kubernetes')) {
                         this.openSections.push('kubernetes');
                     }
                 }
-                if (validation.errors.includes('Custom image URL is required for Bring Your Own Image')) {
+                if (validation.errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED)) {
                     if (!this.openSections.includes('base-image')) {
                         this.openSections.push('base-image');
                     }
                 }
+
+                // Focus on the first field with an error after a short delay
+                // This allows the accordion animation to complete
+                this.$nextTick(() => {
+                    setTimeout(() => {
+                        let firstErrorField = null;
+
+                        if (validation.errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED)) {
+                            firstErrorField = document.querySelector('input[name="version"]');
+                        } else if (validation.errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED)) {
+                            firstErrorField = document.querySelector('input[name="byoi_image"]');
+                        } else if (validation.errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED)) {
+                            firstErrorField = document.querySelector('input[name="kubernetes_distribution"]:checked') ||
+                                            document.querySelector('input[name="kubernetes_distribution"]');
+                        }
+
+                        if (firstErrorField) {
+                            firstErrorField.focus();
+                            firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        }
+                    }, 300);
+                });
             }
             
             return validation;
@@ -343,6 +379,46 @@ export function createAccordionView() {
                 'azure': 'Azure'
             };
             return displays[artifactValue] || '';
+        },
+
+        // Validation error checking for UI styling
+        hasValidationError(fieldName) {
+            const validation = this.getLastValidation ? this.getLastValidation() : null;
+            if (!validation || validation.isValid) return false;
+
+            // Check specific field errors
+            if (fieldName === 'version') {
+                return validation.errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED);
+            }
+            if (fieldName === 'byoi_image') {
+                return validation.errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED);
+            }
+            if (fieldName === 'kubernetes_distribution') {
+                return validation.errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED);
+            }
+
+            return false;
+        },
+
+        // Store last validation result for UI feedback
+        lastValidationResult: null,
+
+        getLastValidation() {
+            return this.lastValidationResult;
+        },
+
+        // Get appropriate error message for a field
+        getValidationErrorMessage(fieldName) {
+            if (fieldName === 'version') {
+                return VALIDATION_ERRORS.VERSION_REQUIRED;
+            }
+            if (fieldName === 'byoi_image') {
+                return VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED;
+            }
+            if (fieldName === 'kubernetes_distribution') {
+                return VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED;
+            }
+            return '';
         }
     };
 } 

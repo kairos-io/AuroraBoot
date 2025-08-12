@@ -196,29 +196,41 @@
                         
                         <!-- Custom Input (e.g., BYOI) -->
                         <li x-show="section.customInput && formData[section.formField] === section.customInput.condition" class="md:col-span-3">
-                        <input
-                            type="text"
-                            :name="section.customInput?.field || ''"
-                            :id="section.customInput?.field || ''"
-                            x-model="formData[section.customInput?.field || '']"
-                            class="w-full mt-2 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                            :placeholder="section.customInput?.placeholder || ''"
-                          />
+                          <div>
+                            <input
+                                type="text"
+                                :name="section.customInput?.field || ''"
+                                :id="section.customInput?.field || ''"
+                                x-model="formData[section.customInput?.field || '']"
+                                :class="'w-full mt-2 bg-gray-50 border text-gray-900 text-sm rounded-lg block p-2.5 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white ' + (hasValidationError(section.customInput?.field || '') ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-500 dark:focus:ring-red-500 dark:focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:focus:border-blue-500')"
+                                :placeholder="section.customInput?.placeholder || ''"
+                              />
+                            <template x-if="hasValidationError(section.customInput?.field || '')">
+                              <p class="mt-2 text-sm text-red-600 dark:text-red-500" x-text="getValidationErrorMessage(section.customInput?.field || '')">
+                              </p>
+                            </template>
+                          </div>
                         </li>
                   </ul>
                     </template>
                     
                     <!-- Text Input Type -->
                     <template x-if="section.type === 'text-input'">
-                      <input
-                        type="text"
-                        :name="section.formField"
-                        :id="section.formField"
-                        x-model="formData[section.formField]"
-                        class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                        :placeholder="section.placeholder"
-                        :required="section.required"
-                      />
+                      <div>
+                        <input
+                          type="text"
+                          :name="section.formField"
+                          :id="section.formField"
+                          x-model="formData[section.formField]"
+                          :class="'bg-gray-50 border text-gray-900 text-sm rounded-lg block w-full p-2.5 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white ' + (hasValidationError(section.formField) ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-500 dark:focus:ring-red-500 dark:focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:focus:border-blue-500')"
+                          :placeholder="section.placeholder"
+                          :required="section.required"
+                        />
+                        <template x-if="hasValidationError(section.formField)">
+                          <p class="mt-2 text-sm text-red-600 dark:text-red-500" x-text="getValidationErrorMessage(section.formField)">
+                          </p>
+                        </template>
+                      </div>
                     </template>
                     
                     <!-- Textarea Type -->

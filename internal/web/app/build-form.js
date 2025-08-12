@@ -1,5 +1,13 @@
 // BuildForm Model - Contains all form logic and state management
 // This is independent of the UI implementation (accordion, simple form, etc.)
+
+// Validation error constants to avoid duplication
+export const VALIDATION_ERRORS = {
+    VERSION_REQUIRED: 'Version is required',
+    KUBERNETES_DISTRIBUTION_REQUIRED: 'Kubernetes distribution is required for Standard variant',
+    BYOI_IMAGE_REQUIRED: 'Custom image URL is required for Bring Your Own Image'
+};
+
 export function createBuildForm() {
     return {
         // Form data state
@@ -180,15 +188,15 @@ export function createBuildForm() {
             const errors = [];
             
             if (!this.formData.version.trim()) {
-                errors.push('Version is required');
+                errors.push(VALIDATION_ERRORS.VERSION_REQUIRED);
             }
             
             if (this.formData.variant === 'standard' && !this.formData.kubernetes_distribution) {
-                errors.push('Kubernetes distribution is required for Standard variant');
+                errors.push(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED);
             }
             
             if (this.formData.base_image === 'byoi' && !this.formData.byoi_image.trim()) {
-                errors.push('Custom image URL is required for Bring Your Own Image');
+                errors.push(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED);
             }
             
             return {

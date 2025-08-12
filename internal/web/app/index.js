@@ -106,7 +106,20 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', function(event) {
       event.preventDefault(); // Always prevent default submission
 
-      // Alpine.js will handle form validation, so we just proceed with submission
+      // Get the Alpine.js component instance to access validation
+      const alpineData = Alpine.$data(form);
+
+      // Run validation before proceeding
+      if (alpineData && typeof alpineData.validateForm === 'function') {
+        const validation = alpineData.validateForm();
+
+        if (!validation.isValid) {
+          // Validation failed - accordion sections should already be opened by validateForm()
+          // Visual feedback is handled by the accordion component
+          return; // Don't proceed with form submission
+        }
+      }
+
       // Show the Flowbite modal
       if (flowbiteModal) {
         flowbiteModal.show();
