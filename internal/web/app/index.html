@@ -69,6 +69,7 @@
                 
                 <!-- Dynamic Section Rendering -->
                 <template x-for="section in sections.filter(s => shouldShowSection(s))" :key="section.id">
+                  <div class="accordion-section">
                   
                   <!-- Section Header -->
                   <h2 :id="'accordion-heading-' + section.id">
@@ -150,10 +151,7 @@
                                 <!-- Icon -->
                                 <img x-show="section.showIcon && item.icon" :src="item.icon" class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" />
                                 
-                                <!-- Custom Icons for Models -->
-                                <template x-if="section.customIcons">
-                                  <!-- Model-specific SVG icons would go here -->
-                                </template>
+                                <!-- Custom Icons for Models would go here if needed -->
                                 
                                 <!-- Label -->
                                 <div class="w-full text-lg font-semibold" x-text="item.label"></div>
@@ -169,11 +167,11 @@
                         <li x-show="section.customInput && formData[section.formField] === section.customInput.condition" class="md:col-span-3">
                         <input
                             type="text"
-                            :name="section.customInput.field"
-                            :id="section.customInput.field"
-                            x-model="formData[section.customInput.field]"
+                            :name="section.customInput?.field || ''"
+                            :id="section.customInput?.field || ''"
+                            x-model="formData[section.customInput?.field || '']"
                             class="w-full mt-2 bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
-                            :placeholder="section.customInput.placeholder"
+                            :placeholder="section.customInput?.placeholder || ''"
                           />
                         </li>
                   </ul>
@@ -242,6 +240,7 @@
                     
                   </div>
 
+                  </div>
                 </template>
                 
                   </div>
