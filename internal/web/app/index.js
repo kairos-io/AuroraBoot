@@ -1,8 +1,16 @@
 import 'flowbite';
 import { createAccordionView } from './accordion-view.js';
+import './alpine-3.14.8.js';
+import Alpine from 'alpinejs';
 
 // Make createAccordionView available globally for Alpine.js
 window.createAccordionView = createAccordionView;
+
+// Alpine.js component registration
+Alpine.data('createAccordionView', createAccordionView);
+
+window.Alpine = Alpine;
+Alpine.start();
 
 document.addEventListener('DOMContentLoaded', () => {
   // Alpine.js now handles all the form logic, so we only need to keep the modal and submission logic
