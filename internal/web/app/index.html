@@ -80,8 +80,9 @@
                       :aria-expanded="isSectionOpen(section.id)"
                       :aria-controls="'accordion-body-' + section.id"
                   >
-                      <span x-text="section.title"></span>
-                    <span class="flex items-center gap-2">
+                      <!-- Left side: Title + Info Button -->
+                      <div class="flex items-center gap-2">
+                        <span x-text="section.title"></span>
                         
                         <!-- Info Popover Button -->
                         <template x-if="section.infoPopover && section.infoPopover.id">
@@ -97,7 +98,9 @@
                             <span class="sr-only">Show information</span>
                           </button>
                         </template>
+                      </div>
                       
+                    <span class="flex items-center gap-2">
                         <!-- Selected Icon Display (left of selected value) -->
                         <span x-show="getSelectedIcon(section)" class="text-gray-900 dark:text-white">
                           <img :src="getSelectedIcon(section)" class="w-7 h-7" />
