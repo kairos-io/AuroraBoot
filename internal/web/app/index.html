@@ -147,17 +147,19 @@
                               :for="'option-' + item.value"
                           class="inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 border-gray-200 rounded-lg cursor-pointer dark:hover:text-gray-300 dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 hover:text-gray-600 dark:peer-checked:text-gray-300 peer-checked:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700"
                         >
-                              <div class="block">
+                              <div class="flex items-center gap-3">
                                 <!-- Icon -->
-                                <img x-show="section.showIcon && item.icon" :src="item.icon" class="mb-2 w-7 h-7 text-sky-500 relative top-[5px]" />
+                                <img x-show="section.showIcon && item.icon" :src="item.icon" class="w-7 h-7 text-sky-500 flex-shrink-0" />
                                 
                                 <!-- Custom Icons for Models would go here if needed -->
                                 
-                                <!-- Label -->
-                                <div class="w-full text-lg font-semibold" x-text="item.label"></div>
-                                
-                                <!-- Description -->
-                                <div x-show="section.showDescription" class="w-full text-sm" x-text="item.description"></div>
+                                <div class="flex-1">
+                                  <!-- Label -->
+                                  <div class="w-full text-base font-semibold leading-tight" x-text="item.label"></div>
+                                  
+                                  <!-- Description -->
+                                  <div x-show="section.showDescription" class="w-full text-sm leading-tight" x-text="item.description"></div>
+                                </div>
                           </div>
                         </label>
                       </li>
@@ -227,10 +229,12 @@
                               :for="'artifact-' + item.value" 
                               :class="'flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg ' + (item.alwaysSelected ? 'cursor-not-allowed' : 'cursor-pointer') + ' dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800'"
                             >
-                              <div class="block">
-                                <img x-show="section.showIcon && item.icon" :src="item.icon" class="mb-2 w-7 h-7" />
-                                <div class="w-full text-lg font-bold mb-2" x-text="item.label"></div>
-                                <div x-show="section.showDescription" class="w-full text-sm" x-text="item.description"></div>
+                              <div class="flex items-center gap-3 h-full">
+                                <img x-show="section.showIcon && item.icon" :src="item.icon" class="w-7 h-7 flex-shrink-0" />
+                                <div class="flex-1">
+                                  <div class="w-full text-base font-bold mb-2 leading-tight" x-text="item.label"></div>
+                                  <div x-show="section.showDescription" class="w-full text-sm leading-tight" x-text="item.description"></div>
+                                </div>
                         </div>
                       </label>
                     </li>
