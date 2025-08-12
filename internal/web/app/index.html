@@ -252,6 +252,7 @@
                   </div>
                     </template>
                     
+
                     <!-- Checkbox Grid Type -->
                     <template x-if="section.type === 'checkbox-grid'">
                       <ul :class="'grid w-full gap-6 ' + section.gridCols">
@@ -262,13 +263,14 @@
                               :id="'artifact-' + item.value" 
                               :name="section.formField + item.value" 
                               x-model="formData[section.formField + item.value]"
-                              :checked="item.alwaysSelected"
                               :disabled="item.alwaysSelected"
+                              @change="clearValidationErrors()"
                           class="hidden peer"
                         />
                         <label
                               :for="'artifact-' + item.value" 
                               :class="'flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg ' + (item.alwaysSelected ? 'cursor-not-allowed' : 'cursor-pointer') + ' dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800'"
+                              @click.prevent="if (!item.alwaysSelected) { formData[section.formField + item.value] = !formData[section.formField + item.value]; clearValidationErrors(); }"
                             >
                               <div class="flex items-center gap-3 h-full">
                                 <img x-show="section.showIcon && item.icon" :src="item.icon" class="w-7 h-7 flex-shrink-0" />
