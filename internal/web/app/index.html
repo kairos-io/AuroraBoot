@@ -98,13 +98,13 @@
                           </button>
                         </template>
                       
+                        <!-- Selected Icon Display (left of selected value) -->
+                        <span x-show="getSelectedIcon(section)" class="text-gray-900 dark:text-white">
+                          <img :src="getSelectedIcon(section)" class="w-7 h-7" />
+                        </span>
+                        
                         <!-- Selected Value Display -->
                         <span class="text-gray-900 dark:text-white" x-text="getSelectedValue(section)"></span>
-                        
-                        <!-- Selected Icon Display -->
-                        <span x-show="getSelectedIcon(section)" class="text-gray-900 dark:text-white">
-                          <img :src="getSelectedIcon(section)" class="w-4 h-4" />
-                        </span>
                         
                         <!-- Accordion Arrow -->
                       <svg 
