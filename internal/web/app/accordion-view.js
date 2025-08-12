@@ -10,7 +10,7 @@ export function createAccordionView() {
         ...buildForm,
         
         // Accordion-specific state
-        openSections: new Set(['base-image']), // Start with base-image open
+        openSections: ['base-image'], // Start with base-image open
         
         // Section definitions - data-driven approach
         sections: [
@@ -164,15 +164,15 @@ export function createAccordionView() {
         
         // Accordion methods
         toggleSection(sectionName) {
-            if (this.openSections.has(sectionName)) {
-                this.openSections.delete(sectionName);
+            if (this.openSections.includes(sectionName)) {
+                this.openSections = this.openSections.filter(s => s !== sectionName);
             } else {
-                this.openSections.add(sectionName);
+                this.openSections.push(sectionName);
             }
         },
 
         isSectionOpen(sectionName) {
-            return this.openSections.has(sectionName);
+            return this.openSections.includes(sectionName);
         },
 
         // Section rendering helpers
@@ -216,7 +216,9 @@ export function createAccordionView() {
             buildForm.handleArchitectureChange.call(this);
             
             // Auto-open model section when architecture changes
-            this.openSections.add('model');
+            if (!this.openSections.includes('model')) {
+                this.openSections.push('model');
+            }
         },
 
         handleVariantChange() {
@@ -225,11 +227,15 @@ export function createAccordionView() {
             
             // Show/hide Kubernetes sections based on variant
             if (this.formData.variant === 'standard') {
-                this.openSections.add('kubernetes');
-                this.openSections.add('kubernetes-release');
+                if (!this.openSections.includes('kubernetes')) {
+                    this.openSections.push('kubernetes');
+                }
+                if (!this.openSections.includes('kubernetes-release')) {
+                    this.openSections.push('kubernetes-release');
+                }
             } else {
-                this.openSections.delete('kubernetes');
-                this.openSections.delete('kubernetes-release');
+                this.openSections = this.openSections.filter(s => s !== 'kubernetes');
+                this.openSections = this.openSections.filter(s => s !== 'kubernetes-release');
             }
         },
 
@@ -240,13 +246,19 @@ export function createAccordionView() {
             if (!validation.isValid) {
                 // Open sections with errors
                 if (validation.errors.includes('Version is required')) {
-                    this.openSections.add('version');
+                    if (!this.openSections.includes('version')) {
+                        this.openSections.push('version');
+                    }
                 }
                 if (validation.errors.includes('Kubernetes distribution is required for Standard variant')) {
-                    this.openSections.add('kubernetes');
+                    if (!this.openSections.includes('kubernetes')) {
+                        this.openSections.push('kubernetes');
+                    }
                 }
                 if (validation.errors.includes('Custom image URL is required for Bring Your Own Image')) {
-                    this.openSections.add('base-image');
+                    if (!this.openSections.includes('base-image')) {
+                        this.openSections.push('base-image');
+                    }
                 }
             }
             
