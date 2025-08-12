@@ -68,7 +68,7 @@
               <div id="accordion-collapse" data-accordion="collapse">
                 
                 <!-- Dynamic Section Rendering -->
-                <template x-for="section in sections.filter(s => shouldShowSection(s))" :key="section.id">
+                <template x-for="(section, index) in visibleSections" :key="section.id">
                   <div class="accordion-section">
                   
                   <!-- Section Header -->
@@ -76,7 +76,7 @@
                   <button
                     type="button"
                       @click="toggleSection(section.id)"
-                    class="flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0"
+                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (index === 0 ? ' rounded-t-lg' : '') + (index === visibleSections.length - 1 ? ' rounded-b-lg' : '')"
                       :aria-expanded="isSectionOpen(section.id)"
                       :aria-controls="'accordion-body-' + section.id"
                   >
