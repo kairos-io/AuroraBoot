@@ -56,7 +56,6 @@ export function createAccordionView() {
                 showDescription: true,
                 customIcons: true, // Special handling for model icons
                 infoPopover: {
-                    id: 'model-popover-description',
                     title: 'What is a model?',
                     content: 'Depending on the architecture you choose, you\'ll be able to select from different models available under that architecture. If you\'re not targeting a specific board like a Raspberry Pi and instead plan to install on generic hardware or a virtual machine, select Generic.'
                 },
@@ -89,7 +88,6 @@ export function createAccordionView() {
                     showWhen: 'standard'
                 },
                 infoPopover: {
-                    id: 'kubernetes-distribution-popover-description',
                     title: 'Provider Kairos',
                     content: 'The Kairos Factory uses a component called provider to extend the functionality of the core images. In the web version, it\'s only possible to use the default Provider Kairos, which has support for K3s and K0s distributions. There are other providers available by the community with different distributions but these don\'t include the p2p functionality.',
                     link: {
@@ -111,7 +109,6 @@ export function createAccordionView() {
                     showWhen: 'standard'
                 },
                 infoPopover: {
-                    id: 'kubernetes-release-popover-description',
                     title: 'Kubernetes Versions',
                     content: `
                         <h3 class="font-semibold text-gray-900 dark:text-white">K3s</h3>
@@ -132,7 +129,6 @@ export function createAccordionView() {
                 placeholder: 'v0.1.0-alpha',
                 required: true,
                 infoPopover: {
-                    id: 'version-popover-description',
                     title: 'Semantic Versioning',
                     content: 'Kairos uses Semantic Versioning for its versioning scheme. This means that the version starts with the letter v followed by a three-part number, with the format MAJOR.MINOR.PATCH. The MAJOR version is incremented when there are breaking changes, the MINOR version is incremented when there are new features, and the PATCH version is incremented when there are bug fixes. Build numbers are also possible. Check the Semver website for more information.',
                     link: {
@@ -150,7 +146,6 @@ export function createAccordionView() {
                 placeholder: '#cloud-config',
                 rows: 10,
                 infoPopover: {
-                    id: 'configuration-popover-description',
                     title: 'What is a cloud-config?',
                     content: 'A <code>cloud-config.yaml</code> file allows you to preconfigure your Kairos system with users, network, and more. It is applied at first boot. See the <a href="https://kairos.io/docs/architecture/cloud-init/" class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline" target="_blank">Kairos documentation</a> for details and examples.'
                 },
@@ -179,13 +174,6 @@ export function createAccordionView() {
                 // Close all other sections and open this one
                 this.openSections = [sectionName];
             }
-
-            // Reinitialize Flowbite components (including popovers) after DOM changes
-            this.$nextTick(() => {
-                if (typeof window.initFlowbite === 'function') {
-                    window.initFlowbite();
-                }
-            });
         },
 
         isSectionOpen(sectionName) {
@@ -268,13 +256,6 @@ export function createAccordionView() {
                 this.openSections = this.openSections.filter(s => s !== 'kubernetes');
                 this.openSections = this.openSections.filter(s => s !== 'kubernetes-release');
             }
-
-            // Reinitialize Flowbite components after changing section visibility
-            this.$nextTick(() => {
-                if (typeof window.initFlowbite === 'function') {
-                    window.initFlowbite();
-                }
-            });
         },
 
         // Form validation with accordion behavior
