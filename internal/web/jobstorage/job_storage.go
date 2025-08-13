@@ -68,6 +68,7 @@ type Artifacts struct {
 type JobData struct {
 	Variant                string    `json:"variant"`
 	Model                  string    `json:"model"`
+	Architecture           string    `json:"architecture"`
 	TrustedBoot            bool      `json:"trusted_boot"`
 	KubernetesDistribution string    `json:"kubernetes_distribution"`
 	KubernetesVersion      string    `json:"kubernetes_version"`
