@@ -3,6 +3,8 @@ describe('Kairos Factory Web Interface', () => {
         cy.visit('/')
         // Wait for the page to be fully loaded
         cy.get('#accordion-collapse').should('exist')
+        // Wait for Alpine.js to initialize the accordion sections
+        cy.get('[id^="accordion-heading-"]').should('have.length.at.least', 4)
     })
 
     const expectedText = [
@@ -21,15 +23,22 @@ describe('Kairos Factory Web Interface', () => {
     it('should have all required accordion sections', () => {
         // Check for the main accordion container
         cy.get('#accordion-collapse').should('exist');
-        
-        // Check for required sections
+
+        // Check for required sections (these are always visible)
         cy.get('#accordion-heading-base-image').should('exist');
         cy.get('#accordion-heading-architecture').should('exist');
         cy.get('#accordion-heading-model').should('exist');
         cy.get('#accordion-heading-variant').should('exist');
+        cy.get('#accordion-heading-version').should('exist');
+        cy.get('#accordion-heading-configuration').should('exist');
+        cy.get('#accordion-heading-artifacts').should('exist');
+
+        // Kubernetes sections are conditional - need to select Standard variant first
+        // First open the variant section
+        cy.get('#accordion-heading-variant button').click();
+        cy.get('label[for="option-standard"]').click();
         cy.get('#accordion-heading-kubernetes').should('exist');
         cy.get('#accordion-heading-kubernetes-release').should('exist');
-        cy.get('#accordion-heading-version').should('exist');
     });
 
     it('should have all required accordion bodies', () => {
@@ -37,16 +46,26 @@ describe('Kairos Factory Web Interface', () => {
         cy.get('#accordion-body-architecture').should('exist');
         cy.get('#accordion-body-model').should('exist');
         cy.get('#accordion-body-variant').should('exist');
+        cy.get('#accordion-body-version').should('exist');
+        cy.get('#accordion-body-configuration').should('exist');
+        cy.get('#accordion-body-artifacts').should('exist');
+        
+        // Kubernetes sections are conditional
+        cy.get('#accordion-heading-variant button').click();
+        cy.get('label[for="option-standard"]').click();
         cy.get('#accordion-body-kubernetes').should('exist');
         cy.get('#accordion-body-kubernetes-release').should('exist');
-        cy.get('#accordion-body-version').should('exist');
     });
 
     it('should allow section interaction', () => {
         // Helper function to check section state
         const checkSectionState = (headingId, bodyId, shouldBeExpanded) => {
             cy.get(`#${headingId} button`).should('have.attr', 'aria-expanded', shouldBeExpanded.toString());
-            cy.get(`#${bodyId}`).should(shouldBeExpanded ? 'not.have.class' : 'have.class', 'hidden');
+            if (shouldBeExpanded) {
+                cy.get(`#${bodyId}`).should('be.visible');
+            } else {
+                cy.get(`#${bodyId}`).should('not.be.visible');
+            }
         };
 
         // Check initial state - first section should be expanded
@@ -54,12 +73,12 @@ describe('Kairos Factory Web Interface', () => {
         checkSectionState('accordion-heading-architecture', 'accordion-body-architecture', false);
 
         // Click on architecture section
-        cy.get('#accordion-heading-architecture button').click();
+        cy.get('#accordion-heading-architecture button').first().click();
         checkSectionState('accordion-heading-architecture', 'accordion-body-architecture', true);
         checkSectionState('accordion-heading-base-image', 'accordion-body-base-image', false);
 
         // Click on model section
-        cy.get('#accordion-heading-model button').click();
+        cy.get('#accordion-heading-model button').first().click();
         checkSectionState('accordion-heading-model', 'accordion-body-model', true);
         checkSectionState('accordion-heading-architecture', 'accordion-body-architecture', false);
     });
@@ -70,18 +89,18 @@ describe('Kairos Factory Web Interface', () => {
             cy.get(`input[type="radio"][name="${name}"][value="${value}"]`).should('be.checked');
         };
 
-        // Select base image
-        cy.get('label[for="ubuntu-option"]').click();
+        // Select base image (Ubuntu is selected by default)
+        cy.get('label[for="option-ubuntu:24.04"]').click();
         checkRadioSelection('base_image', 'ubuntu:24.04');
 
-        // Select architecture
-        cy.get('#accordion-heading-architecture button').click();
-        cy.get('label[for="amd64-option"]').click();
+        // Select architecture (AMD64 is selected by default)
+        cy.get('#accordion-heading-architecture button').first().click();
+        cy.get('label[for="option-amd64"]').click();
         checkRadioSelection('architecture', 'amd64');
 
-        // Select model
-        cy.get('#accordion-heading-model button').click();
-        cy.get('label[for="generic-option"]').click();
+        // Select model (Generic is selected by default)
+        cy.get('#accordion-heading-model button').first().click();
+        cy.get('label[for="option-generic"]').click();
         checkRadioSelection('model', 'generic');
     });
 
@@ -89,15 +108,15 @@ describe('Kairos Factory Web Interface', () => {
         // Intercept the build start request
         cy.intercept('POST', '/start').as('startBuild');
 
-        // Fill out required fields
-        cy.get('label[for="ubuntu-option"]').click();
-        cy.get('#accordion-heading-architecture button').click();
-        cy.get('label[for="amd64-option"]').click();
-        cy.get('#accordion-heading-model button').click();
-        cy.get('label[for="generic-option"]').click();
-        cy.get('#accordion-heading-variant button').click();
-        cy.get('label[for="core-option"]').click();
-        cy.get('#accordion-heading-version button').click();
+        // Fill out required fields using new Alpine.js structure
+        cy.get('label[for="option-ubuntu:24.04"]').click();
+        cy.get('#accordion-heading-architecture button').first().click();
+        cy.get('label[for="option-amd64"]').click();
+        cy.get('#accordion-heading-model button').first().click();
+        cy.get('label[for="option-generic"]').click();
+        cy.get('#accordion-heading-variant button').first().click();
+        cy.get('label[for="option-core"]').click();
+        cy.get('#accordion-heading-version button').first().click();
         cy.get('#version').type('v0.1.0-alpha');
 
         // Submit form
@@ -106,64 +125,48 @@ describe('Kairos Factory Web Interface', () => {
         // Wait for the build start request to complete
         cy.wait('@startBuild');
 
-        // Polling function to check for visibility at increasing intervals
-        function checkBuildingContainerImage(attempt = 1) {
-            const waitTimes = [5000, 15000, 30000, 60000];
-            if (attempt > waitTimes.length) {
-                // Final fail if not visible after all attempts
-                cy.get('#building-container-image').should('be.visible');
-                return;
-            }
-            cy.wait(waitTimes[attempt - 1]).then(() => {
-                cy.get('#building-container-image').then($el => {
-                    if (Cypress.dom.isVisible($el)) {
-                        // Element is visible, test passes
-                        expect(Cypress.dom.isVisible($el)).to.be.true;
-                    } else {
-                        // Try again with the next wait time
-                        checkBuildingContainerImage(attempt + 1);
-                    }
-                });
-            });
-        }
-
-        // Check if modal appears
-        cy.get('#static-modal').should('be.visible');
-        checkBuildingContainerImage();
+        // Check if modal appears (using different selector based on Alpine.js modal)
+        cy.get('[x-show="isModalVisible"]').should('be.visible');
+        
+        // Check for the specific building step in the new modal structure
+        cy.get('#waiting-for-worker').should('be.visible');
     });
 
     it('should show ARM-specific options when ARM64 is selected', () => {
         // Select ARM64 architecture
-        cy.get('#accordion-heading-architecture button').click();
-        cy.get('label[for="arm64-option"]').click();
+        cy.get('#accordion-heading-architecture button').first().click();
+        cy.get('label[for="option-arm64"]').click();
         // Open the model accordion section
-        cy.get('#accordion-heading-model button').click();
-        // Check if ARM-specific model options are visible
-        cy.get('.model-option.arm-only').each($el => {
-            cy.wrap($el).should('be.visible');
-          });
+        cy.get('#accordion-heading-model button').first().click();
+        // Check if ARM-specific model options are visible (Raspberry Pi models)
+        cy.get('label[for="option-rpi3"]').should('be.visible');
+        cy.get('label[for="option-rpi4"]').should('be.visible');
+        cy.get('label[for="option-nvidia-agx-orin"]').should('be.visible');
     });
 
     it('should hide ARM-specific options when AMD64 is selected', () => {
-        // Select AMD64 architecture
-        cy.get('#accordion-heading-architecture button').click();
-        cy.get('label[for="amd64-option"]').click();
+        // Select AMD64 architecture (default)
+        cy.get('#accordion-heading-architecture button').first().click();
+        cy.get('label[for="option-amd64"]').click();
+        cy.get('#accordion-heading-model button').first().click();
 
-        // Check if ARM-specific model options are hidden
-        cy.get('.model-option.arm-only').should('have.class', 'hidden');
+        // ARM-specific model options should not be present in the DOM for AMD64
+        cy.get('label[for="option-rpi3"]').should('not.exist');
+        cy.get('label[for="option-rpi4"]').should('not.exist');
+        cy.get('label[for="option-nvidia-agx-orin"]').should('not.exist');
     });
 
     it('should handle BYOI (Bring Your Own Image) option', () => {
         // Select BYOI option
-        cy.get('label[for="byoi-option"]').click();
+        cy.get('label[for="option-byoi"]').click();
 
         // Check if BYOI input field is visible and enabled
-        cy.get('#byoi').should('be.visible').and('be.enabled');
+        cy.get('#byoi_image').should('be.visible').and('be.enabled');
         
         // Enter custom image
-        cy.get('#byoi').type('custom-repo.com/image:tag');
+        cy.get('#byoi_image').type('custom-repo.com/image:tag');
         
         // Verify the value was entered
-        cy.get('#byoi').should('have.value', 'custom-repo.com/image:tag');
+        cy.get('#byoi_image').should('have.value', 'custom-repo.com/image:tag');
     });
 });
