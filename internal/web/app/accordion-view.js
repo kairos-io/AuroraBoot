@@ -20,16 +20,14 @@ export function createAccordionView() {
             {
                 id: 'base-image',
                 title: 'Base Image',
-                type: 'radio-grid',
-                dataKey: 'baseImages',
+                type: 'text-input-with-buttons',
                 formField: 'base_image',
+                placeholder: 'your-repo.com/path:tag',
+                required: true,
+                description: 'Choose from predefined images below or enter a custom image. Other versions from the previously listed distributions should work. It\'s also possible that some derivatives work as long as they use systemd or openrc as init system.',
+                dataKey: 'baseImages',
                 gridCols: 'md:grid-cols-3',
                 showIcon: true,
-                customInput: {
-                    field: 'byoi_image',
-                    placeholder: 'your-repo.com/path:tag',
-                    condition: 'byoi'
-                },
                 getSelectedLabel: 'getSelectedBaseImageLabel',
                 getSelectedIcon: 'getSelectedBaseImageIcon'
             },
@@ -145,6 +143,7 @@ export function createAccordionView() {
                 formField: 'cloud_config',
                 placeholder: '#cloud-config',
                 rows: 10,
+                description: 'Paste your cloud-config.yaml here (optional):',
                 infoPopover: {
                     title: 'What is a cloud-config?',
                     content: 'A <code>cloud-config.yaml</code> file allows you to preconfigure your Kairos system with users, network, and more. It is applied at first boot. See the <a href="https://kairos.io/docs/architecture/cloud-init/" class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline" target="_blank">Kairos documentation</a> for details and examples.'
@@ -277,11 +276,7 @@ export function createAccordionView() {
                         this.openSections.push('kubernetes');
                     }
                 }
-                if (validation.errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED)) {
-                    if (!this.openSections.includes('base-image')) {
-                        this.openSections.push('base-image');
-                    }
-                }
+
 
                 // Focus on the first field with an error using Alpine.js refs
                 this.$nextTick(() => {
@@ -298,10 +293,10 @@ export function createAccordionView() {
         focusFirstErrorField(errors) {
             let targetField = null;
 
-            if (errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED)) {
+            if (errors.includes(VALIDATION_ERRORS.BASE_IMAGE_REQUIRED)) {
+                targetField = this.$refs.baseImageField;
+            } else if (errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED)) {
                 targetField = this.$refs.versionField;
-            } else if (errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED)) {
-                targetField = this.$refs.byoiField;
             } else if (errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED)) {
                 targetField = this.$refs.kubernetesFields?.[0];
             }
@@ -389,11 +384,11 @@ export function createAccordionView() {
             if (!validation || validation.isValid) return false;
 
             // Check specific field errors
+            if (fieldName === 'base_image') {
+                return validation.errors.includes(VALIDATION_ERRORS.BASE_IMAGE_REQUIRED);
+            }
             if (fieldName === 'version') {
                 return validation.errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED);
-            }
-            if (fieldName === 'byoi_image') {
-                return validation.errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED);
             }
             if (fieldName === 'kubernetes_distribution') {
                 return validation.errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED);
@@ -411,11 +406,11 @@ export function createAccordionView() {
 
         // Get appropriate error message for a field
         getValidationErrorMessage(fieldName) {
+            if (fieldName === 'base_image') {
+                return VALIDATION_ERRORS.BASE_IMAGE_REQUIRED;
+            }
             if (fieldName === 'version') {
                 return VALIDATION_ERRORS.VERSION_REQUIRED;
-            }
-            if (fieldName === 'byoi_image') {
-                return VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED;
             }
             if (fieldName === 'kubernetes_distribution') {
                 return VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED;

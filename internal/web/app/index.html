@@ -223,30 +223,63 @@
                       </li>
                     </template> 
                         
-                        <!-- Custom Input (e.g., BYOI) -->
-                        <li x-show="section.customInput && formData[section.formField] === section.customInput.condition" class="md:col-span-3">
-                          <div>
-                            <input
-                                type="text"
-                                :name="section.customInput?.field || ''"
-                                :id="section.customInput?.field || ''"
-                                x-model="formData[section.customInput?.field || '']"
-                                x-ref="byoiField"
-                                :class="'w-full mt-2 bg-gray-50 border text-gray-900 text-sm rounded-lg block p-2.5 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white ' + (hasValidationError(section.customInput?.field || '') ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-500 dark:focus:ring-red-500 dark:focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:focus:border-blue-500')"
-                                :placeholder="section.customInput?.placeholder || ''"
-                              />
-                            <template x-if="hasValidationError(section.customInput?.field || '')">
-                              <p class="mt-2 text-sm text-red-600 dark:text-red-500" x-text="getValidationErrorMessage(section.customInput?.field || '')">
-                              </p>
-                            </template>
-                          </div>
-                        </li>
+
                   </ul>
+                    </template>
+                    
+                    <!-- Text Input with Helper Buttons Type -->
+                    <template x-if="section.type === 'text-input-with-buttons'">
+                      <div>
+                        <div x-show="section.description" class="w-full mb-3 text-sm text-gray-600 dark:text-gray-400" x-text="section.description">
+                        </div>
+                        <input
+                          type="text"
+                          :name="section.formField"
+                          :id="section.formField"
+                          x-model="formData[section.formField]"
+                          x-ref="baseImageField"
+                          :class="'bg-gray-50 border text-gray-900 text-sm rounded-lg block w-full p-2.5 mb-4 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white ' + (hasValidationError(section.formField) ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-500 dark:focus:ring-red-500 dark:focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:focus:border-blue-500')"
+                          :placeholder="section.placeholder"
+                          :required="section.required"
+                        />
+                        <template x-if="hasValidationError(section.formField)">
+                          <p class="mt-2 text-sm text-red-600 dark:text-red-500" x-text="getValidationErrorMessage(section.formField)">
+                          </p>
+                        </template>
+                        
+                        <!-- Helper Buttons Grid -->
+                        <ul :class="'grid w-full gap-3 ' + section.gridCols">
+                          <template x-for="item in getSectionData(section)" :key="item.value">
+                            <li>
+                              <button
+                                type="button"
+                                @click="formData[section.formField] = item.value; clearValidationErrors();"
+                                :class="'inline-flex items-center justify-between w-full p-3 text-gray-500 bg-white border-2 rounded-lg hover:text-gray-600 hover:bg-gray-50 dark:text-gray-400 dark:bg-gray-800 dark:hover:bg-gray-700 ' + (formData[section.formField] === item.value ? 'border-blue-600 dark:border-blue-600' : 'border-gray-200 dark:border-gray-700')"
+                              >
+                                <div class="flex items-center gap-3">
+                                  <!-- Icon -->
+                                  <img x-show="section.showIcon && item.icon" :src="item.icon" class="w-7 h-7 text-sky-500 flex-shrink-0" />
+                                  
+                                  <div class="flex-1">
+                                    <!-- Label -->
+                                    <div class="w-full text-base font-semibold leading-tight" x-text="item.label"></div>
+                                    
+                                    <!-- Description -->
+                                    <div x-show="section.showDescription" class="w-full text-sm leading-tight" x-text="item.description"></div>
+                                  </div>
+                                </div>
+                              </button>
+                            </li>
+                          </template>
+                        </ul>
+                      </div>
                     </template>
                     
                     <!-- Text Input Type -->
                     <template x-if="section.type === 'text-input'">
                       <div>
+                        <div x-show="section.description" class="w-full mb-3 text-sm text-gray-600 dark:text-gray-400" x-text="section.description">
+                        </div>
                         <input
                           type="text"
                           :name="section.formField"
@@ -267,9 +300,8 @@
                     <!-- Textarea Type -->
                     <template x-if="section.type === 'textarea'">
                       <div>
-                        <label :for="section.formField" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white">
-                          Paste your <code>cloud-config.yaml</code> here (optional):
-                        </label>
+                        <div x-show="section.description" class="w-full mb-3 text-sm text-gray-600 dark:text-gray-400" x-text="section.description">
+                        </div>
                         <textarea
                           :id="section.formField"
                           :name="section.formField"
