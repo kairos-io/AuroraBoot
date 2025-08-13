@@ -89,9 +89,14 @@ describe('Kairos Factory Web Interface', () => {
             cy.get(`input[type="radio"][name="${name}"][value="${value}"]`).should('be.checked');
         };
 
-        // Select base image (Ubuntu is selected by default)
-        cy.get('label[for="option-ubuntu:24.04"]').click();
-        checkRadioSelection('base_image', 'ubuntu:24.04');
+        // Helper function to check text input value
+        const checkTextInputValue = (name, value) => {
+            cy.get(`input[type="text"][name="${name}"]`).should('have.value', value);
+        };
+
+        // Select base image using the new button-based system (Ubuntu is default)
+        cy.get('button').contains('Ubuntu 24.04 LTS').click();
+        checkTextInputValue('base_image', 'ubuntu:24.04');
 
         // Select architecture (AMD64 is selected by default)
         cy.get('#accordion-heading-architecture button').first().click();
@@ -109,7 +114,7 @@ describe('Kairos Factory Web Interface', () => {
         cy.intercept('POST', '/start').as('startBuild');
 
         // Fill out required fields using new Alpine.js structure
-        cy.get('label[for="option-ubuntu:24.04"]').click();
+        cy.get('button').contains('Ubuntu 24.04 LTS').click();
         cy.get('#accordion-heading-architecture button').first().click();
         cy.get('label[for="option-amd64"]').click();
         cy.get('#accordion-heading-model button').first().click();
@@ -157,16 +162,21 @@ describe('Kairos Factory Web Interface', () => {
     });
 
     it('should handle BYOI (Bring Your Own Image) option', () => {
-        // Select BYOI option
-        cy.get('label[for="option-byoi"]').click();
-
-        // Check if BYOI input field is visible and enabled
-        cy.get('#byoi_image').should('be.visible').and('be.enabled');
+        // Check if base image input field is visible and enabled
+        cy.get('#base_image').should('be.visible').and('be.enabled');
         
-        // Enter custom image
-        cy.get('#byoi_image').type('custom-repo.com/image:tag');
+        // Clear the default value and enter custom image
+        cy.get('#base_image').clear().type('custom-repo.com/image:tag');
         
         // Verify the value was entered
-        cy.get('#byoi_image').should('have.value', 'custom-repo.com/image:tag');
+        cy.get('#base_image').should('have.value', 'custom-repo.com/image:tag');
+        
+        // Test that clicking a helper button updates the field
+        cy.get('button').contains('Fedora 40').click();
+        cy.get('#base_image').should('have.value', 'fedora:40');
+        
+        // Test that we can edit after clicking a button
+        cy.get('#base_image').clear().type('my-custom:latest');
+        cy.get('#base_image').should('have.value', 'my-custom:latest');
     });
 });
