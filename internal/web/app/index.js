@@ -117,7 +117,7 @@ document.addEventListener('DOMContentLoaded', () => {
     form.addEventListener('submit', function(event) {
       event.preventDefault(); // Always prevent default submission
 
-      // Get the Alpine.js component instance to access validation
+      // Get the Alpine.js component instance to access validation and form data
       const alpineData = Alpine.$data(form);
 
       // Run validation before proceeding
@@ -144,7 +144,6 @@ document.addEventListener('DOMContentLoaded', () => {
         modalData.downloads = [];
       }
 
-      
       const formData = new FormData(event.target);
       
       fetch('/start', {

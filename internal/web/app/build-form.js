@@ -205,24 +205,7 @@ export function createBuildForm() {
             };
         },
 
-        // Form submission
-        getFormData() {
-            const data = new FormData();
-            
-            // Add all form fields
-            Object.keys(this.formData).forEach(key => {
-                const value = this.formData[key];
-                if (typeof value === 'boolean') {
-                    if (value) {
-                        data.append(key, 'true');
-                    }
-                } else if (value !== null && value !== undefined) {
-                    data.append(key, value);
-                }
-            });
-            
-            return data;
-        },
+
 
         // Reset form
         resetForm() {

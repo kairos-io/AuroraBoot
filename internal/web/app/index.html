@@ -263,14 +263,14 @@
                               :id="'artifact-' + item.value" 
                               :name="section.formField + item.value" 
                               x-model="formData[section.formField + item.value]"
-                              :disabled="item.alwaysSelected"
+                              :disabled="item.alwaysSelected === true"
                               @change="clearValidationErrors()"
                           class="hidden peer"
                         />
                         <label
                               :for="'artifact-' + item.value" 
-                              :class="'flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg ' + (item.alwaysSelected ? 'cursor-not-allowed' : 'cursor-pointer') + ' dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800'"
-                              @click.prevent="if (!item.alwaysSelected) { formData[section.formField + item.value] = !formData[section.formField + item.value]; clearValidationErrors(); }"
+                              :class="'flex flex-col items-start justify-between w-full h-full p-6 text-gray-500 bg-white border-2 border-gray-200 rounded-lg ' + (item.alwaysSelected === true ? 'cursor-not-allowed' : 'cursor-pointer') + ' dark:border-gray-700 peer-checked:border-blue-600 dark:peer-checked:border-blue-600 dark:text-gray-400 dark:bg-gray-800'"
+                              @click="if (item.alwaysSelected === true) $event.preventDefault()"
                             >
                               <div class="flex items-center gap-3 h-full">
                                 <img x-show="section.showIcon && item.icon" :src="item.icon" class="w-7 h-7 flex-shrink-0" />
@@ -330,14 +330,14 @@
 
     <div x-data="buildModal()">
       <!-- Modal backdrop -->
-      <div
+    <div
         x-show="isModalVisible"
         class="fixed inset-0 z-40 bg-black/75"
         @click="!isBuilding && resetBuildState()"
-      ></div>
+    ></div>
       
-      <!-- Main modal -->
-      <div
+    <!-- Main modal -->
+    <div
         x-show="isModalVisible"
         class="fixed inset-0 z-50 flex justify-center items-center p-4"
       >
