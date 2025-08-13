@@ -5,7 +5,7 @@
 export const VALIDATION_ERRORS = {
     VERSION_REQUIRED: 'Version is required',
     KUBERNETES_DISTRIBUTION_REQUIRED: 'Kubernetes distribution is required for Standard variant',
-    BYOI_IMAGE_REQUIRED: 'Custom image URL is required for Bring Your Own Image'
+    BASE_IMAGE_REQUIRED: 'Base image is required'
 };
 
 export function createBuildForm() {
@@ -20,7 +20,7 @@ export function createBuildForm() {
             kubernetes_release: '',
             version: '',
             cloud_config: '',
-            byoi_image: '',
+
             artifact_raw: true,
             artifact_iso: true,
             artifact_tar: true,
@@ -36,7 +36,7 @@ export function createBuildForm() {
             { value: 'debian:12', label: 'Debian 12 (Bookworm)', icon: 'assets/img/debian.svg' },
             { value: 'alpine:3.21', label: 'Alpine 3.21', icon: 'assets/img/alpine.svg' },
             { value: 'rockylinux:9', label: 'Rocky Linux 9', icon: 'assets/img/rockylinux.svg' },
-            { value: 'byoi', label: 'Bring Your Own Image', icon: null, isCustom: true }
+
         ],
 
         // Available models with their compatible architectures
@@ -104,11 +104,13 @@ export function createBuildForm() {
 
         // Display methods for UI
         getSelectedBaseImageLabel() {
+            // Check if it matches a predefined image
             const selected = this.baseImages.find(img => img.value === this.formData.base_image);
-            if (selected?.isCustom) {
-                return this.formData.byoi_image || 'Not set';
+            if (selected) {
+                return selected.label;
             }
-            return selected?.label || 'Not selected';
+            // Return the custom value or indicate not set
+            return this.formData.base_image.trim() || 'Not set';
         },
 
         getSelectedBaseImageIcon() {
@@ -168,6 +170,8 @@ export function createBuildForm() {
             return this.formData.cloud_config.trim() ? 'added' : 'none';
         },
 
+
+
         // Artifact methods
         getSelectedArtifacts() {
             return this.artifacts.filter(artifact => this.formData[`artifact_${artifact.value}`]);
@@ -187,6 +191,10 @@ export function createBuildForm() {
         validateForm() {
             const errors = [];
             
+            if (!this.formData.base_image.trim()) {
+                errors.push(VALIDATION_ERRORS.BASE_IMAGE_REQUIRED);
+            }
+            
             if (!this.formData.version.trim()) {
                 errors.push(VALIDATION_ERRORS.VERSION_REQUIRED);
             }
@@ -195,9 +203,7 @@ export function createBuildForm() {
                 errors.push(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED);
             }
             
-            if (this.formData.base_image === 'byoi' && !this.formData.byoi_image.trim()) {
-                errors.push(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED);
-            }
+
             
             return {
                 isValid: errors.length === 0,
@@ -218,7 +224,7 @@ export function createBuildForm() {
                 kubernetes_release: '',
                 version: '',
                 cloud_config: '',
-                byoi_image: '',
+    
                 artifact_raw: true,
                 artifact_iso: true,
                 artifact_tar: true,
