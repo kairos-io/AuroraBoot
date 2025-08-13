@@ -152,10 +152,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }).then(response => response.json())
         .then(result => {
           const socket = new WebSocket("ws://" + window.location.host + "/ws/" + result.uuid);
-          const outputElement = document.getElementById('output');
-          const linkElement = document.getElementById('links');
-          
-          if (outputElement) outputElement.innerHTML = "";
           
           socket.onmessage = function(event) {
             const message = event.data;
@@ -163,20 +159,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
             updateStatus(message);
             
-            // Update Alpine.js logs state
+            // Update Alpine.js logs state only
             modalData = getModalData();
             if (modalData) {
               const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
               modalData.logs += strippedMessage + '\n';
-            }
-            
-            // Legacy fallback for output element
-            const pre = document.createElement('pre');
-            const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
-            pre.textContent = strippedMessage;
-            if (outputElement) {
-              outputElement.appendChild(pre);
-              outputElement.scrollTop = outputElement.scrollHeight;
             }
           };
           
@@ -218,12 +205,6 @@ document.addEventListener('DOMContentLoaded', () => {
               modalData.isComplete = true;
               modalData.logs += "Process complete. Check the links above for downloads.\n";
             }
-            
-            // Legacy fallback
-            if (outputElement) {
-              outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";
-              outputElement.scrollTop = outputElement.scrollHeight;
-            }
 
             // Fetch artifacts from the server
             fetch(`/api/v1/builds/${result.uuid}/artifacts`)
@@ -238,33 +219,6 @@ document.addEventListener('DOMContentLoaded', () => {
                     description: artifact.description
                   }));
                 }
-                
-                // Legacy fallback
-                if (linkElement) {
-                  linkElement.innerHTML = ""; // Clear existing links
-                  for (const [i, artifact] of artifacts.entries()) {
-                    const fullUrl = `/builds/${result.uuid}/artifacts/${artifact.url}`;
-                    const popoverId = `artifact-popover-${i}`;
-                    linkElement.innerHTML += `
-                      <a href="${fullUrl}" target="_blank" class="block text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-small rounded-lg px-5 py-2.5 h-full flex flex-col justify-between dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">
-                        <div class="text-sm font-semibold flex items-center gap-2">
-                          ${artifact.name}
-                          <button type="button" data-popover-target="${popoverId}" data-popover-placement="bottom-end" tabindex="0" class="ml-2 align-middle">
-                            <svg class="w-4 h-4 text-gray-200 hover:text-gray-100 dark:text-gray-400 dark:hover:text-gray-200" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg"><path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path></svg>
-                            <span class="sr-only">Show information</span>
-                          </button>
-                        </div>
-                      </a>
-                      <div data-popover id="${popoverId}" role="tooltip" class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400">
-                        <div class="p-3 space-y-2">
-                          <p>${artifact.description}</p>
-                        </div>
-                        <div data-popper-arrow></div>
-                      </div>
-                    `;
-                  }
-                  if (window.initPopovers) window.initPopovers();
-                }
               })
               .catch(error => {
                 console.error('Error fetching artifacts:', error);
@@ -273,12 +227,6 @@ document.addEventListener('DOMContentLoaded', () => {
                 modalData = getModalData();
                 if (modalData) {
                   modalData.logs += "Error fetching download links. Please try refreshing the page.\n";
-                }
-                
-                // Legacy fallback
-                if (outputElement) {
-                  outputElement.innerHTML += "Error fetching download links. Please try refreshing the page.\n";
-                  outputElement.scrollTop = outputElement.scrollHeight;
                 }
               });
           };
