@@ -9,6 +9,78 @@ window.createAccordionView = createAccordionView;
 // Alpine.js component registration
 Alpine.data('createAccordionView', createAccordionView);
 
+// Modal and build process state management
+Alpine.data('buildModal', () => ({
+  // Modal state
+  isModalVisible: false,
+  
+  // Initialize keyboard listeners
+  init() {
+    // Handle escape key to close modal
+    const handleEscape = (event) => {
+      if (event.key === 'Escape' && this.isModalVisible) {
+        // Only allow closing if build is not active
+        if (!this.isBuilding) {
+          this.resetBuildState();
+        }
+      }
+    };
+    
+    this.$watch('isModalVisible', (value) => {
+      if (value) {
+        document.addEventListener('keydown', handleEscape);
+      } else {
+        document.removeEventListener('keydown', handleEscape);
+      }
+    });
+  },
+  
+  // Build state
+  currentStep: -1, // -1 = no step active, 0-4 = active steps
+  isBuilding: false,
+  isComplete: false,
+  showLogs: false,
+  logs: '',
+  downloads: [],
+  
+  // Build steps
+  statusSteps: [
+    { id: 'building-container-image', name: 'Building container image' },
+    { id: 'generating-tarball', name: 'Generating tarball' },
+    { id: 'generating-raw-image', name: 'Generating raw image' },
+    { id: 'generating-iso', name: 'Generating ISO' },
+    { id: 'generating-download-links', name: 'Generating download links' }
+  ],
+  
+  // Methods
+  resetBuildState() {
+    this.logs = '';
+    this.downloads = [];
+    this.currentStep = -1; // Reset to initial state (no step active)
+    this.isBuilding = false;
+    this.isComplete = false;
+    this.isModalVisible = false;
+    this.showLogs = false; // Also reset logs visibility
+  },
+  
+  toggleLogs() {
+    this.showLogs = !this.showLogs;
+  },
+  
+  isStepActive(stepIndex) {
+    return stepIndex === this.currentStep && this.isBuilding;
+  },
+  
+  isStepComplete(stepIndex) {
+    return stepIndex < this.currentStep || this.isComplete;
+  },
+  
+  isStepVisible(stepIndex) {
+    return (this.isBuilding && stepIndex <= this.currentStep) || 
+           (this.isComplete && stepIndex < this.statusSteps.length);
+  }
+}));
+
 window.Alpine = Alpine;
 Alpine.start();
 
@@ -20,86 +92,25 @@ Alpine.nextTick(() => {
 });
 
 document.addEventListener('DOMContentLoaded', () => {
-  // Alpine.js now handles all the form logic, so we only need to keep the modal and submission logic
-  
-  // Initialize Flowbite modal instance
-  let flowbiteModal = null;
-  if (window.Modal) {
-    const modalElement = document.getElementById('static-modal');
-    if (modalElement) {
-      flowbiteModal = new window.Modal(modalElement, {
-        backdrop: 'static',
-        keyboard: false
-      });
-    }
-  }
-  
-  const logsToggle = document.getElementById('logs-toggle');
-  const logs = document.getElementById('output');
-  
-  if (logsToggle && logs) {
-    logsToggle.addEventListener('change', function() {
-      if (this.checked) {
-        logs.style.display = 'block';
-      } else {
-        logs.style.display = 'none';
-      }
-    });
-  }
 
-  const restartButton = document.getElementById('restart-button');
-  const staticModal = document.getElementById('static-modal');
-  const modalBackdrop = document.getElementById('modal-backdrop');
+  // Get the buildModal component instance once and reuse it
+  let modalData = null;
   
-  if (restartButton) {
-    restartButton.addEventListener('click', function() {
-      if (logs) logs.innerHTML = "";
-      const downloads = document.getElementById('downloads');
-      if (downloads) downloads.style.display = 'none';
-      const linkElement = document.getElementById('links');
-      if (linkElement) linkElement.innerHTML = "";
-      // Hide the Flowbite modal
-      if (flowbiteModal) {
-        flowbiteModal.hide();
-      } else {
-        // Fallback to manual show/hide
-        if (modalBackdrop) modalBackdrop.classList.add("hidden");
-        if (staticModal) staticModal.classList.add("hidden");
+  // Function to get modal data with retry
+  function getModalData() {
+    if (!modalData) {
+      const modalElement = document.querySelector('[x-data*="buildModal"]');
+      if (modalElement) {
+        modalData = Alpine.$data(modalElement);
       }
-      restartButton.classList.add("hidden");
-      
-      document.querySelectorAll('.spinner').forEach(function(element) {
-        element.classList.remove("hidden");
-      });
-      document.querySelectorAll('.done').forEach(function(element) {
-        element.classList.add("hidden");
-      });
-      
-      // Hide all status steps except the first one
-      const statusSteps = [
-        document.getElementById('building-container-image'),
-        document.getElementById('generating-tarball'),
-        document.getElementById('generating-raw-image'),
-        document.getElementById('generating-iso'),
-        document.getElementById('generating-download-links')
-      ];
-      
-      statusSteps.forEach((el, idx) => {
-        if (el) {
-          if (idx === 0) {
-            el.classList.remove('hidden'); // Only show the first step at the start
-          } else {
-            el.classList.add('hidden');
-          }
-          // Also reset spinners and checkmarks for all
-          const spinner = el.querySelector('.spinner');
-          const done = el.querySelector('.done');
-          if (spinner) spinner.classList.remove('hidden');
-          if (done) done.classList.add('hidden');
-        }
-      });
-    });
+    }
+    return modalData;
   }
+  
+  // Wait for Alpine.js to initialize
+  Alpine.nextTick(() => {
+    modalData = getModalData();
+  });
 
   const form = document.getElementById('process-form');
   if (form) {
@@ -120,14 +131,19 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       }
 
-      // Show the Flowbite modal
-      if (flowbiteModal) {
-        flowbiteModal.show();
-      } else {
-        // Fallback to manual show/hide
-        if (modalBackdrop) modalBackdrop.classList.remove("hidden");
-        if (staticModal) staticModal.classList.remove("hidden");
+      // Ensure we have the modalData reference
+      modalData = getModalData();
+
+      // Update Alpine.js state
+      if (modalData) {
+        modalData.isModalVisible = true;
+        modalData.isBuilding = true;
+        modalData.currentStep = -1; // Start with no step active (waiting for worker)
+        modalData.isComplete = false;
+        modalData.logs = '';
+        modalData.downloads = [];
       }
+
       
       const formData = new FormData(event.target);
       
@@ -147,9 +163,16 @@ document.addEventListener('DOMContentLoaded', () => {
             if (!message.trim()) return; // Skip empty messages
 
             updateStatus(message);
-            // Create a pre element to preserve whitespace and prevent wrapping
+            
+            // Update Alpine.js logs state
+            modalData = getModalData();
+            if (modalData) {
+              const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
+              modalData.logs += strippedMessage + '\n';
+            }
+            
+            // Legacy fallback for output element
             const pre = document.createElement('pre');
-            // Strip ANSI color codes using regex
             const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
             pre.textContent = strippedMessage;
             if (outputElement) {
@@ -157,88 +180,67 @@ document.addEventListener('DOMContentLoaded', () => {
               outputElement.scrollTop = outputElement.scrollHeight;
             }
           };
-
-          const generatingDownloadLinks = document.getElementById('generating-download-links');
           
           function updateStatus(message) {
+            modalData = getModalData();
             if (message.includes("Waiting for worker to pick up the job")) {
-              showStep("waiting-for-worker");
+              if (modalData) modalData.currentStep = -1;
               return;
             }
             if (message.includes("Building container image")) {
-              showStep("building-container-image");
+              if (modalData) modalData.currentStep = 0;
               return;
             }
             if (message.includes("Generating tarball")) {
-              showStep("generating-tarball");
+              if (modalData) modalData.currentStep = 1;
+              return;
             }
             if (message.includes("Generating raw image")) {
-              showStep("generating-raw-image");
+              if (modalData) modalData.currentStep = 2;
               return;
             }
             if (message.includes("Generating ISO")) {
-              showStep("generating-iso");
-              return;
-            }
-            if (message.includes("Generating AWS image")) {
-              showStep("generating-aws-image");
-              return;
-            }
-            if (message.includes("Generating GCP image")) {
-              showStep("generating-gcp-image");
-              return;
-            }
-            if (message.includes("Generating Azure image")) {
-              showStep("generating-azure-image");
+              if (modalData) modalData.currentStep = 3;
               return;
             }
             if (message.includes("Uploading artifacts to server")) {
-              showStep("generating-download-links");
+              if (modalData) modalData.currentStep = 4;
               return;
             }
           }
 
-          function showStep(stepId) {
-            const step = document.getElementById(stepId);
-            if (step) {
-              step.classList.remove('hidden');
-            }
-            // find the previous li in the status-list
-            const statusList = document.querySelector('.status-list');
-            if (statusList) {
-              const steps = Array.from(statusList.querySelectorAll('li'));
-              const currentStep = document.getElementById(stepId);
-              const currentStepIndex = steps.indexOf(currentStep);
-              // find all previous steps and hide their spinners and show their done icons
-              for (let i = 0; i < currentStepIndex; i++) {
-                const previousStep = steps[i];
-                const spinner = previousStep.querySelector('.spinner');
-                const done = previousStep.querySelector('.done');
-                if (spinner) spinner.classList.add('hidden');
-                if (done) done.classList.remove('hidden');
-              }
-            }
-          }
+
 
           socket.onclose = function() {
-            if (restartButton) restartButton.classList.remove("hidden");
-            if (generatingDownloadLinks) {
-              const spinner = generatingDownloadLinks.querySelector('.spinner');
-              const done = generatingDownloadLinks.querySelector('.done');
-              if (spinner) spinner.classList.add("hidden");
-              if (done) done.classList.remove("hidden");
+            // Update Alpine.js state
+            modalData = getModalData();
+            if (modalData) {
+              modalData.isBuilding = false;
+              modalData.isComplete = true;
+              modalData.logs += "Process complete. Check the links above for downloads.\n";
             }
+            
+            // Legacy fallback
             if (outputElement) {
               outputElement.innerHTML += "Process complete. Check the links above for downloads.\n";
               outputElement.scrollTop = outputElement.scrollHeight;
             }
-            const downloads = document.getElementById('downloads');
-            if (downloads) downloads.style.display = 'block';
 
             // Fetch artifacts from the server
             fetch(`/api/v1/builds/${result.uuid}/artifacts`)
               .then(response => response.json())
               .then(artifacts => {
+                // Update Alpine.js state
+                modalData = getModalData();
+                if (modalData) {
+                  modalData.downloads = artifacts.map(artifact => ({
+                    name: artifact.name,
+                    fullUrl: `/builds/${result.uuid}/artifacts/${artifact.url}`,
+                    description: artifact.description
+                  }));
+                }
+                
+                // Legacy fallback
                 if (linkElement) {
                   linkElement.innerHTML = ""; // Clear existing links
                   for (const [i, artifact] of artifacts.entries()) {
@@ -267,6 +269,14 @@ document.addEventListener('DOMContentLoaded', () => {
               })
               .catch(error => {
                 console.error('Error fetching artifacts:', error);
+                
+                // Update Alpine.js state
+                modalData = getModalData();
+                if (modalData) {
+                  modalData.logs += "Error fetching download links. Please try refreshing the page.\n";
+                }
+                
+                // Legacy fallback
                 if (outputElement) {
                   outputElement.innerHTML += "Error fetching download links. Please try refreshing the page.\n";
                   outputElement.scrollTop = outputElement.scrollHeight;
