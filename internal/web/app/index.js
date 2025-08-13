@@ -1,4 +1,3 @@
-import 'flowbite';
 import { createAccordionView } from './accordion-view.js';
 import './alpine-3.14.8.js';
 import Alpine from 'alpinejs';
@@ -79,13 +78,6 @@ Alpine.data('buildModal', () => ({
 }));
 
 Alpine.start();
-
-// Initialize Flowbite components after Alpine.js starts
-Alpine.nextTick(() => {
-  if (typeof window.initFlowbite === 'function') {
-    window.initFlowbite();
-  }
-});
 
 document.addEventListener('DOMContentLoaded', () => {
 

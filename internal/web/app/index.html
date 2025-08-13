@@ -80,7 +80,7 @@
             <form id="process-form" x-data="createAccordionView()" class="mt-8 space-y-6" action="#" novalidate>
               
               <!-- Data-Driven Accordion -->
-              <div id="accordion-collapse" data-accordion="collapse">
+              <div id="accordion-collapse">
                 
                 <!-- Dynamic Section Rendering -->
                 <template x-for="(section, index) in visibleSections" :key="section.id">
@@ -100,18 +100,46 @@
                         <span x-text="section.title"></span>
                         
                         <!-- Info Popover Button -->
-                        <template x-if="section.infoPopover && section.infoPopover.id">
-                          <button 
-                            type="button" 
-                            :data-popover-target="section.infoPopover.id" 
-                            data-popover-placement="bottom-end"
-                            class="text-gray-400 hover:text-gray-500"
-                          >
-                            <svg class="w-4 h-4" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
-                            <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
-                            </svg>
-                            <span class="sr-only">Show information</span>
-                          </button>
+                        <template x-if="section.infoPopover">
+                          <div x-data="{ showPopover: false }" class="relative">
+                            <button 
+                              type="button" 
+                              @mouseenter="showPopover = true" 
+                              @mouseleave="showPopover = false"
+                              @focus="showPopover = true"
+                              @blur="showPopover = false"
+                              class="text-gray-400 hover:text-gray-500 focus:outline-none focus:text-gray-600"
+                            >
+                              <svg class="w-4 h-4" aria-hidden="true" fill="currentColor" viewBox="0 0 20 20" xmlns="http://www.w3.org/2000/svg">
+                              <path fill-rule="evenodd" d="M18 10a8 8 0 11-16 0 8 8 0 0116 0zm-8-3a1 1 0 00-.867.5 1 1 0 11-1.731-1A3 3 0 0113 8a3.001 3.001 0 01-2 2.83V11a1 1 0 11-2 0v-1a1 1 0 011-1 1 1 0 100-2zm0 8a1 1 0 100-2 1 1 0 000 2z" clip-rule="evenodd"></path>
+                              </svg>
+                              <span class="sr-only">Show information</span>
+                            </button>
+                            <!-- Alpine.js Popover -->
+                            <div 
+                              x-show="showPopover"
+                              x-transition:enter="transition ease-out duration-200"
+                              x-transition:enter-start="opacity-0 translate-y-1"
+                              x-transition:enter-end="opacity-100 translate-y-0"
+                              x-transition:leave="transition ease-in duration-150"
+                              x-transition:leave-start="opacity-100 translate-y-0"
+                              x-transition:leave-end="opacity-0 translate-y-1"
+                              class="absolute left-0 top-full mt-2 w-72 p-3 bg-white border border-gray-200 rounded-lg shadow-lg z-50 dark:bg-gray-800 dark:border-gray-600"
+                              @mouseenter="showPopover = true"
+                              @mouseleave="showPopover = false"
+                            >
+                              <h3 class="font-semibold text-gray-900 dark:text-white mb-2" x-text="section.infoPopover?.title"></h3>
+                              <div class="text-sm text-gray-500 dark:text-gray-400 mb-2" x-html="section.infoPopover?.content"></div>
+                              <a x-show="section.infoPopover?.link" 
+                                 :href="section.infoPopover?.link?.url || '#'"
+                                 target="_blank"
+                                 class="inline-flex items-center font-medium text-blue-600 dark:text-blue-500 hover:text-blue-700 hover:underline text-sm"
+                                 x-text="section.infoPopover?.link?.text">
+                              </a>
+                              <!-- Arrow -->
+                              <div class="absolute -top-1 left-6 w-2 h-2 bg-white dark:bg-gray-800 border-l border-t border-gray-200 dark:border-gray-600 rotate-45"></div>
+                            </div>
+                          </div>
                         </template>
                       </div>
                       
@@ -301,26 +329,7 @@
                 Build
                   </button>
 
-              <!-- Info Popovers -->
-              <template x-for="section in sections.filter(s => s.infoPopover)" :key="section.id">
-                  <div
-                    data-popover
-                :id="section.infoPopover.id"
-                    role="tooltip"
-                    class="absolute z-10 invisible inline-block text-sm text-gray-500 transition-opacity duration-300 bg-white border border-gray-200 rounded-lg shadow-xs opacity-0 w-72 dark:bg-gray-800 dark:border-gray-600 dark:text-gray-400"
-                  >
-                    <div class="p-3 space-y-2">
-                  <h3 class="font-semibold text-gray-900 dark:text-white" x-text="section.infoPopover && section.infoPopover.title ? section.infoPopover.title : ''"></h3>
-                  <div x-html="section.infoPopover && section.infoPopover.content ? section.infoPopover.content : ''"></div>
-                  <a x-show="section.infoPopover && section.infoPopover.link" 
-                     :href="section.infoPopover && section.infoPopover.link ? section.infoPopover.link.url : '#'"
-                     class="flex items-center font-medium text-blue-600 dark:text-blue-500 dark:hover:text-blue-600 hover:text-blue-700 hover:underline"
-                     x-text="section.infoPopover && section.infoPopover.link ? section.infoPopover.link.text : ''">
-                  </a>
-                    </div>
-                    <div data-popper-arrow></div>
-                  </div>
-              </template>
+
             </form>
             
           </div>
