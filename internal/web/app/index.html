@@ -77,7 +77,7 @@
             </p>
 
             <!-- Form -->
-            <form id="process-form" x-data="createAccordionView()" class="mt-8 space-y-6" action="#" novalidate>
+            <form x-data="createAccordionView()" @submit="handleFormSubmit" class="mt-8 space-y-6" action="#" novalidate>
               
               <!-- Data-Driven Accordion -->
               <div id="accordion-collapse">
@@ -197,6 +197,7 @@
                               :value="item.value"
                               x-model="formData[section.formField]"
                               @change="handleSectionChange(section, item.value)"
+                              x-ref="kubernetesFields"
                           class="hidden peer"
                               :required="section.required"
                         />
@@ -230,6 +231,7 @@
                                 :name="section.customInput?.field || ''"
                                 :id="section.customInput?.field || ''"
                                 x-model="formData[section.customInput?.field || '']"
+                                x-ref="byoiField"
                                 :class="'w-full mt-2 bg-gray-50 border text-gray-900 text-sm rounded-lg block p-2.5 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white ' + (hasValidationError(section.customInput?.field || '') ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-500 dark:focus:ring-red-500 dark:focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:focus:border-blue-500')"
                                 :placeholder="section.customInput?.placeholder || ''"
                               />
@@ -250,6 +252,7 @@
                           :name="section.formField"
                           :id="section.formField"
                           x-model="formData[section.formField]"
+                          x-ref="versionField"
                           :class="'bg-gray-50 border text-gray-900 text-sm rounded-lg block w-full p-2.5 dark:bg-gray-700 dark:placeholder-gray-400 dark:text-white ' + (hasValidationError(section.formField) ? 'border-red-500 focus:ring-red-500 focus:border-red-500 dark:border-red-500 dark:focus:ring-red-500 dark:focus:border-red-500' : 'border-gray-300 focus:ring-blue-500 focus:border-blue-500 dark:border-gray-600 dark:focus:ring-blue-500 dark:focus:border-blue-500')"
                           :placeholder="section.placeholder"
                           :required="section.required"

@@ -258,7 +258,7 @@ export function createAccordionView() {
             }
         },
 
-        // Form validation with accordion behavior
+        // Form validation with accordion behavior (pure Alpine.js)
         validateForm() {
             const validation = buildForm.validateForm.call(this);
             
@@ -283,30 +283,51 @@ export function createAccordionView() {
                     }
                 }
 
-                // Focus on the first field with an error after a short delay
-                // This allows the accordion animation to complete
+                // Focus on the first field with an error using Alpine.js refs
                 this.$nextTick(() => {
                     setTimeout(() => {
-                        let firstErrorField = null;
-
-                        if (validation.errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED)) {
-                            firstErrorField = document.querySelector('input[name="version"]');
-                        } else if (validation.errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED)) {
-                            firstErrorField = document.querySelector('input[name="byoi_image"]');
-                        } else if (validation.errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED)) {
-                            firstErrorField = document.querySelector('input[name="kubernetes_distribution"]:checked') ||
-                                            document.querySelector('input[name="kubernetes_distribution"]');
-                        }
-
-                        if (firstErrorField) {
-                            firstErrorField.focus();
-                            firstErrorField.scrollIntoView({ behavior: 'smooth', block: 'center' });
-                        }
+                        this.focusFirstErrorField(validation.errors);
                     }, 300);
                 });
             }
             
             return validation;
+        },
+
+        // Focus first error field using Alpine.js reactive patterns
+        focusFirstErrorField(errors) {
+            let targetField = null;
+
+            if (errors.includes(VALIDATION_ERRORS.VERSION_REQUIRED)) {
+                targetField = this.$refs.versionField;
+            } else if (errors.includes(VALIDATION_ERRORS.BYOI_IMAGE_REQUIRED)) {
+                targetField = this.$refs.byoiField;
+            } else if (errors.includes(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED)) {
+                targetField = this.$refs.kubernetesFields?.[0];
+            }
+
+            if (targetField) {
+                targetField.focus();
+                targetField.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        },
+
+        // Handle form submission through Alpine.js store communication
+        handleFormSubmit(event) {
+            event.preventDefault();
+
+            // Run validation before proceeding
+            const validation = this.validateForm();
+
+            if (!validation.isValid) {
+                // Validation failed - accordion sections should already be opened by validateForm()
+                // Visual feedback is handled by the accordion component
+                return; // Don't proceed with form submission
+            }
+
+            // Communicate with modal component through Alpine store
+            const formData = new FormData(event.target);
+            this.$store.formSubmission = { shouldSubmit: true, formData: formData };
         },
 
         // Accordion-specific helper methods
