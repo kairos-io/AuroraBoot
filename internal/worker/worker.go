@@ -218,7 +218,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	imageName := fmt.Sprintf("build-%s", jobID)
-	if err := runBashProcessWithOutput(writer, buildOCI(tempdir, imageName)); err != nil {
+	if err := runBashProcessWithOutput(writer, buildOCI(tempdir, imageName, jobData.Architecture)); err != nil {
 		return fmt.Errorf("failed to build image: %v", err)
 	}
 
@@ -464,8 +464,9 @@ RUN rm /kairos-init`
 	return nil
 }
 
-func buildOCI(contextDir, image string) string {
-	return fmt.Sprintf(`docker buildx build --load --progress=plain %s -t %s`, contextDir, image)
+func buildOCI(contextDir, image, architecture string) string {
+	platform := fmt.Sprintf("linux/%s", architecture)
+	return fmt.Sprintf(`docker buildx build --platform=%s --load --progress=plain %s -t %s`, platform, contextDir, image)
 }
 
 func saveOCI(dst, image string) string {
