@@ -21,6 +21,12 @@
       "automerge": true
     },
     {
+      "matchDepNames": [
+        "github.com/urfave/cli/v3"
+      ],
+      "enabled": false
+    },
+    {
       "groupName": "repositories",
       "matchPackageNames": [
         "/^quay.io/kairos/packages*/"
