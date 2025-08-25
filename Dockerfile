@@ -55,20 +55,20 @@ RUN dnf in -y bc \
               zstd
 
 
-FROM golang:1.24 AS with-swagger
+FROM golang:1.25 AS with-swagger
 WORKDIR /app
 RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
 RUN swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
 
-FROM golang:1.24 AS without-swagger
+FROM golang:1.25 AS without-swagger
 WORKDIR /app
 RUN mkdir -p internal/web/app
 RUN touch internal/web/app/swagger.json internal/web/app/redoc.html
 
 FROM ${SWAGGER_STAGE} AS swagger
 
-FROM golang:1.24 AS builder
+FROM golang:1.25 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
 COPY --from=js /app/bundle.js ./internal/web/app/bundle.js
