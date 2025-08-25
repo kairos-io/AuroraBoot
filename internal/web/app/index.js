@@ -1,5 +1,4 @@
 import { createAccordionView } from './accordion-view.js';
-import './alpine-3.14.8.js';
 import Alpine from 'alpinejs';
 
 // Alpine.js component registration
