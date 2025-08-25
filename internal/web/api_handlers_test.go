@@ -91,11 +91,12 @@ var _ = Describe("API Handlers", func() {
 		Context("when valid build request is submitted", func() {
 			BeforeEach(func() {
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				json.NewEncoder(body).Encode(buildReq)
 				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
@@ -143,6 +144,33 @@ var _ = Describe("API Handlers", func() {
 				Expect(rec.Code).To(Equal(http.StatusBadRequest), fmt.Sprintf("Response body: %s", rec.Body.String()))
 			})
 		})
+
+		Context("when architecture field is missing", func() {
+			BeforeEach(func() {
+				buildReq := jobstorage.JobData{
+					Variant: "core",
+					Model:   "test-model",
+					Image:   "test-image",
+					Version: "1.0.0",
+					// Architecture missing
+				}
+				json.NewEncoder(body).Encode(buildReq)
+				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
+				req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			})
+
+			It("should return bad request with architecture error", func() {
+				c := e.NewContext(req, rec)
+				err := HandleQueueBuild(c)
+				Expect(err).To(BeNil(), fmt.Sprintf("Response body: %s", rec.Body.String()))
+				Expect(rec.Code).To(Equal(http.StatusBadRequest), fmt.Sprintf("Response body: %s", rec.Body.String()))
+				
+				var response map[string]string
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+				Expect(response["error"]).To(ContainSubstring("Architecture"))
+			})
+		})
 	})
 
 	Describe("BindBuildJob", func() {
@@ -152,11 +180,12 @@ var _ = Describe("API Handlers", func() {
 			BeforeEach(func() {
 				// Create a job first
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				json.NewEncoder(body).Encode(buildReq)
 				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
@@ -210,11 +239,12 @@ var _ = Describe("API Handlers", func() {
 			BeforeEach(func() {
 				// Create and bind a job
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				json.NewEncoder(body).Encode(buildReq)
 				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
@@ -261,11 +291,12 @@ var _ = Describe("API Handlers", func() {
 			BeforeEach(func() {
 				// Create and bind a job
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				json.NewEncoder(body).Encode(buildReq)
 				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
@@ -309,11 +340,12 @@ var _ = Describe("API Handlers", func() {
 			BeforeEach(func() {
 				// Create a job first
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				json.NewEncoder(body).Encode(buildReq)
 				req = httptest.NewRequest(http.MethodPost, "/api/v1/builds", body)
@@ -373,11 +405,12 @@ var _ = Describe("API Handlers", func() {
 			BeforeEach(func() {
 				// Create a job first
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				jsonData, err := json.Marshal(buildReq)
 				Expect(err).NotTo(HaveOccurred())
@@ -441,11 +474,12 @@ var _ = Describe("API Handlers", func() {
 			BeforeEach(func() {
 				// Create and bind a job
 				buildReq := jobstorage.JobData{
-					Variant:     "core",
-					Model:       "test-model",
-					Image:       "test-image",
-					Version:     "1.0.0",
-					TrustedBoot: false,
+					Variant:      "core",
+					Model:        "test-model",
+					Architecture: "amd64",
+					Image:        "test-image",
+					Version:      "1.0.0",
+					TrustedBoot:  false,
 				}
 				jsonData, err := json.Marshal(buildReq)
 				Expect(err).NotTo(HaveOccurred())

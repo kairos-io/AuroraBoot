@@ -127,7 +127,7 @@ func buildHandler(c echo.Context) error {
 	variant := c.FormValue("variant")
 	architecture := c.FormValue("architecture")
 	if architecture == "" {
-		architecture = "amd64" // Default to amd64 if not specified
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Architecture is required"})
 	}
 
 	kubernetesDistribution := c.FormValue("kubernetes_distribution")
