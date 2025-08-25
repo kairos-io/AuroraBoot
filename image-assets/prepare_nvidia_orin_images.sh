@@ -40,7 +40,14 @@ truncate -s $((20*1024*1024)) bootloader/efi.img
 cp -rfv /arm/raw/grubefi/* $WORKDIR/tmpefi
 cp -rfv /arm/raw/grubartifacts/* $WORKDIR/tmpefi/EFI/BOOT/
 mkdir -p $WORKDIR/tmpefi/EFI/BOOT/fonts
-mv $WORKDIR/tmpefi/EFI/BOOT/*pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
+# Move any .pf2 files from the old location if they exist
+if compgen -G "$WORKDIR/tmpefi/EFI/BOOT/*.pf2" > /dev/null; then
+    mv $WORKDIR/tmpefi/EFI/BOOT/*pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
+fi
+# Move any .pf2 files from the new grub2 location if they exist
+if compgen -G "$WORKDIR/tmpefi/EFI/BOOT/grub2/*.pf2" > /dev/null; then
+    mv $WORKDIR/tmpefi/EFI/BOOT/grub2/"*.pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
+fi
 
 mkfs.fat -F16 -n COS_GRUB bootloader/efi.img
 mcopy -s -i bootloader/efi.img $WORKDIR/tmpefi/EFI ::EFI
