@@ -335,8 +335,8 @@ export function createAccordionView() {
                 'kubernetes': '☸️',
                 'kubernetes-release': '📋',
                 'version': '🏷️',
-                'configuration': '⚙️',
-                'artifacts': '📦'
+                'configuration': '📝',
+                'artifacts': '📁'
             };
             return icons[sectionName] || '📄';
         },
