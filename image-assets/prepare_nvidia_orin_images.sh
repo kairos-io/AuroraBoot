@@ -41,12 +41,12 @@ cp -rfv /arm/raw/grubefi/* $WORKDIR/tmpefi
 cp -rfv /arm/raw/grubartifacts/* $WORKDIR/tmpefi/EFI/BOOT/
 mkdir -p $WORKDIR/tmpefi/EFI/BOOT/fonts
 # Move any .pf2 files from the old location if they exist
-if compgen -G "$WORKDIR/tmpefi/EFI/BOOT/*.pf2" > /dev/null; then
+if compgen -G $WORKDIR/tmpefi/EFI/BOOT/*.pf2 > /dev/null; then
     mv $WORKDIR/tmpefi/EFI/BOOT/*pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
 fi
 # Move any .pf2 files from the new grub2 location if they exist
-if compgen -G "$WORKDIR/tmpefi/EFI/BOOT/grub2/*.pf2" > /dev/null; then
-    mv $WORKDIR/tmpefi/EFI/BOOT/grub2/"*.pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
+if compgen -G $WORKDIR/tmpefi/EFI/BOOT/grub2/*.pf2 > /dev/null; then
+    mv $WORKDIR/tmpefi/EFI/BOOT/grub2/*.pf2 $WORKDIR/tmpefi/EFI/BOOT/fonts
 fi
 
 mkfs.fat -F16 -n COS_GRUB bootloader/efi.img
