@@ -325,64 +325,7 @@ export function createAccordionView() {
             this.$store.formSubmission = { shouldSubmit: true, formData: formData };
         },
 
-        // Accordion-specific helper methods
-        getSectionIcon(sectionName) {
-            const icons = {
-                'base-image': '📦',
-                'architecture': '🏗️',
-                'model': '🔧',
-                'variant': '⚙️',
-                'kubernetes': '☸️',
-                'kubernetes-release': '📋',
-                'version': '🏷️',
-                'configuration': '📝',
-                'artifacts': '📁'
-            };
-            return icons[sectionName] || '📄';
-        },
 
-        getSectionDescription(sectionName) {
-            const descriptions = {
-                'base-image': 'Choose your base operating system',
-                'architecture': 'Select target architecture',
-                'model': 'Choose hardware model',
-                'variant': 'Select Kairos variant',
-                'kubernetes': 'Choose Kubernetes distribution',
-                'kubernetes-release': 'Specify Kubernetes version',
-                'version': 'Set your image version',
-                'configuration': 'Add cloud-init configuration',
-                'artifacts': 'Select output formats'
-            };
-            return descriptions[sectionName] || '';
-        },
-
-        // Model-specific SVG icons
-        getModelIcon(modelValue) {
-            // Create an img element that references the SVG file
-            const svgFiles = {
-                'rpi3': 'assets/img/rpi.svg',
-                'rpi4': 'assets/img/rpi.svg',
-                'nvidia-agx-orin': 'assets/img/nvidia-agx-orin.svg'
-            };
-
-            const svgPath = svgFiles[modelValue];
-            if (svgPath) {
-                return `<img src="${svgPath}" class="mb-2 w-7 h-7 text-sky-500" alt="${modelValue}" />`;
-            }
-            return '';
-        },
-
-        // Artifact-specific display
-        getArtifactDisplay(artifactValue) {
-            const displays = {
-                'raw': 'RAW',
-                'iso': 'ISO',
-                'tar': 'TAR',
-                'gcp': 'Google Cloud',
-                'azure': 'Azure'
-            };
-            return displays[artifactValue] || '';
-        },
 
         // Validation error checking for UI styling
         hasValidationError(fieldName) {
