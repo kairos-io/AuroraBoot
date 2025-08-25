@@ -67,11 +67,12 @@ var _ = Describe("Worker", func() {
 	It("process jobs appropriately", func() {
 		// Create a test job with an invalid image
 		jobData := jobstorage.JobData{
-			Variant:     "core",
-			Model:       "test-model",
-			Image:       "invalid-image-that-does-not-exist",
-			Version:     "1.0.0",
-			TrustedBoot: false,
+			Variant:      "core",
+			Model:        "test-model",
+			Architecture: "amd64",
+			Image:        "invalid-image-that-does-not-exist",
+			Version:      "1.0.0",
+			TrustedBoot:  false,
 		}
 
 		// Submit the job

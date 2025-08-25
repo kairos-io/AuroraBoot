@@ -42,8 +42,8 @@ func HandleQueueBuild(c echo.Context) error {
 	}
 
 	// Validate required fields
-	if req.Version == "" || req.Image == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Missing required fields (Version, Image)"})
+	if req.Version == "" || req.Image == "" || req.Architecture == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Missing required fields (Version, Image, Architecture)"})
 	}
 
 	id, err := uuid.NewV4()
