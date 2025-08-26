@@ -43,7 +43,7 @@ const (
 	KairosDefaultArtifactName = "kairos"
 	IsoEFIPath                = "/boot/uefi.img"
 	EfiBootPath               = "/EFI/BOOT"
-	EfiLabel                  = "COS_GRUB"
+	EfiLabel                  = "COS_GRUB_LIVE"
 	EfiFs                     = "vfat"
 	IsoRootFile               = "rootfs.squashfs"
 	ISOLabel                  = "COS_LIVE"
