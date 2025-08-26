@@ -125,6 +125,10 @@ func buildHandler(c echo.Context) error {
 	}
 
 	variant := c.FormValue("variant")
+	architecture := c.FormValue("architecture")
+	if architecture == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "Architecture is required"})
+	}
 
 	kubernetesDistribution := c.FormValue("kubernetes_distribution")
 	kubernetesVersion := c.FormValue("kubernetes_version")
@@ -147,6 +151,7 @@ func buildHandler(c echo.Context) error {
 		JobData: jobstorage.JobData{
 			Variant:                variant,
 			Model:                  c.FormValue("model"),
+			Architecture:           architecture,
 			TrustedBoot:            c.FormValue("trusted_boot") == "true",
 			KubernetesDistribution: kubernetesDistribution,
 			KubernetesVersion:      kubernetesVersion,

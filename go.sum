@@ -1081,6 +1081,8 @@ github.com/twpayne/go-vfs/v4 v4.3.0 h1:rTqFzzOQ/6ESKTSiwVubHlCBedJDOhQyVSnw8rQNZ
 github.com/twpayne/go-vfs/v4 v4.3.0/go.mod h1:tq2UVhnUepesc0lSnPJH/jQ8HruGhzwZe2r5kDFpEIw=
 github.com/twpayne/go-vfs/v5 v5.0.4 h1:/ne3h+rW7f5YOyOFguz+3ztfUwzOLR0Vts3y0mMAitg=
 github.com/twpayne/go-vfs/v5 v5.0.4/go.mod h1:zTPFJUbgsEMFNSWnWQlLq9wh4AN83edZzx3VXbxrS1w=
+github.com/twpayne/go-vfs/v5 v5.0.5 h1:s+Rb66vj0Y8waQV3xndzjh/qdZNiOWEpnCctM2cHWaA=
+github.com/twpayne/go-vfs/v5 v5.0.5/go.mod h1:AF7wvxTGEE0XnSdtHXKwHY8vcanqhFga27BhJYHUvMo=
 github.com/u-root/u-root v0.14.0 h1:Ka4T10EEML7dQ5XDvO9c3MBN8z4nuSnGjcd1jmU2ivg=
 github.com/u-root/u-root v0.14.0/go.mod h1:hAyZorapJe4qzbLWlAkmSVCJGbfoU9Pu4jpJ1WMluqE=
 github.com/u-root/uio v0.0.0-20240209044354-b3d14b93376a h1:BH1SOPEvehD2kVrndDnGJiUF0TrBpNs+iyYocu6h0og=

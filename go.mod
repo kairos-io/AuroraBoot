@@ -32,7 +32,7 @@ require (
 	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
 	github.com/spf13/viper v1.19.0 // agent cant use 1.20.0 due to some marshall changes
 	github.com/stretchr/testify v1.10.0
-	github.com/twpayne/go-vfs/v5 v5.0.4
+	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.14.0
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b
 	golang.org/x/mod v0.25.0
