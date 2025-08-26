@@ -479,10 +479,9 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	efiSizeMB := (efiSize/align*align + align) / (1024 * 1024)
 	// Create the actual efi image
 	err = b.e.CreateFileSystemImage(&v1types.Image{
-		File:  img,
-		Size:  uint(efiSizeMB),
-		FS:    constants.EfiFs,
-		Label: constants.EfiLabel,
+		File: img,
+		Size: uint(efiSizeMB),
+		FS:   constants.EfiFs,
 	})
 	if err != nil {
 		return err
