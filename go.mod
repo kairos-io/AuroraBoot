@@ -9,7 +9,7 @@ godebug x509negativeserial=1
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/containerd/containerd/v2 v2.1.4
-	github.com/diskfs/go-diskfs v1.6.0
+	github.com/diskfs/go-diskfs v1.7.0
 	github.com/foxboron/go-uefi v0.0.0-20250207204325-69fb7dba244f
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/gofrs/uuid v4.4.0+incompatible
@@ -56,6 +56,7 @@ require (
 	github.com/ProtonMail/go-crypto v1.1.5 // indirect
 	github.com/StackExchange/wmi v1.2.1 // indirect
 	github.com/ThalesGroup/crypto11 v1.4.1 // indirect
+	github.com/anchore/go-lzo v0.1.0 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/aybabtme/rgbterm v0.0.0-20170906152045-cc83f3b3ce59 // indirect
 	github.com/bramvdbogaerde/go-scp v1.2.0 // indirect
