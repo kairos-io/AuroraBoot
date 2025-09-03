@@ -257,7 +257,7 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 		return fmt.Errorf("failed to send log message: %v", err)
 	}
 
-	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigContent); err != nil {
+	if err := buildRawDisk(imageName, jobOutputDir, writer, cloudConfigContent, jobData); err != nil {
 		return fmt.Errorf("failed to generate raw image: %v", err)
 	}
 
@@ -268,6 +268,22 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 	}
 
 	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
+
+	// Apply custom branding if specified
+	if jobData.ArtifactName != "" || jobData.Version != "" || jobData.BuildTag != "" {
+		customBaseName := generateCustomArtifactName(baseName, jobData)
+		if customBaseName != baseName {
+			// Rename the raw image with custom name
+			customRawName := customBaseName + ".raw"
+			customRawPath := filepath.Join(jobOutputDir, customRawName)
+			if err := os.Rename(rawImage, customRawPath); err != nil {
+				return fmt.Errorf("failed to rename raw image with custom name: %v", err)
+			}
+			rawImage = customRawPath
+			baseName = customBaseName
+			fmt.Fprintf(writer, "Applied custom branding: %s\n", customBaseName)
+		}
+	}
 
 	// Generate ISO if requested
 	if jobData.Artifacts.ISO {
@@ -480,7 +496,7 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 	return cmd.Run()
 }
 
-func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
+func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigContent string, jobData jobstorage.JobData) error {
 	artifact := schema.ReleaseArtifact{
 		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
 	}
@@ -581,10 +597,52 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 	return file, nil
 }
 
+// generateCustomArtifactName creates a custom artifact name based on branding options
+func generateCustomArtifactName(originalName string, jobData jobstorage.JobData) string {
+	// Parse the original name to extract components
+	// Example: kairos-ubuntu-24.04-core-amd64-generic-v3.2.4
+	parts := strings.Split(originalName, "-")
+	if len(parts) < 2 {
+		// If we can't parse it properly, fall back to simple replacement
+		result := originalName
+		if jobData.ArtifactName != "" {
+			result = strings.Replace(result, "kairos", jobData.ArtifactName, 1)
+		}
+		if jobData.BuildTag != "" {
+			result = result + "-" + jobData.BuildTag
+		}
+		return result
+	}
+
+	// Replace the artifact name prefix (typically "kairos")
+	if jobData.ArtifactName != "" {
+		parts[0] = jobData.ArtifactName
+	}
+
+	// Find and replace the version if specified
+	if jobData.Version != "" {
+		// Look for a version-like part (starts with 'v' and contains dots)
+		for i, part := range parts {
+			if strings.HasPrefix(part, "v") && strings.Contains(part, ".") {
+				parts[i] = jobData.Version
+				break
+			}
+		}
+	}
+
+	// Add build tag if specified
+	result := strings.Join(parts, "-")
+	if jobData.BuildTag != "" {
+		result = result + "-" + jobData.BuildTag
+	}
+
+	return result
+}
+
 // --- Cloud image builders ---
-func buildAWS(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
+func buildAWS(containerImage, outputDir string, writer io.Writer, cloudConfigContent string, jobData jobstorage.JobData) error {
 	// AWS uses the same as RAW
-	return buildRawDisk(containerImage, outputDir, writer, cloudConfigContent)
+	return buildRawDisk(containerImage, outputDir, writer, cloudConfigContent, jobData)
 }
 
 func buildGCP(containerImage, outputDir, artifactBaseName string, writer io.Writer, cloudConfigContent string) error {

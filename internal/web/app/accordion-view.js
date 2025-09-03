@@ -151,6 +151,32 @@ export function createAccordionView() {
                 getSelectedLabel: 'getConfigurationLabel'
             },
             {
+                id: 'branding',
+                title: 'Artifact Branding',
+                type: 'multi-text-inputs',
+                fields: [
+                    {
+                        id: 'artifact_name',
+                        label: 'Artifact Name',
+                        formField: 'artifact_name',
+                        placeholder: 'kairos',
+                        description: 'Custom prefix for artifact names (default: kairos)'
+                    },
+                    {
+                        id: 'build_tag',
+                        label: 'Build Tag',
+                        formField: 'build_tag',
+                        placeholder: 'alpha',
+                        description: 'Additional tag/suffix for artifacts'
+                    }
+                ],
+                infoPopover: {
+                    title: 'Artifact Branding',
+                    content: 'Customize the naming of your generated artifacts. The artifact name becomes the prefix (default: kairos), and build tag adds a custom suffix. The version is controlled by the "Version" field above. Example: mycompany-ubuntu-24.04-core-amd64-generic-v1.0.0-alpha.iso'
+                },
+                getSelectedLabel: 'getBrandingLabel'
+            },
+            {
                 id: 'artifacts',
                 title: 'Artifacts',
                 type: 'checkbox-grid',

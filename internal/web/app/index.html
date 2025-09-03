@@ -315,6 +315,27 @@
                   </div>
                     </template>
                     
+                    <!-- Multi Text Inputs Type -->
+                    <template x-if="section.type === 'multi-text-inputs'">
+                      <div class="space-y-4">
+                        <template x-for="field in section.fields" :key="field.id">
+                          <div>
+                            <label :for="field.formField" class="block mb-2 text-sm font-medium text-gray-900 dark:text-white" x-text="field.label"></label>
+                            <input
+                              type="text"
+                              :name="field.formField"
+                              :id="field.formField"
+                              x-model="formData[field.formField]"
+                              @change="clearValidationErrors()"
+                              class="bg-gray-50 border border-gray-300 text-gray-900 text-sm rounded-lg focus:ring-blue-500 focus:border-blue-500 block w-full p-2.5 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                              :placeholder="field.placeholder"
+                            />
+                            <p x-show="field.description" class="mt-1 text-xs text-gray-500 dark:text-gray-400" x-text="field.description"></p>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                    
 
                     <!-- Checkbox Grid Type -->
                     <template x-if="section.type === 'checkbox-grid'">

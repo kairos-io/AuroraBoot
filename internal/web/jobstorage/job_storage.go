@@ -76,6 +76,10 @@ type JobData struct {
 	Version                string    `json:"version"`
 	Artifacts              Artifacts `json:"artifacts"`
 	CloudConfig            string    `json:"cloud_config,omitempty"`
+
+	// Artifact branding options
+	ArtifactName string `json:"artifact_name,omitempty"` // Custom prefix for artifacts (default: "kairos")
+	BuildTag     string `json:"build_tag,omitempty"`     // Additional suffix/tag for artifacts
 }
 
 // JobStatus represents the current status of a build job

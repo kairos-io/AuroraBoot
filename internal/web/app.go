@@ -159,6 +159,10 @@ func buildHandler(c echo.Context) error {
 			Version:                c.FormValue("version"),
 			Artifacts:              artifacts,
 			CloudConfig:            c.FormValue("cloud_config"),
+
+			// Artifact branding options
+			ArtifactName: c.FormValue("artifact_name"),
+			BuildTag:     c.FormValue("build_tag"),
 		},
 		Status:    jobstorage.JobStatusQueued,
 		CreatedAt: time.Now().Format(time.RFC3339),

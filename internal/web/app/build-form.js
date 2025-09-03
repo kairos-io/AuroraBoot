@@ -25,7 +25,11 @@ export function createBuildForm() {
             artifact_iso: true,
             artifact_tar: true,
             artifact_gcp: false,
-            artifact_azure: false
+            artifact_azure: false,
+            
+            // Artifact branding options
+            artifact_name: '',
+            build_tag: ''
         },
 
         // Available base images with their metadata
@@ -168,6 +172,23 @@ export function createBuildForm() {
 
         getConfigurationLabel() {
             return this.formData.cloud_config.trim() ? 'added' : 'none';
+        },
+
+        // Artifact branding label functions
+        getArtifactNameLabel() {
+            return this.formData.artifact_name.trim() || 'kairos (default)';
+        },
+
+        getBuildTagLabel() {
+            return this.formData.build_tag.trim() || 'none';
+        },
+
+        getBrandingLabel() {
+            const parts = [];
+            if (this.formData.artifact_name.trim()) parts.push(`name: ${this.formData.artifact_name}`);
+            if (this.formData.version.trim()) parts.push(`version: ${this.formData.version}`);
+            if (this.formData.build_tag.trim()) parts.push(`tag: ${this.formData.build_tag}`);
+            return parts.length > 0 ? parts.join(', ') : 'default';
         },
 
 
