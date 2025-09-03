@@ -1,8 +1,106 @@
 import { createAccordionView } from './accordion-view.js';
+import { createBuildsView } from './builds-view.js';
 import Alpine from 'alpinejs';
+
+// URL Navigation component for tab management and persistence
+Alpine.data('urlNavigation', () => ({
+  mainActiveTab: 'newbuild',
+  
+  init() {
+    // Parse URL on page load to restore state
+    this.parseUrlAndSetState();
+    
+    // Listen for browser back/forward navigation
+    window.addEventListener('popstate', () => {
+      this.parseUrlAndSetState();
+    });
+  },
+  
+  // Parse URL hash and query parameters to restore state
+  parseUrlAndSetState() {
+    const urlParams = new URLSearchParams(window.location.search);
+    const hash = window.location.hash.substring(1); // Remove the # character
+    
+    // Set active tab from hash
+    if (hash === 'builds') {
+      this.mainActiveTab = 'builds';
+      // Auto-load builds when switching to builds tab
+      if (this.builds.length === 0) {
+        this.refreshBuilds();
+      }
+    } else {
+      this.mainActiveTab = 'newbuild';
+    }
+    
+    // If there's a build ID in query params and we're on builds tab, select it
+    const buildId = urlParams.get('build');
+    if (buildId && this.mainActiveTab === 'builds') {
+      this.selectBuildById(buildId);
+    }
+  },
+  
+  // Switch to a specific tab and update URL
+  switchToTab(tabName) {
+    this.mainActiveTab = tabName;
+    
+    // Update URL hash
+    const url = new URL(window.location);
+    if (tabName === 'builds') {
+      url.hash = 'builds';
+      // Auto-load builds when switching to builds tab
+      if (this.builds.length === 0) {
+        this.refreshBuilds();
+      }
+    } else {
+      url.hash = '';
+      // Clear build selection when going back to new build tab
+      url.searchParams.delete('build');
+      this.selectedBuild = null;
+    }
+    
+    // Update URL without page reload
+    window.history.pushState({}, '', url);
+  },
+  
+  // Select a build and update URL
+  selectBuildWithUrl(build) {
+    this.selectBuild(build, false);
+    
+    // Update URL with build ID
+    const url = new URL(window.location);
+    url.hash = 'builds';
+    url.searchParams.set('build', build.uuid);
+    window.history.pushState({}, '', url);
+  },
+  
+  // Select build by ID (for URL restoration)
+  async selectBuildById(buildId) {
+    try {
+      const response = await fetch(`/api/v1/builds/${buildId}`);
+      if (response.ok) {
+        const build = await response.json();
+        this.selectBuild(build, false);
+        
+        // Load the full builds list if not loaded
+        if (this.builds.length === 0) {
+          await this.refreshBuilds();
+        }
+      } else {
+        console.error('Build not found:', buildId);
+        // Remove invalid build ID from URL
+        const url = new URL(window.location);
+        url.searchParams.delete('build');
+        window.history.replaceState({}, '', url);
+      }
+    } catch (error) {
+      console.error('Error loading build:', error);
+    }
+  }
+}));
 
 // Alpine.js component registration
 Alpine.data('createAccordionView', createAccordionView);
+Alpine.data('buildsView', createBuildsView);
 
 // Modal and build process state management with form communication
 Alpine.data('buildModal', () => ({

@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,6 +25,122 @@ import (
 
 type BuildResponse struct {
 	UUID string `json:"uuid"`
+}
+
+// BuildListResponse represents the response for listing builds
+type BuildListResponse struct {
+	Builds []BuildWithUUID `json:"builds"`
+	Total  int             `json:"total"`
+}
+
+// BuildWithUUID represents a build job with its UUID
+type BuildWithUUID struct {
+	UUID string `json:"uuid"`
+	jobstorage.BuildJob
+}
+
+// @Summary List all build jobs
+// @Description Returns a paginated list of all build jobs, optionally filtered by status
+// @Tags builds
+// @Accept json
+// @Produce json
+// @Param status query string false "Filter by job status (queued, assigned, running, complete, failed)"
+// @Param limit query int false "Maximum number of builds to return (default: 50, max: 100)"
+// @Param offset query int false "Number of builds to skip (default: 0)"
+// @Success 200 {object} BuildListResponse
+// @Failure 400 {object} map[string]string
+// @Failure 500 {object} map[string]string
+// @Router /builds [get]
+func HandleListBuilds(c echo.Context) error {
+	// Parse query parameters
+	statusFilter := c.QueryParam("status")
+	limitStr := c.QueryParam("limit")
+	offsetStr := c.QueryParam("offset")
+
+	// Set defaults and parse limits
+	limit := 50
+	offset := 0
+
+	if limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+
+	if offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	// Read all build directories
+	entries, err := os.ReadDir(jobstorage.BuildsDir)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read builds directory"})
+	}
+
+	// Collect all builds with their UUIDs
+	var allBuilds []BuildWithUUID
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+
+		jobID := entry.Name()
+
+		// Validate UUID format
+		if _, err := uuid.FromString(jobID); err != nil {
+			continue
+		}
+
+		job, err := jobstorage.ReadJob(jobID)
+		if err != nil {
+			continue // Skip builds that can't be read
+		}
+
+		// Apply status filter if specified
+		if statusFilter != "" && string(job.Status) != statusFilter {
+			continue
+		}
+
+		allBuilds = append(allBuilds, BuildWithUUID{
+			UUID:     jobID,
+			BuildJob: job,
+		})
+	}
+
+	// Sort builds by creation time (newest first)
+	sort.Slice(allBuilds, func(i, j int) bool {
+		timeI, errI := time.Parse(time.RFC3339, allBuilds[i].CreatedAt)
+		timeJ, errJ := time.Parse(time.RFC3339, allBuilds[j].CreatedAt)
+
+		if errI != nil || errJ != nil {
+			return false // Keep original order if we can't parse times
+		}
+
+		return timeI.After(timeJ)
+	})
+
+	// Apply pagination
+	total := len(allBuilds)
+	start := offset
+	end := offset + limit
+
+	if start > total {
+		start = total
+	}
+	if end > total {
+		end = total
+	}
+
+	paginatedBuilds := allBuilds[start:end]
+
+	response := BuildListResponse{
+		Builds: paginatedBuilds,
+		Total:  total,
+	}
+
+	return c.JSON(http.StatusOK, response)
 }
 
 // @Summary Queue a new build job

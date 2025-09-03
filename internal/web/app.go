@@ -67,6 +67,7 @@ func App(config AppConfig) error {
 
 	// API routes
 	api := e.Group("/api/v1")
+	api.GET("/builds", HandleListBuilds)
 	api.POST("/builds", HandleQueueBuild)
 	api.POST("/builds/bind", HandleBindBuildJob)
 	api.PUT("/builds/:job_id/status", HandleUpdateJobStatus)

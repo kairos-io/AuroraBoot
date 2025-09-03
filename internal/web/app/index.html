@@ -25,8 +25,10 @@
       </div>
     </div>
 
+
+
     <!-- Main Content -->
-    <section class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16">
+    <section class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16" x-data="{ ...createAccordionView(), ...buildsView(), ...urlNavigation() }">
       <div class="grid lg:grid-cols-3 gap-8 lg:gap-16">
         <!-- Left Column - Header -->
         <div class="lg:col-span-1">
@@ -69,15 +71,39 @@
           </div>
         </div>
 
-        <!-- Right Column - Form -->
+        <!-- Right Column - Tabbed Content -->
         <div class="lg:col-span-2">
           <div class="w-full p-6 space-y-8 bg-white rounded-lg shadow-xl dark:bg-gray-800">
+            
+            <!-- Tab Navigation -->
+            <div class="border-b border-gray-200 dark:border-gray-600">
+              <nav class="flex space-x-8" aria-label="Tabs">
+                <button 
+                  @click="switchToTab('newbuild')"
+                  :class="[mainActiveTab === 'newbuild' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
+                >
+                  New Build
+                </button>
+                <button 
+                  @click="switchToTab('builds')"
+                  :class="[mainActiveTab === 'builds' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
+                >
+                  Builds
+                </button>
+              </nav>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="min-h-96">
+              
+              <!-- New Build Tab -->
+              <div x-show="mainActiveTab === 'newbuild'" class="space-y-6">
             <p class="text-gray-600 dark:text-gray-300 mb-6">
               Choose your desired configuration options below by selecting from each category. Once you've made your selections, click the "Build" button at the bottom to generate your custom Kairos image. The build process will create both an ISO and a raw disk image for your chosen configuration.
             </p>
 
             <!-- Form -->
-            <form x-data="createAccordionView()" @submit="handleFormSubmit" class="mt-8 space-y-6" action="#" novalidate>
+                <form @submit="handleFormSubmit" class="mt-8 space-y-6" action="#" novalidate>
               
               <!-- Alpine.js Accordion -->
               <div id="accordion-collapse">
@@ -363,10 +389,143 @@
               >
                 Build
                   </button>
+                </form>
+              </div>
 
+              <!-- Builds Tab -->
+              <div x-show="mainActiveTab === 'builds'" class="space-y-4">
+                <!-- Header with filters -->
+                <div class="flex items-center justify-between">
+                  <h2 class="text-xl font-bold text-gray-900 dark:text-white">Build History</h2>
+                  <button 
+                    @click="refreshBuilds()"
+                    class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:text-white dark:focus:ring-gray-700"
+                  >
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Refresh
+                  </button>
+                </div>
+                
+                <!-- Filter Controls -->
+                <div class="flex space-x-4">
+                  <select 
+                    x-model="statusFilter" 
+                    @change="refreshBuilds()"
+                    class="block w-48 p-2 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                  >
+                    <option value="">All Status</option>
+                    <option value="queued">Queued</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="running">Running</option>
+                    <option value="complete">Complete</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </div>
 
-            </form>
-            
+                <!-- Loading State -->
+                <template x-if="loading">
+                  <div class="flex items-center justify-center h-32">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                  </div>
+                </template>
+
+                <!-- Empty State -->
+                <template x-if="!loading && builds.length === 0">
+                  <div class="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400">
+                    <svg class="w-12 h-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <p class="text-lg font-medium">No builds found</p>
+                    <p class="text-sm">Start by creating a new build</p>
+                  </div>
+                </template>
+
+                <!-- Builds Grid -->
+                <template x-if="!loading && builds.length > 0">
+                  <div class="space-y-3">
+                    <template x-for="build in builds" :key="build.uuid">
+                      <div 
+                        @click="selectBuildWithUrl(build)"
+                        :class="['p-4 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors', selectedBuild?.uuid === build.uuid ? 'ring-2 ring-blue-500 bg-blue-50 dark:bg-blue-900/20' : '']"
+                      >
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center space-x-3">
+                            <!-- Status indicator -->
+                            <div 
+                              :class="getStatusIndicatorClass(build.status)"
+                              class="w-3 h-3 rounded-full"
+                            ></div>
+                            
+                            <!-- Build info -->
+                            <div>
+                              <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="getBuildTitle(build)"></p>
+                              <p class="text-xs text-gray-500 dark:text-gray-400">
+                                <span x-text="build.image"></span> • <span x-text="formatTime(build.created_at)"></span>
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <!-- Status badge -->
+                          <span 
+                            :class="getStatusBadgeClass(build.status)"
+                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            x-text="build.status"
+                          ></span>
+                        </div>
+                        
+                        <!-- Build Details (if selected) -->
+                        <template x-if="selectedBuild?.uuid === build.uuid">
+                          <div class="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                            <div class="grid grid-cols-1 gap-x-4 gap-y-2 sm:grid-cols-2">
+                              <div>
+                                <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Architecture</dt>
+                                <dd class="text-xs text-gray-900 dark:text-white" x-text="build.architecture"></dd>
+                              </div>
+                              <div>
+                                <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Model</dt>
+                                <dd class="text-xs text-gray-900 dark:text-white" x-text="build.model"></dd>
+                              </div>
+                              <div>
+                                <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Variant</dt>
+                                <dd class="text-xs text-gray-900 dark:text-white" x-text="build.variant"></dd>
+                              </div>
+                              <div>
+                                <dt class="text-xs font-medium text-gray-500 dark:text-gray-400">Version</dt>
+                                <dd class="text-xs text-gray-900 dark:text-white" x-text="build.version"></dd>
+                              </div>
+                            </div>
+                            
+                            <!-- Artifacts (if available) -->
+                            <template x-if="artifacts.length > 0 && selectedBuild?.uuid === build.uuid">
+                              <div class="mt-3">
+                                <p class="text-xs font-medium text-gray-500 dark:text-gray-400 mb-2">Downloads:</p>
+                                <div class="flex flex-wrap gap-2">
+                                  <template x-for="artifact in artifacts" :key="artifact.url">
+                                    <a 
+                                      :href="`/builds/${build.uuid}/artifacts/${artifact.url}`"
+                                      target="_blank"
+                                      class="inline-flex items-center px-2 py-1 text-xs font-medium text-center text-white bg-blue-600 rounded hover:bg-blue-700 focus:ring-2 focus:outline-none focus:ring-blue-300"
+                                    >
+                                      <svg class="w-3 h-3 mr-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                                      </svg>
+                                      <span x-text="artifact.name"></span>
+                                    </a>
+                                  </template>
+                                </div>
+                              </div>
+                            </template>
+                          </div>
+                        </template>
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+
+            </div>
           </div>
         </div>
       </div>
