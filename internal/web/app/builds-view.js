@@ -15,9 +15,20 @@ export function createBuildsView() {
         artifacts: [],
         isStreamingLogs: false,
         autoScroll: true,
+        pendingBuildId: null, // For URL restoration
+        
+        // Modal state
+        isModalVisible: false,
+        modalSelectedBuild: null,
+        modalLogs: '',
+        modalArtifacts: [],
+        modalIsStreamingLogs: false,
+        modalIsBuilding: false,
+        modalShowLogs: false,
         
         // WebSocket connections
         logsSocket: null,
+        modalLogsSocket: null,
         refreshInterval: null,
 
         // Initialize the view
@@ -28,6 +39,35 @@ export function createBuildsView() {
             this.$watch('selectedBuild', (newBuild, oldBuild) => {
                 if (newBuild) {
                     this.loadBuildDetails();
+                }
+            });
+
+            // Watch for builds list changes to handle pending build ID
+            this.$watch('builds', (newBuilds) => {
+                if (newBuilds.length > 0 && this.pendingBuildId) {
+                    const build = newBuilds.find(b => b.uuid === this.pendingBuildId);
+                    if (build) {
+                        this.openBuildModal(build);
+                        this.pendingBuildId = null; // Clear after processing
+                    } else {
+                        // If not found in list, try to fetch it directly
+                        this.selectBuildById(this.pendingBuildId);
+                    }
+                }
+            });
+
+            // Handle escape key to close modal
+            const handleEscape = (event) => {
+                if (event.key === 'Escape' && this.isModalVisible) {
+                    this.closeModal();
+                }
+            };
+            
+            this.$watch('isModalVisible', (value) => {
+                if (value) {
+                    document.addEventListener('keydown', handleEscape);
+                } else {
+                    document.removeEventListener('keydown', handleEscape);
                 }
             });
         },
@@ -209,9 +249,203 @@ export function createBuildsView() {
             return classes[status] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
         },
 
+        // Modal methods
+        openBuildModal(build) {
+            this.modalSelectedBuild = build;
+            this.isModalVisible = true;
+            this.modalLogs = '';
+            this.modalArtifacts = [];
+            this.modalIsBuilding = ['queued', 'assigned', 'running'].includes(build.status);
+            this.modalShowLogs = false;
+            
+            // Update URL with build ID (only if not from URL restoration)
+            if (!window.location.search.includes(`build=${build.uuid}`)) {
+                const url = new URL(window.location);
+                url.hash = 'builds';
+                url.searchParams.set('build', build.uuid);
+                window.history.pushState({}, '', url);
+            }
+            
+            // Load modal data
+            this.loadModalBuildDetails();
+            
+            // Start log streaming if build is active
+            if (this.modalIsBuilding) {
+                this.startModalLogStreaming();
+            }
+        },
+
+        closeModal() {
+            this.isModalVisible = false;
+            this.modalSelectedBuild = null;
+            this.stopModalLogStreaming();
+            this.modalLogs = '';
+            this.modalArtifacts = [];
+            this.modalIsBuilding = false;
+            this.modalShowLogs = false;
+            
+            // Remove build ID from URL
+            const url = new URL(window.location);
+            url.searchParams.delete('build');
+            window.history.pushState({}, '', url);
+        },
+
+        // Load additional build details for modal
+        async loadModalBuildDetails() {
+            if (!this.modalSelectedBuild) return;
+            
+            // Load artifacts
+            try {
+                const response = await fetch(`/api/v1/builds/${this.modalSelectedBuild.uuid}/artifacts`);
+                if (response.ok) {
+                    this.modalArtifacts = await response.json();
+                } else {
+                    this.modalArtifacts = [];
+                }
+            } catch (error) {
+                console.error('Error loading modal artifacts:', error);
+                this.modalArtifacts = [];
+            }
+
+            // Load logs for completed builds
+            if (this.modalSelectedBuild.status === 'complete' || this.modalSelectedBuild.status === 'failed') {
+                this.loadModalBuildLogs();
+            }
+        },
+
+        // Load logs for completed builds
+        async loadModalBuildLogs() {
+            if (!this.modalSelectedBuild) return;
+            
+            try {
+                const response = await fetch(`/api/v1/builds/${this.modalSelectedBuild.uuid}/logs`);
+                if (response.ok) {
+                    const logs = await response.text();
+                    // Strip ANSI escape codes for display
+                    this.modalLogs = logs.replace(/\x1b\[[0-9;]*m/g, '');
+                }
+            } catch (error) {
+                console.error('Error loading build logs:', error);
+                this.modalLogs = 'Error loading logs.';
+            }
+        },
+
+        // Start streaming logs for active builds in modal
+        startModalLogStreaming() {
+            if (!this.modalSelectedBuild || this.modalIsStreamingLogs) return;
+            
+            try {
+                const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+                const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/builds/${this.modalSelectedBuild.uuid}/logs`;
+                
+                this.modalLogsSocket = new WebSocket(wsUrl);
+                this.modalIsStreamingLogs = true;
+                this.modalLogs = '';
+                
+                this.modalLogsSocket.onmessage = (event) => {
+                    const message = event.data;
+                    if (message.trim()) {
+                        // Strip ANSI escape codes for display
+                        const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
+                        this.modalLogs += strippedMessage;
+                        
+                        // Auto-scroll to bottom if logs are visible
+                        if (this.modalShowLogs) {
+                            this.$nextTick(() => {
+                                const container = this.$refs.modalLogsContainer;
+                                if (container) {
+                                    container.scrollTop = container.scrollHeight;
+                                }
+                            });
+                        }
+                    }
+                };
+                
+                this.modalLogsSocket.onclose = () => {
+                    this.modalIsStreamingLogs = false;
+                    this.modalIsBuilding = false;
+                    this.modalLogs += '\n--- Build completed ---\n';
+                    
+                    // Refresh build status and artifacts
+                    this.refreshBuilds();
+                    this.loadModalBuildDetails();
+                };
+                
+                this.modalLogsSocket.onerror = (error) => {
+                    console.error('Modal WebSocket error:', error);
+                    this.modalIsStreamingLogs = false;
+                    this.modalLogs += '\n--- Connection error ---\n';
+                };
+                
+            } catch (error) {
+                console.error('Failed to start modal log streaming:', error);
+                this.modalIsStreamingLogs = false;
+            }
+        },
+
+        // Stop streaming logs for modal
+        stopModalLogStreaming() {
+            if (this.modalLogsSocket) {
+                this.modalLogsSocket.close();
+                this.modalLogsSocket = null;
+            }
+            this.modalIsStreamingLogs = false;
+        },
+
+        // Handle logs display toggle in modal
+        onModalLogsToggle() {
+            // Auto-scroll to bottom when showing logs
+            if (this.modalShowLogs) {
+                this.$nextTick(() => {
+                    const container = this.$refs.modalLogsContainer;
+                    if (container) {
+                        container.scrollTop = container.scrollHeight;
+                    }
+                });
+            }
+        },
+
+        // Get build configuration summary for modal
+        getBuildSummary(build) {
+            if (!build) return {};
+            
+            return {
+                'Base Image': build.image || 'N/A',
+                'Architecture': build.architecture || 'N/A',
+                'Model': build.model || 'N/A',
+                'Variant': build.variant || 'N/A',
+                'Version': build.version || 'N/A',
+                'Status': build.status || 'N/A',
+                'Created': this.formatTime(build.created_at)
+            };
+        },
+
+        // Select build by ID (for URL restoration)
+        async selectBuildById(buildId) {
+            try {
+                const response = await fetch(`/api/v1/builds/${buildId}`);
+                if (response.ok) {
+                    const build = await response.json();
+                    this.openBuildModal(build);
+                    this.pendingBuildId = null; // Clear after processing
+                } else {
+                    console.error('Build not found:', buildId);
+                    // Remove invalid build ID from URL
+                    const url = new URL(window.location);
+                    url.searchParams.delete('build');
+                    window.history.replaceState({}, '', url);
+                    this.pendingBuildId = null;
+                }
+            } catch (error) {
+                console.error('Error loading build:', error);
+                this.pendingBuildId = null;
+            }
+        },
+
         // Cleanup when component is destroyed
         destroy() {
             this.stopLogStreaming();
+            this.stopModalLogStreaming();
             if (this.refreshInterval) {
                 clearInterval(this.refreshInterval);
             }

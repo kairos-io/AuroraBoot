@@ -2,13 +2,26 @@ import { createAccordionView } from './accordion-view.js';
 import { createBuildsView } from './builds-view.js';
 import Alpine from 'alpinejs';
 
+
+
 // URL Navigation component for tab management and persistence
-Alpine.data('urlNavigation', () => ({
-  mainActiveTab: 'newbuild',
-  
-  init() {
+const urlNavigation = () => {
+  return {
+    mainActiveTab: 'newbuild',
+    
+    init() {
+      // Watch for tab changes
+      this.$watch('mainActiveTab', (newTab) => {
+        // Tab changed
+      });
+    
     // Parse URL on page load to restore state
     this.parseUrlAndSetState();
+    
+    // Also try again after a short delay to handle initialization timing
+    setTimeout(() => {
+      this.parseUrlAndSetState();
+    }, 100);
     
     // Listen for browser back/forward navigation
     window.addEventListener('popstate', () => {
@@ -35,7 +48,13 @@ Alpine.data('urlNavigation', () => ({
     // If there's a build ID in query params and we're on builds tab, select it
     const buildId = urlParams.get('build');
     if (buildId && this.mainActiveTab === 'builds') {
-      this.selectBuildById(buildId);
+      // Store the build ID to be processed by the builds view
+      this.pendingBuildId = buildId;
+      
+      // Auto-load builds immediately when there's a pending build ID
+      if (this.builds.length === 0) {
+        this.refreshBuilds();
+      }
     }
   },
   
@@ -62,71 +81,53 @@ Alpine.data('urlNavigation', () => ({
     window.history.pushState({}, '', url);
   },
   
-  // Select a build and update URL
+  // Select a build and update URL - now opens modal instead
   selectBuildWithUrl(build) {
-    this.selectBuild(build, false);
-    
-    // Update URL with build ID
-    const url = new URL(window.location);
-    url.hash = 'builds';
-    url.searchParams.set('build', build.uuid);
-    window.history.pushState({}, '', url);
+    this.openBuildModal(build);
   },
   
-  // Select build by ID (for URL restoration)
+  // Select build by ID (for URL restoration) - now opens modal
   async selectBuildById(buildId) {
     try {
-      const response = await fetch(`/api/v1/builds/${buildId}`);
-      if (response.ok) {
-        const build = await response.json();
-        this.selectBuild(build, false);
-        
-        // Load the full builds list if not loaded
-        if (this.builds.length === 0) {
-          await this.refreshBuilds();
+      // Load builds list first if not loaded
+      if (this.builds.length === 0) {
+        await this.refreshBuilds();
+      }
+      
+      // Try to find the build in the loaded list first
+      let build = this.builds.find(b => b.uuid === buildId);
+      
+      // If not found in list, fetch it directly
+      if (!build) {
+        const response = await fetch(`/api/v1/builds/${buildId}`);
+        if (response.ok) {
+          build = await response.json();
+        } else {
+          console.error('Build not found:', buildId);
+          // Remove invalid build ID from URL
+          const url = new URL(window.location);
+          url.searchParams.delete('build');
+          window.history.replaceState({}, '', url);
+          return;
         }
-      } else {
-        console.error('Build not found:', buildId);
-        // Remove invalid build ID from URL
-        const url = new URL(window.location);
-        url.searchParams.delete('build');
-        window.history.replaceState({}, '', url);
+      }
+      
+      // Open the modal for the found build
+      if (build) {
+        this.openBuildModal(build);
       }
     } catch (error) {
       console.error('Error loading build:', error);
     }
   }
-}));
+  };
+};
 
-// Alpine.js component registration
-Alpine.data('createAccordionView', createAccordionView);
-Alpine.data('buildsView', createBuildsView);
-
-// Modal and build process state management with form communication
-Alpine.data('buildModal', () => ({
-  // Modal state
-  isModalVisible: false,
-  
-  // Initialize keyboard listeners and form communication
-  init() {
-    // Handle escape key to close modal
-    const handleEscape = (event) => {
-      if (event.key === 'Escape' && this.isModalVisible) {
-        // Only allow closing if build is not active
-        if (!this.isBuilding) {
-          this.resetBuildState();
-        }
-      }
-    };
-    
-    this.$watch('isModalVisible', (value) => {
-      if (value) {
-        document.addEventListener('keydown', handleEscape);
-      } else {
-        document.removeEventListener('keydown', handleEscape);
-      }
-    });
-
+// Form submission handler
+const formSubmissionHandler = () => {
+  return {
+    // Initialize form submission communication
+    init() {
     // Listen for form submission events from accordion component
     this.$watch('$store.formSubmission', (submission) => {
       if (submission && submission.shouldSubmit) {
@@ -136,131 +137,61 @@ Alpine.data('buildModal', () => ({
       }
     });
   },
-  
-  // Build state
-  currentStep: -1, // -1 = no step active, 0-4 = active steps
-  isBuilding: false,
-  isComplete: false,
-  showLogs: false,
-  logs: '',
-  downloads: [],
-  
-  // Build steps
-  statusSteps: [
-    { id: 'building-container-image', name: 'Building container image' },
-    { id: 'generating-tarball', name: 'Generating tarball' },
-    { id: 'generating-raw-image', name: 'Generating raw image' },
-    { id: 'generating-iso', name: 'Generating ISO' },
-    { id: 'generating-download-links', name: 'Generating download links' }
-  ],
-  
-  // Methods
-  resetBuildState() {
-    this.logs = '';
-    this.downloads = [];
-    this.currentStep = -1; // Reset to initial state (no step active)
-    this.isBuilding = false;
-    this.isComplete = false;
-    this.isModalVisible = false;
-    this.showLogs = false; // Also reset logs visibility
-  },
-  
-  toggleLogs() {
-    this.showLogs = !this.showLogs;
-  },
-  
-  isStepActive(stepIndex) {
-    return stepIndex === this.currentStep && this.isBuilding;
-  },
-  
-  isStepComplete(stepIndex) {
-    return stepIndex < this.currentStep || this.isComplete;
-  },
-  
-  isStepVisible(stepIndex) {
-    return (this.isBuilding && stepIndex <= this.currentStep) || 
-           (this.isComplete && stepIndex < this.statusSteps.length);
-  },
 
   // Handle form submission through Alpine.js communication
   handleFormSubmission(formData) {
-    // Update Alpine.js state
-    this.isModalVisible = true;
-    this.isBuilding = true;
-    this.currentStep = -1; // Start with no step active (waiting for worker)
-    this.isComplete = false;
-    this.logs = '';
-    this.downloads = [];
-
     fetch('/start', {
       method: 'POST',
       body: formData
     }).then(response => response.json())
       .then(result => {
-        const socket = new WebSocket("ws://" + window.location.host + "/ws/" + result.uuid);
+        // Switch to builds tab
+        this.switchToTab('builds');
         
-        socket.onmessage = (event) => {
-          const message = event.data;
-          if (!message.trim()) return; // Skip empty messages
-
-          this.updateStatus(message);
-          
-          // Update Alpine.js logs state
-          const strippedMessage = message.replace(/\x1b\[[0-9;]*m/g, '');
-          this.logs += strippedMessage + '\n';
-        };
-        
-        socket.onclose = () => {
-          // Update Alpine.js state
-          this.isBuilding = false;
-          this.isComplete = true;
-          this.logs += "Process complete. Check the links above for downloads.\n";
-
-          // Fetch artifacts from the server
-          fetch(`/api/v1/builds/${result.uuid}/artifacts`)
-            .then(response => response.json())
-            .then(artifacts => {
-              this.downloads = artifacts.map(artifact => ({
-                name: artifact.name,
-                fullUrl: `/builds/${result.uuid}/artifacts/${artifact.url}`,
-                description: artifact.description
-              }));
-            })
-            .catch(error => {
-              console.error('Error fetching artifacts:', error);
-              this.logs += "Error fetching download links. Please try refreshing the page.\n";
-            });
-        };
+        // Wait for builds to load, then find and open the new build
+        setTimeout(() => {
+          this.refreshBuilds().then(() => {
+            const newBuild = this.builds.find(b => b.uuid === result.uuid);
+            if (newBuild) {
+              this.openBuildModal(newBuild);
+            }
+          });
+        }, 500);
       });
-  },
-
-  updateStatus(message) {
-    if (message.includes("Waiting for worker to pick up the job")) {
-      this.currentStep = -1;
-      return;
-    }
-    if (message.includes("Building container image")) {
-      this.currentStep = 0;
-      return;
-    }
-    if (message.includes("Generating tarball")) {
-      this.currentStep = 1;
-      return;
-    }
-    if (message.includes("Generating raw image")) {
-      this.currentStep = 2;
-      return;
-    }
-    if (message.includes("Generating ISO")) {
-      this.currentStep = 3;
-      return;
-    }
-    if (message.includes("Uploading artifacts to server")) {
-      this.currentStep = 4;
-      return;
-    }
   }
-}));
+  };
+};
+
+// Merged components function to avoid init() conflicts
+const mergedComponents = () => {
+  const accordion = createAccordionView();
+  const builds = createBuildsView();
+  const urlNav = urlNavigation();
+  const formHandler = formSubmissionHandler();
+  
+  return {
+    ...accordion,
+    ...builds,
+    ...urlNav,
+    ...formHandler,
+    
+    // Combined init method that calls all individual init methods
+    init() {
+      // Call individual init methods in the right context
+      if (accordion.init) accordion.init.call(this);
+      if (builds.init) builds.init.call(this);
+      if (urlNav.init) urlNav.init.call(this);
+      if (formHandler.init) formHandler.init.call(this);
+    }
+  };
+};
+
+// Alpine.js component registration
+Alpine.data('createAccordionView', createAccordionView);
+Alpine.data('buildsView', createBuildsView);
+Alpine.data('urlNavigation', urlNavigation);
+Alpine.data('formSubmissionHandler', formSubmissionHandler);
+Alpine.data('mergedComponents', mergedComponents);
 
 // Initialize Alpine store for component communication
 Alpine.store('formSubmission', { shouldSubmit: false, formData: null });
