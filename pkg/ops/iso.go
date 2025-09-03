@@ -124,8 +124,11 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		}
 		if i.OverrideName != "" {
 			i.Name = i.OverrideName
+		} else if i.Name != "" {
+			// Use the provided name as artifact prefix
+			i.Name = fmt.Sprintf("%s-%s", i.Name, utils.NameFromRootfs(src))
 		} else {
-			// Generate name from the rootfs kairos-release file
+			// Generate name from the rootfs kairos-release file with default prefix
 			i.Name = fmt.Sprintf("kairos-%s", utils.NameFromRootfs(src))
 		}
 

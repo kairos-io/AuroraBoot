@@ -113,6 +113,14 @@ func OutPutTypes() []string {
 	return []string{string(IsoOutput), string(ContainerOutput), string(DefaultOutput)}
 }
 
+// GetArtifactName returns the artifact name, defaulting to KairosDefaultArtifactName if empty
+func GetArtifactName(customName string) string {
+	if customName != "" {
+		return customName
+	}
+	return KairosDefaultArtifactName
+}
+
 func GetXorrisoBooloaderArgs(root string) []string {
 	args := []string{
 		"-boot_image", "grub", fmt.Sprintf("bin_path=%s", IsoBootFile),

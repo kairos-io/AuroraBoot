@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 	"time"
@@ -269,20 +270,18 @@ func (w *Worker) processJob(jobID string, jobData jobstorage.JobData, writer *Mu
 
 	baseName := strings.TrimSuffix(filepath.Base(rawImage), filepath.Ext(rawImage))
 
-	// Apply custom branding if specified
-	if jobData.ArtifactName != "" || jobData.Version != "" || jobData.BuildTag != "" {
-		customBaseName := generateCustomArtifactName(baseName, jobData)
-		if customBaseName != baseName {
-			// Rename the raw image with custom name
-			customRawName := customBaseName + ".raw"
-			customRawPath := filepath.Join(jobOutputDir, customRawName)
-			if err := os.Rename(rawImage, customRawPath); err != nil {
-				return fmt.Errorf("failed to rename raw image with custom name: %v", err)
-			}
-			rawImage = customRawPath
-			baseName = customBaseName
-			fmt.Fprintf(writer, "Applied custom branding: %s\n", customBaseName)
+	// Apply custom branding if build tag is specified (artifact name is handled at source now)
+	if jobData.BuildTag != "" {
+		customBaseName := baseName + "-" + jobData.BuildTag
+		// Rename the raw image with custom name
+		customRawName := customBaseName + ".raw"
+		customRawPath := filepath.Join(jobOutputDir, customRawName)
+		if err := os.Rename(rawImage, customRawPath); err != nil {
+			return fmt.Errorf("failed to rename raw image with build tag: %v", err)
 		}
+		rawImage = customRawPath
+		baseName = customBaseName
+		fmt.Fprintf(writer, "Applied build tag: %s\n", jobData.BuildTag)
 	}
 
 	// Generate ISO if requested
@@ -514,6 +513,11 @@ func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfi
 		config.CloudConfig = cloudConfigContent
 	}
 
+	// Set custom artifact name if provided
+	if jobData.ArtifactName != "" {
+		config.ArtifactName = jobData.ArtifactName
+	}
+
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
 	if err := deployer.RegisterAll(d); err != nil {
 		fmt.Fprintf(writer, "Error registering steps: %v\n", err)
@@ -527,6 +531,12 @@ func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfi
 	if err := d.CollectErrors(); err != nil {
 		fmt.Fprintf(writer, "Error collecting errors: %v\n", err)
 		return fmt.Errorf("error collecting errors: %v", err)
+	}
+
+	// Apply custom branding to /etc/kairos-release in the rootfs
+	if err := applyBrandingToKairosRelease(config.StateDir("temp-rootfs"), jobData, writer); err != nil {
+		fmt.Fprintf(writer, "Warning: Failed to apply branding to /etc/kairos-release: %v\n", err)
+		// Don't fail the build for this, just warn
 	}
 	return nil
 }
@@ -597,46 +607,90 @@ func searchFileByExtensionInDirectory(artifactDir, ext string) (string, error) {
 	return file, nil
 }
 
-// generateCustomArtifactName creates a custom artifact name based on branding options
-func generateCustomArtifactName(originalName string, jobData jobstorage.JobData) string {
-	// Parse the original name to extract components
-	// Example: kairos-ubuntu-24.04-core-amd64-generic-v3.2.4
-	parts := strings.Split(originalName, "-")
-	if len(parts) < 2 {
-		// If we can't parse it properly, fall back to simple replacement
-		result := originalName
-		if jobData.ArtifactName != "" {
-			result = strings.Replace(result, "kairos", jobData.ArtifactName, 1)
-		}
-		if jobData.BuildTag != "" {
-			result = result + "-" + jobData.BuildTag
-		}
-		return result
+// applyBrandingToKairosRelease modifies the /etc/kairos-release file in the rootfs to apply custom branding
+func applyBrandingToKairosRelease(rootfsPath string, jobData jobstorage.JobData, writer io.Writer) error {
+	kairosReleasePath := filepath.Join(rootfsPath, "etc", "kairos-release")
+
+	// Check if the file exists
+	if _, err := os.Stat(kairosReleasePath); os.IsNotExist(err) {
+		return fmt.Errorf("kairos-release file not found at %s", kairosReleasePath)
 	}
 
-	// Replace the artifact name prefix (typically "kairos")
-	if jobData.ArtifactName != "" {
-		parts[0] = jobData.ArtifactName
+	// Read the current file
+	content, err := os.ReadFile(kairosReleasePath)
+	if err != nil {
+		return fmt.Errorf("failed to read kairos-release: %v", err)
 	}
 
-	// Find and replace the version if specified
+	modified := string(content)
+
+	// Apply artifact name branding (replace KAIROS_ID and related fields)
+	if jobData.ArtifactName != "" && jobData.ArtifactName != "kairos" {
+		fmt.Fprintf(writer, "Applying artifact name branding: %s\n", jobData.ArtifactName)
+
+		// Replace KAIROS_ID
+		modified = replaceKairosReleaseField(modified, "KAIROS_ID", jobData.ArtifactName)
+
+		// Replace KAIROS_NAME (need to update the full name)
+		if oldName := extractKairosReleaseField(modified, "KAIROS_NAME"); oldName != "" {
+			newName := strings.Replace(oldName, "kairos", jobData.ArtifactName, 1)
+			modified = replaceKairosReleaseField(modified, "KAIROS_NAME", newName)
+		}
+
+		// Replace KAIROS_ID_LIKE
+		if oldIdLike := extractKairosReleaseField(modified, "KAIROS_ID_LIKE"); oldIdLike != "" {
+			newIdLike := strings.Replace(oldIdLike, "kairos", jobData.ArtifactName, 1)
+			modified = replaceKairosReleaseField(modified, "KAIROS_ID_LIKE", newIdLike)
+		}
+	}
+
+	// Apply version branding
 	if jobData.Version != "" {
-		// Look for a version-like part (starts with 'v' and contains dots)
-		for i, part := range parts {
-			if strings.HasPrefix(part, "v") && strings.Contains(part, ".") {
-				parts[i] = jobData.Version
-				break
+		fmt.Fprintf(writer, "Applying version branding: %s\n", jobData.Version)
+		modified = replaceKairosReleaseField(modified, "KAIROS_VERSION", jobData.Version)
+		modified = replaceKairosReleaseField(modified, "KAIROS_RELEASE", jobData.Version)
+
+		// Update IMAGE_LABEL with new version
+		if oldLabel := extractKairosReleaseField(modified, "KAIROS_IMAGE_LABEL"); oldLabel != "" {
+			// Replace version part in the label (e.g., "v0.0.23" -> new version)
+			parts := strings.Split(oldLabel, "-")
+			if len(parts) > 0 {
+				// Find and replace version-like part
+				for i, part := range parts {
+					if strings.HasPrefix(part, "v") && strings.Contains(part, ".") {
+						parts[i] = jobData.Version
+						break
+					}
+				}
+				newLabel := strings.Join(parts, "-")
+				modified = replaceKairosReleaseField(modified, "KAIROS_IMAGE_LABEL", newLabel)
 			}
 		}
 	}
 
-	// Add build tag if specified
-	result := strings.Join(parts, "-")
-	if jobData.BuildTag != "" {
-		result = result + "-" + jobData.BuildTag
+	// Write the modified content back
+	if err := os.WriteFile(kairosReleasePath, []byte(modified), 0644); err != nil {
+		return fmt.Errorf("failed to write modified kairos-release: %v", err)
 	}
 
-	return result
+	fmt.Fprintf(writer, "Successfully applied branding to /etc/kairos-release\n")
+	return nil
+}
+
+// Helper function to extract a field value from kairos-release content
+func extractKairosReleaseField(content, field string) string {
+	re := regexp.MustCompile(fmt.Sprintf(`(?m)^%s="([^"]*)"`, regexp.QuoteMeta(field)))
+	matches := re.FindStringSubmatch(content)
+	if len(matches) > 1 {
+		return matches[1]
+	}
+	return ""
+}
+
+// Helper function to replace a field in kairos-release content
+func replaceKairosReleaseField(content, field, newValue string) string {
+	re := regexp.MustCompile(fmt.Sprintf(`(?m)^%s="[^"]*"`, regexp.QuoteMeta(field)))
+	return re.ReplaceAllString(content, fmt.Sprintf(`%s="%s"`, field, newValue))
 }
 
 // --- Cloud image builders ---

@@ -39,22 +39,23 @@ import (
 // TODO: Add testing
 
 type RawImage struct {
-	CloudConfig string               // cloud config to copy to the oem partition, if none provided a default one will be created with the kairos user
-	Source      string               // Source image to copy the artifacts from, which will be the rootfs in the final image
-	Output      string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
-	FinalSize   uint64               // Final size of the disk image in MB
-	StateSize   int64                // Size of the state partition in MB
-	tmpDir      string               // A temp dir to do all work on
-	elemental   *elemental.Elemental // Elemental instance to use for the operations
-	efi         bool                 // If the image should be EFI or BIOS
-	config      *config.Config       // config to use for the operations
+	CloudConfig  string               // cloud config to copy to the oem partition, if none provided a default one will be created with the kairos user
+	Source       string               // Source image to copy the artifacts from, which will be the rootfs in the final image
+	Output       string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
+	FinalSize    uint64               // Final size of the disk image in MB
+	StateSize    int64                // Size of the state partition in MB
+	ArtifactName string               // Custom artifact name prefix (default: "kairos")
+	tmpDir       string               // A temp dir to do all work on
+	elemental    *elemental.Elemental // Elemental instance to use for the operations
+	efi          bool                 // If the image should be EFI or BIOS
+	config       *config.Config       // config to use for the operations
 }
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64, artifactName string) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, StateSize: stateSize}
+	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, StateSize: stateSize, ArtifactName: artifactName}
 }
 
 func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize int64) *RawImage {
@@ -431,7 +432,11 @@ func (r *RawImage) Build() error {
 	defer r.config.Fs.RemoveAll(r.TempDir())
 
 	// Get the artifact version from the rootfs
-	outputName := fmt.Sprintf("%s-%s.raw", constants.KairosDefaultArtifactName, utils.NameFromRootfs(r.Source))
+	artifactPrefix := constants.KairosDefaultArtifactName
+	if r.ArtifactName != "" {
+		artifactPrefix = r.ArtifactName
+	}
+	outputName := fmt.Sprintf("%s-%s.raw", artifactPrefix, utils.NameFromRootfs(r.Source))
 	internal.Log.Logger.Debug().Str("name", outputName).Msg("Got output name")
 
 	internal.Log.Logger.Info().Msg("Creating RECOVERY image")

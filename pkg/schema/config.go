@@ -36,6 +36,9 @@ type Config struct {
 	Disk Disk `yaml:"disk"`
 
 	System System `yaml:"system"`
+
+	// Artifact branding
+	ArtifactName string `yaml:"artifact_name"` // Custom prefix for artifacts (default: "kairos")
 }
 
 type System struct {
@@ -75,4 +78,11 @@ func (c Config) StateDir(s ...string) string {
 	}
 
 	return filepath.Join(append([]string{d}, s...)...)
+}
+
+func (c Config) GetArtifactName() string {
+	if c.ArtifactName != "" {
+		return c.ArtifactName
+	}
+	return "kairos" // Default artifact name
 }

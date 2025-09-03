@@ -10,6 +10,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/spectrocloud-labs/herd"
@@ -103,7 +104,7 @@ func (d *Deployer) StepDumpSource() error {
 func (d *Deployer) StepGenISO() error {
 	return d.Add(constants.OpGenISO,
 		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() }),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO)))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.getISOConfigWithArtifactName())))
 }
 
 func (d *Deployer) StepDownloadISO() error {
@@ -131,7 +132,7 @@ func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(constants.OpGenEFIRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD }),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.Config.GetArtifactName())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
@@ -327,4 +328,13 @@ func (d *Deployer) rawDiskStateSize() int64 {
 		return 0
 	}
 	return sizeInt
+}
+
+func (d *Deployer) getISOConfigWithArtifactName() schema.ISO {
+	isoConfig := d.Config.ISO
+	// If no custom ISO name is set, use the artifact name for branding
+	if isoConfig.Name == "" && d.Config.ArtifactName != "" {
+		isoConfig.Name = d.Config.ArtifactName
+	}
+	return isoConfig
 }
