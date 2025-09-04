@@ -19,15 +19,11 @@ export function createBuildsView() {
             this.refreshBuilds();
             this.refreshInterval = setInterval(() => this.refreshBuilds(), 5000);
             
-            // Watch for logs toggle changes to handle loading
-            this.$watch('modal.showLogs', async (showLogs) => {
-                if (showLogs && this.modal.build?.isCompleted && !this.modal.logs) {
-                    try {
-                        this.modal.logs = await this.modal.build.loadLogs();
-                    } catch (error) {
-                        console.error('Error loading completed build logs:', error);
-                        this.modal.logs = 'Error loading logs for completed build.';
-                    }
+            // Watch for logs toggle changes - WebSocket streaming handles all cases now
+            this.$watch('modal.showLogs', (showLogs) => {
+                if (showLogs && this.modal.build && !this.modal.isStreamingLogs) {
+                    // Start streaming if not already active
+                    this.modal.startLogStreaming();
                 }
             });
         },

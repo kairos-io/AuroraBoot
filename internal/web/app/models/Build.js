@@ -136,7 +136,7 @@ export class Build {
 
     get logsWebSocketUrl() {
         const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        return `${wsProtocol}//${window.location.host}/ws/${this.uuid}`;
+        return `${wsProtocol}//${window.location.host}/api/v1/builds/${this.uuid}/logs`;
     }
 
     // Load artifacts for this build
@@ -162,33 +162,7 @@ export class Build {
         return this._artifacts;
     }
 
-    // Load logs for completed builds
-    async loadLogs() {
-        if (this._logs !== null) {
-            return this._logs;
-        }
-
-        if (!this.isCompleted) {
-            this._logs = '';
-            return this._logs;
-        }
-
-        try {
-            const response = await fetch(this.logsUrl);
-            if (response.ok) {
-                const logs = await response.text();
-                // Strip ANSI escape codes for display
-                this._logs = logs.replace(/\x1b\[[0-9;]*m/g, '');
-            } else {
-                this._logs = 'Error loading logs.';
-            }
-        } catch (error) {
-            console.error('Error loading build logs:', error);
-            this._logs = 'Error loading logs.';
-        }
-        
-        return this._logs;
-    }
+    // Note: Log loading is now handled via WebSocket streaming in BuildModal
 
     // Get cached artifacts (returns null if not loaded)
     get artifacts() {

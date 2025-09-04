@@ -311,7 +311,7 @@ func HandleGetBuild(c echo.Context) error {
 }
 
 // @Summary Get build logs
-// @Description Returns the build logs for a job via WebSocket connection
+// @Description Streams build logs via WebSocket for all jobs (running, completed, or failed)
 // @Tags builds
 // @Accept json
 // @Produce json
@@ -324,30 +324,66 @@ func HandleGetBuildLogs(c echo.Context) error {
 	jobID := c.Param("job_id")
 
 	// Verify the job exists
-	if _, err := jobstorage.ReadJob(jobID); err != nil {
+	_, err := jobstorage.ReadJob(jobID)
+	if err != nil {
 		if os.IsNotExist(err) {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "Job not found"})
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Failed to read job metadata"})
 	}
 
-	// Open the log file in read-only mode
+	// Get the log file path
 	logFile, err := jobstorage.GetJobLogPath(jobID)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
-	file, err := os.OpenFile(logFile, os.O_RDONLY, 0644)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "Log file not found"})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("Failed to open log file: %v", err)})
-	}
-	defer file.Close()
 
+	// Always handle as WebSocket streaming
+	return handleWebSocketLogs(c, jobID, logFile)
+}
+
+// handleWebSocketLogs handles WebSocket connections for live log streaming
+func handleWebSocketLogs(c echo.Context, jobID, logFile string) error {
 	// Handle websocket upgrade
 	websocket.Handler(func(ws *websocket.Conn) {
 		defer ws.Close()
+
+		// Check if log file exists, wait if it doesn't (for queued/assigned jobs)
+		var file *os.File
+		var err error
+
+		if _, err := os.Stat(logFile); os.IsNotExist(err) {
+			websocket.Message.Send(ws, "Waiting for worker to pick up the job.\nIf you're running locally, make sure to pass the --create-worker to get a worker running.")
+
+			// Wait for the file to appear
+			for {
+				time.Sleep(1 * time.Second)
+				if _, err := os.Stat(logFile); err == nil {
+					break
+				}
+
+				// Check if we should still wait
+				job, err := jobstorage.ReadJob(jobID)
+				if err != nil {
+					websocket.Message.Send(ws, fmt.Sprintf("Error reading job status: %v", err))
+					return
+				}
+
+				// If job failed before log file was created, stop waiting
+				if job.Status == jobstorage.JobStatusFailed {
+					websocket.Message.Send(ws, "Job failed before logs were generated.")
+					return
+				}
+			}
+		}
+
+		// Open the log file
+		file, err = os.OpenFile(logFile, os.O_RDONLY, 0644)
+		if err != nil {
+			websocket.Message.Send(ws, fmt.Sprintf("Error opening log file: %v", err))
+			return
+		}
+		defer file.Close()
 
 		// Start from the beginning of the file
 		if _, err := file.Seek(0, 0); err != nil {
@@ -383,7 +419,7 @@ func HandleGetBuildLogs(c echo.Context) error {
 				return
 			}
 
-			// If job is complete or failed, close the connection
+			// If job is complete or failed, send final message and close
 			if job.Status == jobstorage.JobStatusComplete || job.Status == jobstorage.JobStatusFailed {
 				websocket.Message.Send(ws, fmt.Sprintf("Job reached status: %s, closing connection.", job.Status))
 				return // Connection will be closed by defer

@@ -34,21 +34,8 @@ export class BuildModal {
             this.artifacts = [];
         }
         
-        // Handle logs based on build status
-        if (build.status === 'running') {
-            this.startLogStreaming();
-        } else if (build.isCompleted) {
-            try {
-                this.logs = await build.loadLogs();
-            } catch (error) {
-                console.error('Error loading logs:', error);
-                this.logs = 'Error loading logs.';
-            }
-        } else if (build.status === 'queued') {
-            this.logs = 'Build is queued. Waiting for an available worker...\n';
-        } else if (build.status === 'assigned') {
-            this.logs = 'Build assigned to worker. Starting soon...\n';
-        }
+        // Always use WebSocket streaming for logs
+        this.startLogStreaming();
     }
 
     // Close modal
@@ -61,10 +48,10 @@ export class BuildModal {
     }
 
 
-    // Start WebSocket log streaming for active builds
+    // Start WebSocket log streaming for all builds
     startLogStreaming() {
-        // Only start WebSocket for builds that are actually running (not just queued/assigned)
-        if (!this.build?.isActive || this.isStreamingLogs || this.build.status !== 'running') {
+        // Skip if already streaming or no build
+        if (!this.build || this.isStreamingLogs) {
             return;
         }
         
