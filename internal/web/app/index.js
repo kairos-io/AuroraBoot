@@ -75,10 +75,24 @@ const urlNavigation = () => {
       if (this.builds.length === 0) {
         this.refreshBuilds();
       }
+      
+      // Update URL without page reload first
+      window.history.pushState({}, '', url);
+      
+      // Then sync filter state to URL if there's an active filter
+      // Use setTimeout to ensure the hash change has been processed
+      setTimeout(() => {
+        if (this.syncFilterToURL) {
+          this.syncFilterToURL();
+        }
+      }, 0);
+      
+      return; // Early return to avoid the second pushState call below
     } else {
       url.hash = '';
-      // Clear build selection when going back to new build tab
+      // Clear build-related parameters when going back to new build tab
       url.searchParams.delete('build');
+      url.searchParams.delete('status');
       this.selectedBuild = null;
     }
     

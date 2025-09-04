@@ -16,6 +16,15 @@ export function createBuildsView() {
         refreshInterval: null,
 
         init() {
+            // Initialize filter from URL parameters only if we're on the builds tab
+            if (this.isBuildsTabActive()) {
+                const urlParams = new URLSearchParams(window.location.search);
+                const statusFromUrl = urlParams.get('status');
+                if (statusFromUrl && ['queued', 'assigned', 'running', 'complete', 'failed'].includes(statusFromUrl)) {
+                    this.statusFilter = statusFromUrl;
+                }
+            }
+            
             this.refreshBuilds();
             this.refreshInterval = setInterval(() => this.refreshBuilds(), 5000);
             
@@ -26,13 +35,36 @@ export function createBuildsView() {
                     this.modal.startLogStreaming();
                 }
             });
+
+
+            // Handle browser back/forward navigation
+            window.addEventListener('popstate', () => {
+                // Only update filter from URL if we're on the builds tab
+                if (this.isBuildsTabActive()) {
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const statusFromUrl = urlParams.get('status');
+                    this.statusFilter = statusFromUrl && ['queued', 'assigned', 'running', 'complete', 'failed'].includes(statusFromUrl) ? statusFromUrl : '';
+                } else {
+                    // If we navigated away from builds tab, keep the current filter but don't read from URL
+                    // This preserves the user's filter choice within the tab
+                }
+                // Refresh builds if we're on the builds tab
+                if (this.isBuildsTabActive()) {
+                    this.refreshBuilds();
+                }
+            });
         },
 
         // Load builds from API
         async refreshBuilds() {
             try {
                 this.loading = true;
-                const response = await fetch('/api/v1/builds?');
+                // Build query string with status filter if set
+                const params = new URLSearchParams();
+                if (this.statusFilter) {
+                    params.append('status', this.statusFilter);
+                }
+                const response = await fetch(`/api/v1/builds?${params.toString()}`);
                 if (response.ok) {
                     const data = await response.json();
                     
@@ -111,6 +143,43 @@ export function createBuildsView() {
 
         getStatusBadgeClass(build) {
             return build.statusBadgeClass;
+        },
+
+        // URL synchronization - tab-specific approach
+        updateURLAndRefresh() {
+            // Only update URL parameters when we're on the builds tab
+            if (this.isBuildsTabActive()) {
+                const url = new URL(window.location);
+                
+                if (this.statusFilter) {
+                    url.searchParams.set('status', this.statusFilter);
+                } else {
+                    url.searchParams.delete('status');
+                }
+                
+                // Update URL without triggering a page reload
+                window.history.pushState({}, '', url);
+            }
+            
+            // Always refresh builds with new filter regardless of URL update
+            this.refreshBuilds();
+        },
+
+        // Check if we're currently on the builds tab
+        isBuildsTabActive() {
+            // Access the main app's activeTab state
+            // This assumes the builds view is used within the main app context
+            return window.location.hash === '#builds' || 
+                   (window.location.hash === '' && window.location.pathname.includes('builds'));
+        },
+
+        // Sync filter state to URL - called when tab becomes active
+        syncFilterToURL() {
+            if (this.isBuildsTabActive() && this.statusFilter) {
+                const url = new URL(window.location);
+                url.searchParams.set('status', this.statusFilter);
+                window.history.replaceState({}, '', url);
+            }
         },
 
         // Cleanup
