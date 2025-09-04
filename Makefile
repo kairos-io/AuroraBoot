@@ -118,3 +118,69 @@ swagger: ## Generate swagger documentation
 # Quick development cycle (build and run)
 quick: build-js build-go run-docker ## Quick build and run cycle
 
+
+# Test targets
+test-js: build-js build-go ## Run JavaScript E2E tests (starts server, runs tests, stops server)
+	@echo "Starting AuroraBoot server for testing..."
+	@mkdir -p builds
+	@# Start server in background and capture PID
+	@docker run --rm -d \
+		--name auroraboot-test-server \
+		--net host \
+		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
+		-v $(PWD)/builds:/builds \
+		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker > /tmp/auroraboot-test.pid || true
+	@echo "Waiting for server to be ready..."
+	@# Wait for server to be ready (up to 30 seconds)
+	@for i in $$(seq 1 30); do \
+		if curl -s http://localhost:8080 > /dev/null 2>&1; then \
+			echo "Server is ready!"; \
+			break; \
+		fi; \
+		echo "Waiting for server... ($$i/30)"; \
+		sleep 1; \
+	done
+	@# Run the tests
+	@echo "Running JavaScript E2E tests..."
+	@cd e2e/web && npm install && npm test
+	@# Stop the server
+	@echo "Stopping test server..."
+	@docker stop auroraboot-test-server > /dev/null 2>&1 || true
+	@rm -f /tmp/auroraboot-test.pid
+	@echo "Tests completed!"
+
+test-js-open: build-js build-go ## Run JavaScript E2E tests in interactive mode (starts server, opens Cypress, stops server)
+	@echo "Starting AuroraBoot server for testing..."
+	@mkdir -p builds
+	@# Start server in background
+	@docker run --rm -d \
+		--name auroraboot-test-server \
+		--net host \
+		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
+		-v $(PWD)/builds:/builds \
+		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker > /tmp/auroraboot-test.pid || true
+	@echo "Waiting for server to be ready..."
+	@# Wait for server to be ready (up to 30 seconds)
+	@for i in $$(seq 1 30); do \
+		if curl -s http://localhost:8080 > /dev/null 2>&1; then \
+			echo "Server is ready!"; \
+			break; \
+		fi; \
+		echo "Waiting for server... ($$i/30)"; \
+		sleep 1; \
+	done
+	@# Run the tests in interactive mode
+	@echo "Opening Cypress in interactive mode..."
+	@cd e2e/web && npm install && npm run test:open
+	@# Stop the server
+	@echo "Stopping test server..."
+	@docker stop auroraboot-test-server > /dev/null 2>&1 || true
+	@rm -f /tmp/auroraboot-test.pid
+	@echo "Interactive tests completed!"
+
+test-js-stop: ## Stop any running test server
+	@echo "Stopping test server..."
+	@docker stop auroraboot-test-server > /dev/null 2>&1 || true
+	@rm -f /tmp/auroraboot-test.pid
+	@echo "Test server stopped!"
+
