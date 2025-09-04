@@ -48,6 +48,11 @@ const urlNavigation = () => {
     // If there's a build ID in query params and we're on builds tab, select it
     const buildId = urlParams.get('build');
     if (buildId && this.mainActiveTab === 'builds') {
+      // Skip URL restoration if we just created this build to avoid race condition
+      if (this.newBuildCreated === buildId) {
+        return; // Let the form submission handler manage this build
+      }
+      
       // Store the build ID to be processed by the builds view
       this.pendingBuildId = buildId;
       
@@ -84,10 +89,15 @@ const urlNavigation = () => {
   // Select a build and update URL - now opens modal instead
   selectBuildWithUrl(build) {
     this.openBuildModal(build);
+    
+    // Update URL to include build ID
+    const url = new URL(window.location);
+    url.searchParams.set('build', build.uuid);
+    window.history.pushState({}, '', url);
   },
   
   // Select build by ID (for URL restoration) - now opens modal
-  async selectBuildById(buildId) {
+  async selectBuildById(buildId, retryCount = 0) {
     try {
       // Load builds list first if not loaded
       if (this.builds.length === 0) {
@@ -102,6 +112,13 @@ const urlNavigation = () => {
         const response = await fetch(`/api/v1/builds/${buildId}`);
         if (response.ok) {
           build = await response.json();
+        } else if (response.status === 404 && retryCount < 3) {
+          // Build might not be available yet (just created), retry after a short delay
+          console.log(`Build ${buildId} not found, retrying... (${retryCount + 1}/3)`);
+          setTimeout(() => {
+            this.selectBuildById(buildId, retryCount + 1);
+          }, 1000);
+          return;
         } else {
           console.error('Build not found:', buildId);
           // Remove invalid build ID from URL
@@ -148,15 +165,34 @@ const formSubmissionHandler = () => {
         // Switch to builds tab
         this.switchToTab('builds');
         
+        // Set a flag to prevent URL restoration from interfering
+        this.newBuildCreated = result.uuid;
+        
         // Wait for builds to load, then find and open the new build
         setTimeout(() => {
           this.refreshBuilds().then(() => {
             const newBuild = this.builds.find(b => b.uuid === result.uuid);
             if (newBuild) {
-              this.openBuildModal(newBuild);
+              // Clear the flag before opening modal
+              this.newBuildCreated = null;
+              
+              // Open modal without URL update to avoid race condition
+              this.openBuildModal(newBuild, false);
+              
+              // Manually update URL after modal is open
+              const url = new URL(window.location);
+              url.searchParams.set('build', result.uuid);
+              window.history.pushState({}, '', url);
+            } else {
+              // If build not found in list, try to fetch it directly with retry
+              this.selectBuildById(result.uuid);
             }
           });
         }, 500);
+      })
+      .catch(error => {
+        console.error('Error submitting form:', error);
+        this.newBuildCreated = null;
       });
   }
   };
@@ -174,6 +210,9 @@ const mergedComponents = () => {
     ...builds,
     ...urlNav,
     ...formHandler,
+    
+    // Additional state for handling new build creation
+    newBuildCreated: null,
     
     // Combined init method that calls all individual init methods
     init() {
