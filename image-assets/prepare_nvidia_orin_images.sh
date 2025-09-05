@@ -136,7 +136,7 @@ cp -rfv recovery_partition.img bootloader/
 
 # Create the grubenv forcing first boot to be on recovery system
 mkdir -p $WORKDIR/oem
-$WORKDIR/oem/01_defaults.yaml <<EOF
+cat > $WORKDIR/oem/01_defaults.yaml <<EOF
 #cloud-config
 
 # Additional system users
