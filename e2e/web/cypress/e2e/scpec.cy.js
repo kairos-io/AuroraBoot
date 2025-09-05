@@ -35,7 +35,7 @@ describe('Kairos Factory Web Interface', () => {
 
         // Kubernetes sections are conditional - need to select Standard variant first
         // First open the variant section and wait for it to be visible
-        cy.get('#accordion-heading-variant button').click();
+        cy.get('#accordion-heading-variant').click();
         cy.get('#accordion-body-variant').should('be.visible');
         
         // Click on standard variant option and wait for Alpine.js to process
@@ -58,9 +58,10 @@ describe('Kairos Factory Web Interface', () => {
         
         // Kubernetes sections are conditional
         cy.get('#accordion-heading-variant button').click();
-        cy.get('#accordion-body-variant').should('be.visible');
+        // Then wait for the body to be visible
+        cy.get('#accordion-body-variant', { timeout: 5000 }).should('be.visible');
         cy.get('label[for="option-standard"]').click();
-        cy.wait(500); // Give Alpine.js time to process the variant change
+        cy.wait(1000); // Give Alpine.js time to process the variant change
         
         // Wait for the conditional sections to appear after variant change
         cy.get('#accordion-body-kubernetes', { timeout: 10000 }).should('exist');
