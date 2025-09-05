@@ -60,6 +60,9 @@ const urlNavigation = () => {
       if (this.builds.length === 0) {
         this.refreshBuilds();
       }
+      
+      // Process the pending build ID to open the modal
+      this.processPendingBuildId();
     }
   },
   
@@ -85,6 +88,8 @@ const urlNavigation = () => {
         if (this.syncFilterToURL) {
           this.syncFilterToURL();
         }
+        // Also process any pending build ID when switching to builds tab
+        this.processPendingBuildId();
       }, 0);
       
       return; // Early return to avoid the second pushState call below
@@ -108,6 +113,19 @@ const urlNavigation = () => {
     const url = new URL(window.location);
     url.searchParams.set('build', build.uuid);
     window.history.pushState({}, '', url);
+  },
+  
+  // Process pending build ID to open modal
+  async processPendingBuildId() {
+    if (this.pendingBuildId) {
+      const buildId = this.pendingBuildId;
+      this.pendingBuildId = null; // Clear it to avoid reprocessing
+      
+      // Use a small delay to ensure builds are loaded
+      setTimeout(() => {
+        this.selectBuildById(buildId);
+      }, 100);
+    }
   },
   
   // Select build by ID (for URL restoration) - now opens modal

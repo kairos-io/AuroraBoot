@@ -140,14 +140,15 @@ test-js: build-js build-go ## Run JavaScript E2E tests (starts server, runs test
 		echo "Waiting for server... ($$i/30)"; \
 		sleep 1; \
 	done
-	@# Run the tests
+	@# Run the tests with proper cleanup
 	@echo "Running JavaScript E2E tests..."
-	@cd e2e/web && npm install && npm test
-	@# Stop the server
-	@echo "Stopping test server..."
-	@docker stop auroraboot-test-server > /dev/null 2>&1 || true
-	@rm -f /tmp/auroraboot-test.pid
-	@echo "Tests completed!"
+	@cd e2e/web && npm install && npm test; \
+	TEST_EXIT_CODE=$$?; \
+	echo "Stopping test server..."; \
+	docker stop auroraboot-test-server > /dev/null 2>&1 || true; \
+	rm -f /tmp/auroraboot-test.pid; \
+	echo "Tests completed!"; \
+	exit $$TEST_EXIT_CODE
 
 test-js-open: build-js build-go ## Run JavaScript E2E tests in interactive mode (starts server, opens Cypress, stops server)
 	@echo "Starting AuroraBoot server for testing..."
@@ -169,14 +170,15 @@ test-js-open: build-js build-go ## Run JavaScript E2E tests in interactive mode 
 		echo "Waiting for server... ($$i/30)"; \
 		sleep 1; \
 	done
-	@# Run the tests in interactive mode
+	@# Run the tests in interactive mode with proper cleanup
 	@echo "Opening Cypress in interactive mode..."
-	@cd e2e/web && npm install && npm run test:open
-	@# Stop the server
-	@echo "Stopping test server..."
-	@docker stop auroraboot-test-server > /dev/null 2>&1 || true
-	@rm -f /tmp/auroraboot-test.pid
-	@echo "Interactive tests completed!"
+	@cd e2e/web && npm install && npm run test:open; \
+	TEST_EXIT_CODE=$$?; \
+	echo "Stopping test server..."; \
+	docker stop auroraboot-test-server > /dev/null 2>&1 || true; \
+	rm -f /tmp/auroraboot-test.pid; \
+	echo "Interactive tests completed!"; \
+	exit $$TEST_EXIT_CODE
 
 test-js-stop: ## Stop any running test server
 	@echo "Stopping test server..."
