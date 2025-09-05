@@ -3,7 +3,6 @@ package web
 import (
 	"embed"
 	"fmt"
-	"io"
 	"io/fs"
 	"net/http"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/labstack/echo/v4"
 	"github.com/labstack/echo/v4/middleware"
-	"golang.org/x/net/websocket"
 )
 
 //go:embed app
@@ -62,11 +60,9 @@ func App(config AppConfig) error {
 	// Handle form submission
 	e.POST("/start", buildHandler)
 
-	// Handle WebSocket connection
-	e.GET("/ws/:uuid", webSocketHandler)
-
 	// API routes
 	api := e.Group("/api/v1")
+	api.GET("/builds", HandleListBuilds)
 	api.POST("/builds", HandleQueueBuild)
 	api.POST("/builds/bind", HandleBindBuildJob)
 	api.PUT("/builds/:job_id/status", HandleUpdateJobStatus)
@@ -188,86 +184,4 @@ func buildHandler(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"uuid": id.String()})
 }
 
-func webSocketHandler(c echo.Context) error {
-	websocket.Handler(func(ws *websocket.Conn) {
-		uuid := c.Param("uuid")
-		_, err := jobstorage.ReadJob(uuid)
-		if err != nil {
-			websocket.Message.Send(ws, "Job not found")
-			return
-		}
-
-		defer func() {
-			// Send a final message before closing
-			websocket.Message.Send(ws, "Connection closing...")
-			time.Sleep(1 * time.Second) // Give time for the final message to be sent
-			ws.Close()
-		}()
-
-		// Get the job's build directory
-		jobPath, err := jobstorage.GetJobPath(uuid)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Error getting job path: %v", err))
-			return
-		}
-		buildLogPath := filepath.Join(jobPath, "build.log")
-
-		// Check if build.log exists
-		if _, err := os.Stat(buildLogPath); os.IsNotExist(err) {
-			websocket.Message.Send(ws, "Waiting for worker to pick up the job.\nIf you're running locally, make sure to pass the --create-worker to get a worker running.")
-
-			// Wait for the file to appear
-			for {
-				time.Sleep(1 * time.Second)
-				if _, err := os.Stat(buildLogPath); err == nil {
-					break
-				}
-			}
-		}
-
-		// Open the log file
-		file, err := os.Open(buildLogPath)
-		if err != nil {
-			websocket.Message.Send(ws, fmt.Sprintf("Failed to open build log: %v", err))
-			return
-		}
-		defer file.Close()
-
-		// Create a buffer for reading
-		buf := make([]byte, 1024)
-		for {
-			// Read all currently available data from the file
-			for {
-				n, err := file.Read(buf)
-				if err != nil && err != io.EOF {
-					websocket.Message.Send(ws, fmt.Sprintf("Error reading log file: %v", err))
-					return
-				}
-				if n > 0 {
-					if err := websocket.Message.Send(ws, string(buf[:n])); err != nil {
-						return
-					}
-				}
-				// If we got no data, break the inner loop to check job status
-				if n == 0 {
-					break
-				}
-			}
-
-			// Check job status after reading all currently available data
-			job, err := jobstorage.ReadJob(uuid)
-			if err != nil {
-				websocket.Message.Send(ws, fmt.Sprintf("Error reading job status: %v", err))
-				return
-			}
-
-			// If job is complete or failed, close the connection
-			if job.Status == jobstorage.JobStatusComplete || job.Status == jobstorage.JobStatusFailed {
-				return // Connection will be closed by defer with sleep
-			}
-
-			time.Sleep(100 * time.Millisecond)
-		}
-	}).ServeHTTP(c.Response(), c.Request())
-	return nil
-}
+// Legacy webSocketHandler removed - functionality moved to HandleGetBuildLogs API endpoint

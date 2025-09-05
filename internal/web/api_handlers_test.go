@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/gofrs/uuid"
 	"github.com/kairos-io/AuroraBoot/internal/web/jobstorage"
 	"github.com/labstack/echo/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -164,7 +165,7 @@ var _ = Describe("API Handlers", func() {
 				err := HandleQueueBuild(c)
 				Expect(err).To(BeNil(), fmt.Sprintf("Response body: %s", rec.Body.String()))
 				Expect(rec.Code).To(Equal(http.StatusBadRequest), fmt.Sprintf("Response body: %s", rec.Body.String()))
-				
+
 				var response map[string]string
 				err = json.Unmarshal(rec.Body.Bytes(), &response)
 				Expect(err).To(BeNil())
@@ -578,6 +579,223 @@ var _ = Describe("API Handlers", func() {
 				wsURL := fmt.Sprintf("ws://localhost:%d/api/v1/builds/%s/logs/write", port, jobID)
 				_, err := websocket.Dial(wsURL, "", "http://localhost")
 				Expect(err).To(HaveOccurred())
+			})
+		})
+	})
+
+	Describe("HandleListBuilds", func() {
+		var (
+			job1UUID, job2UUID, job3UUID string
+		)
+
+		BeforeEach(func() {
+			// Create test jobs with different statuses
+			job1 := jobstorage.BuildJob{
+				JobData: jobstorage.JobData{
+					Variant:      "core",
+					Model:        "generic",
+					Architecture: "amd64",
+					Image:        "ubuntu:24.04",
+					Version:      "1.0.0",
+				},
+				Status:    jobstorage.JobStatusQueued,
+				CreatedAt: time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+				UpdatedAt: time.Now().Add(-2 * time.Hour).Format(time.RFC3339),
+			}
+
+			job2 := jobstorage.BuildJob{
+				JobData: jobstorage.JobData{
+					Variant:      "standard",
+					Model:        "generic",
+					Architecture: "amd64",
+					Image:        "fedora:40",
+					Version:      "1.0.1",
+				},
+				Status:    jobstorage.JobStatusRunning,
+				CreatedAt: time.Now().Add(-1 * time.Hour).Format(time.RFC3339),
+				UpdatedAt: time.Now().Add(-30 * time.Minute).Format(time.RFC3339),
+			}
+
+			job3 := jobstorage.BuildJob{
+				JobData: jobstorage.JobData{
+					Variant:      "core",
+					Model:        "rpi4",
+					Architecture: "arm64",
+					Image:        "alpine:3.21",
+					Version:      "1.0.2",
+				},
+				Status:    jobstorage.JobStatusComplete,
+				CreatedAt: time.Now().Add(-30 * time.Minute).Format(time.RFC3339),
+				UpdatedAt: time.Now().Add(-10 * time.Minute).Format(time.RFC3339),
+			}
+
+			// Generate UUIDs and save jobs
+			id1, err := uuid.NewV4()
+			Expect(err).NotTo(HaveOccurred())
+			job1UUID = id1.String()
+			Expect(os.MkdirAll(filepath.Join(testDir, job1UUID), 0755)).To(Succeed())
+			Expect(jobstorage.WriteJob(job1UUID, job1)).To(Succeed())
+
+			id2, err := uuid.NewV4()
+			Expect(err).NotTo(HaveOccurred())
+			job2UUID = id2.String()
+			Expect(os.MkdirAll(filepath.Join(testDir, job2UUID), 0755)).To(Succeed())
+			Expect(jobstorage.WriteJob(job2UUID, job2)).To(Succeed())
+
+			id3, err := uuid.NewV4()
+			Expect(err).NotTo(HaveOccurred())
+			job3UUID = id3.String()
+			Expect(os.MkdirAll(filepath.Join(testDir, job3UUID), 0755)).To(Succeed())
+			Expect(jobstorage.WriteJob(job3UUID, job3)).To(Succeed())
+		})
+
+		Context("when listing all builds", func() {
+			It("should return all builds sorted by creation time", func() {
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds", nil)
+				c := e.NewContext(req, rec)
+
+				err := HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(3))
+				Expect(response.Builds).To(HaveLen(3))
+
+				// Should be sorted by creation time (newest first)
+				Expect(response.Builds[0].UUID).To(Equal(job3UUID)) // Most recent
+				Expect(response.Builds[1].UUID).To(Equal(job2UUID))
+				Expect(response.Builds[2].UUID).To(Equal(job1UUID)) // Oldest
+			})
+		})
+
+		Context("when filtering by status", func() {
+			It("should return only queued builds", func() {
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds?status=queued", nil)
+				c := e.NewContext(req, rec)
+
+				err := HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(1))
+				Expect(response.Builds).To(HaveLen(1))
+				Expect(response.Builds[0].UUID).To(Equal(job1UUID))
+				Expect(response.Builds[0].Status).To(Equal(jobstorage.JobStatusQueued))
+			})
+
+			It("should return only running builds", func() {
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds?status=running", nil)
+				c := e.NewContext(req, rec)
+
+				err := HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(1))
+				Expect(response.Builds).To(HaveLen(1))
+				Expect(response.Builds[0].UUID).To(Equal(job2UUID))
+				Expect(response.Builds[0].Status).To(Equal(jobstorage.JobStatusRunning))
+			})
+
+			It("should return only completed builds", func() {
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds?status=complete", nil)
+				c := e.NewContext(req, rec)
+
+				err := HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(1))
+				Expect(response.Builds).To(HaveLen(1))
+				Expect(response.Builds[0].UUID).To(Equal(job3UUID))
+				Expect(response.Builds[0].Status).To(Equal(jobstorage.JobStatusComplete))
+			})
+
+			It("should return empty list for non-existent status", func() {
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds?status=failed", nil)
+				c := e.NewContext(req, rec)
+
+				err := HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(0))
+				Expect(response.Builds).To(HaveLen(0))
+			})
+		})
+
+		Context("when using pagination", func() {
+			It("should respect limit parameter", func() {
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds?limit=2", nil)
+				c := e.NewContext(req, rec)
+
+				err := HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(3))    // Total count should still be 3
+				Expect(response.Builds).To(HaveLen(2)) // But only 2 returned
+			})
+
+			It("should combine status filter with pagination", func() {
+				// Create additional queued job to test pagination with filter
+				job4 := jobstorage.BuildJob{
+					JobData: jobstorage.JobData{
+						Variant:      "core",
+						Model:        "generic",
+						Architecture: "amd64",
+						Image:        "debian:12",
+						Version:      "1.0.3",
+					},
+					Status:    jobstorage.JobStatusQueued,
+					CreatedAt: time.Now().Format(time.RFC3339),
+					UpdatedAt: time.Now().Format(time.RFC3339),
+				}
+
+				id4, err := uuid.NewV4()
+				Expect(err).NotTo(HaveOccurred())
+				job4UUID := id4.String()
+				Expect(os.MkdirAll(filepath.Join(testDir, job4UUID), 0755)).To(Succeed())
+				Expect(jobstorage.WriteJob(job4UUID, job4)).To(Succeed())
+
+				req = httptest.NewRequest(http.MethodGet, "/api/v1/builds?status=queued&limit=1", nil)
+				c := e.NewContext(req, rec)
+
+				err = HandleListBuilds(c)
+				Expect(err).To(BeNil())
+				Expect(rec.Code).To(Equal(http.StatusOK))
+
+				var response BuildListResponse
+				err = json.Unmarshal(rec.Body.Bytes(), &response)
+				Expect(err).To(BeNil())
+
+				Expect(response.Total).To(Equal(2))    // 2 queued builds total
+				Expect(response.Builds).To(HaveLen(1)) // But only 1 returned due to limit
+				Expect(response.Builds[0].Status).To(Equal(jobstorage.JobStatusQueued))
 			})
 		})
 	})

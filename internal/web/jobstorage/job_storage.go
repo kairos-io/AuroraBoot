@@ -19,30 +19,32 @@ var jobMutex sync.Mutex
 
 // getJobPath returns the path to a job's directory
 func GetJobPath(jobID string) (string, error) {
-	// Validate that jobID is a valid UUID.
-	// Also ensure that user provided input is not trying to traverse the file system.
+	// Validate that jobID is a valid UUID to prevent path traversal
 	if _, err := uuid.FromString(jobID); err != nil {
 		return "", fmt.Errorf("invalid job ID format: %v", err)
 	}
+
 	return filepath.Join(BuildsDir, jobID), nil
 }
 
 // getJobMetadataPath returns the path to a job's metadata file
 func GetJobMetadataPath(jobID string) (string, error) {
-	jobPath, err := GetJobPath(jobID)
-	if err != nil {
-		return "", err
+	// Validate that jobID is a valid UUID to prevent path traversal
+	if _, err := uuid.FromString(jobID); err != nil {
+		return "", fmt.Errorf("invalid job ID format: %v", err)
 	}
-	return filepath.Join(jobPath, "job.json"), nil
+
+	return filepath.Join(BuildsDir, jobID, "job.json"), nil
 }
 
 // getJobLogPath returns the path to a job's log file
 func GetJobLogPath(jobID string) (string, error) {
-	jobPath, err := GetJobPath(jobID)
-	if err != nil {
-		return "", err
+	// Validate that jobID is a valid UUID to prevent path traversal
+	if _, err := uuid.FromString(jobID); err != nil {
+		return "", fmt.Errorf("invalid job ID format: %v", err)
 	}
-	return filepath.Join(jobPath, "build.log"), nil
+
+	return filepath.Join(BuildsDir, jobID, "build.log"), nil
 }
 
 // BuildJob represents a build job in the system
