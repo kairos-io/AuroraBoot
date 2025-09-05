@@ -27,9 +27,12 @@ dev: build-js build-go ## Build JS assets, compile Go binary, and run Docker ima
 	@echo "Starting AuroraBoot in development mode..."
 	@mkdir -p builds
 	docker run --rm \
+		--privileged \
 		--net host \
 		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
 		-v $(PWD)/builds:/builds \
+		-v /dev:/dev \
+		-v /var/run/docker.sock:/var/run/docker.sock \
 		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker $(ARGS)
 
 # Build JavaScript assets (only if needed)
