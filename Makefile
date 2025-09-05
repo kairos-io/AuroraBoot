@@ -29,7 +29,8 @@ dev: build-js build-go ## Build JS assets, compile Go binary, and run Docker ima
 	docker run --rm \
 		--privileged \
 		--net host \
-		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
+		--entrypoint /usr/sbin/auroraboot \
+		-v $(PWD)/auroraboot:/usr/sbin/auroraboot \
 		-v $(PWD)/builds:/builds \
 		-v /dev:/dev \
 		-v /var/run/docker.sock:/var/run/docker.sock \
@@ -86,7 +87,7 @@ run-docker: ## Run the Docker image with mounted binary
 	@mkdir -p builds
 	docker run --rm \
 		--net host \
-		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
+		-v $(PWD)/auroraboot:/usr/sbin/auroraboot \
 		-v $(PWD)/builds:/builds \
 		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker $(ARGS)
 

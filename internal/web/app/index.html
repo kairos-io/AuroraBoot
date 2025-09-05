@@ -395,7 +395,7 @@
               <div x-show="mainActiveTab === 'builds'" class="space-y-4">
                 <!-- Header with filters -->
                 <div class="flex items-center justify-between">
-                  <h2 class="text-xl font-bold text-gray-900 dark:text-white">Build History</h2>
+                  <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">Build History</h2>
                   <button 
                     @click="refreshBuilds()"
                     class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:text-white dark:focus:ring-gray-700"
@@ -447,7 +447,7 @@
                     <template x-for="build in builds" :key="build.uuid">
                       <div 
                         @click="selectBuildWithUrl(build)"
-                        class="p-4 border border-gray-200 dark:border-gray-700 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                        class="p-4 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors bg-white dark:bg-gray-800 shadow-sm hover:shadow-md"
                       >
                         <div class="flex items-center justify-between">
                           <div class="flex items-center space-x-3">
@@ -459,8 +459,8 @@
                             
                             <!-- Build info -->
                             <div>
-                              <p class="text-sm font-medium text-gray-900 dark:text-white" x-text="getBuildTitle(build)"></p>
-                              <p class="text-xs text-gray-500 dark:text-gray-400">
+                              <p class="text-sm font-medium text-gray-900 dark:text-gray-100" x-text="getBuildTitle(build)"></p>
+                              <p class="text-xs text-gray-600 dark:text-gray-300">
                                 <span x-text="build.image"></span> • <span x-text="formatTime(build.created_at)"></span>
                               </p>
                             </div>
@@ -468,8 +468,7 @@
                           
                           <!-- Status badge -->
                           <span 
-                            :class="getStatusBadgeClass(build.status)"
-                            class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium"
+                            :class="getStatusBadgeClass(build)"
                             x-text="build.status"
                           ></span>
                         </div>

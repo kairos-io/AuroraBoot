@@ -69,13 +69,13 @@ export class Build {
 
     get statusBadgeClass() {
         const classes = {
-            'queued': 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300',
-            'assigned': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300',
-            'running': 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
-            'complete': 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
-            'failed': 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'
+            'queued': 'inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium uppercase tracking-wide bg-slate-700 text-slate-300 border border-slate-600',
+            'assigned': 'inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium uppercase tracking-wide bg-amber-800 text-amber-200 border border-amber-700',
+            'running': 'inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium uppercase tracking-wide bg-sky-800 text-sky-200 border border-sky-700',
+            'complete': 'inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium uppercase tracking-wide bg-emerald-800 text-emerald-200 border border-emerald-700',
+            'failed': 'inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium uppercase tracking-wide bg-rose-800 text-rose-200 border border-rose-700'
         };
-        return classes[this.status] || 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300';
+        return classes[this.status] || 'inline-flex items-center px-3 py-1 rounded-lg text-xs font-medium uppercase tracking-wide bg-slate-700 text-slate-300 border border-slate-600';
     }
 
     // Time formatting
