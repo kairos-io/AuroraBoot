@@ -34,8 +34,12 @@ const urlNavigation = () => {
     const urlParams = new URLSearchParams(window.location.search);
     const hash = window.location.hash.substring(1); // Remove the # character
     
+    // Parse hash to extract tab name (hash might contain query params like "builds?build=123")
+    const hashParts = hash.split('?');
+    const tabName = hashParts[0];
+    
     // Set active tab from hash
-    if (hash === 'builds') {
+    if (tabName === 'builds') {
       this.mainActiveTab = 'builds';
       // Auto-load builds when switching to builds tab
       if (this.builds.length === 0) {
@@ -45,8 +49,15 @@ const urlNavigation = () => {
       this.mainActiveTab = 'newbuild';
     }
     
-    // If there's a build ID in query params and we're on builds tab, select it
-    const buildId = urlParams.get('build');
+    // Check for build ID in both search params and hash params
+    let buildId = urlParams.get('build');
+    if (!buildId && hashParts.length > 1) {
+      // Build ID might be in hash query params (e.g., "builds?build=123")
+      const hashParams = new URLSearchParams(hashParts[1]);
+      buildId = hashParams.get('build');
+    }
+    
+    // If there's a build ID and we're on builds tab, select it
     if (buildId && this.mainActiveTab === 'builds') {
       // Skip URL restoration if we just created this build to avoid race condition
       if (this.newBuildCreated === buildId) {
