@@ -117,8 +117,8 @@ const urlNavigation = () => {
   },
   
   // Select a build and update URL - now opens modal instead
-  selectBuildWithUrl(build) {
-    this.openBuildModal(build);
+  async selectBuildWithUrl(build) {
+    await this.openBuildModal(build);
     
     // Update URL to include build ID
     const url = new URL(window.location);

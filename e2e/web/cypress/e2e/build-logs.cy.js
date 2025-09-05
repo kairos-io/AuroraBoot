@@ -144,20 +144,22 @@ describe('Build Logs and Modal Functionality', () => {
         })
 
         it('should display build summary information', () => {
-            // Check build summary section
-            cy.contains('Build Configuration').should('be.visible')
-            cy.contains('Base Image').should('be.visible')
-            cy.contains('ubuntu:24.04').should('be.visible')
-            cy.contains('Architecture').should('be.visible')
-            cy.contains('amd64').should('be.visible')
-            cy.contains('Model').should('be.visible')
-            cy.contains('generic').should('be.visible')
-            cy.contains('Variant').should('be.visible')
-            cy.contains('core').should('be.visible')
-            cy.contains('Version').should('be.visible')
-            cy.contains('1.0.0').should('be.visible')
-            cy.contains('Status').should('be.visible')
-            cy.contains('complete').should('be.visible')
+            // Check build summary section within the modal
+            cy.get('.fixed.inset-0.z-50.overflow-y-auto').within(() => {
+                cy.contains('Build Configuration').should('be.visible')
+                cy.contains('Image').should('be.visible')
+                cy.contains('ubuntu:24.04').should('be.visible')
+                cy.contains('Architecture').should('be.visible')
+                cy.contains('amd64').should('be.visible')
+                cy.contains('Model').should('be.visible')
+                cy.contains('generic').should('be.visible')
+                cy.contains('Variant').should('be.visible')
+                cy.contains('core').should('be.visible')
+                cy.contains('Version').should('be.visible')
+                cy.contains('1.0.0').should('be.visible')
+                cy.contains('Status').should('be.visible')
+                cy.contains('complete').should('be.visible')
+            })
         })
 
         it('should show artifacts section for completed builds', () => {
