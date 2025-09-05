@@ -487,7 +487,7 @@
 
       <!-- Build Details Modal - Simple Alpine.js binding -->
       <template x-if="modal.isVisible">
-        <div class="fixed inset-0 z-50 overflow-y-auto">
+        <div class="fixed inset-0 z-50 overflow-y-auto" @keydown.escape="closeModal()" tabindex="-1" x-init="$el.focus()">
           <!-- Backdrop -->
           <div 
             class="fixed inset-0 bg-black/75"
