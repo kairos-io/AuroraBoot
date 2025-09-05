@@ -1,5 +1,6 @@
 import { createAccordionView } from './accordion-view.js';
 import { createBuildsView } from './builds-view.js';
+import { Build } from './models/index.js';
 import Alpine from 'alpinejs';
 
 
@@ -154,7 +155,8 @@ const urlNavigation = () => {
       if (!build) {
         const response = await fetch(`/api/v1/builds/${buildId}`);
         if (response.ok) {
-          build = await response.json();
+          const buildData = await response.json();
+          build = Build.fromApiResponse(buildData);
         } else if (response.status === 404 && retryCount < 3) {
           // Build might not be available yet (just created), retry after a short delay
           console.log(`Build ${buildId} not found, retrying... (${retryCount + 1}/3)`);

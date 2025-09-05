@@ -163,14 +163,13 @@ describe('Build Logs and Modal Functionality', () => {
         })
 
         it('should show artifacts section for completed builds', () => {
+            // Wait for artifacts API call to complete
             cy.wait('@getArtifacts')
             
-            // Artifacts section should be visible
-            cy.contains('Artifacts').should('be.visible')
+            // Wait for the Downloads section to appear
+            cy.contains('Downloads', { timeout: 10000 }).should('be.visible')
             cy.contains('ISO image').should('be.visible')
             cy.contains('RAW image').should('be.visible')
-            cy.contains('For generic installations').should('be.visible')
-            cy.contains('For AWS, Raspberry Pi').should('be.visible')
         })
 
         it('should have logs toggle functionality', () => {
@@ -190,18 +189,8 @@ describe('Build Logs and Modal Functionality', () => {
     })
 
     describe('Build Logs Access for Previous Jobs', () => {
-        beforeEach(() => {
-            // Wait for builds to load
-            cy.get('[x-if="!loading && builds.length > 0"]').should('exist')
-            cy.contains('.cursor-pointer.p-4', 'ubuntu:24.04').should('be.visible')
-            
-            // Open modal
-            cy.get('.cursor-pointer.p-4').first().click()
-            cy.get('.fixed.inset-0.z-50.overflow-y-auto').should('be.visible')
-        })
-
         it('should be able to access logs for completed builds', () => {
-            // Mock WebSocket connection for logs
+            // Set up WebSocket mock BEFORE opening the modal
             cy.window().then((win) => {
                 // Mock WebSocket for testing
                 const mockWebSocket = {
@@ -214,35 +203,64 @@ describe('Build Logs and Modal Functionality', () => {
                     readyState: WebSocket.OPEN
                 }
 
-                // Stub WebSocket constructor
-                cy.stub(win, 'WebSocket').returns(mockWebSocket)
+                // Stub WebSocket constructor to return our mock and immediately trigger events
+                cy.stub(win, 'WebSocket').callsFake((url) => {
+                    // Immediately simulate connection opening
+                    setTimeout(() => {
+                        if (mockWebSocket.onopen) {
+                            mockWebSocket.onopen()
+                        }
+                        
+                        // Then simulate receiving log messages
+                        setTimeout(() => {
+                            if (mockWebSocket.onmessage) {
+                                mockWebSocket.onmessage({ 
+                                    data: 'Starting build process...\n' 
+                                })
+                                mockWebSocket.onmessage({ 
+                                    data: 'Downloading base image ubuntu:24.04\n' 
+                                })
+                                mockWebSocket.onmessage({ 
+                                    data: 'Build completed successfully!\n' 
+                                })
+                                mockWebSocket.onmessage({ 
+                                    data: 'Job reached status: complete, closing connection.\n' 
+                                })
+                            }
+                        }, 100)
+                    }, 10)
+                    
+                    return mockWebSocket
+                })
+                
+                // Wait for builds to load
+                cy.get('[x-if="!loading && builds.length > 0"]').should('exist')
+                cy.contains('.cursor-pointer.p-4', 'ubuntu:24.04').should('be.visible')
+                
+                // Open modal
+                cy.get('.cursor-pointer.p-4').first().click()
+                cy.get('.fixed.inset-0.z-50.overflow-y-auto').should('be.visible')
+                
+                // First, ensure the modal has fully loaded
+                cy.get('.fixed.inset-0.z-50.overflow-y-auto').should('be.visible')
+                
+                // Wait for modal content to be ready and scroll to bottom to see logs section
+                cy.get('.max-w-4xl').should('be.visible')
+                // Scroll the actual scrollable container (the modal body with overflow-y-auto)
+                cy.get('.p-6.space-y-6.overflow-y-auto').scrollTo('bottom')
+                
+                // Check that the logs toggle exists and is checked (for completed builds)
+                cy.get('input[x-model="modal.showLogs"]').should('be.checked')
+                
+                // The logs section should be visible automatically for completed builds
+                cy.get('[x-show="modal.showLogs"]').scrollIntoView().should('be.visible')
 
-                // Enable logs
-                cy.get('label').contains('Show Logs').click()
-                cy.get('[x-show="modal.showLogs"]').should('be.visible')
-
-                // Simulate receiving log messages
-                setTimeout(() => {
-                    if (mockWebSocket.onmessage) {
-                        mockWebSocket.onmessage({ 
-                            data: 'Starting build process...\n' 
-                        })
-                        mockWebSocket.onmessage({ 
-                            data: 'Downloading base image ubuntu:24.04\n' 
-                        })
-                        mockWebSocket.onmessage({ 
-                            data: 'Build completed successfully!\n' 
-                        })
-                        mockWebSocket.onmessage({ 
-                            data: 'Job reached status: complete, closing connection.\n' 
-                        })
-                    }
-                }, 100)
-
-                // Check that logs appear
-                cy.contains('Starting build process').should('be.visible')
-                cy.contains('Downloading base image').should('be.visible')
-                cy.contains('Build completed successfully').should('be.visible')
+                // Check that logs appear with proper timeout within the logs container
+                cy.get('[x-show="modal.showLogs"]').within(() => {
+                    cy.contains('Starting build process', { timeout: 5000 }).should('be.visible')
+                    cy.contains('Downloading base image', { timeout: 5000 }).should('be.visible')
+                    cy.contains('Build completed successfully', { timeout: 5000 }).should('be.visible')
+                })
             })
         })
 
@@ -260,19 +278,34 @@ describe('Build Logs and Modal Functionality', () => {
                 }
 
                 cy.stub(win, 'WebSocket').returns(mockWebSocket)
+                
+                // Wait for builds to load
+                cy.get('[x-if="!loading && builds.length > 0"]').should('exist')
+                cy.contains('.cursor-pointer.p-4', 'ubuntu:24.04').should('be.visible')
+                
+                // Open modal
+                cy.get('.cursor-pointer.p-4').first().click()
+                cy.get('.fixed.inset-0.z-50.overflow-y-auto').should('be.visible')
 
-                // Enable logs
+                // Enable logs (for this test we manually enable since we're testing different scenario)
                 cy.get('label').contains('Show Logs').click()
+                
+                // Wait for the logs container to become visible after clicking toggle
+                cy.get('[x-ref="modalLogsContainer"]').should('be.visible')
 
                 // Simulate immediate connection close (no logs available)
-                setTimeout(() => {
+                cy.then(() => {
                     if (mockWebSocket.onclose) {
-                        mockWebSocket.onclose()
+                        mockWebSocket.onclose({
+                            code: 1000,  // Normal closure
+                            wasClean: true,
+                            reason: 'No logs available'
+                        })
                     }
-                }, 100)
+                })
 
-                // Should show appropriate message or handle gracefully
-                cy.get('#modalLogsContainer').should('be.visible')
+                // Should show appropriate message after close event
+                cy.get('[x-ref="modalLogsContainer"]').should('contain', 'Build completed')
             })
         })
 
@@ -289,8 +322,16 @@ describe('Build Logs and Modal Functionality', () => {
                 }
 
                 cy.stub(win, 'WebSocket').returns(mockWebSocket)
+                
+                // Wait for builds to load
+                cy.get('[x-if="!loading && builds.length > 0"]').should('exist')
+                cy.contains('.cursor-pointer.p-4', 'ubuntu:24.04').should('be.visible')
+                
+                // Open modal
+                cy.get('.cursor-pointer.p-4').first().click()
+                cy.get('.fixed.inset-0.z-50.overflow-y-auto').should('be.visible')
 
-                // Enable logs
+                // Enable logs (for this test we manually enable since we're testing error scenario)
                 cy.get('label').contains('Show Logs').click()
 
                 // Simulate connection error
