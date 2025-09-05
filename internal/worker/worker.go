@@ -435,7 +435,7 @@ func (w *Worker) updateJobStatus(jobID string, status jobstorage.JobStatus) erro
 
 func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 	// Create a Dockerfile from a template
-	tmpl := `FROM quay.io/kairos/kairos-init:v0.4.9 AS kairos-init
+	tmpl := `FROM quay.io/kairos/kairos-init:v0.6.0 AS kairos-init
 
 FROM {{.Image}} AS base
 
