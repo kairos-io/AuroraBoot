@@ -120,14 +120,12 @@ describe('Builds Tab and Filter Functionality', () => {
         })
 
         it('should handle direct URL access with filter', () => {
-            // Visit builds tab with filter directly  
-            cy.visit('/#builds?status=failed')
+            // Visit builds tab with filter directly using correct URL format
+            // Query parameters should come before the hash fragment
+            cy.visit('/?status=failed#builds')
             
             // Wait for the accordion to load (indicating Alpine.js is initialized)
             cy.get('#accordion-collapse').should('exist')
-            
-            // Click on the builds tab to ensure it's active (sometimes direct URL doesn't trigger it)
-            cy.contains('button', 'Builds').click()
             
             // Wait for page to load and Alpine.js to initialize the builds tab
             cy.get('[x-show="mainActiveTab === \'builds\'"]', { timeout: 10000 }).should('be.visible')

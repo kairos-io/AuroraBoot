@@ -18,15 +18,18 @@ export function createBuildsView() {
         init() {
             // Initialize filter from URL parameters only if we're on the builds tab
             if (this.isBuildsTabActive()) {
-                const urlParams = new URLSearchParams(window.location.search);
-                const statusFromUrl = urlParams.get('status');
-                if (statusFromUrl && ['queued', 'assigned', 'running', 'complete', 'failed'].includes(statusFromUrl)) {
-                    this.statusFilter = statusFromUrl;
-                }
+                this.initializeFilterFromURL();
             }
             
             this.refreshBuilds();
             this.refreshInterval = setInterval(() => this.refreshBuilds(), 5000);
+            
+            // Watch for tab changes to initialize filter when builds tab becomes active
+            this.$watch('mainActiveTab', (newTab) => {
+                if (newTab === 'builds') {
+                    this.initializeFilterFromURL();
+                }
+            });
             
             // Watch for logs toggle changes - WebSocket streaming handles all cases now
             this.$watch('modal.showLogs', (showLogs) => {
@@ -41,9 +44,7 @@ export function createBuildsView() {
             window.addEventListener('popstate', () => {
                 // Only update filter from URL if we're on the builds tab
                 if (this.isBuildsTabActive()) {
-                    const urlParams = new URLSearchParams(window.location.search);
-                    const statusFromUrl = urlParams.get('status');
-                    this.statusFilter = statusFromUrl && ['queued', 'assigned', 'running', 'complete', 'failed'].includes(statusFromUrl) ? statusFromUrl : '';
+                    this.initializeFilterFromURL();
                 } else {
                     // If we navigated away from builds tab, keep the current filter but don't read from URL
                     // This preserves the user's filter choice within the tab
@@ -53,6 +54,15 @@ export function createBuildsView() {
                     this.refreshBuilds();
                 }
             });
+        },
+
+        // Initialize filter from URL parameters
+        initializeFilterFromURL() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const statusFromUrl = urlParams.get('status');
+            if (statusFromUrl && ['queued', 'assigned', 'running', 'complete', 'failed'].includes(statusFromUrl)) {
+                this.statusFilter = statusFromUrl;
+            }
         },
 
         // Load builds from API
@@ -169,8 +179,7 @@ export function createBuildsView() {
         isBuildsTabActive() {
             // Access the main app's activeTab state
             // This assumes the builds view is used within the main app context
-            return window.location.hash === '#builds' || 
-                   (window.location.hash === '' && window.location.pathname.includes('builds'));
+            return this.mainActiveTab === 'builds';
         },
 
         // Sync filter state to URL - called when tab becomes active
