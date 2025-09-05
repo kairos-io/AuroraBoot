@@ -45,6 +45,15 @@ export function createBuildsView() {
                 // Only update filter from URL if we're on the builds tab
                 if (this.isBuildsTabActive()) {
                     this.initializeFilterFromURL();
+                    
+                    // Check if modal should be closed when build parameter is removed
+                    const urlParams = new URLSearchParams(window.location.search);
+                    const buildIdInUrl = urlParams.get('build');
+                    
+                    // If modal is open but no build ID in URL, close the modal
+                    if (this.modal.isVisible && !buildIdInUrl) {
+                        this.modal.close();
+                    }
                 } else {
                     // If we navigated away from builds tab, keep the current filter but don't read from URL
                     // This preserves the user's filter choice within the tab
