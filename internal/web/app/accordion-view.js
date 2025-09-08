@@ -28,6 +28,11 @@ export function createAccordionView() {
             });
         },
         
+        // Computed property for visible sections (avoids redundant filtering)
+        get visibleSections() {
+            return this.sections.filter(s => s.visible);
+        },
+
         // Section definitions - data-driven approach
         sections: [
             {

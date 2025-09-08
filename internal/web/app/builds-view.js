@@ -127,12 +127,12 @@ export function createBuildsView() {
 
         // Scroll logs to bottom (called from Alpine.js template)
         scrollLogsToBottom() {
-                            this.$nextTick(() => {
-                                const container = this.$refs.modalLogsContainer;
-                                if (container) {
-                                    container.scrollTop = container.scrollHeight;
-                                }
-                            });
+            this.$nextTick(() => {
+                const container = this.$refs.modalLogsContainer;
+                if (container) {
+                    container.scrollTop = container.scrollHeight;
+                }
+            });
         },
 
         // Utility methods

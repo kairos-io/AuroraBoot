@@ -146,8 +146,6 @@ export class Build {
         }
 
         try {
-            // TODO: Does this download the artifacts whenever we open a modal?
-            // We should just present links to the user to download the artifacts.
             const response = await fetch(this.artifactsUrl);
             if (response.ok) {
                 this._artifacts = await response.json();
