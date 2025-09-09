@@ -130,7 +130,7 @@
                   <button
                     type="button"
                       @click="toggleSection(section.id)"
-                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (isFirstVisibleSection(section) ? ' rounded-t-lg' : '') + (isLastVisibleSection(section) ? ' rounded-b-lg' : '') + (section.advanced ? ' border-l-4 border-l-orange-500 dark:border-l-orange-400' : '')"
+                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (isFirstVisibleSection(section) ? ' rounded-t-lg' : '') + (isLastVisibleSection(section) && !isSectionOpen(section.id) ? ' rounded-b-lg' : '') + (section.advanced ? ' border-l-4 border-l-orange-500 dark:border-l-orange-400' : '')"
                       :aria-expanded="isSectionOpen(section.id)"
                       :aria-controls="'accordion-body-' + section.id"
                   >
@@ -220,7 +220,7 @@
                   <div 
                     :id="'accordion-body-' + section.id"
                     x-show="isSectionOpen(section.id)"
-                    :class="'p-5 border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900 mt-0' + (section.advanced ? ' border-l-4 border-l-orange-500 dark:border-l-orange-400' : '')"
+                    :class="'p-5 border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900 mt-0' + (isLastVisibleSection(section) ? ' rounded-b-lg' : '') + (section.advanced ? ' border-l-4 border-l-orange-500 dark:border-l-orange-400' : '')"
                     :aria-labelledby="'accordion-heading-' + section.id"
                   >
                     
