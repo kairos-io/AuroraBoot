@@ -34,11 +34,17 @@ describe('Kairos Factory Web Interface', () => {
         cy.get('#accordion-heading-artifacts').should('exist');
 
         // Kubernetes sections are conditional - need to select Standard variant first
-        // First open the variant section
-        cy.get('#accordion-heading-variant button').click();
+        // First open the variant section and wait for it to be visible
+        cy.get('#accordion-heading-variant').click();
+        cy.get('#accordion-body-variant').should('be.visible');
+        
+        // Click on standard variant option and wait for Alpine.js to process
         cy.get('label[for="option-standard"]').click();
-        cy.get('#accordion-heading-kubernetes').should('exist');
-        cy.get('#accordion-heading-kubernetes-release').should('exist');
+        cy.wait(500); // Give Alpine.js time to process the variant change
+        
+        // Wait for the conditional sections to appear after variant change
+        cy.get('#accordion-heading-kubernetes', { timeout: 10000 }).should('exist');
+        cy.get('#accordion-heading-kubernetes-release', { timeout: 10000 }).should('exist');
     });
 
     it('should have all required accordion bodies', () => {
@@ -52,9 +58,14 @@ describe('Kairos Factory Web Interface', () => {
         
         // Kubernetes sections are conditional
         cy.get('#accordion-heading-variant button').click();
+        // Then wait for the body to be visible
+        cy.get('#accordion-body-variant', { timeout: 5000 }).should('be.visible');
         cy.get('label[for="option-standard"]').click();
-        cy.get('#accordion-body-kubernetes').should('exist');
-        cy.get('#accordion-body-kubernetes-release').should('exist');
+        cy.wait(1000); // Give Alpine.js time to process the variant change
+        
+        // Wait for the conditional sections to appear after variant change
+        cy.get('#accordion-body-kubernetes', { timeout: 10000 }).should('exist');
+        cy.get('#accordion-body-kubernetes-release', { timeout: 10000 }).should('exist');
     });
 
     it('should allow section interaction', () => {
@@ -130,11 +141,11 @@ describe('Kairos Factory Web Interface', () => {
         // Wait for the build start request to complete
         cy.wait('@startBuild');
 
-        // Check if modal appears (using different selector based on Alpine.js modal)
-        cy.get('[x-show="isModalVisible"]').should('be.visible');
+        // After form submission, should redirect to builds tab
+        cy.get('[x-show="mainActiveTab === \'builds\'"]', { timeout: 10000 }).should('be.visible');
         
-        // Check for the specific building step in the new modal structure
-        cy.get('#waiting-for-worker').should('be.visible');
+        // Should be on builds tab with the hash
+        cy.location('hash').should('equal', '#builds');
     });
 
     it('should show ARM-specific options when ARM64 is selected', () => {

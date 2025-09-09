@@ -25,8 +25,10 @@
       </div>
     </div>
 
+
+
     <!-- Main Content -->
-    <section class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16">
+    <section class="py-8 px-4 mx-auto max-w-screen-xl lg:py-16" x-data="mergedComponents()">
       <div class="grid lg:grid-cols-3 gap-8 lg:gap-16">
         <!-- Left Column - Header -->
         <div class="lg:col-span-1">
@@ -69,21 +71,45 @@
           </div>
         </div>
 
-        <!-- Right Column - Form -->
+        <!-- Right Column - Tabbed Content -->
         <div class="lg:col-span-2">
           <div class="w-full p-6 space-y-8 bg-white rounded-lg shadow-xl dark:bg-gray-800">
+            
+            <!-- Tab Navigation -->
+            <div class="border-b border-gray-200 dark:border-gray-600">
+              <nav class="flex space-x-8" aria-label="Tabs">
+                <button 
+                  @click="switchToTab('newbuild')"
+                  :class="[mainActiveTab === 'newbuild' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
+                >
+                  New Build
+                </button>
+                <button 
+                  @click="switchToTab('builds')"
+                  :class="[mainActiveTab === 'builds' ? 'border-blue-500 text-blue-600 dark:text-blue-400' : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300 dark:text-gray-400 dark:hover:text-gray-300', 'whitespace-nowrap py-4 px-1 border-b-2 font-medium text-sm']"
+                >
+                  Builds
+                </button>
+              </nav>
+            </div>
+
+            <!-- Tab Content -->
+            <div class="min-h-96">
+              
+              <!-- New Build Tab -->
+              <div x-show="mainActiveTab === 'newbuild'" class="space-y-6">
             <p class="text-gray-600 dark:text-gray-300 mb-6">
               Choose your desired configuration options below by selecting from each category. Once you've made your selections, click the "Build" button at the bottom to generate your custom Kairos image. The build process will create both an ISO and a raw disk image for your chosen configuration.
             </p>
 
             <!-- Form -->
-            <form x-data="createAccordionView()" @submit="handleFormSubmit" class="mt-8 space-y-6" action="#" novalidate>
+                <form @submit="handleFormSubmit" class="mt-8 space-y-6" action="#" novalidate>
               
               <!-- Alpine.js Accordion -->
               <div id="accordion-collapse">
                 
                 <!-- Dynamic Section Rendering -->
-                <template x-for="(section, index) in visibleSections" :key="section.id">
+                <template x-for="(section, index) in sections.filter(s => s.visible)" :key="section.id">
                   <div class="accordion-section">
                   
                   <!-- Section Header -->
@@ -91,7 +117,7 @@
                   <button
                     type="button"
                       @click="toggleSection(section.id)"
-                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (index === 0 ? ' rounded-t-lg' : '') + (index === visibleSections.length - 1 ? ' rounded-b-lg' : '')"
+                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (index === 0 ? ' rounded-t-lg' : '') + (index === sections.filter(s => s.visible).length - 1 ? ' rounded-b-lg' : '')"
                       :aria-expanded="isSectionOpen(section.id)"
                       :aria-controls="'accordion-body-' + section.id"
                   >
@@ -196,7 +222,6 @@
                               :id="'option-' + item.value"
                               :value="item.value"
                               x-model="formData[section.formField]"
-                              @change="handleSectionChange(section, item.value)"
                               x-ref="kubernetesFields"
                           class="hidden peer"
                               :required="section.required"
@@ -363,178 +388,213 @@
               >
                 Build
                   </button>
+                </form>
+              </div>
 
-
-            </form>
-            
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <div x-data="buildModal()">
-      <!-- Modal backdrop -->
-    <div
-        x-show="isModalVisible"
-        class="fixed inset-0 z-40 bg-black/75"
-        @click="!isBuilding && resetBuildState()"
-    ></div>
-      
-    <!-- Main modal -->
-    <div
-        x-show="isModalVisible"
-        class="fixed inset-0 z-50 flex justify-center items-center p-4"
-      >
-        <!-- Modal container -->
-        <div class="relative w-full max-w-4xl max-h-full" @click.stop>
-        <!-- Modal content -->
-        <div
-          class="relative bg-white rounded-lg shadow-sm dark:bg-gray-700"
-        >
-          <!-- Modal header -->
-          <div
-            class="flex items-center justify-between p-4 md:p-5 border-b rounded-t dark:border-gray-600 border-gray-200"
-          >
-            <h3
-              class="text-xl font-semibold text-gray-900 dark:text-white"
-            >
-              <span x-show="isBuilding">Building image...</span>
-              <span x-show="isComplete">Build Complete!</span>
-            </h3>
-            <!-- Close button - only visible when build is complete or not building -->
-            <button
-              x-show="!isBuilding"
-              @click="resetBuildState()"
-              type="button"
-              class="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 ms-auto inline-flex justify-center items-center dark:hover:bg-gray-600 dark:hover:text-white"
-            >
-              <svg class="w-3 h-3" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 14 14">
-                <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
-              </svg>
-              <span class="sr-only">Close modal</span>
-            </button>
-          </div>
-          <!-- Modal body -->
-          <div class="p-4 md:p-5 space-y-4">
-            <ul
-              class="max-w-md space-y-2 text-gray-500 list-inside dark:text-gray-400 status-list"
-            >
-              <li id="waiting-for-worker" 
-                  x-show="isBuilding && currentStep === -1" 
-                  class="flex items-center">
-                <div role="status" class="spinner">
-                  <svg aria-hidden="true" class="w-4 h-4 me-2 text-gray-200 animate-spin dark:text-gray-600 fill-blue-600" viewBox="0 0 100 101" fill="none" xmlns="http://www.w3.org/2000/svg">
-                    <path d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z" fill="currentColor" />
-                    <path d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z" fill="currentFill" />
-                  </svg>
-                  <span class="sr-only">Loading...</span>
-                </div>
-                <svg class="done w-4 h-4 me-2 text-green-500 dark:text-green-400 shrink-0 hidden" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="currentColor" viewBox="0 0 20 20">
-                  <path d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 8.207-4 4a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L9 10.586l3.293-3.293a1 1 0 0 1 1.414 1.414Z" />
-                </svg>
-                Waiting for worker<span id="create-worker-flag">&nbsp;(Use `--create-worker` locally)</span>
-              </li>
-              <!-- Dynamic status steps using Alpine.js -->
-              <template x-for="(step, index) in statusSteps" :key="step.id">
-                <li :id="step.id" 
-                    x-show="isStepVisible(index)" 
-                    class="flex items-center">
-                  <!-- Spinner (show when step is active and building) -->
-                  <div role="status" 
-                       x-show="isStepActive(index)" 
-                       class="spinner">
-                  <svg
-                    aria-hidden="true"
-                    class="w-4 h-4 me-2 text-gray-200 animate-spin dark:text-gray-600 fill-blue-600"
-                    viewBox="0 0 100 101"
-                    fill="none"
-                    xmlns="http://www.w3.org/2000/svg"
+              <!-- Builds Tab -->
+              <div x-show="mainActiveTab === 'builds'" class="space-y-4">
+                <!-- Header with filters -->
+                <div class="flex items-center justify-between">
+                  <h2 class="text-xl font-bold text-gray-900 dark:text-gray-100">Build History</h2>
+                  <button 
+                    @click="refreshBuilds()"
+                    class="inline-flex items-center px-3 py-2 text-sm font-medium text-gray-500 bg-white border border-gray-300 rounded-lg hover:bg-gray-100 focus:ring-4 focus:outline-none focus:ring-gray-200 dark:bg-gray-800 dark:text-gray-400 dark:border-gray-600 dark:hover:bg-gray-700 dark:hover:text-white dark:focus:ring-gray-700"
                   >
-                    <path
-                      d="M100 50.5908C100 78.2051 77.6142 100.591 50 100.591C22.3858 100.591 0 78.2051 0 50.5908C0 22.9766 22.3858 0.59082 50 0.59082C77.6142 0.59082 100 22.9766 100 50.5908ZM9.08144 50.5908C9.08144 73.1895 27.4013 91.5094 50 91.5094C72.5987 91.5094 90.9186 73.1895 90.9186 50.5908C90.9186 27.9921 72.5987 9.67226 50 9.67226C27.4013 9.67226 9.08144 27.9921 9.08144 50.5908Z"
-                      fill="currentColor"
-                    />
-                    <path
-                      d="M93.9676 39.0409C96.393 38.4038 97.8624 35.9116 97.0079 33.5539C95.2932 28.8227 92.871 24.3692 89.8167 20.348C85.8452 15.1192 80.8826 10.7238 75.2124 7.41289C69.5422 4.10194 63.2754 1.94025 56.7698 1.05124C51.7666 0.367541 46.6976 0.446843 41.7345 1.27873C39.2613 1.69328 37.813 4.19778 38.4501 6.62326C39.0873 9.04874 41.5694 10.4717 44.0505 10.1071C47.8511 9.54855 51.7191 9.52689 55.5402 10.0491C60.8642 10.7766 65.9928 12.5457 70.6331 15.2552C75.2735 17.9648 79.3347 21.5619 82.5849 25.841C84.9175 28.9121 86.7997 32.2913 88.1811 35.8758C89.083 38.2158 91.5421 39.6781 93.9676 39.0409Z"
-                      fill="currentFill"
-                    />
-                  </svg>
-                  <span class="sr-only">Loading...</span>
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"></path>
+                    </svg>
+                    Refresh
+                  </button>
                 </div>
-                  <!-- Done checkmark (show when step is complete) -->
-                <svg
-                    x-show="isStepComplete(index)"
-                    class="done w-4 h-4 me-2 text-green-500 dark:text-green-400 shrink-0"
-                  aria-hidden="true"
-                  xmlns="http://www.w3.org/2000/svg"
-                  fill="currentColor"
-                  viewBox="0 0 20 20"
-                >
-                  <path
-                    d="M10 .5a9.5 9.5 0 1 0 9.5 9.5A9.51 9.51 0 0 0 10 .5Zm3.707 8.207-4 4a1 1 0 0 1-1.414 0l-2-2a1 1 0 0 1 1.414-1.414L9 10.586l3.293-3.293a1 1 0 0 1 1.414 1.414Z"
-                  />
-                </svg>
-                  <span x-text="step.name"></span>
-              </li>
-              </template>
+                
+                <!-- Filter Controls -->
+                <div class="flex space-x-4">
+                  <select 
+                    x-model="statusFilter" 
+                    @change="updateURLAndRefresh()"
+                    class="block w-48 p-2 text-sm text-gray-900 border border-gray-300 rounded-lg bg-gray-50 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:border-gray-600 dark:placeholder-gray-400 dark:text-white dark:focus:ring-blue-500 dark:focus:border-blue-500"
+                  >
+                    <option value="">All Status</option>
+                    <option value="queued">Queued</option>
+                    <option value="assigned">Assigned</option>
+                    <option value="running">Running</option>
+                    <option value="complete">Complete</option>
+                    <option value="failed">Failed</option>
+                  </select>
+                </div>
 
-            </ul>
-            <label class="inline-flex items-center cursor-pointer">
-              <input
-                id="logs-toggle"
-                type="checkbox"
-                x-model="showLogs"
-                class="sr-only peer"
-              />
-              <div
-                class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-400 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 dark:peer-checked:bg-blue-600"
-              ></div>
-              <span
-                class="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300"
-                >Show Logs</span
-              >
-            </label>
-            <div
-              id="output"
-              x-show="showLogs"
-              x-html="logs"
-              class="bg-gray-900 text-green-400 p-6 rounded-lg h-64 overflow-y-auto overflow-x-auto font-mono text-sm whitespace-pre mt-4"
-            >
-              <!-- Output will be managed by Alpine.js -->
-            </div>
-            <h2
-              id="downloads"
-              x-show="isComplete && downloads.length > 0"
-              class="text-2xl font-bold text-gray-900 dark:text-white"
-            >
-              Downloads
-            </h2>
-            <div id="links" x-show="isComplete && downloads.length > 0" class="flex space-x-3 items-center">
-              <template x-for="(artifact, index) in downloads" :key="index">
-                <a :href="artifact.fullUrl" target="_blank" class="block text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:ring-blue-300 font-small rounded-lg px-5 py-2.5 h-full flex flex-col justify-between dark:bg-blue-600 dark:hover:bg-blue-700 focus:outline-none dark:focus:ring-blue-800">
-                  <div class="text-sm font-semibold flex items-center gap-2" x-text="artifact.name">
+                <!-- Loading State -->
+                <template x-if="loading">
+                  <div class="flex items-center justify-center h-32">
+                    <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
                   </div>
-                </a>
-              </template>
+                </template>
+
+                <!-- Empty State -->
+                <template x-if="!loading && builds.length === 0">
+                  <div class="flex flex-col items-center justify-center h-32 text-gray-500 dark:text-gray-400">
+                    <svg class="w-12 h-12 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                    </svg>
+                    <p class="text-lg font-medium">No builds found</p>
+                    <p class="text-sm">Start by creating a new build</p>
+                  </div>
+                </template>
+
+                <!-- Builds Grid -->
+                <template x-if="!loading && builds.length > 0">
+                  <div class="space-y-3">
+                    <template x-for="build in builds" :key="build.uuid">
+                      <div 
+                        @click="selectBuildWithUrl(build)"
+                        class="p-4 border border-gray-200 dark:border-gray-600 rounded-lg cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors bg-white dark:bg-gray-800 shadow-sm hover:shadow-md"
+                      >
+                        <div class="flex items-center justify-between">
+                          <div class="flex items-center space-x-3">
+                            <!-- Status indicator -->
+                            <div 
+                              :class="getStatusIndicatorClass(build.status)"
+                              class="w-3 h-3 rounded-full"
+                            ></div>
+                            
+                            <!-- Build info -->
+                            <div>
+                              <p class="text-sm font-medium text-gray-900 dark:text-gray-100" x-text="getBuildTitle(build)"></p>
+                              <p class="text-xs text-gray-600 dark:text-gray-300">
+                                <span x-text="build.image"></span> • <span x-text="formatTime(build.created_at)"></span>
+                              </p>
+                            </div>
+                          </div>
+                          
+                          <!-- Status badge -->
+                          <span 
+                            :class="getStatusBadgeClass(build)"
+                            x-text="build.status"
+                          ></span>
+                        </div>
+
+                      </div>
+                    </template>
+                  </div>
+                </template>
+              </div>
+
             </div>
-          </div>
-          <!-- Modal footer -->
-          <div
-            class="flex items-center p-4 md:p-5 border-t border-gray-200 rounded-b dark:border-gray-600"
-          >
-            <button
-              id="restart-button"
-              x-show="isComplete"
-              @click="resetBuildState()"
-              type="button"
-              class="text-white bg-blue-700 hover:bg-blue-800 focus:ring-4 focus:outline-none focus:ring-blue-300 font-medium rounded-lg text-sm px-5 py-2.5 text-center dark:bg-blue-600 dark:hover:bg-blue-700 dark:focus:ring-blue-800"
-            >
-              Build a new image
-            </button>
-          </div>
           </div>
         </div>
       </div>
-    </div>
+
+      <!-- Build Details Modal - Simple Alpine.js binding -->
+      <template x-if="modal.isVisible">
+        <div class="fixed inset-0 z-50 overflow-y-auto" @keydown.escape="closeModal()" tabindex="-1" x-init="$el.focus()">
+          <!-- Backdrop -->
+          <div 
+            class="fixed inset-0 bg-black/75"
+            @click="closeModal()"
+          ></div>
+          
+          <!-- Modal container -->
+          <div class="relative min-h-screen flex items-center justify-center p-4">
+            <div 
+              class="relative bg-white rounded-lg shadow-xl dark:bg-gray-800 max-w-4xl w-full max-h-[90vh] overflow-hidden"
+              @click.stop
+            >
+              <!-- Header -->
+              <div class="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+                <div>
+                  <h3 class="text-xl font-semibold text-gray-900 dark:text-white" 
+                      x-text="modal.build ? getBuildTitle(modal.build) : 'Loading...'"></h3>
+                  <p class="text-sm text-gray-500 dark:text-gray-400 mt-1">
+                    <span x-text="modal.build?.status || ''"></span>
+                    <span x-show="modal.build?.status"> • </span>
+                    <span x-text="modal.build ? formatTime(modal.build.created_at) : ''"></span>
+                  </p>
+                </div>
+                
+                <!-- Close button -->
+                <button
+                  @click="closeModal()"
+                  type="button"
+                  class="text-gray-400 bg-transparent hover:bg-gray-200 hover:text-gray-900 rounded-lg text-sm w-8 h-8 inline-flex justify-center items-center dark:hover:bg-gray-600 dark:hover:text-white"
+                >
+                  <svg class="w-3 h-3" fill="none" viewBox="0 0 14 14">
+                    <path stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="m1 1 6 6m0 0 6 6M7 7l6-6M7 7l-6 6"/>
+                  </svg>
+                </button>
+              </div>
+              
+              <!-- Body -->
+              <div class="p-6 space-y-6 overflow-y-auto max-h-[calc(90vh-140px)]">
+                
+                <!-- Build Summary -->
+                <div x-show="modal.build" class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Build Configuration</h4>
+                  <div class="grid grid-cols-2 gap-4">
+                    <template x-for="[key, value] in Object.entries(getBuildSummary(modal.build))" :key="key">
+                      <div>
+                        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400" x-text="key"></dt>
+                        <dd class="text-sm text-gray-900 dark:text-white" x-text="value"></dd>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Download Links -->
+                <div x-show="modal.artifacts?.length > 0" class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <h4 class="text-lg font-medium text-gray-900 dark:text-white mb-3">Downloads</h4>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <template x-for="artifact in modal.artifacts" :key="artifact.url">
+                      <a 
+                        :href="`/builds/${modal.build.uuid}/artifacts/${artifact.url}`"
+                        class="inline-flex items-center px-4 py-2 text-sm font-medium text-center text-white bg-blue-600 rounded-lg hover:bg-blue-700 focus:ring-4 focus:outline-none focus:ring-blue-300"
+                      >
+                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>
+                        </svg>
+                        <span x-text="artifact.name"></span>
+                      </a>
+                    </template>
+                  </div>
+                </div>
+
+                <!-- Build Logs -->
+                <div class="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                  <div class="flex items-center justify-between mb-3">
+                    <h4 class="text-lg font-medium text-gray-900 dark:text-white">Build Logs</h4>
+                    <label class="inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        x-model="modal.showLogs"
+                        class="sr-only peer"
+                      />
+                      <div class="relative w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-400 peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 dark:peer-checked:bg-blue-600"></div>
+                      <span class="ms-3 text-sm font-medium text-gray-900 dark:text-gray-300">Show Logs</span>
+                    </label>
+                  </div>
+                  
+                  <div
+                    x-show="modal.showLogs"
+                    x-transition
+                    class="bg-gray-900 text-green-400 p-4 rounded-lg h-80 overflow-y-auto font-mono text-sm whitespace-pre-wrap"
+                    x-ref="modalLogsContainer"
+                    x-effect="if (modal.logs) scrollLogsToBottom()"
+                  >
+                    <div x-show="modal.isStreamingLogs" class="flex items-center text-blue-400 mb-2">
+                      <svg class="animate-spin -ml-1 mr-2 h-4 w-4" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      Streaming live logs...
+                    </div>
+                    <div x-text="modal.logs || 'No logs available'"></div>
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        </div>
+      </template>
+    </section>
   </body>
 </html>

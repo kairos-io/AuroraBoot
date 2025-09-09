@@ -15,6 +15,19 @@ export function createAccordionView() {
         // Accordion-specific state
         openSections: ['base-image'], // Start with base-image open
         
+        // Initialize watchers for form data changes
+        init() {
+            // Watch for variant changes
+            this.$watch('formData.variant', (newValue, oldValue) => {
+                this.handleVariantChange();
+            });
+            
+            // Watch for architecture changes
+            this.$watch('formData.architecture', (newValue, oldValue) => {
+                this.handleArchitectureChange();
+            });
+        },
+
         // Section definitions - data-driven approach
         sections: [
             {
@@ -28,6 +41,7 @@ export function createAccordionView() {
                 dataKey: 'baseImages',
                 gridCols: 'md:grid-cols-3',
                 showIcon: true,
+                visible: true,
                 getSelectedLabel: 'getSelectedBaseImageLabel',
                 getSelectedIcon: 'getSelectedBaseImageIcon'
             },
@@ -39,6 +53,7 @@ export function createAccordionView() {
                 formField: 'architecture',
                 gridCols: 'md:grid-cols-2',
                 showIcon: true,
+                visible: true,
                 onChange: 'handleArchitectureChange',
                 getSelectedLabel: 'getSelectedArchitectureLabel',
                 getSelectedIcon: 'getSelectedArchitectureIcon'
@@ -53,6 +68,7 @@ export function createAccordionView() {
                 showIcon: true,
                 showDescription: true,
                 customIcons: true, // Special handling for model icons
+                visible: true,
                 infoPopover: {
                     title: 'What is a model?',
                     content: 'Depending on the architecture you choose, you\'ll be able to select from different models available under that architecture. If you\'re not targeting a specific board like a Raspberry Pi and instead plan to install on generic hardware or a virtual machine, select Generic.'
@@ -69,6 +85,7 @@ export function createAccordionView() {
                 gridCols: 'md:grid-cols-2',
                 showIcon: true,
                 showDescription: true,
+                visible: true,
                 onChange: 'handleVariantChange',
                 getSelectedLabel: 'getSelectedVariantLabel',
                 getSelectedIcon: 'getSelectedVariantIcon'
@@ -81,6 +98,7 @@ export function createAccordionView() {
                 formField: 'kubernetes_distribution',
                 gridCols: 'md:grid-cols-2',
                 showIcon: true,
+                visible: false, // Initially hidden
                 conditional: {
                     dependsOn: 'variant',
                     showWhen: 'standard'
@@ -102,6 +120,7 @@ export function createAccordionView() {
                 type: 'text-input',
                 formField: 'kubernetes_release',
                 placeholder: 'v1.32.0',
+                visible: false, // Initially hidden
                 conditional: {
                     dependsOn: 'variant',
                     showWhen: 'standard'
@@ -126,6 +145,7 @@ export function createAccordionView() {
                 formField: 'version',
                 placeholder: 'v0.1.0-alpha',
                 required: true,
+                visible: true,
                 infoPopover: {
                     title: 'Semantic Versioning',
                     content: 'Kairos uses Semantic Versioning for its versioning scheme. This means that the version starts with the letter v followed by a three-part number, with the format MAJOR.MINOR.PATCH. The MAJOR version is incremented when there are breaking changes, the MINOR version is incremented when there are new features, and the PATCH version is incremented when there are bug fixes. Build numbers are also possible. Check the Semver website for more information.',
@@ -144,6 +164,7 @@ export function createAccordionView() {
                 placeholder: '#cloud-config',
                 rows: 10,
                 description: 'Paste your cloud-config.yaml here (optional):',
+                visible: true,
                 infoPopover: {
                     title: 'What is a cloud-config?',
                     content: 'A <code>cloud-config.yaml</code> file allows you to preconfigure your Kairos system with users, network, and more. It is applied at first boot. See the <a href="https://kairos.io/docs/architecture/cloud-init/" class="font-medium text-blue-600 underline dark:text-blue-500 hover:no-underline" target="_blank">Kairos documentation</a> for details and examples.'
@@ -160,6 +181,7 @@ export function createAccordionView() {
                 showIcon: true,
                 showDescription: true,
                 customDisplay: true, // Special handling for artifacts display
+                visible: true,
                 getSelectedLabel: 'getArtifactsLabel',
                 getSelectedIcons: 'getSelectedArtifactIcons' // Multiple icons for artifacts
             }
@@ -187,14 +209,7 @@ export function createAccordionView() {
             return this[section.dataKey] || [];
         },
 
-        shouldShowSection(section) {
-            if (!section.conditional) return true;
-            return this.formData[section.conditional.dependsOn] === section.conditional.showWhen;
-        },
 
-        get visibleSections() {
-            return this.sections.filter(s => this.shouldShowSection(s));
-        },
 
         getSelectedValue(section) {
             if (section.getSelectedLabel) {
@@ -217,16 +232,6 @@ export function createAccordionView() {
             return [];
         },
 
-        handleSectionChange(section, value) {
-            this.formData[section.formField] = value;
-            
-            // Clear validation errors when user makes changes
-            this.clearValidationErrors();
-
-            if (section.onChange) {
-                this[section.onChange]();
-            }
-        },
 
         // Clear validation errors to reset UI state
         clearValidationErrors() {
@@ -243,7 +248,24 @@ export function createAccordionView() {
             // Call the parent method
             buildForm.handleVariantChange.call(this);
             
-            // Show/hide Kubernetes sections based on variant
+            // Force Alpine.js to detect the changes by creating new section objects with updated visibility
+            this.sections = this.sections.map(section => {
+                const newSection = { ...section };
+                
+                if (this.formData.variant === 'standard') {
+                    if (section.id === 'kubernetes' || section.id === 'kubernetes-release') {
+                        newSection.visible = true;
+                    }
+                } else {
+                    if (section.id === 'kubernetes' || section.id === 'kubernetes-release') {
+                        newSection.visible = false;
+                    }
+                }
+                
+                return newSection;
+            });
+            
+            // Update open sections
             if (this.formData.variant === 'standard') {
                 if (!this.openSections.includes('kubernetes')) {
                     this.openSections.push('kubernetes');
