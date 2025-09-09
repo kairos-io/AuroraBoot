@@ -17,6 +17,9 @@ export function createAccordionView() {
         
         // Initialize watchers for form data changes
         init() {
+            // Load configuration from server
+            this.loadConfig();
+
             // Watch for variant changes
             this.$watch('formData.variant', (newValue, oldValue) => {
                 this.handleVariantChange();
@@ -26,6 +29,23 @@ export function createAccordionView() {
             this.$watch('formData.architecture', (newValue, oldValue) => {
                 this.handleArchitectureChange();
             });
+        },
+
+        // Load application configuration
+        async loadConfig() {
+            try {
+                const response = await fetch('/api/v1/config');
+                if (response.ok) {
+                    const config = await response.json();
+                    // Set default kairos-init version if provided by operator
+                    if (config.default_kairos_init_version) {
+                        this.formData.kairos_init_version = config.default_kairos_init_version;
+                    }
+                }
+            } catch (error) {
+                console.warn('Failed to load config:', error);
+                // Silently fail - form will work with defaults
+            }
         },
 
         // Section definitions - data-driven approach
@@ -184,6 +204,24 @@ export function createAccordionView() {
                 visible: true,
                 getSelectedLabel: 'getArtifactsLabel',
                 getSelectedIcons: 'getSelectedArtifactIcons' // Multiple icons for artifacts
+            },
+            {
+                id: 'kairos-init-version',
+                title: 'Kairos Init Version',
+                type: 'text-input',
+                formField: 'kairos_init_version',
+                placeholder: 'latest',
+                visible: true,
+                description: 'Specify the version of kairos-init to use for building the image. Leave empty to use the latest version.',
+                infoPopover: {
+                    title: 'Kairos Init Version',
+                    content: 'This controls which features and bug fixes are included in the build process. Different versions of kairos-init may support different base images or have various performance improvements.',
+                    link: {
+                        url: 'https://github.com/kairos-io/kairos-init/releases',
+                        text: 'View available versions'
+                    }
+                },
+                getSelectedLabel: 'getKairosInitVersionLabel'
             }
         ],
         

@@ -19,6 +19,7 @@ export function createBuildForm() {
             kubernetes_distribution: 'k3s',
             kubernetes_release: '',
             version: '',
+            kairos_init_version: '',
             cloud_config: '',
 
             artifact_raw: true,
@@ -164,6 +165,10 @@ export function createBuildForm() {
 
         getVersionLabel() {
             return this.formData.version.trim() || 'Missing';
+        },
+
+        getKairosInitVersionLabel() {
+            return this.formData.kairos_init_version.trim() || 'Latest';
         },
 
         getConfigurationLabel() {
