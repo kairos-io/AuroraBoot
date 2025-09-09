@@ -105,19 +105,32 @@
             <!-- Form -->
                 <form @submit="handleFormSubmit" class="mt-8 space-y-6" action="#" novalidate>
               
+              <!-- Advanced Options Toggle -->
+              <div class="flex items-center mb-6">
+                <input 
+                  type="checkbox" 
+                  id="showAdvancedOptions" 
+                  x-model="showAdvancedOptions"
+                  class="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 dark:focus:ring-blue-600 dark:ring-offset-gray-800 dark:focus:ring-offset-gray-800 focus:ring-2 dark:bg-gray-700 dark:border-gray-600"
+                >
+                <label for="showAdvancedOptions" class="ms-2 text-sm font-medium text-gray-900 dark:text-gray-300">
+                  Show advanced options
+                </label>
+              </div>
+              
               <!-- Alpine.js Accordion -->
               <div id="accordion-collapse">
                 
                 <!-- Dynamic Section Rendering -->
                 <template x-for="(section, index) in sections.filter(s => s.visible)" :key="section.id">
-                  <div class="accordion-section">
+                  <div class="accordion-section" x-show="isSectionVisible(section)" x-transition>
                   
                   <!-- Section Header -->
                   <h2 :id="'accordion-heading-' + section.id">
                   <button
                     type="button"
                       @click="toggleSection(section.id)"
-                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (index === 0 ? ' rounded-t-lg' : '') + (index === sections.filter(s => s.visible).length - 1 ? ' rounded-b-lg' : '')"
+                    :class="'flex items-center justify-between w-full p-5 font-medium text-gray-500 border border-b border-gray-200 mb-0 focus:ring-4 focus:ring-gray-200 dark:focus:ring-gray-800 dark:border-gray-700 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 gap-3 aria-expanded:true:border-b-0' + (isFirstVisibleSection(section) ? ' rounded-t-lg' : '') + (isLastVisibleSection(section) ? ' rounded-b-lg' : '') + (section.advanced ? ' border-l-4 border-l-orange-500 dark:border-l-orange-400' : '')"
                       :aria-expanded="isSectionOpen(section.id)"
                       :aria-controls="'accordion-body-' + section.id"
                   >
@@ -207,7 +220,7 @@
                   <div 
                     :id="'accordion-body-' + section.id"
                     x-show="isSectionOpen(section.id)"
-                    class="p-5 border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900 mt-0"
+                    :class="'p-5 border border-b-0 border-gray-200 dark:border-gray-700 dark:bg-gray-900 mt-0' + (section.advanced ? ' border-l-4 border-l-orange-500 dark:border-l-orange-400' : '')"
                     :aria-labelledby="'accordion-heading-' + section.id"
                   >
                     

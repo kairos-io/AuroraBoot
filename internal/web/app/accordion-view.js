@@ -14,6 +14,7 @@ export function createAccordionView() {
 
         // Accordion-specific state
         openSections: ['base-image'], // Start with base-image open
+        showAdvancedOptions: false, // Controls visibility of advanced options
         
         // Initialize watchers for form data changes
         init() {
@@ -212,6 +213,7 @@ export function createAccordionView() {
                 formField: 'kairos_init_version',
                 placeholder: 'latest',
                 visible: true,
+                advanced: true, // This marks it as an advanced option
                 description: 'Specify the version of kairos-init to use for building the image. Leave empty to use the latest version.',
                 infoPopover: {
                     title: 'Kairos Init Version',
@@ -245,6 +247,40 @@ export function createAccordionView() {
                 return this[section.dataKey]();
             }
             return this[section.dataKey] || [];
+        },
+
+        // Check if a section should be visible (considering advanced options)
+        isSectionVisible(section) {
+            // If it's not visible in general, don't show it
+            if (!section.visible) {
+                return false;
+            }
+            // If it's an advanced option, only show it when advanced options are enabled
+            if (section.advanced && !this.showAdvancedOptions) {
+                return false;
+            }
+            return true;
+        },
+
+        // Get visible sections for styling calculations
+        getVisibleSections() {
+            return this.sections.filter(s => this.isSectionVisible(s));
+        },
+
+        // Get index of a section among visible sections
+        getVisibleSectionIndex(section) {
+            return this.getVisibleSections().indexOf(section);
+        },
+
+        // Check if section is first visible
+        isFirstVisibleSection(section) {
+            return this.getVisibleSectionIndex(section) === 0;
+        },
+
+        // Check if section is last visible
+        isLastVisibleSection(section) {
+            const visibleSections = this.getVisibleSections();
+            return this.getVisibleSectionIndex(section) === visibleSections.length - 1;
         },
 
 
