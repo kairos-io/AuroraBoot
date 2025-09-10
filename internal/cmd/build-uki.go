@@ -141,6 +141,11 @@ var BuildUKICmd = cli.Command{
 			Name:  "splash",
 			Usage: "Path to the custom logo splash BMP file.",
 		},
+		&cli.BoolFlag{
+			Name:  "cmd-lines-v2",
+			Value: false,
+			Usage: "Use the new cmdline v2 format to generate a multiprofile efi with all the extra cmdlines. This requires systemd-boot 257 or newer.",
+		},
 	},
 	Before: func(ctx *cli.Context) error {
 		// // Mark flags as mutually exclusive
@@ -327,9 +332,10 @@ var BuildUKICmd = cli.Command{
 		boodBranding := ctx.String("boot-branding")
 		extraCmdlines := ctx.StringSlice("extra-cmdline")
 		singleEfiCmdlines := ctx.StringSlice("single-efi-cmdline")
+		cmdLinesV2 := ctx.Bool("cmd-lines-v2")
 
 		entries := append(
-			GetUkiCmdline(extendCmdline, boodBranding, extraCmdlines),
+			GetUkiCmdline(extendCmdline, boodBranding, extraCmdlines, cmdLinesV2),
 			GetUkiSingleCmdlines(boodBranding, singleEfiCmdlines, logger)...)
 
 		for _, entry := range entries {
@@ -374,6 +380,11 @@ var BuildUKICmd = cli.Command{
 				SdBootPath:    systemdBoot,
 				OutSdBootPath: outputSystemdBootEfi,
 				Splash:        ctx.String("splash"),
+			}
+
+			// If we are using cmdLinesV2 we need to pass the extra cmdlines to generate a multiprofile efi
+			if cmdLinesV2 {
+				builder.ExtraCmdlines = extraCmdlines
 			}
 
 			if err := os.Chdir(sourceDir); err != nil {
@@ -983,7 +994,7 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, logg
 // For each cmdline passed, we generate a uki file with that cmdline
 // extend-cmdline will just extend the default cmdline so we only create one efi file. Artifact name is the default one
 // extra-cmdline will create a new efi file for each cmdline passed. artifact name is generated from the cmdline
-func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) []utils.BootEntry {
+func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
 	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
 
 	// Override the default cmdline if the user passed one
@@ -1002,14 +1013,16 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 		FileName: constants.ArtifactBaseName,
 	}}
 
-	// extra
-	for _, extra := range extraCmdlines {
-		cmdline := defaultCmdLine + " " + extra
-		result = append(result, utils.BootEntry{
-			Cmdline:  cmdline,
-			Title:    bootBranding,
-			FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
-		})
+	// if we are using the old style cmdlines, we add the extra ones
+	if !cmdLinesV2 {
+		for _, extra := range extraCmdlines {
+			cmdline := defaultCmdLine + " " + extra
+			result = append(result, utils.BootEntry{
+				Cmdline:  cmdline,
+				Title:    bootBranding,
+				FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
+			})
+		}
 	}
 
 	return result
