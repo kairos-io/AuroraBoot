@@ -123,7 +123,7 @@
                 
                 <!-- Dynamic Section Rendering -->
                 <template x-for="(section, index) in sections.filter(s => s.visible)" :key="section.id">
-                  <div class="accordion-section" x-show="isSectionVisible(section)" x-transition>
+                  <div class="accordion-section" x-show="section.visible && (!section.advanced || showAdvancedOptions)" x-transition>
                   
                   <!-- Section Header -->
                   <h2 :id="'accordion-heading-' + section.id">
