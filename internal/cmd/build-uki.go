@@ -374,6 +374,7 @@ var BuildUKICmd = cli.Command{
 				SdBootPath:    systemdBoot,
 				OutSdBootPath: outputSystemdBootEfi,
 				Splash:        ctx.String("splash"),
+				ExtraCmdlines: extraCmdlines,
 			}
 
 			if err := os.Chdir(sourceDir); err != nil {
@@ -1001,16 +1002,6 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 		Title:    bootBranding,
 		FileName: constants.ArtifactBaseName,
 	}}
-
-	// extra
-	for _, extra := range extraCmdlines {
-		cmdline := defaultCmdLine + " " + extra
-		result = append(result, utils.BootEntry{
-			Cmdline:  cmdline,
-			Title:    bootBranding,
-			FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
-		})
-	}
 
 	return result
 }

@@ -25,6 +25,7 @@ RUN dnf -y update
 RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 # opensc is needed for the pkcs11 module to work
+# llvm is needed for uki building specifically llvm-objcopy
 RUN dnf in -y bc \
               binutils \
               containerd.io \
@@ -41,6 +42,7 @@ RUN dnf in -y bc \
               jq \
               kpartx \
               lvm2 \
+              llvm \
               mtools \
               openssl \
               opensc \
