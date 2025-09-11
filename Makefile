@@ -34,7 +34,7 @@ dev: build-js build-go ## Build JS assets, compile Go binary, and run Docker ima
 		-v $(PWD)/builds:/builds \
 		-v /dev:/dev \
 		-v /var/run/docker.sock:/var/run/docker.sock \
-		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker $(ARGS)
+		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker $(ARGS) --default-kairos-init-version v0.4.9
 
 # Build JavaScript assets (only if needed)
 build-js: internal/web/app/package.json ## Build JavaScript and CSS assets

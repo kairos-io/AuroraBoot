@@ -35,6 +35,11 @@ var WebCMD = cli.Command{
 			Usage: "Start a local worker in a goroutine",
 			Value: false,
 		},
+		&cli.StringFlag{
+			Name:  "default-kairos-init-version",
+			Usage: "Default kairos-init version to prefill in the form (e.g., v0.6.0). If not specified, the form will start empty and use 'latest' when submitted empty.",
+			Value: "",
+		},
 	},
 	Action: func(c *cli.Context) error {
 		os.MkdirAll(c.String("artifact-dir"), os.ModePerm)
@@ -61,10 +66,11 @@ var WebCMD = cli.Command{
 		}
 
 		return web.App(web.AppConfig{
-			EnableLogger: true,
-			ListenAddr:   c.String("address"),
-			OutDir:       c.String("artifact-dir"),
-			BuildsDir:    c.String("builds-dir"),
+			EnableLogger:             true,
+			ListenAddr:               c.String("address"),
+			OutDir:                   c.String("artifact-dir"),
+			BuildsDir:                c.String("builds-dir"),
+			DefaultKairosInitVersion: c.String("default-kairos-init-version"),
 		})
 	},
 }

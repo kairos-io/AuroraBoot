@@ -19,6 +19,7 @@ export function createBuildForm() {
             kubernetes_distribution: 'k3s',
             kubernetes_release: '',
             version: '',
+            kairos_init_version: '',
             cloud_config: '',
 
             artifact_raw: true,
@@ -166,6 +167,10 @@ export function createBuildForm() {
             return this.formData.version.trim() || 'Missing';
         },
 
+        getKairosInitVersionLabel() {
+            return this.formData.kairos_init_version.trim() || 'Latest';
+        },
+
         getConfigurationLabel() {
             return this.formData.cloud_config.trim() ? 'added' : 'none';
         },
@@ -223,6 +228,7 @@ export function createBuildForm() {
                 kubernetes_distribution: 'k3s',
                 kubernetes_release: '',
                 version: '',
+                kairos_init_version: '',
                 cloud_config: '',
     
                 artifact_raw: true,
