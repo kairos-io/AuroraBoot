@@ -32,6 +32,16 @@ The test suite covers the following functionality:
 - Responsive design testing
 - Keyboard accessibility
 
+### Advanced Options Feature (`advanced-options.cy.js`)
+- Advanced options checkbox functionality
+- Kairos-init version field visibility toggling
+- Form submission with hidden/visible advanced fields
+- Config API integration for default values
+- User interaction testing (label clicking, keyboard navigation)
+- State persistence across tab switches
+- Error handling for config API failures
+- Accessibility and user experience validation
+
 ## Running Tests
 
 ### Prerequisites
@@ -62,6 +72,9 @@ npm run test:logs
 
 # Test original form functionality
 npm run test:original
+
+# Test advanced options functionality
+npm run test:advanced
 
 # Run headless
 npm run test:headless

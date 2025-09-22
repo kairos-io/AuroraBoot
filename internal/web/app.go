@@ -20,12 +20,14 @@ import (
 var staticFiles embed.FS
 
 var mu sync.Mutex
+var appConfig AppConfig
 
 type AppConfig struct {
-	EnableLogger bool
-	ListenAddr   string
-	OutDir       string
-	BuildsDir    string
+	EnableLogger             bool
+	ListenAddr               string
+	OutDir                   string
+	BuildsDir                string
+	DefaultKairosInitVersion string
 }
 
 func getFileSystem(useOS bool) http.FileSystem {
@@ -43,6 +45,7 @@ func getFileSystem(useOS bool) http.FileSystem {
 
 func App(config AppConfig) error {
 	jobstorage.BuildsDir = config.BuildsDir
+	appConfig = config
 	e := echo.New()
 
 	if config.EnableLogger {
@@ -62,6 +65,7 @@ func App(config AppConfig) error {
 
 	// API routes
 	api := e.Group("/api/v1")
+	api.GET("/config", HandleGetConfig)
 	api.GET("/builds", HandleListBuilds)
 	api.POST("/builds", HandleQueueBuild)
 	api.POST("/builds/bind", HandleBindBuildJob)
@@ -153,6 +157,7 @@ func buildHandler(c echo.Context) error {
 			KubernetesVersion:      kubernetesVersion,
 			Image:                  image,
 			Version:                c.FormValue("version"),
+			KairosInitVersion:      c.FormValue("kairos_init_version"),
 			Artifacts:              artifacts,
 			CloudConfig:            c.FormValue("cloud_config"),
 		},
