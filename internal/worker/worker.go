@@ -435,7 +435,12 @@ func (w *Worker) updateJobStatus(jobID string, status jobstorage.JobStatus) erro
 
 func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 	// Create a Dockerfile from a template
-	tmpl := `FROM quay.io/kairos/kairos-init:v0.4.9 AS kairos-init
+	kairosInitTag := "latest"
+	if job.KairosInitVersion != "" {
+		kairosInitTag = job.KairosInitVersion
+	}
+
+	tmpl := fmt.Sprintf(`FROM quay.io/kairos/kairos-init:%s AS kairos-init
 
 FROM {{.Image}} AS base
 
@@ -443,7 +448,7 @@ COPY --from=kairos-init /kairos-init /kairos-init
 RUN /kairos-init -l debug -s install --version "{{.Version}}" -m "{{.Model}}" -v "{{.Variant}}" -t "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} -k "{{.KubernetesDistribution}}" --k8sversion "{{.KubernetesVersion}}"{{ end }}
 RUN /kairos-init -l debug -s init --version "{{.Version}}" -m "{{.Model}}" -v "{{.Variant}}" -t "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} -k "{{.KubernetesDistribution}}" --k8sversion "{{.KubernetesVersion}}"{{ end }}
 RUN /kairos-init -l debug --validate --version "{{.Version}}" -m "{{.Model}}" -v "{{.Variant}}" -t "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} -k "{{.KubernetesDistribution}}" --k8sversion "{{.KubernetesVersion}}"{{ end }}
-RUN rm /kairos-init`
+RUN rm /kairos-init`, kairosInitTag)
 
 	t, err := template.New("Interpolate Dockerfile content").Parse(tmpl)
 	if err != nil {

@@ -5,7 +5,8 @@
     "test:headless": "cypress run --headless",
     "test:builds": "cypress run --spec 'cypress/e2e/builds-tab.cy.js'",
     "test:logs": "cypress run --spec 'cypress/e2e/build-logs.cy.js'",
-    "test:original": "cypress run --spec 'cypress/e2e/scpec.cy.js'"
+    "test:original": "cypress run --spec 'cypress/e2e/scpec.cy.js'",
+    "test:advanced": "cypress run --spec 'cypress/e2e/advanced-options.cy.js'"
   },
   "dependencies": {
     "cypress": "^14.0.0"

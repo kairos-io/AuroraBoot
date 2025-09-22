@@ -39,6 +39,24 @@ type BuildWithUUID struct {
 	jobstorage.BuildJob
 }
 
+// ConfigResponse represents the application configuration
+type ConfigResponse struct {
+	DefaultKairosInitVersion string `json:"default_kairos_init_version"`
+}
+
+// @Summary Get application configuration
+// @Description Returns the application configuration including default values for the form
+// @Tags config
+// @Accept json
+// @Produce json
+// @Success 200 {object} ConfigResponse
+// @Router /config [get]
+func HandleGetConfig(c echo.Context) error {
+	return c.JSON(http.StatusOK, ConfigResponse{
+		DefaultKairosInitVersion: appConfig.DefaultKairosInitVersion,
+	})
+}
+
 // @Summary List all build jobs
 // @Description Returns a paginated list of all build jobs, optionally filtered by status
 // @Tags builds

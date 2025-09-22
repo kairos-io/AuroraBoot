@@ -81,6 +81,7 @@ type JobData struct {
 	KubernetesVersion      string    `json:"kubernetes_version"`
 	Image                  string    `json:"image"`
 	Version                string    `json:"version"`
+	KairosInitVersion      string    `json:"kairos_init_version,omitempty"`
 	Artifacts              Artifacts `json:"artifacts"`
 	CloudConfig            string    `json:"cloud_config,omitempty"`
 }
