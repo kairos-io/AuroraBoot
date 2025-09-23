@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/internal"
-
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
@@ -140,6 +139,11 @@ var BuildUKICmd = cli.Command{
 		&cli.StringFlag{
 			Name:  "splash",
 			Usage: "Path to the custom logo splash BMP file.",
+		},
+		&cli.BoolFlag{
+			Name:  "cmd-lines-v2",
+			Value: false,
+			Usage: "Use the new cmdline v2 format to generate a multiprofile efi with all the extra cmdlines. This requires systemd-boot 257 or newer.",
 		},
 	},
 	Before: func(ctx *cli.Context) error {
@@ -327,9 +331,10 @@ var BuildUKICmd = cli.Command{
 		boodBranding := ctx.String("boot-branding")
 		extraCmdlines := ctx.StringSlice("extra-cmdline")
 		singleEfiCmdlines := ctx.StringSlice("single-efi-cmdline")
+		cmdLinesV2 := ctx.Bool("cmd-lines-v2")
 
 		entries := append(
-			GetUkiCmdline(extendCmdline, boodBranding, extraCmdlines),
+			GetUkiCmdline(extendCmdline, boodBranding, extraCmdlines, cmdLinesV2),
 			GetUkiSingleCmdlines(boodBranding, singleEfiCmdlines, logger)...)
 
 		for _, entry := range entries {
@@ -376,6 +381,17 @@ var BuildUKICmd = cli.Command{
 				Splash:        ctx.String("splash"),
 			}
 
+			// If we are using cmdLinesV2 we need to pass the extra cmdlines to generate a multiprofile efi
+			if cmdLinesV2 {
+				// extra cmdlines expand the base one, not substitute it completely
+				// so we need to expand the entry.Cmdline with the extra cmdlines
+
+				for _, cmd := range extraCmdlines {
+					slog.Debug("Expanding extra cmdline with base", "cmdline", cmd, "base", entry.Cmdline)
+					builder.ExtraCmdlines = append(builder.ExtraCmdlines, fmt.Sprintf("%s %s", entry.Cmdline, cmd))
+				}
+			}
+
 			if err := os.Chdir(sourceDir); err != nil {
 				return fmt.Errorf("changing to %s directory: %w", sourceDir, err)
 			}
@@ -385,8 +401,26 @@ var BuildUKICmd = cli.Command{
 			}
 
 			logger.Info("Creating kairos and loader conf files")
-			if err := createConfFiles(sourceDir, entry.Cmdline, entry.Title, entry.FileName, kairosVersion, ctx.Bool("include-version-in-config"), ctx.Bool("include-cmdline-in-config")); err != nil {
+
+			// Always create the base config with profile 0
+			logger.Info("Creating base config file with profile 0")
+			if err := createConfFiles(sourceDir, entry.Cmdline, entry.Title, entry.FileName, kairosVersion, "0", ctx.Bool("include-version-in-config"), ctx.Bool("include-cmdline-in-config")); err != nil {
 				return err
+			}
+			// If cmdLinesV2 is set, we need to create the extra config files with the corresponding profile number
+			// Profile number is the index + 1 (0 is the base config)
+			if cmdLinesV2 {
+				for i, cmd := range extraCmdlines {
+					logger.Info("Creating extra config file for cmdline", "cmdline", cmd)
+					profile := fmt.Sprintf("%d", i+1)
+					// I hoped that we should not set this and systemd-boot would automatically get it from the .profile section
+					// as that can include the ID and title, but seems like it doesnt in neither type 1 or 2 entries :(
+					title := fmt.Sprintf("%s (%s)", entry.Title, cmd)
+
+					if err := createConfFiles(sourceDir, fmt.Sprintf("%s %s", entry.Cmdline, cmd), title, entry.FileName, kairosVersion, profile, ctx.Bool("include-version-in-config"), ctx.Bool("include-cmdline-in-config")); err != nil {
+						return err
+					}
+				}
 			}
 		}
 
@@ -676,7 +710,13 @@ func getEfiStub(arch string) (string, error) {
 	}
 }
 
-func createConfFiles(sourceDir, cmdline, title, finalEfiName, version string, includeVersion, includeCmdline bool) error {
+func createConfFiles(sourceDir, cmdline, title, finalEfiName, version, profile string, includeVersion, includeCmdline bool) error {
+	if _, err := os.Stat(filepath.Join(sourceDir, "entries")); os.IsNotExist(err) {
+		if err := os.Mkdir(filepath.Join(sourceDir, "entries"), os.ModePerm); err != nil {
+			return fmt.Errorf("error creating entries directory: %w", err)
+		}
+	}
+
 	// This is stored in the config
 	var extraCmdline string
 	// For the config title we get only the extra cmdline we added, no replacement of spaces with underscores needed
@@ -688,8 +728,7 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version string, in
 
 	// You can add entries into the config files, they will be ignored by systemd-boot
 	// So we store the cmdline in a key cmdline for easy tracking of what was added to the uki cmdline
-
-	configData := fmt.Sprintf("title %s\nefi /EFI/kairos/%s.efi\n", title, finalEfiName)
+	configData := fmt.Sprintf("title %s\nsort-key %s-%s\nefi /EFI/kairos/%s.efi\nprofile %s\n", title, finalEfiName, profile, finalEfiName, profile)
 
 	if includeVersion {
 		configData = fmt.Sprintf("%sversion %s\n", configData, version)
@@ -699,7 +738,13 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version string, in
 		configData = fmt.Sprintf("%scmdline %s\n", configData, strings.Trim(extraCmdline, " "))
 	}
 
-	err := os.WriteFile(filepath.Join(sourceDir, finalEfiName+".conf"), []byte(configData), os.ModePerm)
+	confName := finalEfiName + ".conf"
+
+	if profile != "0" {
+		// For profiles different than 0 we add the profile number to the conf name so we can have multiple confs for the same efi
+		confName = fmt.Sprintf("%s-profile%s.conf", finalEfiName, profile)
+	}
+	err := os.WriteFile(filepath.Join(sourceDir, "entries", confName), []byte(configData), os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("creating the %s.conf file", finalEfiName)
 	}
@@ -826,7 +871,16 @@ func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry) (map[strin
 	// Add the kairos efi files and the loader conf files for each cmdline
 	for _, entry := range entries {
 		data["EFI/kairos"] = append(data["EFI/kairos"], filepath.Join(sourceDir, entry.FileName+".efi"))
-		data["loader/entries"] = append(data["loader/entries"], filepath.Join(sourceDir, entry.FileName+".conf"))
+	}
+	// add any conf files that are in the sourceDir+entries dir
+	files, err := os.ReadDir(filepath.Join(sourceDir, "entries"))
+	if err != nil {
+		return data, fmt.Errorf("reading source dir: %w", err)
+	}
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".conf") {
+			data["loader/entries"] = append(data["loader/entries"], filepath.Join(sourceDir, "entries", f.Name()))
+		}
 	}
 	return data, nil
 }
@@ -983,7 +1037,7 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, logg
 // For each cmdline passed, we generate a uki file with that cmdline
 // extend-cmdline will just extend the default cmdline so we only create one efi file. Artifact name is the default one
 // extra-cmdline will create a new efi file for each cmdline passed. artifact name is generated from the cmdline
-func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) []utils.BootEntry {
+func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
 	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
 
 	// Override the default cmdline if the user passed one
@@ -1002,14 +1056,16 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string) [
 		FileName: constants.ArtifactBaseName,
 	}}
 
-	// extra
-	for _, extra := range extraCmdlines {
-		cmdline := defaultCmdLine + " " + extra
-		result = append(result, utils.BootEntry{
-			Cmdline:  cmdline,
-			Title:    bootBranding,
-			FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
-		})
+	// if we are using the old style cmdlines, we add the extra ones
+	if !cmdLinesV2 {
+		for _, extra := range extraCmdlines {
+			cmdline := defaultCmdLine + " " + extra
+			result = append(result, utils.BootEntry{
+				Cmdline:  cmdline,
+				Title:    bootBranding,
+				FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
+			})
+		}
 	}
 
 	return result
