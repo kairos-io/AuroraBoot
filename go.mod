@@ -16,7 +16,7 @@ require (
 	github.com/google/go-containerregistry v0.20.6
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
-	github.com/kairos-io/go-ukify v0.3.1
+	github.com/kairos-io/go-ukify v0.4.0
 	github.com/kairos-io/kairos-agent/v2 v2.24.2
 	github.com/kairos-io/kairos-sdk v0.10.0
 	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba

@@ -25,6 +25,7 @@ RUN dnf -y update
 RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 # opensc is needed for the pkcs11 module to work
+# llvm is needed for uki building specifically llvm-objcopy
 RUN dnf in -y bc \
               binutils \
               containerd.io \
@@ -41,6 +42,7 @@ RUN dnf in -y bc \
               jq \
               kpartx \
               lvm2 \
+              llvm \
               mtools \
               openssl \
               opensc \
@@ -116,10 +118,6 @@ RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-config --system-ta
 RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system-target /arm/raw/grubartifacts
 # You can build amd64 raw images for alpine so....we need this in both images
 RUN luet install --config /tmp/luet-amd64.yaml -y static/grub-artifacts --system-target /amd/raw/grubartifacts
-
-# kairos-agent so we can use the pull-image
-# TODO: What? I cant see where this is used anywhere? Check why its here? Its like 35Mb on nothingness if not used?
-RUN luet install -y system/kairos-agent
 
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
 # so temporal files are stored in each dir
