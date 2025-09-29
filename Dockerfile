@@ -119,10 +119,6 @@ RUN luet install --config /tmp/luet-arm64.yaml -y static/grub-artifacts --system
 # You can build amd64 raw images for alpine so....we need this in both images
 RUN luet install --config /tmp/luet-amd64.yaml -y static/grub-artifacts --system-target /amd/raw/grubartifacts
 
-# kairos-agent so we can use the pull-image
-# TODO: What? I cant see where this is used anywhere? Check why its here? Its like 35Mb on nothingness if not used?
-RUN luet install -y system/kairos-agent
-
 # remove luet tmp files. Side effect of setting the system-target is that it treats it as a root fs
 # so temporal files are stored in each dir
 RUN rm -Rf /arm/systemd-boot/var/tmp
