@@ -158,6 +158,7 @@ describe('Kairos Factory Web Interface', () => {
         cy.get('label[for="option-rpi3"]').should('be.visible');
         cy.get('label[for="option-rpi4"]').should('be.visible');
         cy.get('label[for="option-nvidia-agx-orin"]').should('be.visible');
+        cy.get('label[for="option-nvidia-orin-nx"]').should('be.visible');
     });
 
     it('should hide ARM-specific options when AMD64 is selected', () => {
@@ -170,6 +171,7 @@ describe('Kairos Factory Web Interface', () => {
         cy.get('label[for="option-rpi3"]').should('not.exist');
         cy.get('label[for="option-rpi4"]').should('not.exist');
         cy.get('label[for="option-nvidia-agx-orin"]').should('not.exist');
+        cy.get('label[for="option-nvidia-orin-nx"]').should('not.exist');
     });
 
     it('should handle BYOI (Bring Your Own Image) option', () => {

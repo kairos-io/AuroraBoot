@@ -45,7 +45,8 @@ export function createBuildForm() {
             { value: 'generic', label: 'Generic', icon: 'assets/img/cd.svg', archs: ['amd64', 'arm64'], description: 'For generic boards and virtualization.' },
             { value: 'rpi3', label: 'Raspberry Pi 3', icon: 'assets/img/raspberry-pi.svg', archs: ['arm64'], description: 'For Raspberry Pi 3 boards' },
             { value: 'rpi4', label: 'Raspberry Pi 4', icon: 'assets/img/raspberry-pi.svg', archs: ['arm64'], description: 'For Raspberry Pi 4 boards' },
-            { value: 'nvidia-agx-orin', label: 'Nvidia AGX Orin', icon: 'assets/img/nvidia.svg', archs: ['arm64'], description: 'For Nvidia AGX Orin boards.' }
+            { value: 'nvidia-agx-orin', label: 'Nvidia AGX Orin', icon: 'assets/img/nvidia.svg', archs: ['arm64'], description: 'For Nvidia AGX Orin boards.' },
+            { value: 'nvidia-orin-nx', label: 'Nvidia Orin NX', icon: 'assets/img/nvidia.svg', archs: ['arm64'], description: 'For Nvidia Orin NX boards.' }
         ],
 
         // Available architectures
