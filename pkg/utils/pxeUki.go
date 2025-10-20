@@ -14,7 +14,7 @@ import (
 )
 
 // Very simple as this is http booting
-// We setup a dhcp server tha tonly returns a ProxyDHCP offer
+// We setup a dhcp server that only returns a ProxyDHCP offer
 // with the HTTP server address and the filename to boot from.
 // This is used by the EFI client to find the HTTP server and the file to boot from.
 // The HTTP server serves the ISO file for all requests.
