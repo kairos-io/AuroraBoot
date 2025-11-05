@@ -22,7 +22,7 @@ docker run -v $PWD/config.yaml:/config.yaml \
              --rm -ti quay.io/kairos/auroraboot:v0.2.0 \
              --set "disable_http_server=true" \
              --set "disable_netboot=true" \
-             --set "container_image=docker://$IMAGE" \
+             --set "container_image=oci://$IMAGE" \
              --set "iso.data=/tmp/data" \
              --cloud-config /config.yaml \
              --set "state_dir=/tmp/auroraboot"

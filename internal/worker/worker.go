@@ -487,7 +487,7 @@ func runBashProcessWithOutput(ws io.Writer, command string) error {
 
 func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
-		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
+		ContainerImage: fmt.Sprintf("oci://%s", containerImage),
 	}
 
 	config := schema.Config{
@@ -522,7 +522,7 @@ func buildRawDisk(containerImage, outputDir string, writer io.Writer, cloudConfi
 
 func buildISO(containerImage, outputDir, artifactName string, writer io.Writer, cloudConfigContent string) error {
 	artifact := schema.ReleaseArtifact{
-		ContainerImage: fmt.Sprintf("docker://%s", containerImage),
+		ContainerImage: fmt.Sprintf("oci://%s", containerImage),
 	}
 
 	config, _, err := config.ReadConfig("", "", nil)
