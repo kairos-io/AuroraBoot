@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"math"
 	"os"
@@ -22,6 +23,7 @@ import (
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/klauspost/compress/zstd"
+	"github.com/sanity-io/litter"
 	"github.com/u-root/u-root/pkg/cpio"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/maps"
@@ -145,6 +147,11 @@ var BuildUKICmd = cli.Command{
 			Value: false,
 			Usage: "Use the new cmdline v2 format to generate a multiprofile efi with all the extra cmdlines. This requires systemd-boot 257 or newer.",
 		},
+		&cli.BoolFlag{
+			Name:  "sdboot-in-source",
+			Value: false,
+			Usage: "Try to find systemd-boot files in the source rootfs instead of using the bundled ones.",
+		},
 	},
 	Before: func(ctx *cli.Context) error {
 		// // Mark flags as mutually exclusive
@@ -234,10 +241,8 @@ var BuildUKICmd = cli.Command{
 			return errors.New("no image provided")
 		}
 
-		logLevel := "info"
-		if ctx.Bool("debug") {
-			logLevel = "debug"
-		}
+		logLevel := "debug"
+
 		logger := sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
 
 		// TODO: Get rid of "configs".
@@ -337,6 +342,50 @@ var BuildUKICmd = cli.Command{
 			GetUkiCmdline(extendCmdline, boodBranding, extraCmdlines, cmdLinesV2),
 			GetUkiSingleCmdlines(boodBranding, singleEfiCmdlines, logger)...)
 
+		var stub, systemdBoot, outputSystemdBootEfi string
+		// Get sdboot files from source if requested
+		if ctx.Bool("sdboot-in-source") {
+			if utils.IsAmd64(config.Arch) {
+				// Find the stub and systemd-boot in source dir
+				stub, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootStubx86Name)
+				if err != nil {
+					return fmt.Errorf("finding systemd-boot stub in source: %w", err)
+				}
+				systemdBoot, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootx86Name)
+				if err != nil {
+					return fmt.Errorf("finding systemd-boot in source: %w", err)
+				}
+				outputSystemdBootEfi = constants.EfiFallbackNamex86
+			} else if utils.IsArm64(config.Arch) {
+				// Find the stub and systemd-boot in source dir
+				stub, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootStubArmName)
+				if err != nil {
+					return fmt.Errorf("finding systemd-boot stub in source: %w", err)
+				}
+				systemdBoot, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootArmName)
+				if err != nil {
+					return fmt.Errorf("finding systemd-boot in source: %w", err)
+				}
+				outputSystemdBootEfi = constants.EfiFallbackNameArm
+			}
+		} else {
+			// Fallback to bundled files
+			stub, err = getEfiStub(config.Arch)
+			if err != nil {
+				return err
+			}
+			// Get systemd-boot info (we can sign it at the same time)
+			if utils.IsAmd64(config.Arch) {
+				systemdBoot = constants.UkiSystemdBootx86Path
+				outputSystemdBootEfi = constants.EfiFallbackNamex86
+			} else if utils.IsArm64(config.Arch) {
+				systemdBoot = constants.UkiSystemdBootArmPath
+				outputSystemdBootEfi = constants.EfiFallbackNameArm
+			} else {
+				return fmt.Errorf("unsupported arch: %s", config.Arch)
+			}
+		}
+
 		for _, entry := range entries {
 			logger.Info(fmt.Sprintf("Running ukify for cmdline: %s: %s", entry.Title, entry.Cmdline))
 
@@ -344,22 +393,6 @@ var BuildUKICmd = cli.Command{
 
 			// New ukifier !!
 			// Create Builder instance
-			stub, err := getEfiStub(config.Arch)
-			if err != nil {
-				return err
-			}
-			// Get systemd-boot info (we can sign it at the same time)
-			var systemdBoot string
-			var outputSystemdBootEfi string
-			if utils.IsAmd64(config.Arch) {
-				systemdBoot = constants.UkiSystemdBootx86
-				outputSystemdBootEfi = constants.EfiFallbackNamex86
-			} else if utils.IsArm64(config.Arch) {
-				systemdBoot = constants.UkiSystemdBootArm
-				outputSystemdBootEfi = constants.EfiFallbackNameArm
-			} else {
-				return fmt.Errorf("unsupported arch: %s", config.Arch)
-			}
 
 			if logger.GetLevel().String() == "debug" {
 				slog.SetLogLoggerLevel(slog.LevelDebug)
@@ -367,7 +400,6 @@ var BuildUKICmd = cli.Command{
 			builder := &uki.Builder{
 				Arch:          config.Arch,
 				Version:       kairosVersion,
-				SdStubPath:    stub,
 				KernelPath:    filepath.Join(artifactsTempDir, "vmlinuz"),
 				InitrdPath:    filepath.Join(artifactsTempDir, "initrd"),
 				Cmdline:       entry.Cmdline,
@@ -377,9 +409,12 @@ var BuildUKICmd = cli.Command{
 				SBKey:         ctx.String("sb-key"),
 				SBCert:        ctx.String("sb-cert"),
 				SdBootPath:    systemdBoot,
+				SdStubPath:    stub,
 				OutSdBootPath: outputSystemdBootEfi,
 				Splash:        ctx.String("splash"),
 			}
+
+			fmt.Print(litter.Sdump(builder))
 
 			// If we are using cmdLinesV2 we need to pass the extra cmdlines to generate a multiprofile efi
 			if cmdLinesV2 {
@@ -501,13 +536,13 @@ func checkBuildUKIDeps(arch string) error {
 func getEfiNeededFiles(arch string) ([]string, error) {
 	if utils.IsAmd64(arch) {
 		return []string{
-			constants.UkiSystemdBootStubx86,
-			constants.UkiSystemdBootx86,
+			constants.UkiSystemdBootStubx86Path,
+			constants.UkiSystemdBootx86Path,
 		}, nil
 	} else if utils.IsArm64(arch) {
 		return []string{
-			constants.UkiSystemdBootStubArm,
-			constants.UkiSystemdBootArm,
+			constants.UkiSystemdBootStubArmPath,
+			constants.UkiSystemdBootArmPath,
 		}, nil
 	} else {
 		return nil, fmt.Errorf("unsupported arch: %s", arch)
@@ -559,9 +594,17 @@ func setupDirectoriesAndFiles(workDir string) error {
 }
 
 func copyKernel(sourceDir, targetDir string) error {
-	linkTarget, err := os.Readlink(filepath.Join(sourceDir, "boot", "vmlinuz"))
-	if err != nil {
-		return err
+	// Check if its a symlink or a file
+	kernel := filepath.Join(sourceDir, "boot", "vmlinuz")
+
+	var linkTarget string
+	var err error
+
+	if linkTarget, err = os.Readlink(kernel); err == nil {
+		// It's a symlink, read the target already done
+	} else {
+		// It's not a symlink, use the kernel file directly
+		linkTarget = kernel
 	}
 
 	kernelFile := filepath.Base(linkTarget)
@@ -702,9 +745,9 @@ func ZstdFile(sourcePath, targetPath string) error {
 
 func getEfiStub(arch string) (string, error) {
 	if utils.IsAmd64(arch) {
-		return constants.UkiSystemdBootStubx86, nil
+		return constants.UkiSystemdBootStubx86Path, nil
 	} else if utils.IsArm64(arch) {
-		return constants.UkiSystemdBootStubArm, nil
+		return constants.UkiSystemdBootStubArmPath, nil
 	} else {
 		return "", nil
 	}
@@ -1127,4 +1170,36 @@ func NameFromCmdline(basename, cmdline string) string {
 	finalName := strings.ToLower(strings.TrimSuffix(name, "_"))
 
 	return finalName
+}
+
+// FindFirstFileInDir finds the first file matching the pattern in the given directory.
+// It walks over any subdirectories as well.
+// It returns as soon as it finds the first match.
+// It returns the full path to the file if found, or an error if not found or any other error occurs.
+func FindFirstFileInDir(dir, pattern string) (string, error) {
+	var foundFile string
+	err := filepath.WalkDir(dir, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			matched, err := filepath.Match(pattern, d.Name())
+			if err != nil {
+				return err
+			}
+			if matched {
+				foundFile = path
+				return filepath.SkipDir // Stop walking once we found the file
+			}
+
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	if foundFile == "" {
+		return "", fmt.Errorf("no file matching pattern %s found in directory %s", pattern, dir)
+	}
+	return foundFile, nil
 }
