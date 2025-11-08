@@ -23,7 +23,6 @@ import (
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/klauspost/compress/zstd"
-	"github.com/sanity-io/litter"
 	"github.com/u-root/u-root/pkg/cpio"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/maps"
@@ -413,8 +412,6 @@ var BuildUKICmd = cli.Command{
 				OutSdBootPath: outputSystemdBootEfi,
 				Splash:        ctx.String("splash"),
 			}
-
-			fmt.Print(litter.Sdump(builder))
 
 			// If we are using cmdLinesV2 we need to pass the extra cmdlines to generate a multiprofile efi
 			if cmdLinesV2 {
