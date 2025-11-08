@@ -601,7 +601,7 @@ func copyKernel(sourceDir, targetDir string) error {
 	var err error
 
 	if linkTarget, err = os.Readlink(kernel); err == nil {
-		// It's a symlink, read the target already done
+		// It's a symlink, linkTarget now contains the symlink target
 	} else {
 		// It's not a symlink, use the kernel file directly
 		linkTarget = kernel
