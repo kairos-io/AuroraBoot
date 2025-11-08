@@ -1189,7 +1189,7 @@ func FindFirstFileInDir(dir, pattern string) (string, error) {
 			}
 			if matched {
 				foundFile = path
-				return filepath.SkipDir // Stop walking once we found the file
+				return filepath.SkipAll // Stop walking once we found the file
 			}
 
 		}
