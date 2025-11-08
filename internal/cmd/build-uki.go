@@ -240,7 +240,10 @@ var BuildUKICmd = cli.Command{
 			return errors.New("no image provided")
 		}
 
-		logLevel := "debug"
+		logLevel := "info"
+		if ctx.Bool("debug") {
+			logLevel = "debug"
+		}
 
 		logger := sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
 
