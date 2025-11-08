@@ -30,7 +30,7 @@ var _ = Describe("Artifact", func() {
 
 		Context("when the container_image is set", func() {
 			It("should return an empty string", func() {
-				artifact.ContainerImage = "docker://quay.io/kairos/core-rockylinux:latest"
+				artifact.ContainerImage = "oci://quay.io/kairos/core-rockylinux:latest"
 				Expect(artifact.FileName()).To(Equal(""))
 			})
 		})

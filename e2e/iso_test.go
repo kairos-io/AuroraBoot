@@ -40,7 +40,7 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			out, err := aurora.Run("--debug",
-				"--set", fmt.Sprintf("container_image=docker://%s", image),
+				"--set", fmt.Sprintf("container_image=oci://%s", image),
 				"--set", "disable_http_server=true",
 				"--set", "disable_netboot=true",
 				"--set", "state_dir=/tmp/auroraboot",
@@ -61,7 +61,7 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 			Expect(err).ToNot(HaveOccurred())
 
 			out, err := aurora.Run(
-				"--set", fmt.Sprintf("container_image=docker://%s", image),
+				"--set", fmt.Sprintf("container_image=oci://%s", image),
 				"--set", "disable_http_server=true",
 				"--set", "disable_netboot=true",
 				"--cloud-config", "/config.yaml")

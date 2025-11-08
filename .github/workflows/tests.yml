@@ -169,7 +169,7 @@ jobs:
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.efi=true" \
           --set "disk.size=16000" \
-          --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
       - name: Test raw image is bootable
         env:
           KVM: true
@@ -205,7 +205,7 @@ jobs:
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.bios=true" \
           --set "disk.size=16000" \
-          --set "container_image=quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
       - name: Test raw image is bootable
         env:
           KVM: true

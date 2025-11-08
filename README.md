@@ -89,7 +89,7 @@ This command will:
 Auroraboot can also boostrap nodes by using custom container images or [the official kairos releases](https://kairos.io/docs/reference/image_matrix/), for instance:
 
 ```
-docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=docker://quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
+docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=oci://quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
 ```
 
 This command will:
