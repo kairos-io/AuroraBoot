@@ -20,7 +20,7 @@ require (
 	github.com/kairos-io/kairos-agent/v2 v2.24.2
 	github.com/kairos-io/kairos-sdk v0.10.0
 	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82
 	github.com/onsi/ginkgo/v2 v2.25.2
