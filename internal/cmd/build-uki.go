@@ -288,6 +288,9 @@ var BuildUKICmd = cli.Command{
 
 		e := elemental.NewElemental(config)
 		_, err = e.DumpSource(sourceDir, imgSource)
+		if err != nil {
+			return fmt.Errorf("extracting image source: %w", err)
+		}
 		defer os.RemoveAll(sourceDir)
 
 		if overlayRootfs := ctx.String("overlay-rootfs"); overlayRootfs != "" {
@@ -550,13 +553,46 @@ func getEfiNeededFiles(arch string) ([]string, error) {
 }
 
 func findKairosVersion(sourceDir string) (string, error) {
+	// Check if sourceDir exists
+	if _, err := os.Stat(sourceDir); err != nil {
+		return "", fmt.Errorf("source directory does not exist: %s: %w", sourceDir, err)
+	}
+
 	var osReleaseBytes []byte
-	osReleaseBytes, err := os.ReadFile(filepath.Join(sourceDir, "etc", "kairos-release"))
+	var err error
+
+	// Try kairos-release first
+	kairosReleasePath := filepath.Join(sourceDir, "etc", "kairos-release")
+	osReleaseBytes, err = os.ReadFile(kairosReleasePath)
 	if err != nil {
 		// fallback to os-release
-		osReleaseBytes, err = os.ReadFile(filepath.Join(sourceDir, "etc", "os-release"))
+		osReleasePath := filepath.Join(sourceDir, "etc", "os-release")
+		osReleaseBytes, err = os.ReadFile(osReleasePath)
 		if err != nil {
-			return "", fmt.Errorf("reading kairos-release file: %w", err)
+			// Check if etc directory exists and list its contents for debugging
+			etcDir := filepath.Join(sourceDir, "etc")
+			if etcInfo, err := os.Stat(etcDir); err == nil && etcInfo.IsDir() {
+				entries, listErr := os.ReadDir(etcDir)
+				if listErr == nil {
+					var files []string
+					for _, entry := range entries {
+						files = append(files, entry.Name())
+					}
+					return "", fmt.Errorf("reading kairos-release or os-release file: %w (found files in etc/: %v)", err, files)
+				}
+			}
+			// If etc doesn't exist, list top-level directory contents
+			entries, listErr := os.ReadDir(sourceDir)
+			if listErr == nil {
+				var dirs []string
+				for _, entry := range entries {
+					if entry.IsDir() {
+						dirs = append(dirs, entry.Name())
+					}
+				}
+				return "", fmt.Errorf("reading kairos-release or os-release file: %w (top-level directories found: %v)", err, dirs)
+			}
+			return "", fmt.Errorf("reading kairos-release or os-release file: %w", err)
 		}
 	}
 
