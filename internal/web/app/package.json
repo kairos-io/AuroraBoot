@@ -2,7 +2,7 @@
   "dependencies": {
     "alpinejs": "^3.14.9",
     "ansi-to-html": "^0.7.2",
-    "esbuild": "^0.25.1"
+    "esbuild": "^0.27.0"
   },
   "devDependencies": {
     "@tailwindcss/cli": "^4.1.8",
