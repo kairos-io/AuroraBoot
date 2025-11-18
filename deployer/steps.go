@@ -95,9 +95,10 @@ func (d *Deployer) StepCopyCloudConfig() error {
 
 func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
+	internal.Log.Logger.Debug().Str("arch", d.Config.Arch).Str("image", d.Artifact.ContainerImage).Msg("StepDumpSource: config arch and image")
 	return d.Add(constants.OpDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(constants.OpPrepareDirs), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs)))
+		herd.WithDeps(constants.OpPrepareDirs), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs, d.Config.Arch)))
 }
 
 func (d *Deployer) StepGenISO() error {
