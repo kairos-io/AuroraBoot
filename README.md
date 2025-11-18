@@ -111,6 +111,22 @@ This command will:
 - **Create a custom ISO with the cloud config attached to drive automated installations**
 - **Provision Kairos from network, with the same settings**
 
+### Specifying architecture
+
+When pulling container images for a different architecture than the host (e.g., pulling ARM64 images on an AMD64 host), you need to specify the `arch` option:
+
+```
+docker run --rm -ti --net host quay.io/kairos/auroraboot \
+  --set container_image=quay.io/kairos/alpine:3.21-standard-arm64-rpi4-v3.6.0-rc5-k3s-v1.32.9-k3s1 \
+  --set arch=arm64
+```
+
+Supported architectures:
+- `amd64` (default, matches x86_64)
+- `arm64` (matches aarch64)
+
+**Note**: If you don't specify `arch` when pulling images for a different architecture, AuroraBoot will default to the host architecture (`amd64` on x86_64 systems), which will fail when the image doesn't have a matching platform variant.
+
 ### Disable Netboot
 
 To disable netboot, and allow only ISO generation (for offline usage), use `--set disable_netboot=true`:
@@ -129,6 +145,7 @@ A configuration file can be for instance:
 artifact_version: "v2.4.2"
 release_version: "v2.4.2"
 container_image: "..."
+arch: "amd64"  # Optional: architecture to use when pulling container images (amd64 or arm64)
 flavor: "rockylinux"
 flavor_release: "9"
 repository: "kairos-io/kairos"

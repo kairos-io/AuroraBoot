@@ -756,3 +756,22 @@ func WithImageExtractor(extractor v1types.ImageExtractor) func(r *agentconfig.Co
 		return nil
 	}
 }
+
+func WithArch(arch string) func(r *agentconfig.Config) error {
+	return func(r *agentconfig.Config) error {
+		if arch != "" {
+			convertedArch, err := utils.GolangArchToArch(arch)
+			if err != nil {
+				return fmt.Errorf("invalid architecture %s: %w", arch, err)
+			}
+			r.Arch = convertedArch
+			// Also set Platform since DumpSource uses Platform.String() not Arch
+			platform, err := v1types.NewPlatformFromArch(arch)
+			if err != nil {
+				return fmt.Errorf("invalid architecture for platform %s: %w", arch, err)
+			}
+			r.Platform = platform
+		}
+		return nil
+	}
+}

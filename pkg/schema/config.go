@@ -27,6 +27,9 @@ type Config struct {
 
 	ListenAddr string `yaml:"listen_addr"`
 
+	// Architecture to use for container image pulling (e.g., "amd64", "arm64")
+	Arch string `yaml:"arch"`
+
 	// ISO block configuration
 	ISO ISO `yaml:"iso"`
 
