@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/gofrs/uuid"
+	aurorabootUtils "github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/kairos-io/kairos-sdk/sysext"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/kairos-io/kairos-sdk/utils"
@@ -27,12 +28,12 @@ var SysextCmd = cli.Command{
 			Name:     "private-key",
 			Value:    "",
 			Usage:    "Private key to sign the sysext with",
-			Required: true,
+			Required: false,
 		},
 		&cli.StringFlag{
 			Name:     "certificate",
 			Usage:    "Certificate to sign the sysext with",
-			Required: true,
+			Required: false,
 		},
 		&cli.BoolFlag{
 			Name:  "service-load",
@@ -130,8 +131,7 @@ var SysextCmd = cli.Command{
 			outputFile = filepath.Join(outputDir, outputFile)
 		}
 		// Call systemd-repart to create the sysext based off the files
-		command := exec.Command(
-			"systemd-repart",
+		cmdArgs := []string{
 			"--make-ddi=sysext",
 			"--image-policy=root=verity+signed+absent:usr=verity+signed+absent",
 			fmt.Sprintf("--architecture=%s", arch),
@@ -141,9 +141,10 @@ var SysextCmd = cli.Command{
 			fmt.Sprintf("--seed=%s", uuid.NewV5(uuid.NamespaceDNS, "kairos-sysext")),
 			fmt.Sprintf("--copy-source=%s", dir),
 			outputFile, // output sysext image
-			fmt.Sprintf("--private-key=%s", ctx.String("private-key")),
-			fmt.Sprintf("--certificate=%s", ctx.String("certificate")),
-		)
+		}
+		// Add signing flags or exclude partitions based on whether key/cert are provided
+		cmdArgs = append(cmdArgs, aurorabootUtils.GetSysextSigningFlags(ctx.String("private-key"), ctx.String("certificate"))...)
+		command := exec.Command("systemd-repart", cmdArgs...)
 		out, err := command.CombinedOutput()
 		logger.Logger.Debug().Str("output", string(out)).Msg("building sysext")
 		if err != nil {

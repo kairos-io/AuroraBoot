@@ -437,3 +437,17 @@ func NameFromRootfs(rootfs string) string {
 func SafeOCIName(name string) string {
 	return strings.ReplaceAll(name, "+", "-")
 }
+
+// GetSysextSigningFlags returns the appropriate systemd-repart flags for sysext signing.
+// If both key and cert are provided, returns flags to sign the extension.
+// Otherwise, returns flags to exclude verity signature partitions.
+func GetSysextSigningFlags(key, cert string) []string {
+	if key != "" && cert != "" {
+		return []string{
+			fmt.Sprintf("--private-key=%s", key), fmt.Sprintf("--certificate=%s", cert),
+		}
+	}
+	return []string{
+		"--exclude-partitions=root-verity-sig,usr-verity-sig",
+	}
+}
