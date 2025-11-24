@@ -49,11 +49,19 @@ var SysextCmd = cli.Command{
 			Value: "amd64",
 			Usage: "Arch to get the image from and build the sysext for. Accepts amd64 and arm64 values.",
 		},
+		&cli.BoolFlag{
+			Name:  "debug",
+			Value: false,
+			Usage: "Enable debug logging",
+		},
 	},
 	Before: func(ctx *cli.Context) error {
 		arch := ctx.String("arch")
 		if arch != "amd64" && arch != "arm64" {
 			return fmt.Errorf("unsupported architecture: %s", arch)
+		}
+		if ctx.NArg() < 2 {
+			return fmt.Errorf("missing required arguments: <name> <container>")
 		}
 		return nil
 	},
