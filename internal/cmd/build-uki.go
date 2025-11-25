@@ -688,7 +688,7 @@ func createInitramfs(sourceDir, artifactsTempDir string) error {
 		"proc": true,
 	}
 
-	// TODO: Exclude systemd-bootx64.efi, linuxx64.efi.stub, addonx64.efi.stub and arm64 counterparts from the initrad
+	// TODO: Exclude systemd-bootx64.efi, linuxx64.efi.stub, addonx64.efi.stub and arm64 counterparts from the initramfs
 	// we dont want to ship those in the final image!
 
 	if err = os.Chdir(sourceDir); err != nil {
