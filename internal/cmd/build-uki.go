@@ -879,8 +879,8 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		return err
 	}
 
-	// Create just the size we need + 1Mb just in case for folders and so on
-	imgSize := artifactSize + 1
+	// Create just the size we need + 2Mb just in case for folders and so on
+	imgSize := artifactSize + 2
 	fmt.Println(litter.Sdump(filesMap))
 	imgFile := filepath.Join(isoDir, "efiboot.img")
 	logger.Info(fmt.Sprintf("Creating the img file with size: %dMb", imgSize))
