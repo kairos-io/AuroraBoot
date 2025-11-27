@@ -979,7 +979,7 @@ func sumFileSizes(filesMap map[string][]string) (int64, error) {
 		}
 	}
 
-	totalInMB := int64(math.Round(float64(total) / (1024 * 1024)))
+	totalInMB := int64(math.Ceil(float64(total) / (1024 * 1024)))
 
 	return totalInMB, nil
 }
