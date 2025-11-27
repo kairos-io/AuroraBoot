@@ -23,6 +23,7 @@ import (
 	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	sdkTypes "github.com/kairos-io/kairos-sdk/types"
 	"github.com/klauspost/compress/zstd"
+	"github.com/sanity-io/litter"
 	"github.com/u-root/u-root/pkg/cpio"
 	"github.com/urfave/cli/v2"
 	"golang.org/x/exp/maps"
@@ -880,6 +881,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 
 	// Create just the size we need + 1Mb just in case for folders and so on
 	imgSize := artifactSize + 1
+	fmt.Println(litter.Sdump(filesMap))
 	imgFile := filepath.Join(isoDir, "efiboot.img")
 	logger.Info(fmt.Sprintf("Creating the img file with size: %dMb", imgSize))
 	if err = createImgWithSize(imgFile, imgSize); err != nil {
@@ -975,11 +977,15 @@ func sumFileSizes(filesMap map[string][]string) (int64, error) {
 			if err != nil {
 				return total, fmt.Errorf("finding file info for file %s: %w", f, err)
 			}
+			fmt.Println("Doing file " + f + " size " + fmt.Sprint(fileInfo.Size()))
 			total += fileInfo.Size()
+			fmt.Println("Total is now " + fmt.Sprint(total) + " bytes")
 		}
 	}
 
 	totalInMB := int64(math.Round(float64(total) / (1024 * 1024)))
+
+	fmt.Println("Final total is " + fmt.Sprint(totalInMB) + " Mb")
 
 	return totalInMB, nil
 }
