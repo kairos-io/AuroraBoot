@@ -879,7 +879,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		return err
 	}
 
-	// Create just the size we need + 1Mb just in case for folders and so on
+	// Create just the size we need + 2Mb just in case for folders and so on
 	imgSize := artifactSize + 1
 	fmt.Println(litter.Sdump(filesMap))
 	imgFile := filepath.Join(isoDir, "efiboot.img")
@@ -983,7 +983,7 @@ func sumFileSizes(filesMap map[string][]string) (int64, error) {
 		}
 	}
 
-	totalInMB := int64(math.Round(float64(total) / (1024 * 1024)))
+	totalInMB := int64(math.Ceil(float64(total) / (1024 * 1024)))
 
 	fmt.Println("Final total is " + fmt.Sprint(totalInMB) + " Mb")
 
