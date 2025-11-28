@@ -23,7 +23,7 @@ require (
 	github.com/klauspost/compress v1.18.1
 	github.com/labstack/echo/v4 v4.13.4
 	github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82
-	github.com/onsi/ginkgo/v2 v2.25.2
+	github.com/onsi/ginkgo/v2 v2.27.2
 	github.com/onsi/gomega v1.38.2
 	github.com/otiai10/copy v1.14.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
@@ -34,9 +34,9 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.15.0
-	golang.org/x/exp v0.0.0-20250819193227-8b4c13bb791b
-	golang.org/x/mod v0.29.0
-	golang.org/x/net v0.46.0
+	golang.org/x/exp v0.0.0-20251125195548-87e1e737ad39
+	golang.org/x/mod v0.30.0
+	golang.org/x/net v0.47.0
 	golang.org/x/sys v0.38.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -206,16 +206,15 @@ require (
 	go.opentelemetry.io/otel v1.36.0 // indirect
 	go.opentelemetry.io/otel/metric v1.36.0 // indirect
 	go.opentelemetry.io/otel/trace v1.36.0 // indirect
-	go.uber.org/automaxprocs v1.6.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.44.0 // indirect
+	golang.org/x/crypto v0.45.0 // indirect
 	golang.org/x/sync v0.18.0 // indirect
 	golang.org/x/term v0.37.0 // indirect
 	golang.org/x/text v0.31.0 // indirect
-	golang.org/x/time v0.12.0 // indirect
-	golang.org/x/tools v0.38.0 // indirect
+	golang.org/x/time v0.14.0 // indirect
+	golang.org/x/tools v0.39.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20250218202821-56aae31c358a // indirect
 	google.golang.org/grpc v1.72.2 // indirect
 	google.golang.org/protobuf v1.36.7 // indirect
