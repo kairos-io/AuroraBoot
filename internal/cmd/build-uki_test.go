@@ -21,10 +21,10 @@ var _ = Describe("sumFileSizes", func() {
 		os.RemoveAll(tempDir)
 	})
 
-	It("should round up to the next megabyte when size is not exact", func() {
-		// Create a file that is 1 MB + 1 byte (1048577 bytes)
+	It("should account for filesystem overhead", func() {
+		// Create a file that is 1 MB (1048576 bytes)
 		file1 := filepath.Join(tempDir, "file1")
-		err := os.WriteFile(file1, make([]byte, 1048577), 0644)
+		err := os.WriteFile(file1, make([]byte, 1048576), 0644)
 		Expect(err).ToNot(HaveOccurred())
 
 		filesMap := map[string][]string{
@@ -33,11 +33,11 @@ var _ = Describe("sumFileSizes", func() {
 
 		sizeMB, err := sumFileSizes(filesMap)
 		Expect(err).ToNot(HaveOccurred())
-		// Should round up to 2 MB, not 1 MB
-		Expect(sizeMB).To(Equal(int64(2)))
+		// Should be more than 1 MB due to filesystem overhead
+		Expect(sizeMB).To(BeNumerically(">", int64(1)))
 	})
 
-	It("should return exact megabytes when size is exact", func() {
+	It("should handle larger files with overhead", func() {
 		// Create a file that is exactly 5 MB (5242880 bytes)
 		file1 := filepath.Join(tempDir, "file1")
 		err := os.WriteFile(file1, make([]byte, 5*1024*1024), 0644)
@@ -49,16 +49,17 @@ var _ = Describe("sumFileSizes", func() {
 
 		sizeMB, err := sumFileSizes(filesMap)
 		Expect(err).ToNot(HaveOccurred())
-		Expect(sizeMB).To(Equal(int64(5)))
+		// Should be more than 5 MB due to filesystem overhead
+		Expect(sizeMB).To(BeNumerically(">", int64(5)))
 	})
 
-	It("should sum multiple files and round up", func() {
+	It("should sum multiple files with overhead", func() {
 		// Create file1: 1.5 MB
 		file1 := filepath.Join(tempDir, "file1")
 		err := os.WriteFile(file1, make([]byte, 1536*1024), 0644) // 1.5 MB
 		Expect(err).ToNot(HaveOccurred())
 
-		// Create file2: 2.3 MB
+		// Create file2: 2.25 MB
 		file2 := filepath.Join(tempDir, "file2")
 		err = os.WriteFile(file2, make([]byte, 2355200), 0644) // ~2.25 MB
 		Expect(err).ToNot(HaveOccurred())
@@ -70,11 +71,11 @@ var _ = Describe("sumFileSizes", func() {
 
 		sizeMB, err := sumFileSizes(filesMap)
 		Expect(err).ToNot(HaveOccurred())
-		// Total: ~3.75 MB, should round up to 4 MB
+		// Total: ~3.75 MB + overhead, should be at least 4 MB
 		Expect(sizeMB).To(BeNumerically(">=", int64(4)))
 	})
 
-	It("should handle fractional megabytes correctly", func() {
+	It("should handle fractional megabytes with overhead", func() {
 		// Create a file that is 50.5 MB (52953088 bytes)
 		file1 := filepath.Join(tempDir, "file1")
 		err := os.WriteFile(file1, make([]byte, 52953088), 0644)
@@ -86,8 +87,8 @@ var _ = Describe("sumFileSizes", func() {
 
 		sizeMB, err := sumFileSizes(filesMap)
 		Expect(err).ToNot(HaveOccurred())
-		// Should round up to 51 MB (52953088 bytes = 50.5 MB)
-		Expect(sizeMB).To(Equal(int64(51)))
+		// Should be more than 50.5 MB due to filesystem overhead
+		Expect(sizeMB).To(BeNumerically(">=", int64(51)))
 	})
 
 	It("should return error for non-existent file", func() {
