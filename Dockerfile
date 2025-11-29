@@ -4,7 +4,7 @@ ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
-FROM node:23 AS js
+FROM node:24 AS js
 WORKDIR /app
 RUN rm -rf node_modules package-lock.json 
 COPY internal/web/app .
