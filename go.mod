@@ -29,7 +29,7 @@ require (
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5
 	github.com/sanity-io/litter v1.5.8
 	github.com/spectrocloud-labs/herd v0.4.2
-	github.com/spectrocloud/peg v0.0.0-20240405075800-c5da7125e30f
+	github.com/spectrocloud/peg v0.0.0-20251202090320-955ab3047839
 	github.com/spf13/viper v1.19.0 // agent cant use 1.20.0 due to some marshall changes
 	github.com/stretchr/testify v1.11.1
 	github.com/twpayne/go-vfs/v5 v5.0.5
@@ -58,7 +58,7 @@ require (
 	github.com/anchore/go-lzo v0.1.0 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/aybabtme/rgbterm v0.0.0-20170906152045-cc83f3b3ce59 // indirect
-	github.com/bramvdbogaerde/go-scp v1.2.0 // indirect
+	github.com/bramvdbogaerde/go-scp v1.5.0 // indirect
 	github.com/cavaliergopher/grab v2.0.0+incompatible // indirect
 	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/codingsince1985/checksum v1.2.4 // indirect
