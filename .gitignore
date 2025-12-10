@@ -5,6 +5,7 @@ build/
 coverage.out
 coverage.out.*
 AuroraBoot
+auroraboot
 internal/web/app/node_modules/
 internal/web/app/bundle.js
 e2e/web/node_modules/

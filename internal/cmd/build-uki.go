@@ -878,8 +878,8 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		return err
 	}
 
-	// Create just the size we need + 50MB just in case
-	imgSize := artifactSize + 50
+	// Create just the size we need + 1MB for safety margin
+	imgSize := artifactSize + 1
 	imgFile := filepath.Join(isoDir, "efiboot.img")
 	logger.Info(fmt.Sprintf("Creating the img file with size: %dMb", imgSize))
 	if err = createImgWithSize(imgFile, imgSize); err != nil {
@@ -969,6 +969,9 @@ func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry) (map[strin
 
 func sumFileSizes(filesMap map[string][]string) (int64, error) {
 	total := int64(0)
+	fileCount := 0
+	
+	// Count files and sum their sizes
 	for _, files := range maps.Values(filesMap) {
 		for _, f := range files {
 			fileInfo, err := os.Stat(f)
@@ -976,10 +979,32 @@ func sumFileSizes(filesMap map[string][]string) (int64, error) {
 				return total, fmt.Errorf("finding file info for file %s: %w", f, err)
 			}
 			total += fileInfo.Size()
+			fileCount++
 		}
 	}
 
-	totalInMB := int64(math.Round(float64(total) / (1024 * 1024)))
+	// Account for FAT filesystem overhead:
+	// - Each file needs a directory entry (32 bytes)
+	// - Each directory needs a directory entry (32 bytes)
+	// - FAT table overhead (approximately 1-2% of total size)
+	// - Cluster slack (files don't perfectly fit into clusters)
+	// - Boot sector and reserved sectors
+	
+	dirCount := len(filesMap) // Number of directories
+	
+	// Directory entries: 32 bytes per file + 32 bytes per directory
+	dirEntryOverhead := int64((fileCount + dirCount) * 32)
+	
+	// FAT table and boot sector overhead (estimated at 2% of file content + 512KB base)
+	fatOverhead := int64(float64(total)*0.02) + 512*1024
+	
+	// Cluster slack: assume average 50% waste per file due to cluster boundaries
+	// FAT uses 4KB clusters typically, so average waste is 2KB per file
+	clusterSlack := int64(fileCount * 2048)
+	
+	totalWithOverhead := total + dirEntryOverhead + fatOverhead + clusterSlack
+
+	totalInMB := int64(math.Ceil(float64(totalWithOverhead) / (1024 * 1024)))
 
 	return totalInMB, nil
 }
