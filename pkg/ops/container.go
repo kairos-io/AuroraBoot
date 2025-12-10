@@ -6,7 +6,8 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/imageextractor"
+	sdkImage "github.com/kairos-io/kairos-sdk/types/images"
 )
 
 // DumpSource pulls a container image either remotely or locally from a docker daemon
@@ -21,7 +22,7 @@ func DumpSource(image string, dstFunc valueGetOnCall, arch string) func(ctx cont
 		}
 		internal.Log.Logger.Debug().Str("arch", arch).Msg("DumpSource: arch parameter")
 		opts := []GenericOptions{
-			WithImageExtractor(v1.OCIImageExtractor{}),
+			WithImageExtractor(imageextractor.OCIImageExtractor{}),
 			WithLogger(internal.Log),
 		}
 		if arch != "" {
@@ -38,7 +39,7 @@ func DumpSource(image string, dstFunc valueGetOnCall, arch string) func(ctx cont
 		}
 		e := elemental.NewElemental(cfg)
 
-		imgSource, err := v1.NewSrcFromURI(image)
+		imgSource, err := sdkImage.NewSrcFromURI(image)
 		if err != nil {
 			return err
 		}

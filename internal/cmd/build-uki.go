@@ -20,8 +20,9 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/kairos-io/go-ukify/pkg/uki"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/imageextractor"
+	sdkImages "github.com/kairos-io/kairos-sdk/types/images"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	"github.com/klauspost/compress/zstd"
 	"github.com/u-root/u-root/pkg/cpio"
 	"github.com/urfave/cli/v2"
@@ -245,11 +246,11 @@ var BuildUKICmd = cli.Command{
 			logLevel = "debug"
 		}
 
-		logger := sdkTypes.NewKairosLogger("auroraboot", logLevel, false)
+		logger := logger.NewKairosLogger("auroraboot", logLevel, false)
 
 		// TODO: Get rid of "configs".
 		config := ops.NewConfig(
-			ops.WithImageExtractor(v1.OCIImageExtractor{}),
+			ops.WithImageExtractor(imageextractor.OCIImageExtractor{}),
 			ops.WithLogger(logger),
 		)
 
@@ -281,7 +282,7 @@ var BuildUKICmd = cli.Command{
 			return err
 		}
 
-		imgSource, err := v1.NewSrcFromURI(args.Get(0))
+		imgSource, err := sdkImages.NewSrcFromURI(args.Get(0))
 		if err != nil {
 			return fmt.Errorf("not a valid rootfs source image argument: %s", args.Get(0))
 		}
@@ -300,7 +301,7 @@ var BuildUKICmd = cli.Command{
 				return fmt.Errorf("converting overlay-rootfs to absolute path: %w", err)
 			}
 			logger.Infof("Adding files from %s to rootfs", absolutePath)
-			overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", absolutePath))
+			overlay, err := sdkImages.NewSrcFromURI(fmt.Sprintf("dir:%s", absolutePath))
 			if err != nil {
 				return fmt.Errorf("error creating overlay image: %s", err)
 			}
@@ -859,7 +860,7 @@ func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, logger sdkTypes.KairosLogger) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, logger logger.KairosLogger) error {
 	// isoDir is where we generate the img file. We pass this dir to xorriso.
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
@@ -902,7 +903,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	if overlayISO != "" {
 		logger.Infof("Overlay dir is set, copying files from %s", overlayISO)
 		logger.Infof("Adding files from %s to iso", overlayISO)
-		overlay, err := v1.NewSrcFromURI(fmt.Sprintf("dir:%s", overlayISO))
+		overlay, err := sdkImages.NewSrcFromURI(fmt.Sprintf("dir:%s", overlayISO))
 		if err != nil {
 			logger.Errorf("error creating overlay image: %s", err)
 			return err
@@ -970,7 +971,7 @@ func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry) (map[strin
 func sumFileSizes(filesMap map[string][]string) (int64, error) {
 	total := int64(0)
 	fileCount := 0
-	
+
 	// Count files and sum their sizes
 	for _, files := range maps.Values(filesMap) {
 		for _, f := range files {
@@ -989,19 +990,19 @@ func sumFileSizes(filesMap map[string][]string) (int64, error) {
 	// - FAT table overhead (approximately 1-2% of total size)
 	// - Cluster slack (files don't perfectly fit into clusters)
 	// - Boot sector and reserved sectors
-	
+
 	dirCount := len(filesMap) // Number of directories
-	
+
 	// Directory entries: 32 bytes per file + 32 bytes per directory
 	dirEntryOverhead := int64((fileCount + dirCount) * 32)
-	
+
 	// FAT table and boot sector overhead (estimated at 2% of file content + 512KB base)
 	fatOverhead := int64(float64(total)*0.02) + 512*1024
-	
+
 	// Cluster slack: assume average 50% waste per file due to cluster boundaries
 	// FAT uses 4KB clusters typically, so average waste is 2KB per file
 	clusterSlack := int64(fileCount * 2048)
-	
+
 	totalWithOverhead := total + dirEntryOverhead + fatOverhead + clusterSlack
 
 	totalInMB := int64(math.Ceil(float64(totalWithOverhead) / (1024 * 1024)))
@@ -1061,7 +1062,7 @@ func copyFilesToImg(imgFile string, filesMap map[string][]string) error {
 
 // Create artifact just outputs the files from the sourceDir to the outputDir
 // Maintains the same structure as the sourceDir which is the final structure we want
-func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEntry, logger sdkTypes.KairosLogger) error {
+func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEntry, logger logger.KairosLogger) error {
 	filesMap, err := imageFiles(sourceDir, keysDir, entries)
 	if err != nil {
 		return err
@@ -1108,7 +1109,7 @@ func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEn
 	return nil
 }
 
-func createContainer(sourceDir, outputDir, artifactName, outputName string, logger sdkTypes.KairosLogger) error {
+func createContainer(sourceDir, outputDir, artifactName, outputName string, logger logger.KairosLogger) error {
 	temp, err := os.CreateTemp("", "image.tar")
 	if err != nil {
 		return err
@@ -1179,7 +1180,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, c
 }
 
 // GetUkiSingleCmdlines returns the single-efi-cmdline as passed by the user.
-func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, logger sdkTypes.KairosLogger) []utils.BootEntry {
+func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, _ logger.KairosLogger) []utils.BootEntry {
 	result := []utils.BootEntry{}
 	// extra
 	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall

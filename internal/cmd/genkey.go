@@ -16,7 +16,7 @@ import (
 	"github.com/foxboron/sbctl"
 	"github.com/foxboron/sbctl/certs"
 	"github.com/foxboron/sbctl/fs"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	"github.com/urfave/cli/v2"
 )
 
@@ -55,7 +55,7 @@ var GenKeyCmd = cli.Command{
 	},
 	Action: func(ctx *cli.Context) error {
 		// TODO: Implement log level
-		logger := sdkTypes.NewKairosLogger("auroraboot", "debug", false)
+		logger := logger.NewKairosLogger("auroraboot", "debug", false)
 
 		skipMicrosoftCerts := ctx.Bool(skipMicrosoftCertsFlag)
 
@@ -217,7 +217,7 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 // - KEK
 // It returns the prepared temporary directory where the keys are stored in
 // "der" format in the expected directories.
-func prepareCustomDerDir(l sdkTypes.KairosLogger, customCertDir string) (string, error) {
+func prepareCustomDerDir(l logger.KairosLogger, customCertDir string) (string, error) {
 	if customCertDir != "" {
 		if _, err := os.Stat(customCertDir); os.IsNotExist(err) {
 			return "", fmt.Errorf("custom cert directory does not exist: %s", customCertDir)

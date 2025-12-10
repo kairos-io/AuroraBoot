@@ -26,7 +26,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	v1mock "github.com/kairos-io/kairos-agent/v2/tests/mocks"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	sdkLogger "github.com/kairos-io/kairos-sdk/types/logger"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/viper"
@@ -36,13 +36,13 @@ import (
 
 var _ = Describe("Utils", Label("utils"), func() {
 	var runner *v1mock.FakeRunner
-	var logger sdkTypes.KairosLogger
+	var logger sdkLogger.KairosLogger
 	var fs vfs.FS
 	var cleanup func()
 
 	BeforeEach(func() {
 		runner = v1mock.NewFakeRunner()
-		logger = sdkTypes.NewNullLogger()
+		logger = sdkLogger.NewNullLogger()
 		// Ensure /tmp exists in the VFS
 		fs, cleanup, _ = vfst.NewTestFS(nil)
 		fs.Mkdir("/tmp", constants.DirPerm)
@@ -238,7 +238,7 @@ var _ = Describe("Utils", Label("utils"), func() {
 			viper.Set("single-efi-cmdline", []string{"My Entry: key=value"})
 			viper.Set("boot-branding", "Kairos")
 
-			entries := utils.GetUkiSingleCmdlines(sdkTypes.NewNullLogger())
+			entries := utils.GetUkiSingleCmdlines(sdkLogger.NewNullLogger())
 			Expect(entries[0].Cmdline).To(MatchRegexp(defaultCmdline + "  key=value"))
 			Expect(entries[0].Title).To(ContainSubstring("Kairos (My Entry)"))
 			Expect(entries[0].FileName).To(Equal("My_Entry"))

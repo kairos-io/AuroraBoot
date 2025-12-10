@@ -2,10 +2,11 @@ package cmd
 
 import (
 	"fmt"
+
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	"github.com/urfave/cli/v2"
 )
 
@@ -56,7 +57,7 @@ Example:
 		if c.Bool("debug") {
 			loglevel = "debug"
 		}
-		internal.Log = types.NewKairosLogger("AuroraBoot", loglevel, false)
+		internal.Log = logger.NewKairosLogger("AuroraBoot", loglevel, false)
 
 		// Optionally parse NetBoot from flags here if desired
 		nb := schema.NetBoot{} // Use defaults, or parse from CLI flags

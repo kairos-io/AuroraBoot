@@ -3,10 +3,11 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"os"
+
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
-	"os"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal/config"
@@ -62,7 +63,7 @@ var BuildISOCmd = cli.Command{
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
-		internal.Log = sdkTypes.NewKairosLogger("aurora", ctx.String("loglevel"), false)
+		internal.Log = logger.NewKairosLogger("aurora", ctx.String("loglevel"), false)
 		source := ctx.Args().Get(0)
 		if source == "" {
 			// Hack to prevent ShowAppHelpAndExit from checking only subcommands.

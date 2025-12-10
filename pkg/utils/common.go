@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
+	"github.com/kairos-io/kairos-sdk/types/runner"
 
 	containerdCompression "github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -21,8 +22,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/spf13/viper"
 )
@@ -35,7 +35,7 @@ type BootEntry struct {
 
 // CreateSquashFS creates a squash file at destination from a source, with options
 // TODO: Check validity of source maybe?
-func CreateSquashFS(runner v1.Runner, logger sdkTypes.KairosLogger, source string, destination string, options []string) error {
+func CreateSquashFS(runner runner.Runner, logger logger.KairosLogger, source string, destination string, options []string) error {
 	// create args
 	args := []string{source, destination}
 	// append options passed to args in order to have the correct order
@@ -105,7 +105,7 @@ func GetUkiCmdline() []BootEntry {
 }
 
 // GetUkiSingleCmdlines returns the single-efi-cmdline as passed by the user.
-func GetUkiSingleCmdlines(logger sdkTypes.KairosLogger) []BootEntry {
+func GetUkiSingleCmdlines(_ logger.KairosLogger) []BootEntry {
 	result := []BootEntry{}
 	// extra
 	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
@@ -194,7 +194,7 @@ func Tar(src string, writers ...io.Writer) error {
 }
 
 // CreateTar a imagetarball from a standard tarball
-func CreateTar(log sdkTypes.KairosLogger, srctar, dstimageTar, imagename, architecture, OS string) error {
+func CreateTar(_ logger.KairosLogger, srctar, dstimageTar, imagename, architecture, OS string) error {
 
 	dstFile, err := os.Create(dstimageTar)
 	if err != nil {
@@ -320,7 +320,7 @@ func NameFromCmdline(basename, cmdline string) string {
 }
 
 // GetArchFromRootfs returns the architecture from the rootfs of a Kairos image
-func GetArchFromRootfs(rootfs string, l sdkTypes.KairosLogger) (string, error) {
+func GetArchFromRootfs(rootfs string, l logger.KairosLogger) (string, error) {
 	var arch string
 	var ok bool
 	releaseFilename := filepath.Join("etc", "kairos-release")

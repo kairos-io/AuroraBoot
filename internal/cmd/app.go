@@ -11,7 +11,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/internal/worker"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
 )
@@ -71,7 +71,7 @@ func GetApp(version string) *cli.App {
 		UsageText:   ``,
 		Copyright:   "Kairos authors",
 		Action: func(ctx *cli.Context) error {
-			internal.Log = sdkTypes.NewKairosLogger("aurora", "info", false)
+			internal.Log = logger.NewKairosLogger("aurora", "info", false)
 
 			if ctx.Bool("debug") {
 				internal.Log.SetLevel("debug")
