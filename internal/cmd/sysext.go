@@ -11,7 +11,7 @@ import (
 	"github.com/gofrs/uuid"
 	aurorabootUtils "github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/kairos-io/kairos-sdk/sysext"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	"github.com/kairos-io/kairos-sdk/utils"
 	"github.com/urfave/cli/v2"
 )
@@ -70,7 +70,7 @@ var SysextCmd = cli.Command{
 		if ctx.Bool("debug") {
 			level = "debug"
 		}
-		logger := sdkTypes.NewKairosLogger("auroraboot", level, false)
+		logger := logger.NewKairosLogger("auroraboot", level, false)
 		args := ctx.Args()
 
 		name := args.Get(0)

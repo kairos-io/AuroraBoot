@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/internal"
-	"github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-sdk/types/logger"
 	nbConstants "github.com/kairos-io/netboot/constants"
 	"github.com/kairos-io/netboot/dhcp4"
 )
@@ -24,7 +24,7 @@ import (
 // This requires an existing DHCP server on the network to provide the necessary network configuration to the client.
 
 // ServeUkiPXE starts a HTTP+DHCP server that serves the UKI ISO file over HTTP.
-func ServeUkiPXE(isoFile string, log types.KairosLogger) error {
+func ServeUkiPXE(isoFile string, log logger.KairosLogger) error {
 	log.Logger.Info().Msgf("Start pixiecore for UKI")
 	dhcp, err := dhcp4.NewSnooperConn(fmt.Sprintf("%s:%d", "0.0.0.0", nbConstants.PortDHCP))
 	if err != nil {
@@ -48,7 +48,7 @@ func ServeUkiPXE(isoFile string, log types.KairosLogger) error {
 }
 
 // serveDHCP listens for DHCP requests and responds with a ProxyDHCP offer so http booting can jump to the HTTP server.
-func serveDHCP(conn *dhcp4.Conn, log types.KairosLogger) error {
+func serveDHCP(conn *dhcp4.Conn, log logger.KairosLogger) error {
 	log.Logger.Info().Str("subsystem", "DHCP").Msgf("Listening for requests on :%d", nbConstants.PortDHCP)
 	for {
 		pkt, intf, err := conn.RecvDHCP()
@@ -139,7 +139,7 @@ func interfaceIP(intf *net.Interface) (net.IP, error) {
 }
 
 // offerDhcpPackage constructs a ProxyDHCP offer packet with the given parameters.
-func offerDhcpPackage(pkt *dhcp4.Packet, serverIP net.IP, log types.KairosLogger) (resp *dhcp4.Packet, err error) {
+func offerDhcpPackage(pkt *dhcp4.Packet, serverIP net.IP, log logger.KairosLogger) (resp *dhcp4.Packet, err error) {
 	resp = &dhcp4.Packet{
 		Type:           dhcp4.MsgOffer,
 		TransactionID:  pkt.TransactionID,
@@ -163,7 +163,7 @@ func offerDhcpPackage(pkt *dhcp4.Packet, serverIP net.IP, log types.KairosLogger
 }
 
 // serveHTTP starts an HTTP server that serves the specified ISO file for all requests.
-func serveHTTP(isoFile string, log types.KairosLogger) error {
+func serveHTTP(isoFile string, log logger.KairosLogger) error {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Logger.Info().Str("method", r.Method).Str("url", r.URL.Path).Msg("Serving kairos.iso for all requests")
 		http.ServeFile(w, r, isoFile)

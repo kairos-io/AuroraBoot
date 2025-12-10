@@ -1,11 +1,11 @@
 package internal
 
-import sdkTypes "github.com/kairos-io/kairos-sdk/types"
+import "github.com/kairos-io/kairos-sdk/types/logger"
 
-var Log sdkTypes.KairosLogger
+var Log logger.KairosLogger
 
 // The init function initializes the default logger for the package.
 // This ensures that logging is configured and ready for use throughout the package.
 func init() {
-	Log = sdkTypes.NewKairosLogger("aurora", "info", false)
+	Log = logger.NewKairosLogger("aurora", "info", false)
 }

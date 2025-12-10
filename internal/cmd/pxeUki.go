@@ -1,10 +1,11 @@
 package cmd
 
 import (
-	"github.com/kairos-io/AuroraBoot/pkg/utils"
-	"github.com/kairos-io/kairos-sdk/types"
-	"github.com/urfave/cli/v2"
 	"os"
+
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
+	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/urfave/cli/v2"
 )
 
 var UkiPXECmd = cli.Command{
@@ -35,7 +36,7 @@ var UkiPXECmd = cli.Command{
 		return nil
 	},
 	Action: func(context *cli.Context) error {
-		log := types.NewKairosLogger("pxe", context.String("loglevel"), false)
+		log := logger.NewKairosLogger("pxe", context.String("loglevel"), false)
 		return utils.ServeUkiPXE(context.Args().First(), log)
 	},
 }

@@ -13,13 +13,13 @@ import (
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
+	sdkFs "github.com/kairos-io/kairos-sdk/types/fs"
 	"github.com/twpayne/go-vfs/v5"
 	"github.com/twpayne/go-vfs/v5/vfst"
 )
 
 // MkdirAll directory and all parents if not existing
-func MkdirAll(fs v1.FS, name string, mode os.FileMode) (err error) {
+func MkdirAll(fs sdkFs.KairosFS, name string, mode os.FileMode) (err error) {
 	if _, isReadOnly := fs.(*vfs.ReadOnlyFS); isReadOnly {
 		return permError("mkdir", name)
 	}
@@ -39,7 +39,7 @@ func permError(op, path string) error {
 }
 
 // Copies source file to target file using Fs interface
-func CreateDirStructure(fs v1.FS, target string) error {
+func CreateDirStructure(fs sdkFs.KairosFS, target string) error {
 	for _, dir := range []string{"/run", "/dev", "/boot", "/usr/local", "/oem"} {
 		err := MkdirAll(fs, filepath.Join(target, dir), constants.DirPerm)
 		if err != nil {
@@ -66,7 +66,7 @@ func CreateDirStructure(fs v1.FS, target string) error {
 
 // TempDir creates a temp file in the virtual fs
 // Took from afero.FS code and adapted
-func TempDir(fs v1.FS, dir, prefix string) (name string, err error) {
+func TempDir(fs sdkFs.KairosFS, dir, prefix string) (name string, err error) {
 	if dir == "" {
 		dir = os.TempDir()
 	}
@@ -124,12 +124,12 @@ func nextRandom() string {
 
 // CopyFile Copies source file to target file using Fs interface. If target
 // is  directory source is copied into that directory using source name file.
-func CopyFile(fs v1.FS, source string, target string) (err error) {
+func CopyFile(fs sdkFs.KairosFS, source string, target string) (err error) {
 	return ConcatFiles(fs, []string{source}, target)
 }
 
 // IsDir check if the path is a dir
-func IsDir(fs v1.FS, path string) (bool, error) {
+func IsDir(fs sdkFs.KairosFS, path string) (bool, error) {
 	fi, err := fs.Stat(path)
 	if err != nil {
 		return false, err
@@ -141,7 +141,7 @@ func IsDir(fs v1.FS, path string) (bool, error) {
 // Source files are concatenated into target file in the given order.
 // If target is a directory source is copied into that directory using
 // 1st source name file.
-func ConcatFiles(fs v1.FS, sources []string, target string) (err error) {
+func ConcatFiles(fs sdkFs.KairosFS, sources []string, target string) (err error) {
 	if len(sources) == 0 {
 		return fmt.Errorf("Empty sources list")
 	}
@@ -181,7 +181,7 @@ func ConcatFiles(fs v1.FS, sources []string, target string) (err error) {
 }
 
 // DirSize returns the accumulated size of all files in folder
-func DirSize(fs v1.FS, path string) (int64, error) {
+func DirSize(fs sdkFs.KairosFS, path string) (int64, error) {
 	var size int64
 	err := vfs.Walk(fs, path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
@@ -196,7 +196,7 @@ func DirSize(fs v1.FS, path string) (int64, error) {
 }
 
 // Check if a file or directory exists.
-func Exists(fs v1.FS, path string) (bool, error) {
+func Exists(fs sdkFs.KairosFS, path string) (bool, error) {
 	_, err := fs.Stat(path)
 	if err == nil {
 		return true, nil
@@ -208,7 +208,7 @@ func Exists(fs v1.FS, path string) (bool, error) {
 }
 
 // CalcFileChecksum opens the given file and returns the sha256 checksum of it.
-func CalcFileChecksum(fs v1.FS, fileName string) (string, error) {
+func CalcFileChecksum(fs sdkFs.KairosFS, fileName string) (string, error) {
 	f, err := fs.Open(fileName)
 	if err != nil {
 		return "", err

@@ -19,9 +19,11 @@ import (
 	"github.com/kairos-io/kairos-agent/v2/pkg/config"
 	agentConstants "github.com/kairos-io/kairos-agent/v2/pkg/constants"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	v1 "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
 	agentUtils "github.com/kairos-io/kairos-agent/v2/pkg/utils"
 	fsutils "github.com/kairos-io/kairos-agent/v2/pkg/utils/fs"
+	sdkConstants "github.com/kairos-io/kairos-sdk/constants"
+	sdkConfig "github.com/kairos-io/kairos-sdk/types/config"
+	sdkImage "github.com/kairos-io/kairos-sdk/types/images"
 	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/twpayne/go-vfs/v5"
 	"golang.org/x/sys/unix"
@@ -47,7 +49,7 @@ type RawImage struct {
 	tmpDir      string               // A temp dir to do all work on
 	elemental   *elemental.Elemental // Elemental instance to use for the operations
 	efi         bool                 // If the image should be EFI or BIOS
-	config      *config.Config       // config to use for the operations
+	config      *sdkConfig.Config    // config to use for the operations
 }
 
 // NewEFIRawImage creates a new RawImage struct
@@ -168,14 +170,14 @@ stages:
                   pLabel: %[7]s
                   filesystem: %[5]s
 `,
-		agentConstants.RecoveryLabel,      // 1
-		agentConstants.StateLabel,         // 2
-		stateSize,                         // 3
-		agentConstants.StatePartName,      // 4
-		agentConstants.LinuxImgFs,         // 5
-		agentConstants.PersistentLabel,    // 6
-		agentConstants.PersistentPartName, // 7
-		resetCloudInit,                    // 8
+		sdkConstants.RecoveryLabel,      // 1
+		sdkConstants.StateLabel,         // 2
+		stateSize,                       // 3
+		sdkConstants.StatePartName,      // 4
+		sdkConstants.LinuxImgFs,         // 5
+		sdkConstants.PersistentLabel,    // 6
+		sdkConstants.PersistentPartName, // 7
+		resetCloudInit,                  // 8
 	)
 
 	// Save the cloud config
@@ -186,12 +188,12 @@ stages:
 		return "", err
 	}
 
-	OemPartitionImage := v1.Image{
+	OemPartitionImage := sdkImage.Image{
 		File:       filepath.Join(r.TempDir(), "oem.img"),
-		FS:         agentConstants.LinuxImgFs,
-		Label:      agentConstants.OEMLabel,
-		Size:       agentConstants.OEMSize,
-		Source:     v1.NewDirSrc(tmpDirOem),
+		FS:         sdkConstants.LinuxImgFs,
+		Label:      sdkConstants.OEMLabel,
+		Size:       sdkConstants.OEMSize,
+		Source:     sdkImage.NewDirSrc(tmpDirOem),
 		MountPoint: tmpDirOemMount,
 	}
 
@@ -227,11 +229,11 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	err = fsutils.MkdirAll(r.config.Fs, filepath.Join(tmpDirRecovery, "cOS"), 0755)
 
-	recoveryImage := &v1.Image{
+	recoveryImage := &sdkImage.Image{
 		File:       filepath.Join(tmpDirRecovery, "cOS", agentConstants.RecoveryImgFile),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.SystemLabel,
-		Source:     v1.NewDirSrc(r.Source),
+		Source:     sdkImage.NewDirSrc(r.Source),
 		MountPoint: tmpDirRecoveryImage,
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
@@ -273,12 +275,12 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	// Now we create an image for the recovery partition
 	// We use the dir we created with the image above, which contains the recovery.img and the grub.cfg stuff
-	recoverPartitionImage := &v1.Image{
+	recoverPartitionImage := &sdkImage.Image{
 		File:       filepath.Join(r.TempDir(), "recovery.img"),
 		FS:         agentConstants.LinuxImgFs,
 		Label:      agentConstants.RecoveryLabel,
 		Size:       uint(size),
-		Source:     v1.NewDirSrc(tmpDirRecovery),
+		Source:     sdkImage.NewDirSrc(tmpDirRecovery),
 		MountPoint: tmpDirRecoveryImage,
 	}
 
@@ -376,12 +378,12 @@ func (r *RawImage) createEFIPartitionImage() (string, error) {
 		}
 	}
 
-	efiPartitionImage := v1.Image{
+	efiPartitionImage := sdkImage.Image{
 		File:       filepath.Join(r.TempDir(), "efi.img"),
-		FS:         agentConstants.EfiFs,
-		Label:      agentConstants.EfiLabel,
-		Size:       agentConstants.EfiSize,
-		Source:     v1.NewDirSrc(tmpDirEfi),
+		FS:         sdkConstants.EfiFs,
+		Label:      sdkConstants.EfiLabel,
+		Size:       sdkConstants.EfiSize,
+		Source:     sdkImage.NewDirSrc(tmpDirEfi),
 		MountPoint: tmpDirEfiMount,
 	}
 
@@ -403,7 +405,7 @@ func (r *RawImage) createBiosPartitionImage() (string, error) {
 		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to create bios image")
 		return "", err
 	}
-	err = f.Truncate(int64(agentConstants.BiosSize * 1024 * 1024))
+	err = f.Truncate(int64(sdkConstants.BiosSize * 1024 * 1024))
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(r.TempDir(), "bios.img")).Msg("failed to truncate bios image")
 		return "", err
@@ -592,20 +594,20 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 			End:        getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
 			Type:       gpt.EFISystemPartition,
 			Size:       size,
-			Name:       agentConstants.EfiPartName,
-			GUID:       uuid.NewV5(uuid.NamespaceURL, agentConstants.EfiLabel).String(),
+			Name:       sdkConstants.EfiPartName,
+			GUID:       uuid.NewV5(uuid.NamespaceURL, sdkConstants.EfiLabel).String(),
 			Attributes: 1 << 0, // Sets bit 0
 		})
 	} else {
-		size = roundToNearestSector(int64(agentConstants.BiosSize*1024*1024), finalDisk.LogicalBlocksize)
+		size = roundToNearestSector(int64(sdkConstants.BiosSize*1024*1024), finalDisk.LogicalBlocksize)
 		parts = append(parts, &gpt.Partition{
 			Start:      2048,
 			End:        getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
 			Type:       gpt.BIOSBoot,
 			Size:       size,
-			Name:       agentConstants.BiosPartName,
-			GUID:       uuid.NewV5(uuid.NamespaceURL, agentConstants.EfiLabel).String(), // Same name as EFI, COS_GRUB usually
-			Attributes: (1 << 0) | (1 << 2),                                             // Sets bits 0 and 2
+			Name:       sdkConstants.BiosPartName,
+			GUID:       uuid.NewV5(uuid.NamespaceURL, sdkConstants.EfiLabel).String(), // Same name as EFI, COS_GRUB usually
+			Attributes: (1 << 0) | (1 << 2),                                           // Sets bits 0 and 2
 		})
 	}
 
@@ -621,8 +623,8 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 		End:   getSectorEndFromSize(parts[len(parts)-1].End+1, size, finalDisk.LogicalBlocksize),
 		Type:  gpt.LinuxFilesystem,
 		Size:  size,
-		Name:  agentConstants.OEMPartName,
-		GUID:  uuid.NewV5(uuid.NamespaceURL, agentConstants.OEMLabel).String(),
+		Name:  sdkConstants.OEMPartName,
+		GUID:  uuid.NewV5(uuid.NamespaceURL, sdkConstants.OEMLabel).String(),
 	})
 	// Recovery
 	stat, err = os.Stat(partImgs[2])
@@ -637,7 +639,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 		Type:  gpt.LinuxFilesystem,
 		Size:  size,
 		Name:  agentConstants.RecoveryImgName,
-		GUID:  uuid.NewV5(uuid.NamespaceURL, agentConstants.RecoveryLabel).String(),
+		GUID:  uuid.NewV5(uuid.NamespaceURL, sdkConstants.RecoveryLabel).String(),
 	})
 
 	table = &gpt.Table{

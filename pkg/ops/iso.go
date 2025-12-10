@@ -17,22 +17,25 @@ import (
 	"github.com/twpayne/go-vfs/v5"
 
 	"github.com/kairos-io/kairos-agent/v2/pkg/cloudinit"
-	agentconfig "github.com/kairos-io/kairos-agent/v2/pkg/config"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	"github.com/kairos-io/kairos-agent/v2/pkg/http"
-	v1types "github.com/kairos-io/kairos-agent/v2/pkg/types/v1"
-	sdkTypes "github.com/kairos-io/kairos-sdk/types"
+	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/http"
+	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/runner"
+	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/syscall"
+	sdkConfig "github.com/kairos-io/kairos-sdk/types/config"
+	imagetypes "github.com/kairos-io/kairos-sdk/types/images"
+	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/kairos-io/kairos-sdk/types/platform"
 	sdkutils "github.com/kairos-io/kairos-sdk/utils"
 	"github.com/sanity-io/litter"
 )
 
 type LiveISO struct {
-	RootFS             []*v1types.ImageSource `yaml:"rootfs,omitempty" mapstructure:"rootfs"`
-	UEFI               []*v1types.ImageSource `yaml:"uefi,omitempty" mapstructure:"uefi"`
-	Image              []*v1types.ImageSource `yaml:"image,omitempty" mapstructure:"image"`
-	Label              string                 `yaml:"label,omitempty" mapstructure:"label"`
-	GrubEntry          string                 `yaml:"grub-entry-name,omitempty" mapstructure:"grub-entry-name"`
-	BootloaderInRootFs bool                   `yaml:"bootloader-in-rootfs" mapstructure:"bootloader-in-rootfs"`
+	RootFS             []*imagetypes.ImageSource `yaml:"rootfs,omitempty" mapstructure:"rootfs"`
+	UEFI               []*imagetypes.ImageSource `yaml:"uefi,omitempty" mapstructure:"uefi"`
+	Image              []*imagetypes.ImageSource `yaml:"image,omitempty" mapstructure:"image"`
+	Label              string                    `yaml:"label,omitempty" mapstructure:"label"`
+	GrubEntry          string                    `yaml:"grub-entry-name,omitempty" mapstructure:"grub-entry-name"`
+	BootloaderInRootFs bool                      `yaml:"bootloader-in-rootfs" mapstructure:"bootloader-in-rootfs"`
 }
 
 // BuildConfig represents the config we need for building isos, raw images, artifacts
@@ -43,7 +46,7 @@ type BuildConfig struct {
 
 	// 'inline' and 'squash' labels ensure config fields
 	// are embedded from a yaml and map PoV
-	agentconfig.Config `yaml:",inline" mapstructure:",squash"`
+	sdkConfig.Config `yaml:",inline" mapstructure:",squash"`
 }
 
 type BuildISOAction struct {
@@ -53,7 +56,7 @@ type BuildISOAction struct {
 }
 
 type BuildISOActionOption func(a *BuildISOAction)
-type GenericOptions func(a *agentconfig.Config) error
+type GenericOptions func(a *sdkConfig.Config) error
 
 func NewBuildConfig(opts ...GenericOptions) *BuildConfig {
 	b := &BuildConfig{
@@ -63,17 +66,17 @@ func NewBuildConfig(opts ...GenericOptions) *BuildConfig {
 	return b
 }
 
-func NewConfig(opts ...GenericOptions) *agentconfig.Config {
+func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	arch, err := utils.GolangArchToArch(runtime.GOARCH)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("invalid arch")
 		return nil
 	}
 
-	c := &agentconfig.Config{
+	c := &sdkConfig.Config{
 		Fs:                    vfs.OSFS,
 		Logger:                internal.Log,
-		Syscall:               &v1types.RealSyscall{},
+		Syscall:               &syscall.RealSyscall{},
 		Client:                http.NewClient(),
 		Arch:                  arch,
 		SquashFsNoCompression: true,
@@ -88,7 +91,7 @@ func NewConfig(opts ...GenericOptions) *agentconfig.Config {
 
 	// delay runner creation after we have run over the options in case we use WithRunner
 	if c.Runner == nil {
-		c.Runner = &v1types.RealRunner{Logger: &c.Logger}
+		c.Runner = &runner.RealRunner{Logger: &c.Logger}
 	}
 
 	// Now check if the runner has a logger inside, otherwise point our logger into it
@@ -144,21 +147,21 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		cfg.Date = i.IncludeDate
 
 		spec := &LiveISO{
-			RootFS:             []*v1types.ImageSource{v1types.NewDirSrc(src)},
-			Image:              []*v1types.ImageSource{v1types.NewDirSrc(overlay)},
+			RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(src)},
+			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(overlay)},
 			Label:              constants.ISOLabel,
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
 		}
 
 		if i.OverlayRootfs != "" {
-			spec.RootFS = append(spec.RootFS, v1types.NewDirSrc(i.OverlayRootfs))
+			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
 		}
 		if i.OverlayUEFI != "" {
-			spec.UEFI = append(spec.UEFI, v1types.NewDirSrc(i.OverlayUEFI))
+			spec.UEFI = append(spec.UEFI, imagetypes.NewDirSrc(i.OverlayUEFI))
 		}
 		if i.OverlayISO != "" {
-			spec.Image = append(spec.Image, v1types.NewDirSrc(i.OverlayISO))
+			spec.Image = append(spec.Image, imagetypes.NewDirSrc(i.OverlayISO))
 		}
 
 		buildISO := NewBuildISOAction(cfg, spec)
@@ -478,7 +481,7 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 	align := int64(4 * 1024 * 1024)
 	efiSizeMB := (efiSize/align*align + align) / (1024 * 1024)
 	// Create the actual efi image
-	err = b.e.CreateFileSystemImage(&v1types.Image{
+	err = b.e.CreateFileSystemImage(&imagetypes.Image{
 		File:  img,
 		Size:  uint(efiSizeMB),
 		FS:    constants.EfiFs,
@@ -719,7 +722,7 @@ func (b BuildISOAction) burnISO(root string) error {
 	return nil
 }
 
-func (b BuildISOAction) applySources(target string, sources ...*v1types.ImageSource) error {
+func (b BuildISOAction) applySources(target string, sources ...*imagetypes.ImageSource) error {
 	for _, src := range sources {
 		_, err := b.e.DumpSource(target, src)
 		if err != nil {
@@ -743,22 +746,22 @@ func cleanupGrubName(name string) string {
 	return clean
 }
 
-func WithLogger(logger sdkTypes.KairosLogger) func(r *agentconfig.Config) error {
-	return func(r *agentconfig.Config) error {
+func WithLogger(logger logger.KairosLogger) func(r *sdkConfig.Config) error {
+	return func(r *sdkConfig.Config) error {
 		r.Logger = logger
 		return nil
 	}
 }
 
-func WithImageExtractor(extractor v1types.ImageExtractor) func(r *agentconfig.Config) error {
-	return func(r *agentconfig.Config) error {
+func WithImageExtractor(extractor imagetypes.ImageExtractor) func(r *sdkConfig.Config) error {
+	return func(r *sdkConfig.Config) error {
 		r.ImageExtractor = extractor
 		return nil
 	}
 }
 
-func WithArch(arch string) func(r *agentconfig.Config) error {
-	return func(r *agentconfig.Config) error {
+func WithArch(arch string) func(r *sdkConfig.Config) error {
+	return func(r *sdkConfig.Config) error {
 		if arch != "" {
 			convertedArch, err := utils.GolangArchToArch(arch)
 			if err != nil {
@@ -766,7 +769,7 @@ func WithArch(arch string) func(r *agentconfig.Config) error {
 			}
 			r.Arch = convertedArch
 			// Also set Platform since DumpSource uses Platform.String() not Arch
-			platform, err := v1types.NewPlatformFromArch(arch)
+			platform, err := platform.NewPlatformFromArch(arch)
 			if err != nil {
 				return fmt.Errorf("invalid architecture for platform %s: %w", arch, err)
 			}
