@@ -37,6 +37,9 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 
 	Describe("single-efi-cmdline", func() {
 		BeforeEach(func() {
+			By("pulling the container image")
+			_, err := PullImage(image)
+			Expect(err).ToNot(HaveOccurred())
 			By("building the iso with single-efi-cmdline flags set")
 			buildISO(auroraboot, image, keysDir, resultDir, resultFile,
 				"--single-efi-cmdline", "My Entry: someoption=somevalue",
@@ -57,6 +60,9 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 	Describe("secure-boot-enroll setting in loader.conf", func() {
 		When("secure-boot-enroll is not set", func() {
 			BeforeEach(func() {
+				By("pulling the container image")
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
 				By("building the iso with secure-boot-enroll not set")
 				buildISO(auroraboot, image, keysDir, resultDir, resultFile)
 			})
@@ -70,6 +76,9 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 
 		When("secure-boot-enroll is set", func() {
 			BeforeEach(func() {
+				By("pulling the container image")
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
 				By("building the iso with secure-boot-enroll set to manual")
 				buildISO(auroraboot, image, keysDir, resultDir, resultFile, "--secure-boot-enroll", "manual")
 			})
@@ -123,14 +132,34 @@ func runCommandInIso(auroraboot *Auroraboot, isoFile, command string) string {
 	out, err := auroraboot.ContainerRun("/bin/bash", "-c",
 		fmt.Sprintf(`#!/bin/bash
 set -e
+cleanup() {
+	# Clean up only the loop devices we explicitly created
+	if [ -n "$LOOP_EFI" ]; then
+		umount /tmp/efi 2>&1 || true
+		losetup -d "$LOOP_EFI" 2>&1 || true
+	fi
+	if [ -n "$LOOP_ISO" ]; then
+		umount /tmp/iso 2>&1 || true
+		losetup -d "$LOOP_ISO" 2>&1 || true
+	fi
+	# Fallback: try to unmount even if variables are not set
+	umount /tmp/efi 2>&1 || true
+	umount /tmp/iso 2>&1 || true
+}
+trap cleanup EXIT ERR
+
 mkdir -p /tmp/iso /tmp/efi
-mount -v -o loop %[1]s /tmp/iso 2>&1 > /dev/null
-sleep 2
-mount -v -o loop /tmp/iso/efiboot.img /tmp/efi 2>&1 > /dev/null
+
+# Explicitly create and track loop device for the ISO file
+LOOP_ISO=$(losetup --find --show %[1]s)
+mount -v -t iso9660 "$LOOP_ISO" /tmp/iso
+
+# Now create a loop device for the efiboot.img file inside the mounted ISO
+LOOP_EFI=$(losetup --find --show /tmp/iso/efiboot.img)
+mount -v "$LOOP_EFI" /tmp/efi
+
 %[2]s
-umount /tmp/efi 2>&1 > /dev/null
-sleep 2
-umount /tmp/iso 2>&1 > /dev/null
+cleanup
 `, isoFile, command))
 	Expect(err).ToNot(HaveOccurred(), out)
 
