@@ -445,9 +445,9 @@ func prepareDockerfile(job jobstorage.JobData, tempdir string) error {
 FROM {{.Image}} AS base
 
 COPY --from=kairos-init /kairos-init /kairos-init
-RUN /kairos-init -l debug -s install --version "{{.Version}}" -m "{{.Model}}" -v "{{.Variant}}" -t "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} -k "{{.KubernetesDistribution}}" --k8sversion "{{.KubernetesVersion}}"{{ end }}
-RUN /kairos-init -l debug -s init --version "{{.Version}}" -m "{{.Model}}" -v "{{.Variant}}" -t "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} -k "{{.KubernetesDistribution}}" --k8sversion "{{.KubernetesVersion}}"{{ end }}
-RUN /kairos-init -l debug --validate --version "{{.Version}}" -m "{{.Model}}" -v "{{.Variant}}" -t "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} -k "{{.KubernetesDistribution}}" --k8sversion "{{.KubernetesVersion}}"{{ end }}
+	RUN /kairos-init --level debug --stage install --version "{{.Version}}" --model "{{.Model}}" --trusted "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} --provider "{{.KubernetesDistribution}}" --provider-{{.KubernetesDistribution}}-version "{{.KubernetesVersion}}"{{ end }}
+	RUN /kairos-init --level debug --stage init --version "{{.Version}}" --model "{{.Model}}" --trusted "{{.TrustedBoot}}"{{ if eq .Variant "standard" }} --provider "{{.KubernetesDistribution}}" --provider-{{.KubernetesDistribution}}-version "{{.KubernetesVersion}}"{{ end }}
+	RUN /kairos-init validate --trusted "{{.TrustedBoot}}"
 RUN rm /kairos-init`, kairosInitTag)
 
 	t, err := template.New("Interpolate Dockerfile content").Parse(tmpl)
