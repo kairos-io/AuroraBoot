@@ -8,7 +8,7 @@ godebug x509negativeserial=1
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/containerd/containerd/v2 v2.2.0
+	github.com/containerd/containerd/v2 v2.2.1
 	github.com/diskfs/go-diskfs v1.7.0
 	github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
@@ -62,7 +62,7 @@ require (
 	github.com/cavaliergopher/grab v2.0.0+incompatible // indirect
 	github.com/cloudflare/circl v1.6.1 // indirect
 	github.com/codingsince1985/checksum v1.2.4 // indirect
-	github.com/containerd/cgroups/v3 v3.1.0 // indirect
+	github.com/containerd/cgroups/v3 v3.1.2 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd v1.7.29 // indirect
 	github.com/containerd/continuity v0.4.5 // indirect
@@ -73,7 +73,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.2.3 // indirect
 	github.com/coreos/go-systemd/v22 v22.6.0 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.7 // indirect
-	github.com/cyphar/filepath-securejoin v0.4.1 // indirect
+	github.com/cyphar/filepath-securejoin v0.5.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
