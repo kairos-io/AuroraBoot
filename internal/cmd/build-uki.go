@@ -123,11 +123,6 @@ var BuildUKICmd = cli.Command{
 			Usage:    "Certificate to sign the EFI files for SecureBoot",
 			Required: true,
 		},
-		&cli.StringFlag{
-			Name:    "default-entry",
-			Aliases: []string{"e"},
-			Usage:   "Default entry selected in the boot menu. Supported glob wildcard patterns are \"?\", \"*\", and \"[...]\". If not selected, the default entry with install-mode is selected.",
-		},
 		&cli.Int64Flag{
 			Name:  "efi-size-warn",
 			Value: 1024,
@@ -463,7 +458,7 @@ var BuildUKICmd = cli.Command{
 			}
 		}
 
-		if err := createSystemdConf(sourceDir, ctx.String("default-entry"), ctx.String("secure-boot-enroll")); err != nil {
+		if err := createSystemdConf(sourceDir, ctx.String("secure-boot-enroll")); err != nil {
 			return err
 		}
 
@@ -840,23 +835,9 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version, profile s
 }
 
 // createSystemdConf creates the generic conf that systemd-boot uses
-func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
-	var finalEfiConf string
-	if defaultEntry != "" {
-		if !strings.HasSuffix(defaultEntry, ".conf") {
-			finalEfiConf = strings.TrimSuffix(defaultEntry, " ") + ".conf"
-		} else {
-			finalEfiConf = defaultEntry
-		}
-
-	} else {
-		// Get the generic efi file that we produce from the default cmdline
-		// This is the one name that has nothing added, just the version
-		finalEfiConf = NameFromCmdline(constants.ArtifactBaseName, constants.UkiCmdline+" "+constants.UkiCmdlineInstall) + ".conf"
-	}
-
+func createSystemdConf(dir, secureBootEnroll string) error {
 	// Set that as default selection for booting
-	data := fmt.Sprintf("default %s\ntimeout 5\nconsole-mode max\neditor no\nsecure-boot-enroll %s\n", finalEfiConf, secureBootEnroll)
+	data := fmt.Sprintf("timeout 5\nconsole-mode max\neditor no\nsecure-boot-enroll %s\n", secureBootEnroll)
 	err := os.WriteFile(filepath.Join(dir, "loader.conf"), []byte(data), os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("creating the loader.conf file: %s", err)
