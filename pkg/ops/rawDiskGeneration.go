@@ -41,27 +41,47 @@ import (
 // TODO: Add testing
 
 type RawImage struct {
-	CloudConfig string               // cloud config to copy to the oem partition, if none provided a default one will be created with the kairos user
-	Source      string               // Source image to copy the artifacts from, which will be the rootfs in the final image
-	Output      string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
-	FinalSize   uint64               // Final size of the disk image in MB
-	StateSize   int64                // Size of the state partition in MB
-	tmpDir      string               // A temp dir to do all work on
-	elemental   *elemental.Elemental // Elemental instance to use for the operations
-	efi         bool                 // If the image should be EFI or BIOS
-	config      *sdkConfig.Config    // config to use for the operations
+	CloudConfig          string               // cloud config to copy to the oem partition, if none provided a default one will be created with the kairos user
+	NoDefaultCloudConfig bool                 // if true, no default cloud config will be created if CloudConfig is not provided
+	Source               string               // Source image to copy the artifacts from, which will be the rootfs in the final image
+	Output               string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
+	FinalSize            uint64               // Final size of the disk image in MB
+	StateSize            int64                // Size of the state partition in MB
+	tmpDir               string               // A temp dir to do all work on
+	elemental            *elemental.Elemental // Elemental instance to use for the operations
+	efi                  bool                 // If the image should be EFI or BIOS
+	config               *sdkConfig.Config    // config to use for the operations
 }
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64, noDefaultCloudConfig bool) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: true, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, StateSize: stateSize}
+	return &RawImage{
+		efi:                  true,
+		config:               cfg,
+		Source:               source,
+		Output:               output,
+		elemental:            elemental.NewElemental(cfg),
+		CloudConfig:          cc,
+		FinalSize:            finalsize,
+		StateSize:            stateSize,
+		NoDefaultCloudConfig: noDefaultCloudConfig,
+	}
 }
 
-func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize int64) *RawImage {
+func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize int64, noDefaultCloudConfig bool) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
-	return &RawImage{efi: false, config: cfg, Source: source, Output: output, elemental: elemental.NewElemental(cfg), CloudConfig: cc, FinalSize: finalsize, StateSize: stateSize}
+	return &RawImage{efi: false,
+		config:               cfg,
+		Source:               source,
+		Output:               output,
+		elemental:            elemental.NewElemental(cfg),
+		CloudConfig:          cc,
+		FinalSize:            finalsize,
+		StateSize:            stateSize,
+		NoDefaultCloudConfig: noDefaultCloudConfig,
+	}
 }
 
 // createOemPartitionImage creates an OEM partition image with the given cloud config
@@ -94,7 +114,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 			internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to copy cloud config")
 			return "", err
 		}
-	} else {
+	} else if !r.NoDefaultCloudConfig {
 		// Create a default cloud config yaml with at least a user
 		internal.Log.Logger.Debug().Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Creating default cloud config")
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, "90_custom.yaml"), []byte(constants.DefaultCloudConfig), 0o644)
