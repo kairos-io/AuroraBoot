@@ -37,7 +37,7 @@ require (
 	golang.org/x/exp v0.0.0-20251209150349-8475f28825e9
 	golang.org/x/mod v0.31.0
 	golang.org/x/net v0.48.0
-	golang.org/x/sys v0.39.0
+	golang.org/x/sys v0.40.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
