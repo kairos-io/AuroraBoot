@@ -303,6 +303,8 @@ github.com/kairos-io/kairos-agent/v2 v2.26.0-beta4.0.20251209054005-04b8ebfc33ed
 github.com/kairos-io/kairos-agent/v2 v2.26.0-beta4.0.20251209054005-04b8ebfc33ed/go.mod h1:sJQTrn/HW8nPqlPTjnqlufGw309Tqsc5ZDRiDNeNRIE=
 github.com/kairos-io/kairos-agent/v2 v2.26.0-beta4.0.20260109011220-03ba6764ac1d h1:yS6t9gJbNpMGmapNpUKZWethsXYHm5/eyT5YztxxOZI=
 github.com/kairos-io/kairos-agent/v2 v2.26.0-beta4.0.20260109011220-03ba6764ac1d/go.mod h1:551I0XZfMFhkKfhYcp/2HbADcSc/xxGQmAZlyob7e0c=
+github.com/kairos-io/kairos-agent/v2 v2.26.0-beta5 h1:R6oSHqVECQPIVijHDO4kwzYSAhk4PxefyXJMEbcmDLs=
+github.com/kairos-io/kairos-agent/v2 v2.26.0-beta5/go.mod h1:Mz0Mr2W4chfjCPQLH/Uc6sz3kYVyqdPmoOZhYbLQyK8=
 github.com/kairos-io/kairos-sdk v0.14.1 h1:zHr+9y9fXEbq+WvShYIhTg4tYhQ1YZItLkeaIEBObaQ=
 github.com/kairos-io/kairos-sdk v0.14.1/go.mod h1:LuEegKz9zE5nwpCrFdP+tmh8VuBeaz2d4Gc3FIUBk9Q=
 github.com/kairos-io/kairos-sdk v0.15.0 h1:NGJ9Ks/h74hiDm6ltCo36LqUIkIrHD8tza48XVlY6Z4=
@@ -393,6 +395,8 @@ github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82 h1:FVT07E
 github.com/mudler/go-processmanager v0.0.0-20240820160718-8b802d3ecf82/go.mod h1:Urp7LG5jylKoDq0663qeBh0pINGcRl35nXdKx82PSoU=
 github.com/mudler/yip v1.19.0 h1:xYZGIj4GwBgofVnD50RBb43Ks7Mf/ZYA+Zd3/fU9s3E=
 github.com/mudler/yip v1.19.0/go.mod h1:kRjH39H96Eh4NkL984OvDWPERVOzDw+oVI/oVy5GzuE=
+github.com/mudler/yip v1.20.0 h1:0I+Nuf5yyt06sS8UrEYC5MG6S5yBOmw1XtSKHzpqBj8=
+github.com/mudler/yip v1.20.0/go.mod h1:kRjH39H96Eh4NkL984OvDWPERVOzDw+oVI/oVy5GzuE=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 h1:zYyBkD/k9seD2A7fsi6Oo2LfFZAehjjQMERAvZLEDnQ=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646/go.mod h1:jpp1/29i3P1S/RLdc7JQKbRpFeM1dOBd8T9ki5s+AY8=
 github.com/nxadm/tail v1.4.11 h1:8feyoE3OzPrcshW5/MJ4sGESc5cqmGkGCWlco4l0bqY=
