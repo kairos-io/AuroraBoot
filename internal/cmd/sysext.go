@@ -12,7 +12,7 @@ import (
 	aurorabootUtils "github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/kairos-io/kairos-sdk/sysext"
 	"github.com/kairos-io/kairos-sdk/types/logger"
-	"github.com/kairos-io/kairos-sdk/utils"
+	sdkImage "github.com/kairos-io/kairos-sdk/utils/image"
 	"github.com/urfave/cli/v2"
 )
 
@@ -94,7 +94,7 @@ var SysextCmd = cli.Command{
 		// Get the image struct
 		logger.Info("💿 Getting image info")
 		platform := fmt.Sprintf("linux/%s", ctx.String("arch"))
-		image, err := utils.GetImage(args.Get(1), platform, nil, nil)
+		image, err := sdkImage.GetImage(args.Get(1), platform, nil, nil)
 		if err != nil {
 			logger.Logger.Error().Str("image", args.Get(1)).Err(err).Msg("⛔ getting image")
 			return err
