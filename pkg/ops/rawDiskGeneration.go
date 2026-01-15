@@ -181,11 +181,6 @@ stages:
                   size: %[3]d
                   pLabel: %[4]s
                   filesystem: %[5]s
-        - name: Add persistent partition
-          layout:
-            device:
-                label: %[1]s
-            add_partitions:
                 - fsLabel: %[6]s
                   pLabel: %[7]s
                   filesystem: %[5]s
