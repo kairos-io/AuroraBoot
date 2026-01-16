@@ -17,8 +17,8 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.4.0
-	github.com/kairos-io/kairos-agent/v2 v2.26.0-beta7
-	github.com/kairos-io/kairos-sdk v0.16.1
+	github.com/kairos-io/kairos-agent/v2 v2.26.0-beta9
+	github.com/kairos-io/kairos-sdk v0.17.0
 	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba
 	github.com/klauspost/compress v1.18.2
 	github.com/labstack/echo/v4 v4.15.0
@@ -174,7 +174,7 @@ require (
 	github.com/moby/sys/userns v0.1.0 // indirect
 	github.com/mudler/entities v0.8.3-0.20260109121712-af3b96567af9 // indirect
 	github.com/mudler/go-pluggable v0.0.0-20230126220627-7710299a0ae5 // indirect
-	github.com/mudler/yip v1.21.0 // indirect
+	github.com/mudler/yip v1.21.1 // indirect
 	github.com/muesli/ansi v0.0.0-20230316100256-276c6243b2f6 // indirect
 	github.com/muesli/cancelreader v0.2.2 // indirect
 	github.com/muesli/reflow v0.3.0 // indirect
@@ -210,7 +210,7 @@ require (
 	github.com/shirou/gopsutil/v4 v4.24.7 // indirect
 	github.com/shoenig/go-m1cpu v0.1.6 // indirect
 	github.com/shopspring/decimal v1.4.0 // indirect
-	github.com/sirupsen/logrus v1.9.4-0.20251023124752-b61f268f75b6 // indirect
+	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/skeema/knownhosts v1.3.1 // indirect
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e // indirect
 	github.com/sourcegraph/conc v0.3.0 // indirect
