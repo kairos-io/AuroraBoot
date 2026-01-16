@@ -362,6 +362,8 @@ github.com/kairos-io/kairos-sdk v0.15.0 h1:NGJ9Ks/h74hiDm6ltCo36LqUIkIrHD8tza48X
 github.com/kairos-io/kairos-sdk v0.15.0/go.mod h1:+vQSBcF+Czj/f6Lk7FDunLal7CwXOIKHP3ssD43tl24=
 github.com/kairos-io/kairos-sdk v0.16.1 h1:ivYg/sJTasXJtytz6wBxFXHwaf06nAg0NP7OumjLkpM=
 github.com/kairos-io/kairos-sdk v0.16.1/go.mod h1:oBZY3zj+3ZeY/6gi6+ODWSH5aWmSzuRvH8dzJzR1SjQ=
+github.com/kairos-io/kairos-sdk v0.17.0 h1:NwS/ZwM0lKyMedRROQt6yImM5QHMwMFvHGNyjsKC15E=
+github.com/kairos-io/kairos-sdk v0.17.0/go.mod h1:Ta+IpC2qeSexbHaxRtxxqAm+RnkCEk6tfzipYhLN+zs=
 github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba h1:6mivQTeKV3aF14wyOfREenk8axO9DS1it1quCR4Hzb4=
 github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba/go.mod h1:gMg6AXfBz7FwiixrPbwTtz9FvhCuFQP7Qclo3EBQkxY=
 github.com/kairos-io/tpm-helpers v0.0.0-20251107132133-df566ad2d185 h1:XSUSjYFkIFdZhFEc3Z6xcqggbgPOclKz+9hntaA+q8o=

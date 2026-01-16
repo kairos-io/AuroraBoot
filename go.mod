@@ -18,7 +18,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.4.0
 	github.com/kairos-io/kairos-agent/v2 v2.26.0-beta7
-	github.com/kairos-io/kairos-sdk v0.16.1
+	github.com/kairos-io/kairos-sdk v0.17.0
 	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba
 	github.com/klauspost/compress v1.18.2
 	github.com/labstack/echo/v4 v4.15.0
