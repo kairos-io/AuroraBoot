@@ -9,6 +9,7 @@
     "test:advanced": "cypress run --spec 'cypress/e2e/advanced-options.cy.js'"
   },
   "dependencies": {
-    "cypress": "^15.0.0"
+    "cypress": "^15.0.0",
+    "qs": "^6.14.1"
   }
 }
