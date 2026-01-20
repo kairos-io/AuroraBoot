@@ -8,6 +8,9 @@ type Config struct {
 	// CloudConfig to use for generating installation mediums
 	CloudConfig string `yaml:"cloud_config"`
 
+	// NoDefaultCloudConfig to skip injecting default cloud config if user doesn't provide one
+	NoDefaultCloudConfig bool `yaml:"no_default_cloud_config"`
+
 	// Disable Netboot
 	DisableNetboot bool `yaml:"disable_netboot"`
 

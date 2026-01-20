@@ -123,11 +123,6 @@ var BuildUKICmd = cli.Command{
 			Usage:    "Certificate to sign the EFI files for SecureBoot",
 			Required: true,
 		},
-		&cli.StringFlag{
-			Name:    "default-entry",
-			Aliases: []string{"e"},
-			Usage:   "Default entry selected in the boot menu. Supported glob wildcard patterns are \"?\", \"*\", and \"[...]\". If not selected, the default entry with install-mode is selected.",
-		},
 		&cli.Int64Flag{
 			Name:  "efi-size-warn",
 			Value: 1024,
@@ -463,7 +458,7 @@ var BuildUKICmd = cli.Command{
 			}
 		}
 
-		if err := createSystemdConf(sourceDir, ctx.String("default-entry"), ctx.String("secure-boot-enroll")); err != nil {
+		if err := createSystemdConf(sourceDir, ctx.String("secure-boot-enroll")); err != nil {
 			return err
 		}
 
@@ -476,7 +471,11 @@ var BuildUKICmd = cli.Command{
 					return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
 				}
 			}
-			if err := createISO(e, sourceDir, ctx.String("output-dir"), absolutePathIso, ctx.String("public-keys"), outputName, ctx.String("name"), entries, logger); err != nil {
+			if err := createISO(e, sourceDir, ctx.String("output-dir"),
+				absolutePathIso, ctx.String("public-keys"),
+				outputName, ctx.String("name"),
+				entries, logger, config.Arch,
+			); err != nil {
 				return err
 			}
 		case string(constants.ContainerOutput):
@@ -487,15 +486,15 @@ var BuildUKICmd = cli.Command{
 			}
 			defer os.RemoveAll(temp)
 			// First create the files
-			if err := createArtifact(sourceDir, temp, ctx.String("public-keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, temp, ctx.String("public-keys"), entries, logger, config.Arch); err != nil {
 				return err
 			}
 			// Then build the image
-			if err := createContainer(temp, ctx.String("output-dir"), ctx.String("name"), outputName, logger); err != nil {
+			if err := createContainer(temp, ctx.String("output-dir"), ctx.String("name"), outputName, logger, config.Arch); err != nil {
 				return err
 			}
 		case string(constants.DefaultOutput):
-			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("public-keys"), entries, logger); err != nil {
+			if err := createArtifact(sourceDir, ctx.String("output-dir"), ctx.String("public-keys"), entries, logger, config.Arch); err != nil {
 				return err
 			}
 		}
@@ -836,23 +835,9 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version, profile s
 }
 
 // createSystemdConf creates the generic conf that systemd-boot uses
-func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
-	var finalEfiConf string
-	if defaultEntry != "" {
-		if !strings.HasSuffix(defaultEntry, ".conf") {
-			finalEfiConf = strings.TrimSuffix(defaultEntry, " ") + ".conf"
-		} else {
-			finalEfiConf = defaultEntry
-		}
-
-	} else {
-		// Get the generic efi file that we produce from the default cmdline
-		// This is the one name that has nothing added, just the version
-		finalEfiConf = NameFromCmdline(constants.ArtifactBaseName, constants.UkiCmdline+" "+constants.UkiCmdlineInstall) + ".conf"
-	}
-
+func createSystemdConf(dir, secureBootEnroll string) error {
 	// Set that as default selection for booting
-	data := fmt.Sprintf("default %s\ntimeout 5\nconsole-mode max\neditor no\nsecure-boot-enroll %s\n", finalEfiConf, secureBootEnroll)
+	data := fmt.Sprintf("timeout 5\nconsole-mode max\neditor no\nsecure-boot-enroll %s\n", secureBootEnroll)
 	err := os.WriteFile(filepath.Join(dir, "loader.conf"), []byte(data), os.ModePerm)
 	if err != nil {
 		return fmt.Errorf("creating the loader.conf file: %s", err)
@@ -860,7 +845,7 @@ func createSystemdConf(dir, defaultEntry, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, logger logger.KairosLogger) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, logger logger.KairosLogger, arch string) error {
 	// isoDir is where we generate the img file. We pass this dir to xorriso.
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
@@ -868,7 +853,7 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	}
 	defer os.RemoveAll(isoDir)
 
-	filesMap, err := imageFiles(sourceDir, keysDir, entries)
+	filesMap, err := imageFiles(sourceDir, keysDir, entries, arch)
 	if err != nil {
 		return err
 	}
@@ -934,12 +919,16 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	return nil
 }
 
-func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry) (map[string][]string, error) {
+func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry, arch string) (map[string][]string, error) {
 	// the keys are the target dirs
 	// the values are the source files that should be copied into the target dir
+	bootfile := "BOOTX64.EFI"
+	if utils.IsArm64(arch) {
+		bootfile = "BOOTAA64.EFI"
+	}
 	data := map[string][]string{
 		"EFI":            {},
-		"EFI/BOOT":       {filepath.Join(sourceDir, "BOOTX64.EFI")},
+		"EFI/BOOT":       {filepath.Join(sourceDir, bootfile)},
 		"EFI/kairos":     {},
 		"EFI/tools":      {},
 		"loader":         {filepath.Join(sourceDir, "loader.conf")},
@@ -1062,8 +1051,8 @@ func copyFilesToImg(imgFile string, filesMap map[string][]string) error {
 
 // Create artifact just outputs the files from the sourceDir to the outputDir
 // Maintains the same structure as the sourceDir which is the final structure we want
-func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEntry, logger logger.KairosLogger) error {
-	filesMap, err := imageFiles(sourceDir, keysDir, entries)
+func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEntry, logger logger.KairosLogger, arch string) error {
+	filesMap, err := imageFiles(sourceDir, keysDir, entries, arch)
 	if err != nil {
 		return err
 	}
@@ -1109,7 +1098,7 @@ func createArtifact(sourceDir, outputDir, keysDir string, entries []utils.BootEn
 	return nil
 }
 
-func createContainer(sourceDir, outputDir, artifactName, outputName string, logger logger.KairosLogger) error {
+func createContainer(sourceDir, outputDir, artifactName, outputName string, logger logger.KairosLogger, arch string) error {
 	temp, err := os.CreateTemp("", "image.tar")
 	if err != nil {
 		return err
@@ -1123,16 +1112,13 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, logg
 	_ = temp.Close()
 	defer os.RemoveAll(temp.Name())
 	finalImage := filepath.Join(outputDir, fmt.Sprintf("%s-%s-uki.tar", constants.KairosDefaultArtifactName, outputName))
-	// TODO: get the arch from the running system or by flag? Config.Arch has this value on it
-	arch := "amd64"
-	os := "linux"
 	// Build imageTar from normal tar
 	tarName := "kairos.tar"
 	if artifactName != "" {
 		tarName = fmt.Sprintf("%s.tar", artifactName)
 	}
 	internal.Log.Logger.Debug().Str("name", tarName).Msg("Got output name")
-	err = utils.CreateTar(logger, temp.Name(), finalImage, tarName, arch, os)
+	err = utils.CreateTar(logger, temp.Name(), finalImage, tarName, arch, "linux")
 	if err != nil {
 		return err
 	}
