@@ -810,7 +810,7 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version, profile s
 
 	// You can add entries into the config files, they will be ignored by systemd-boot
 	// So we store the cmdline in a key cmdline for easy tracking of what was added to the uki cmdline
-	configData := fmt.Sprintf("title %s\nsort-key %s-%s\nefi /EFI/kairos/%s.efi\nprofile %s\n", title, finalEfiName, profile, finalEfiName, profile)
+	configData := fmt.Sprintf("title %s\nsort-key %s-%s\nuki /EFI/kairos/%s.efi\nprofile %s\n", title, finalEfiName, profile, finalEfiName, profile)
 
 	if includeVersion {
 		configData = fmt.Sprintf("%sversion %s\n", configData, version)
