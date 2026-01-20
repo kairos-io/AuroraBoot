@@ -21,7 +21,7 @@ require (
 	github.com/kairos-io/kairos-sdk v0.17.0
 	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba
 	github.com/klauspost/compress v1.18.3
-	github.com/labstack/echo/v4 v4.15.0
+	github.com/labstack/echo/v5 v5.0.0
 	github.com/mudler/go-processmanager v0.1.0
 	github.com/onsi/ginkgo/v2 v2.27.5
 	github.com/onsi/gomega v1.39.0
@@ -41,7 +41,10 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/urfave/cli/v2 v2.27.7
+require (
+	github.com/labstack/echo/v4 v4.15.0
+	github.com/urfave/cli/v2 v2.27.7
+)
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
