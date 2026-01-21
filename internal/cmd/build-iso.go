@@ -80,6 +80,12 @@ var BuildISOCmd = cli.Command{
 			return errors.New("no source defined")
 		}
 
+		// Validate arch flag if provided
+		arch := ctx.String("arch")
+		if arch != "" && arch != "amd64" && arch != "arm64" {
+			return fmt.Errorf("invalid architecture '%s': must be 'amd64' or 'arm64'", arch)
+		}
+
 		cloudConfig := ""
 		var err error
 		if ctx.String("cloud-config") != "" {
