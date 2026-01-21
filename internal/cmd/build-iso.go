@@ -60,6 +60,10 @@ var BuildISOCmd = cli.Command{
 			Usage:   "Set the log level",
 			Value:   "info",
 		},
+		&cli.StringFlag{
+			Name:  "arch",
+			Usage: "Architecture to use when pulling container images (amd64 or arm64). Defaults to host architecture if not specified.",
+		},
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
@@ -74,6 +78,22 @@ var BuildISOCmd = cli.Command{
 			fmt.Println("")
 
 			return errors.New("no source defined")
+		}
+
+		// Validate arch flag if provided
+		arch := ctx.String("arch")
+		if arch != "" {
+			validArchs := []string{"amd64", "arm64"}
+			isValid := false
+			for _, valid := range validArchs {
+				if arch == valid {
+					isValid = true
+					break
+				}
+			}
+			if !isValid {
+				return fmt.Errorf("invalid architecture '%s': must be 'amd64' or 'arm64'", arch)
+			}
 		}
 
 		cloudConfig := ""
@@ -105,6 +125,7 @@ var BuildISOCmd = cli.Command{
 			ISO:         isoOptions,
 			State:       ctx.String("output"),
 			CloudConfig: cloudConfig,
+			Arch:        ctx.String("arch"),
 		}
 
 		if c.State == "" {
