@@ -90,5 +90,41 @@ var _ = Describe("ISO image generation", Label("iso", "e2e"), func() {
 			_, err = os.Stat(filepath.Join(tempDir, "kairos.iso"))
 			Expect(err).ToNot(HaveOccurred())
 		})
+
+		It("fails when --arch arm64 is used with an amd64-only image", func() {
+			image := "quay.io/kairos/ubuntu:22.04-core-amd64-generic-v3.6.1-beta2"
+			out, err := aurora.Run("build-iso",
+				"--arch", "arm64",
+				"--output", "/tmp/auroraboot",
+				"--cloud-config", "/config.yaml",
+				fmt.Sprintf("oci://%s", image),
+			)
+			Expect(err).To(HaveOccurred(), out)
+			// The error should indicate that the arm64 layer cannot be found
+			Expect(out).To(Or(
+				ContainSubstring("arm64"),
+				ContainSubstring("no matching manifest"),
+				ContainSubstring("platform"),
+				ContainSubstring("architecture"),
+			), out)
+		})
+
+		It("succeeds when --arch arm64 is used with an arm64 image", func() {
+			image := "quay.io/kairos/ubuntu:22.04-core-arm64-rpi4-v3.6.1-beta2"
+
+			out, err := aurora.Run("build-iso",
+				"--arch", "arm64",
+				"--output", "/tmp/auroraboot",
+				"--cloud-config", "/config.yaml",
+				fmt.Sprintf("oci://%s", image),
+			)
+			Expect(err).ToNot(HaveOccurred(), out)
+			Expect(out).To(ContainSubstring("Generating iso"), out)
+			// Verify that an ISO file was created
+			// The ISO name should match the image name pattern
+			files, err := filepath.Glob(filepath.Join(tempDir, "*.iso"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(len(files)).To(BeNumerically(">", 0), "Expected at least one ISO file to be created")
+		})
 	})
 })
