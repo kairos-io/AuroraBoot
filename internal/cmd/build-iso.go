@@ -60,6 +60,10 @@ var BuildISOCmd = cli.Command{
 			Usage:   "Set the log level",
 			Value:   "info",
 		},
+		&cli.StringFlag{
+			Name:  "arch",
+			Usage: "Architecture to use when pulling container images (amd64 or arm64). Defaults to host architecture if not specified.",
+		},
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
@@ -105,6 +109,7 @@ var BuildISOCmd = cli.Command{
 			ISO:         isoOptions,
 			State:       ctx.String("output"),
 			CloudConfig: cloudConfig,
+			Arch:        ctx.String("arch"),
 		}
 
 		if c.State == "" {
