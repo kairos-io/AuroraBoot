@@ -82,8 +82,18 @@ var BuildISOCmd = cli.Command{
 
 		// Validate arch flag if provided
 		arch := ctx.String("arch")
-		if arch != "" && arch != "amd64" && arch != "arm64" {
-			return fmt.Errorf("invalid architecture '%s': must be 'amd64' or 'arm64'", arch)
+		if arch != "" {
+			validArchs := []string{"amd64", "arm64"}
+			isValid := false
+			for _, valid := range validArchs {
+				if arch == valid {
+					isValid = true
+					break
+				}
+			}
+			if !isValid {
+				return fmt.Errorf("invalid architecture '%s': must be 'amd64' or 'arm64'", arch)
+			}
 		}
 
 		cloudConfig := ""
