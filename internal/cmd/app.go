@@ -55,6 +55,7 @@ func GetApp(version string) *cli.App {
 			&WebCMD,
 			&RedFishDeployCmd,
 			&WorkerCmd,
+			&UnpackCmd,
 		},
 		Flags: []cli.Flag{
 			&cli.StringSliceFlag{
