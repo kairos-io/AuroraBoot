@@ -132,6 +132,7 @@ jobs:
         run: |
           mkdir build
           docker run --rm --privileged \
+          --network=host \
           -v $PWD/build/:/output \
           -v $PWD/e2e/assets/keys/:/keys \
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
@@ -180,6 +181,7 @@ jobs:
         run: |
           mkdir build
           docker run --rm --privileged \
+          --network=host \
           -v $PWD/build/:/output \
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
           --debug \
@@ -222,6 +224,7 @@ jobs:
         run: |
           mkdir build
           docker run --rm --privileged \
+          --network=host \
           -v $PWD/build/:/output \
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
           --debug \
@@ -254,7 +257,7 @@ jobs:
        uses: cypress-io/github-action@v6
        with:
          working-directory: e2e/web/
-         start: docker run --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web --create-worker > /dev/null 2>&1
+         start: docker run --network=host --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web --create-worker > /dev/null 2>&1
      - name: Upload Cypress screenshots
        if: always()
        continue-on-error: true
