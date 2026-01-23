@@ -133,9 +133,12 @@ jobs:
           --output-type iso \
           -x "console=ttyS0" \
           quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
       - name: Test UKI iso is bootable
         env:
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           KVM: true
           EFIVARS_EMPTY: true
         run: |
@@ -170,10 +173,13 @@ jobs:
           --set "disk.efi=true" \
           --set "disk.size=16000" \
           --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
       - name: Test raw image is bootable
         env:
           KVM: true
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e

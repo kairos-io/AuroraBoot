@@ -1,0 +1,30 @@
+name: 'Find OVMF Firmware'
+description: 'Finds the OVMF firmware file path for the current system'
+outputs:
+  firmware:
+    description: 'Path to the OVMF firmware file'
+    value: ${{ steps.find_ovmf.outputs.firmware }}
+runs:
+  using: composite
+  steps:
+    - id: find_ovmf
+      shell: bash
+      run: |
+        # In Ubuntu 24.04, OVMF files have different names. Try to find the correct one.
+        if [ -f /usr/share/OVMF/OVMF_CODE.fd ]; then
+          echo "firmware=/usr/share/OVMF/OVMF_CODE.fd" >> $GITHUB_OUTPUT
+        elif [ -f /usr/share/OVMF/OVMF_CODE_4M.secboot.fd ]; then
+          echo "firmware=/usr/share/OVMF/OVMF_CODE_4M.secboot.fd" >> $GITHUB_OUTPUT
+        elif [ -f /usr/share/OVMF/OVMF_CODE_4M.fd ]; then
+          echo "firmware=/usr/share/OVMF/OVMF_CODE_4M.fd" >> $GITHUB_OUTPUT
+        else
+          # Fallback: find any OVMF_CODE*.fd file
+          FIRMWARE=$(find /usr/share/OVMF -name "OVMF_CODE*.fd" | head -n 1)
+          if [ -n "$FIRMWARE" ]; then
+            echo "firmware=$FIRMWARE" >> $GITHUB_OUTPUT
+          else
+            echo "ERROR: Could not find OVMF firmware file"
+            dpkg -L ovmf | grep -i ovmf
+            exit 1
+          fi
+        fi
