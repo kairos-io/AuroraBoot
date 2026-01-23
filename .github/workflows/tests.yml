@@ -161,7 +161,7 @@ jobs:
           go-version-file: go.mod
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
       - name: Generate raw image
         run: |
           mkdir build
@@ -201,7 +201,7 @@ jobs:
           go-version-file: go.mod
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
       - name: Generate raw image
         run: |
           mkdir build
@@ -229,7 +229,7 @@ jobs:
          fetch-depth: 1
      - name: Set up Docker Buildx
        id: buildx
-       uses: docker/setup-buildx-action@master
+       uses: docker/setup-buildx-action@v3
      - name: Preload the Aurora image
        run: docker pull quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
      - name: Cypress run
