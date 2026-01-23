@@ -149,6 +149,8 @@ jobs:
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
+        with:
+          prefer_secboot: true
       - name: Test UKI iso is bootable
         env:
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
