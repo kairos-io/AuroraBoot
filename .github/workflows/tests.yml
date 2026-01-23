@@ -180,6 +180,7 @@ jobs:
         env:
           KVM: true
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
+          EFIVARS_EMPTY: true
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
