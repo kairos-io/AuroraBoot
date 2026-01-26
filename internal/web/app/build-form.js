@@ -31,6 +31,7 @@ export function createBuildForm() {
 
         // Available base images with their metadata
         baseImages: [
+            { value: 'ghcr.io/kairos-io/hadron:v0.0.1-beta6', label: 'Hadron', icon: 'assets/img/kairos-hadron.svg' },
             { value: 'ubuntu:24.04', label: 'Ubuntu 24.04 LTS', icon: 'assets/img/ubuntu.svg' },
             { value: 'fedora:40', label: 'Fedora 40', icon: 'assets/img/fedora.svg' },
             { value: 'opensuse/leap:15.6', label: 'openSUSE Leap 15.6', icon: 'assets/img/opensuse.svg' },
@@ -81,7 +82,7 @@ export function createBuildForm() {
             if (!this.formData.architecture) {
                 return this.models;
             }
-            return this.models.filter(model => 
+            return this.models.filter(model =>
                 model.archs.includes(this.formData.architecture)
             );
         },
@@ -196,21 +197,21 @@ export function createBuildForm() {
         // Form validation
         validateForm() {
             const errors = [];
-            
+
             if (!this.formData.base_image.trim()) {
                 errors.push(VALIDATION_ERRORS.BASE_IMAGE_REQUIRED);
             }
-            
+
             if (!this.formData.version.trim()) {
                 errors.push(VALIDATION_ERRORS.VERSION_REQUIRED);
             }
-            
+
             if (this.formData.variant === 'standard' && !this.formData.kubernetes_distribution) {
                 errors.push(VALIDATION_ERRORS.KUBERNETES_DISTRIBUTION_REQUIRED);
             }
-            
 
-            
+
+
             return {
                 isValid: errors.length === 0,
                 errors: errors
@@ -231,7 +232,7 @@ export function createBuildForm() {
                 version: '',
                 kairos_init_version: '',
                 cloud_config: '',
-    
+
                 artifact_raw: true,
                 artifact_iso: true,
                 artifact_tar: true,
@@ -240,4 +241,4 @@ export function createBuildForm() {
             };
         }
     };
-} 
+}
