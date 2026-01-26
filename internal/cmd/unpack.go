@@ -53,13 +53,6 @@ Examples:
 		image := ctx.Args().Get(0)
 		destination := ctx.Args().Get(1)
 
-		if image == "" {
-			return errors.New("image argument is required")
-		}
-		if destination == "" {
-			return errors.New("destination argument is required")
-		}
-
 		// Validate arch flag if provided
 		arch := ctx.String("arch")
 		if arch != "" {
