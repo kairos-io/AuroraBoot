@@ -21,9 +21,13 @@ jobs:
           go-version-file: go.mod
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+        with:
+          driver-opts: network=host
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - name: Run tests
         run: |
           sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
@@ -42,7 +46,9 @@ jobs:
           fetch-depth: 0
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - name: Login to Quay Registry
         uses: docker/login-action@v3
         with:
@@ -77,9 +83,13 @@ jobs:
           go-version-file: go.mod
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
+        with:
+          driver-opts: network=host
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - name: Build local image
         uses: docker/build-push-action@v6
         with:
@@ -115,11 +125,14 @@ jobs:
           go-version-file: go.mod
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - name: Generate ISO
         run: |
           mkdir build
           docker run --rm --privileged \
+          --network=host \
           -v $PWD/build/:/output \
           -v $PWD/e2e/assets/keys/:/keys \
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
@@ -133,9 +146,14 @@ jobs:
           --output-type iso \
           -x "console=ttyS0" \
           quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
+        with:
+          prefer_secboot: true
       - name: Test UKI iso is bootable
         env:
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           KVM: true
           EFIVARS_EMPTY: true
         run: |
@@ -158,11 +176,14 @@ jobs:
           go-version-file: go.mod
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - name: Generate raw image
         run: |
           mkdir build
           docker run --rm --privileged \
+          --network=host \
           -v $PWD/build/:/output \
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
           --debug \
@@ -170,10 +191,14 @@ jobs:
           --set "disk.efi=true" \
           --set "disk.size=16000" \
           --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
       - name: Test raw image is bootable
         env:
           KVM: true
-          FIRMWARE: /usr/share/OVMF/OVMF_CODE.fd
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
+          EFIVARS_EMPTY: true
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
@@ -194,11 +219,14 @@ jobs:
           go-version-file: go.mod
       - name: Set up Docker Buildx
         id: buildx
-        uses: docker/setup-buildx-action@master
+        uses: docker/setup-buildx-action@v3
+        with:
+          driver-opts: network=host
       - name: Generate raw image
         run: |
           mkdir build
           docker run --rm --privileged \
+          --network=host \
           -v $PWD/build/:/output \
           quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
           --debug \
@@ -222,14 +250,16 @@ jobs:
          fetch-depth: 1
      - name: Set up Docker Buildx
        id: buildx
-       uses: docker/setup-buildx-action@master
+       uses: docker/setup-buildx-action@v3
+       with:
+         driver-opts: network=host
      - name: Preload the Aurora image
        run: docker pull quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
      - name: Cypress run
        uses: cypress-io/github-action@v6
        with:
          working-directory: e2e/web/
-         start: docker run --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web --create-worker > /dev/null 2>&1
+         start: docker run --network=host --rm -p 8080:8080 quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web --create-worker > /dev/null 2>&1
      - name: Upload Cypress screenshots
        if: always()
        continue-on-error: true
