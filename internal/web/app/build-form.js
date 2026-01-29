@@ -31,7 +31,7 @@ export function createBuildForm() {
 
         // Available base images with their metadata
         baseImages: [
-            { value: 'ghcr.io/kairos-io/hadron:v0.0.1-beta6', label: 'Hadron', icon: 'assets/img/kairos-hadron.svg' },
+            { value: 'ghcr.io/kairos-io/hadron:v0.0.1', label: 'Hadron', icon: 'assets/img/kairos-hadron.svg' },
             { value: 'ubuntu:24.04', label: 'Ubuntu 24.04 LTS', icon: 'assets/img/ubuntu.svg' },
             { value: 'fedora:40', label: 'Fedora 40', icon: 'assets/img/fedora.svg' },
             { value: 'opensuse/leap:15.6', label: 'openSUSE Leap 15.6', icon: 'assets/img/opensuse.svg' },
