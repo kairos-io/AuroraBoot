@@ -11,7 +11,7 @@ require (
 	github.com/containerd/containerd/v2 v2.2.1
 	github.com/diskfs/go-diskfs v1.7.0
 	github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29
-	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
+	github.com/foxboron/sbctl v0.0.0-20251130203647-eba782214ed5
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.20.7
 	github.com/hashicorp/go-multierror v1.1.1
@@ -90,8 +90,9 @@ require (
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20250912055424-93680c478db2 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/fatih/color v1.15.0 // indirect
+	github.com/fatih/color v1.17.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/foxboron/go-tpm-keyfiles v0.0.0-20240725205618-b7c5a84edf9d // indirect
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
@@ -100,7 +101,9 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.2.6 // indirect
+	github.com/go-piv/piv-go/v2 v2.3.0 // indirect
 	github.com/go-task/slim-sprig/v3 v3.0.0 // indirect
+	github.com/goccy/go-yaml v1.18.0 // indirect
 	github.com/gofrs/flock v0.12.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
 	github.com/golang/groupcache v0.0.0-20241129210726-2c02b8208cf8 // indirect
@@ -127,6 +130,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.2.8 // indirect
 	github.com/labstack/gommon v0.4.2 // indirect
+	github.com/landlock-lsm/go-landlock v0.0.0-20240715193425-db0c8d6f1dff // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/magiconair/properties v1.8.7 // indirect
 	github.com/mattn/go-colorable v0.1.14 // indirect
@@ -219,6 +223,7 @@ require (
 	k8s.io/klog/v2 v2.130.1 // indirect
 	k8s.io/mount-utils v0.35.0 // indirect
 	k8s.io/utils v0.0.0-20251002143259-bc988d571ff4 // indirect
+	kernel.org/pub/linux/libs/security/libcap/psx v1.2.70 // indirect
 	pault.ag/go/modprobe v0.2.0 // indirect
 	pault.ag/go/topsort v0.1.1 // indirect
 )
