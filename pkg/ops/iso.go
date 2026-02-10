@@ -142,6 +142,11 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		cfg := NewBuildConfig(
 			WithLogger(internal.Log),
 		)
+		if arch, err := utils.GetArchFromRootfs(src, internal.Log); err == nil && arch != "" {
+			cfg.Arch = arch
+		} else if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to detect arch from rootfs; falling back to host arch")
+		}
 		cfg.Name = i.Name
 		cfg.OutDir = dst
 		cfg.Date = i.IncludeDate
@@ -351,7 +356,12 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 		return err
 	}
 	if _, exist := os.Stat(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg)); os.IsNotExist(exist) {
-		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), constants.GrubLiveBiosCfg, constants.FilePerm)
+		nomodeset := ""
+		if b.cfg.Arch == constants.ArchAmd64 || b.cfg.Arch == constants.Archx86 {
+			nomodeset = " nomodeset"
+		}
+		grubCfg := strings.ReplaceAll(string(constants.GrubLiveBiosCfg), "{{NOMODESET}}", nomodeset)
+		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), []byte(grubCfg), constants.FilePerm)
 	} else {
 		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
 	}
