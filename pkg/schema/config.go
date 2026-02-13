@@ -1,6 +1,10 @@
 package schema
 
-import "path/filepath"
+import (
+	"path/filepath"
+
+	"github.com/kairos-io/kairos-sdk/types/logger"
+)
 
 // Config represent the AuroraBoot
 // configuration
@@ -72,6 +76,24 @@ type ISO struct {
 	OverlayISO    string `yaml:"overlay_iso"`
 	OverlayRootfs string `yaml:"overlay_rootfs"`
 	OverlayUEFI   string `yaml:"overlay_uefi"`
+}
+
+// HandleDeprecations checks for deprecated ISO options and migrates them.
+// iso.data is deprecated in favor of iso.overlay_iso. If iso.data is set,
+// its value is moved to iso.overlay_iso (unless overlay_iso is already set)
+// and a deprecation warning is logged.
+func (i *ISO) HandleDeprecations(log logger.KairosLogger) {
+	if i.DataPath == "" {
+		return
+	}
+
+	if i.OverlayISO == "" {
+		log.Logger.Warn().Msg("'iso.data' is deprecated and will be removed in a future release. Use 'iso.overlay_iso' instead.")
+		i.OverlayISO = i.DataPath
+	} else {
+		log.Logger.Warn().Msg("'iso.data' is deprecated and will be removed in a future release. Both 'iso.data' and 'iso.overlay_iso' are set; 'iso.data' will be ignored.")
+	}
+	i.DataPath = ""
 }
 
 func (c Config) StateDir(s ...string) string {
