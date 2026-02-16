@@ -50,11 +50,9 @@ var _ = Describe("ISO HandleDeprecations", func() {
 	It("does not affect other ISO fields", func() {
 		iso.DataPath = "/some/path"
 		iso.OverlayRootfs = "/rootfs"
-		iso.OverlayUEFI = "/uefi"
 		iso.Name = "test-iso"
 		iso.HandleDeprecations(log)
 		Expect(iso.OverlayRootfs).To(Equal("/rootfs"))
-		Expect(iso.OverlayUEFI).To(Equal("/uefi"))
 		Expect(iso.Name).To(Equal("test-iso"))
 	})
 })

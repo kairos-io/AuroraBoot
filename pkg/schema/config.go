@@ -75,7 +75,6 @@ type ISO struct {
 	IncludeDate   bool   `yaml:"include_date"`
 	OverlayISO    string `yaml:"overlay_iso"`
 	OverlayRootfs string `yaml:"overlay_rootfs"`
-	OverlayUEFI   string `yaml:"overlay_uefi"`
 }
 
 // HandleDeprecations checks for deprecated ISO options and migrates them.

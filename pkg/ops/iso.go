@@ -31,7 +31,6 @@ import (
 
 type LiveISO struct {
 	RootFS             []*imagetypes.ImageSource `yaml:"rootfs,omitempty" mapstructure:"rootfs"`
-	UEFI               []*imagetypes.ImageSource `yaml:"uefi,omitempty" mapstructure:"uefi"`
 	Image              []*imagetypes.ImageSource `yaml:"image,omitempty" mapstructure:"image"`
 	Label              string                    `yaml:"label,omitempty" mapstructure:"label"`
 	GrubEntry          string                    `yaml:"grub-entry-name,omitempty" mapstructure:"grub-entry-name"`
@@ -160,9 +159,6 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		if i.OverlayRootfs != "" {
 			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
 		}
-		if i.OverlayUEFI != "" {
-			spec.UEFI = append(spec.UEFI, imagetypes.NewDirSrc(i.OverlayUEFI))
-		}
 		if i.OverlayISO != "" {
 			spec.Image = append(spec.Image, imagetypes.NewDirSrc(i.OverlayISO))
 		}
@@ -273,12 +269,6 @@ func (b *BuildISOAction) ISORun() (err error) {
 
 	rootDir := filepath.Join(isoTmpDir, "rootfs")
 	err = utils.MkdirAll(b.cfg.Fs, rootDir, constants.DirPerm)
-	if err != nil {
-		return err
-	}
-
-	uefiDir := filepath.Join(isoTmpDir, "uefi")
-	err = utils.MkdirAll(b.cfg.Fs, uefiDir, constants.DirPerm)
 	if err != nil {
 		return err
 	}
