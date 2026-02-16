@@ -121,10 +121,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 			return err
 		}
 		defer os.RemoveAll(tmp)
-		overlay := tmp
-		if i.DataPath != "" {
-			overlay = i.DataPath
-		}
+
 		if i.OverrideName != "" {
 			i.Name = i.OverrideName
 		} else {
@@ -132,8 +129,9 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 			i.Name = fmt.Sprintf("kairos-%s", utils.NameFromRootfs(src))
 		}
 
-		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst"
-		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(overlay, "config.yaml"))
+		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst".
+		// Copy the cloud config into the temp dir so it ends up on the ISO root.
+		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
 		if err != nil {
 			return err
 		}
@@ -153,7 +151,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 
 		spec := &LiveISO{
 			RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(src)},
-			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(overlay)},
+			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(tmp)},
 			Label:              constants.ISOLabel,
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
@@ -189,9 +187,9 @@ func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.C
 		}
 		defer os.RemoveAll(tmp)
 
-		if i.DataPath != "" {
-			internal.Log.Logger.Info().Msgf("Adding data in '%s' to '%s'", i.DataPath, isoFile)
-			err = copy.Copy(i.DataPath, tmp)
+		if i.OverlayISO != "" {
+			internal.Log.Logger.Info().Msgf("Adding overlay data in '%s' to '%s'", i.OverlayISO, isoFile)
+			err = copy.Copy(i.OverlayISO, tmp)
 			if err != nil {
 				return err
 			}

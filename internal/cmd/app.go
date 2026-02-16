@@ -82,6 +82,8 @@ func GetApp(version string) *cli.App {
 				return err
 			}
 
+			c.ISO.HandleDeprecations(internal.Log)
+
 			d := deployer.NewDeployer(*c, *r, herd.CollectOrphans)
 			err = deployer.RegisterAll(d)
 			if err != nil {
