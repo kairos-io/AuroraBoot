@@ -47,10 +47,6 @@ var BuildISOCmd = cli.Command{
 			Usage: "Path of the overlayed rootfs data",
 		},
 		&cli.StringFlag{
-			Name:  "overlay-uefi",
-			Usage: "Path of the overlayed uefi data",
-		},
-		&cli.StringFlag{
 			Name:  "overlay-iso",
 			Usage: "Path of the overlayed iso data",
 		},
@@ -114,7 +110,6 @@ var BuildISOCmd = cli.Command{
 			IncludeDate:   ctx.Bool("date"),
 			OverlayISO:    ctx.String("overlay-iso"),
 			OverlayRootfs: ctx.String("overlay-rootfs"),
-			OverlayUEFI:   ctx.String("overlay-uefi"),
 		}
 
 		if err := validateISOOptions(isoOptions); err != nil {
@@ -161,7 +156,7 @@ var BuildISOCmd = cli.Command{
 }
 
 func validateISOOptions(i schema.ISO) error {
-	for _, path := range []string{i.OverlayISO, i.OverlayRootfs, i.OverlayUEFI} {
+	for _, path := range []string{i.OverlayISO, i.OverlayRootfs} {
 		if path == "" {
 			continue
 		}
