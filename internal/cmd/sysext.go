@@ -16,6 +16,10 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
+// Sysext/confext info: https://www.freedesktop.org/software/systemd/man/latest/systemd-sysext.html
+// System extension images may – dynamically at runtime — extend the /usr/ and /opt/ directory hierarchies with additional files.
+// Configuration extension images may – dynamically at runtime — extend the /etc/ directory hierarchy with additional files.
+
 // SysextCmd generates a sysextension from the last layer of the given CONTAINER
 var SysextCmd = cli.Command{
 	Name:      "sysext",
