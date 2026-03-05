@@ -136,6 +136,7 @@ func generateSysextConfext(ctx *cli.Context) error {
 	err = sysext.ExtractFilesFromLastLayer(image, dir, logger, allowList)
 	if err != nil {
 		logger.Logger.Error().Str("image", args.Get(1)).Err(err).Msg("⛔ extracting layer")
+		return err
 	}
 
 	// Now create the file that tells systemd that this is a sysext/confext!
