@@ -25,9 +25,10 @@ var SysextCmd = cli.Command{
 	Flags: append(
 		commonFlagsSysextConfext(),
 		&cli.BoolFlag{
-			Name:  "service-reload",
-			Value: false,
-			Usage: "Make systemctl reload the service when loading the sysext. This is useful for sysext that provide systemd service files.",
+			Name:    "service-reload",
+			Aliases: []string{"service-load"},
+			Value:   false,
+			Usage:   "Make systemctl reload the service when loading the sysext. This is useful for sysext that provide systemd service files.",
 		},
 	),
 	Before: validateSysextConfextArgs,
