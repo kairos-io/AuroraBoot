@@ -25,7 +25,7 @@ var SysextCmd = cli.Command{
 	Flags: append(
 		commonFlagsSysextConfext(),
 		&cli.BoolFlag{
-			Name:  "service-load",
+			Name:  "service-reload",
 			Value: false,
 			Usage: "Make systemctl reload the service when loading the sysext. This is useful for sysext that provide systemd service files.",
 		},
@@ -40,9 +40,7 @@ var ConfextCmd = cli.Command{
 	Usage:     "Generate a confextension from the last layer of the given CONTAINER",
 	ArgsUsage: "<name> <container>",
 
-	Flags: append(
-		commonFlagsSysextConfext(),
-	),
+	Flags:  commonFlagsSysextConfext(),
 	Before: validateSysextConfextArgs,
 	Action: generateSysextConfext,
 }
@@ -127,15 +125,15 @@ func generateSysextConfext(ctx *cli.Context) error {
 		return err
 	}
 
-	var AllowList *regexp.Regexp
+	var allowList *regexp.Regexp
 	if buildType == "sysext" {
-		AllowList = regexp.MustCompile(`^usr/*|^/usr/*`)
+		allowList = regexp.MustCompile(`^usr/*|^/usr/*`)
 	} else {
-		AllowList = regexp.MustCompile(`^etc/*|^/etc/*`)
+		allowList = regexp.MustCompile(`^etc/*|^/etc/*`)
 	}
 	// extract the files into the temp dir
 	logger.Info("📤 Extracting archives from image layer")
-	err = sysext.ExtractFilesFromLastLayer(image, dir, logger, AllowList)
+	err = sysext.ExtractFilesFromLastLayer(image, dir, logger, allowList)
 	if err != nil {
 		logger.Logger.Error().Str("image", args.Get(1)).Err(err).Msg("⛔ extracting layer")
 	}
@@ -187,7 +185,7 @@ func generateSysextConfext(ctx *cli.Context) error {
 		// Another layer to verify images, even if its a manual check, we make it easier
 		fmt.Sprintf("--seed=%s", uuid.NewV5(uuid.NamespaceDNS, fmt.Sprintf("kairos-%s", buildType))),
 		fmt.Sprintf("--copy-source=%s", dir),
-		outputFile, // output sysext image
+		outputFile, // output file
 	}
 	// Add signing flags or exclude partitions based on whether key/cert are provided
 	cmdArgs = append(cmdArgs, aurorabootUtils.GetSysextSigningFlags(ctx.String("private-key"), ctx.String("certificate"))...)
