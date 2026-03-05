@@ -172,7 +172,7 @@ func generateSysextConfext(ctx *cli.Context) error {
 	}
 
 	logger.Logger.Info().Msgf("📦 Packing %s into raw image", buildType)
-	// Call systemd-repart to create the sysext based off the files
+	// Call systemd-repart to create the sysext/confext based off the files
 	outputFile := fmt.Sprintf("%s.%s.raw", name, buildType)
 	if outputDir := ctx.String("output"); outputDir != "" {
 		outputFile = filepath.Join(outputDir, outputFile)
