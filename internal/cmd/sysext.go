@@ -130,11 +130,15 @@ func generateSysextConfext(ctx *cli.Context) error {
 		return err
 	}
 
-	var allowList *regexp.Regexp
-	if buildType == "sysext" {
-		allowList = regexp.MustCompile(`^usr/*|^/usr/*`)
-	} else {
+	// We only want to extract files from /usr for sysext and /etc for confext, so we create a regex allowlist based on the build type
+	allowList := regexp.MustCompile(`^usr/*|^/usr/*`)
+	// The directory where the extension-release file will be created, based on the build type
+	extensionReleaseDir := filepath.Join(dir, "/usr/lib/extension-release.d/")
+
+	// If its a confext, we change the allowlist and the extension release dir to match /etc instead of /usr
+	if buildType == "confext" {
 		allowList = regexp.MustCompile(`^etc/*|^/etc/*`)
+		extensionReleaseDir = filepath.Join(dir, "/etc/extension-release.d/")
 	}
 	// extract the files into the temp dir
 	logger.Info("📤 Extracting archives from image layer")
@@ -145,12 +149,6 @@ func generateSysextConfext(ctx *cli.Context) error {
 	}
 
 	// Now create the file that tells systemd that this is a sysext/confext!
-	var extensionReleaseDir string
-	if buildType == "sysext" {
-		extensionReleaseDir = filepath.Join(dir, "/usr/lib/extension-release.d/")
-	} else {
-		extensionReleaseDir = filepath.Join(dir, "/etc/extension-release.d/")
-	}
 	err = os.MkdirAll(extensionReleaseDir, os.ModeDir|os.ModePerm)
 	if err != nil {
 		logger.Logger.Error().Str("dir", extensionReleaseDir).Err(err).Msg("⛔ creating dir")
