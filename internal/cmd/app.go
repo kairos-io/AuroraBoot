@@ -50,6 +50,7 @@ func GetApp(version string) *cli.App {
 			&BuildUKICmd,
 			&GenKeyCmd,
 			&SysextCmd,
+			&ConfextCmd,
 			&NetBootCmd,
 			&StartPixieCmd,
 			&WebCMD,
