@@ -75,6 +75,8 @@ type ISO struct {
 	IncludeDate   bool   `yaml:"include_date"`
 	OverlayISO    string `yaml:"overlay_iso"`
 	OverlayRootfs string `yaml:"overlay_rootfs"`
+	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO. Does not affect the installed system.
+	ExtendLiveCmdline string `yaml:"extend_live_cmdline"`
 }
 
 // HandleDeprecations checks for deprecated ISO options and migrates them.
