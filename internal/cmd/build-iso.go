@@ -60,6 +60,10 @@ var BuildISOCmd = cli.Command{
 			Name:  "arch",
 			Usage: "Architecture to use when pulling container images (amd64 or arm64). Defaults to host architecture if not specified.",
 		},
+		&cli.StringFlag{
+			Name:  "extend-live-cmdline",
+			Usage: "Append options to the kernel cmdline when booting from the live/installer ISO (e.g. rd.debug rd.shell). Does not affect the installed system.",
+		},
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
@@ -110,6 +114,7 @@ var BuildISOCmd = cli.Command{
 			IncludeDate:   ctx.Bool("date"),
 			OverlayISO:    ctx.String("overlay-iso"),
 			OverlayRootfs: ctx.String("overlay-rootfs"),
+			ExtendLiveCmdline: ctx.String("extend-live-cmdline"),
 		}
 
 		if err := validateISOOptions(isoOptions); err != nil {

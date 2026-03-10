@@ -66,4 +66,18 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("invalid architecture"))
 	})
+
+	It("Accepts extend-live-cmdline flag", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extend-live-cmdline", "rd.debug", "system/cos"})
+		// Fails on image reference, but flag should be accepted (no "unknown flag" or similar)
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("extend-live-cmdline"))
+		Expect(err.Error()).ToNot(ContainSubstring("unknown"))
+	})
+
+	It("Accepts extend-live-cmdline with multiple options", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extend-live-cmdline", "rd.debug rd.shell root=live:LABEL=TEST", "system/cos"})
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("extend-live-cmdline"))
+	})
 })
