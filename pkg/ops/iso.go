@@ -36,7 +36,7 @@ type LiveISO struct {
 	GrubEntry          string                    `yaml:"grub-entry-name,omitempty" mapstructure:"grub-entry-name"`
 	BootloaderInRootFs bool                      `yaml:"bootloader-in-rootfs" mapstructure:"bootloader-in-rootfs"`
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO.
-	ExtendLiveCmdline string `yaml:"extend_live_cmdline,omitempty" mapstructure:"extend_live_cmdline"`
+	ExtendLiveCmdline string `yaml:"extend-live-cmdline,omitempty" mapstructure:"extend-live-cmdline"`
 }
 
 // BuildConfig represents the config we need for building isos, raw images, artifacts
@@ -332,8 +332,8 @@ func (b *BuildISOAction) ISORun() (err error) {
 }
 
 // applyGrubTemplate replaces {{NOMODESET}} and {{EXTEND_CMDLINE}} in the grub config template.
-func applyGrubTemplate(template []byte, nomodeset, extendCmdline string) []byte {
-	out := strings.ReplaceAll(string(template), "{{NOMODESET}}", nomodeset)
+func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline string) []byte {
+	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", nomodeset)
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
 	return []byte(out)
 }
@@ -363,7 +363,9 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 			extendCmdline = b.spec.ExtendLiveCmdline
 		}
 		if extendCmdline != "" {
-			extendCmdline = " " + strings.TrimSpace(extendCmdline)
+			// Strip any newlines or carriage returns to prevent corruption of the grub config
+			extendCmdline = strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(extendCmdline))
+			extendCmdline = " " + extendCmdline
 		}
 		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline)
 		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), grubCfg, constants.FilePerm)
