@@ -131,7 +131,8 @@ func generateSysextConfext(ctx *cli.Context) error {
 	}
 
 	// We only want to extract files from /usr for sysext and /etc for confext, so we create a regex allowlist based on the build type
-	allowList := regexp.MustCompile(`^usr/*|^/usr/*`)
+	// Users including /opt must set SYSTEMD_SYSEXT_HIERARCHIES accordingly.
+	allowList := regexp.MustCompile(`^usr/*|^/usr/*|^opt/*|^/opt/*`)
 	// The directory where the extension-release file will be created, based on the build type
 	extensionReleaseDir := filepath.Join(dir, "/usr/lib/extension-release.d/")
 
