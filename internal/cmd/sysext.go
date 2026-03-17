@@ -34,6 +34,11 @@ var SysextCmd = cli.Command{
 			Value:   false,
 			Usage:   "Make systemctl reload the service when loading the sysext. This is useful for sysext that provide systemd service files.",
 		},
+		&cli.BoolFlag{
+			Name:  "with-opt",
+			Value: false,
+			Usage: "Include files from /opt in the sysext (requires SYSTEMD_SYSEXT_HIERARCHIES to be set to include /opt subdirs to avoid making whole /opt as read-only)",
+		},
 	),
 	Before: validateSysextConfextArgs,
 	Action: generateSysextConfext,
@@ -131,7 +136,12 @@ func generateSysextConfext(ctx *cli.Context) error {
 	}
 
 	// We only want to extract files from /usr for sysext and /etc for confext, so we create a regex allowlist based on the build type
+	// Users including /opt must set SYSTEMD_SYSEXT_HIERARCHIES accordingly.
 	allowList := regexp.MustCompile(`^usr/*|^/usr/*`)
+	if ctx.Bool("with-opt") {
+		logger.Logger.Debug().Msg("including /opt in the allowlist")
+		allowList = regexp.MustCompile(`^usr/*|^/usr/*|^opt/*|^/opt/*`)
+	}
 	// The directory where the extension-release file will be created, based on the build type
 	extensionReleaseDir := filepath.Join(dir, "/usr/lib/extension-release.d/")
 
