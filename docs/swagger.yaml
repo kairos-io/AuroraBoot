@@ -1,0 +1,1032 @@
+basePath: /
+definitions:
+  handlers.APIArtifactOutputs:
+    properties:
+      cloudImage:
+        type: boolean
+      fips:
+        type: boolean
+      gce:
+        type: boolean
+      iso:
+        type: boolean
+      netboot:
+        type: boolean
+      rawDisk:
+        type: boolean
+      tar:
+        type: boolean
+      trustedBoot:
+        type: boolean
+      uki:
+        type: boolean
+      vhd:
+        type: boolean
+    type: object
+  handlers.APIArtifactProvisioning:
+    properties:
+      autoInstall:
+        type: boolean
+      password:
+        type: string
+      registerDaedalus:
+        type: boolean
+      sshKeys:
+        type: string
+      targetGroupId:
+        type: string
+      userMode:
+        enum:
+        - default
+        - custom
+        - none
+        type: string
+      username:
+        type: string
+    type: object
+  handlers.APIArtifactSigning:
+    properties:
+      ukiKeySetId:
+        type: string
+      ukiPublicKeysDir:
+        type: string
+      ukiSecureBootCert:
+        type: string
+      ukiSecureBootEnroll:
+        enum:
+        - "off"
+        - manual
+        - if-safe
+        - force
+        type: string
+      ukiSecureBootKey:
+        type: string
+      ukiTpmPcrKey:
+        type: string
+    type: object
+  handlers.APICreateArtifactRequest:
+    properties:
+      arch:
+        enum:
+        - amd64
+        - arm64
+        example: amd64
+        type: string
+      baseImage:
+        type: string
+      cloudConfig:
+        type: string
+      dockerfile:
+        type: string
+      kairosInitImage:
+        type: string
+      kairosVersion:
+        example: v1.0
+        type: string
+      kubernetesDistro:
+        enum:
+        - k3s
+        - k0s
+        type: string
+      kubernetesVersion:
+        type: string
+      model:
+        example: generic
+        type: string
+      name:
+        type: string
+      outputs:
+        $ref: '#/definitions/handlers.APIArtifactOutputs'
+      overlayRootfs:
+        type: string
+      provisioning:
+        $ref: '#/definitions/handlers.APIArtifactProvisioning'
+      signing:
+        $ref: '#/definitions/handlers.APIArtifactSigning'
+      variant:
+        enum:
+        - core
+        - standard
+        example: core
+        type: string
+    type: object
+  handlers.APICreateCommandRequest:
+    properties:
+      args:
+        additionalProperties:
+          type: string
+        type: object
+      command:
+        enum:
+        - upgrade
+        - upgrade-recovery
+        - reset
+        - apply-cloud-config
+        - reboot
+        - exec
+        example: upgrade
+        type: string
+    type: object
+  handlers.APICreateGroupRequest:
+    properties:
+      description:
+        example: Production fleet nodes
+        type: string
+      name:
+        example: production
+        type: string
+    type: object
+  handlers.APIError:
+    properties:
+      detail:
+        type: string
+      error:
+        type: string
+    type: object
+  handlers.APIGenerateKeySetRequest:
+    properties:
+      name:
+        example: production
+        type: string
+      secureBootEnroll:
+        enum:
+        - "off"
+        - manual
+        - if-safe
+        - force
+        type: string
+    type: object
+  handlers.APIHeartbeatRequest:
+    properties:
+      agentVersion:
+        example: v2.27.0
+        type: string
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      osRelease:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  handlers.APIRegisterRequest:
+    properties:
+      agentVersion:
+        example: v2.27.0
+        type: string
+      hostname:
+        example: kairos-node-01
+        type: string
+      machineID:
+        example: a1b2c3d4e5f6
+        type: string
+      registrationToken:
+        example: 74a7e7452f9da2fd7739557f027bca0f
+        type: string
+    type: object
+  handlers.APIRegisterResponse:
+    properties:
+      apiKey:
+        example: 3db2c1e4f5a6b7c8d9e0f1a2b3c4d5e6
+        type: string
+      id:
+        example: c8a4fb46-1836-4c70-97c8-29490ad110bc
+        type: string
+    type: object
+  handlers.APIRegistrationTokenResponse:
+    properties:
+      registrationToken:
+        type: string
+    type: object
+  handlers.APISetGroupRequest:
+    properties:
+      groupID:
+        example: b1db4f35-6195-410a-94f2-09e66e0a6a83
+        type: string
+    type: object
+  handlers.APISetLabelsRequest:
+    properties:
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
+  handlers.APIUpdateArtifactRequest:
+    properties:
+      name:
+        type: string
+      saved:
+        type: boolean
+    type: object
+  handlers.APIUpdateGroupRequest:
+    properties:
+      description:
+        type: string
+      name:
+        type: string
+    type: object
+  store.ArtifactRecord:
+    properties:
+      arch:
+        type: string
+      artifacts:
+        items:
+          type: string
+        type: array
+      autoInstall:
+        type: boolean
+      baseImage:
+        type: string
+      cloudConfig:
+        type: string
+      cloudImage:
+        type: boolean
+      containerImage:
+        type: string
+      createdAt:
+        type: string
+      dockerfile:
+        type: string
+      fips:
+        type: boolean
+      gce:
+        type: boolean
+      id:
+        type: string
+      iso:
+        type: boolean
+      kairosInitImage:
+        type: string
+      kairosVersion:
+        type: string
+      kubernetesDistro:
+        type: string
+      kubernetesVersion:
+        type: string
+      message:
+        type: string
+      model:
+        type: string
+      name:
+        type: string
+      netboot:
+        type: boolean
+      overlayRootfs:
+        type: string
+      phase:
+        type: string
+      rawDisk:
+        type: boolean
+      registerDaedalus:
+        type: boolean
+      saved:
+        type: boolean
+      tar:
+        type: boolean
+      targetGroupId:
+        type: string
+      trustedBoot:
+        type: boolean
+      uki:
+        type: boolean
+      updatedAt:
+        type: string
+      variant:
+        type: string
+      vhd:
+        type: boolean
+    type: object
+  store.ManagedNode:
+    properties:
+      agentVersion:
+        type: string
+      createdAt:
+        type: string
+      group:
+        $ref: '#/definitions/store.NodeGroup'
+      groupID:
+        type: string
+      hostname:
+        type: string
+      id:
+        type: string
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      lastHeartbeat:
+        type: string
+      machineID:
+        type: string
+      osRelease:
+        additionalProperties:
+          type: string
+        type: object
+      phase:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  store.NodeCommand:
+    properties:
+      args:
+        additionalProperties:
+          type: string
+        type: object
+      command:
+        type: string
+      completedAt:
+        type: string
+      createdAt:
+        type: string
+      deliveredAt:
+        type: string
+      expiresAt:
+        type: string
+      id:
+        type: string
+      managedNodeID:
+        type: string
+      phase:
+        type: string
+      result:
+        type: string
+    type: object
+  store.NodeGroup:
+    properties:
+      createdAt:
+        type: string
+      description:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+  store.SecureBootKeySet:
+    properties:
+      createdAt:
+        type: string
+      id:
+        type: string
+      keysDir:
+        type: string
+      name:
+        type: string
+      secureBootEnroll:
+        type: string
+      tpmPcrKeyPath:
+        type: string
+      updatedAt:
+        type: string
+    type: object
+info:
+  contact:
+    name: Kairos authors
+    url: https://github.com/kairos-io/AuroraBoot
+  description: |-
+    HTTP API for the AuroraBoot Kairos node manager.
+
+    Three security schemes are used across the API:
+    * AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.
+    * NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
+    * RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.
+
+    Two WebSocket endpoints also exist but are not described in this spec:
+    * GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).
+    * GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).
+  license:
+    name: Apache-2.0
+    url: https://www.apache.org/licenses/LICENSE-2.0
+  title: AuroraBoot API
+  version: 0.1.0
+paths:
+  /api/v1/artifacts:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactRecord'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List artifacts
+      tags:
+      - Artifacts
+    post:
+      consumes:
+      - application/json
+      description: Kicks off an asynchronous build. The response is the initial record
+        with phase Pending. Subscribe to /api/v1/ws/ui or poll GET /api/v1/artifacts/{id}
+        to watch it progress through Building then Ready/Error.
+      parameters:
+      - description: Build specification
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APICreateArtifactRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.ArtifactRecord'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Start a build
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}:
+    delete:
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminBearer: []
+      summary: Delete an artifact and its output files
+      tags:
+      - Artifacts
+    get:
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.ArtifactRecord'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get an artifact
+      tags:
+      - Artifacts
+    patch:
+      consumes:
+      - application/json
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Fields to update
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIUpdateArtifactRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.ArtifactRecord'
+      security:
+      - AdminBearer: []
+      summary: Update artifact metadata (name / saved flag)
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/cancel:
+    post:
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+      security:
+      - AdminBearer: []
+      summary: Cancel a running build
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/logs:
+    get:
+      description: Returns the full concatenated log as text/plain. For real-time
+        updates subscribe to the UI WebSocket and filter {type:"build-log"} envelopes.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      security:
+      - AdminBearer: []
+      summary: Get build log snapshot
+      tags:
+      - Artifacts
+  /api/v1/groups:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.NodeGroup'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List groups
+      tags:
+      - Groups
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APICreateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.NodeGroup'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Create a group
+      tags:
+      - Groups
+  /api/v1/groups/{id}:
+    delete:
+      description: Member nodes are detached in the same transaction; nodes are never
+        deleted.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminBearer: []
+      summary: Delete a group
+      tags:
+      - Groups
+    get:
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.NodeGroup'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get a group
+      tags:
+      - Groups
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Update payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIUpdateGroupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.NodeGroup'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Update a group
+      tags:
+      - Groups
+  /api/v1/nodes:
+    get:
+      description: Returns every registered node. Optional group/label filters.
+      parameters:
+      - description: Filter by group ID
+        in: query
+        name: group
+        type: string
+      - description: Filter by a single key:value label pair
+        in: query
+        name: label
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ManagedNode'
+            type: array
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: List nodes
+      tags:
+      - Nodes
+  /api/v1/nodes/{nodeID}:
+    delete:
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Delete a node
+      tags:
+      - Nodes
+    get:
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.ManagedNode'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get a node
+      tags:
+      - Nodes
+  /api/v1/nodes/{nodeID}/commands:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      - description: Command payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APICreateCommandRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.NodeCommand'
+      security:
+      - AdminBearer: []
+      summary: Queue a command for a single node
+      tags:
+      - Commands
+  /api/v1/nodes/{nodeID}/group:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      - description: Target group
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APISetGroupRequest'
+      responses:
+        "200":
+          description: OK
+      security:
+      - AdminBearer: []
+      summary: Assign a node to a group
+      tags:
+      - Nodes
+  /api/v1/nodes/{nodeID}/heartbeat:
+    post:
+      consumes:
+      - application/json
+      description: Transitions the node to Online and records the latest agent version
+        and OS info.
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      - description: Heartbeat payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIHeartbeatRequest'
+      responses:
+        "200":
+          description: OK
+      security:
+      - NodeAPIKey: []
+      summary: Agent heartbeat
+      tags:
+      - Agent
+  /api/v1/nodes/{nodeID}/labels:
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      - description: Labels payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APISetLabelsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+      security:
+      - AdminBearer: []
+      summary: Replace a node's labels
+      tags:
+      - Nodes
+  /api/v1/nodes/register:
+    post:
+      consumes:
+      - application/json
+      description: 'Idempotent by machineID: if a node with the same machineID already
+        exists, the existing record is returned so the agent can resume with its persisted
+        API key. Authenticated by the registrationToken inside the request body.'
+      parameters:
+      - description: Registration payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIRegisterRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APIRegisterResponse'
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/handlers.APIRegisterResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Register a node
+      tags:
+      - Agent bootstrap
+  /api/v1/secureboot-keys:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.SecureBootKeySet'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List SecureBoot key sets
+      tags:
+      - SecureBoot
+  /api/v1/secureboot-keys/{id}:
+    delete:
+      description: Removes the database record. Key files on disk are left in place.
+      parameters:
+      - description: Key set ID
+        in: path
+        name: id
+        required: true
+        type: string
+      responses:
+        "204":
+          description: No Content
+      security:
+      - AdminBearer: []
+      summary: Delete a key set record
+      tags:
+      - SecureBoot
+  /api/v1/secureboot-keys/{id}/export:
+    get:
+      description: Streams a gzipped tar with manifest.json at the root and every
+        key file under keys/. File permissions preserved so private keys remain 0600.
+      parameters:
+      - description: Key set ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/gzip
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: file
+      security:
+      - AdminBearer: []
+      summary: Export a key set as a portable tar.gz
+      tags:
+      - SecureBoot
+  /api/v1/secureboot-keys/generate:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Key set name + enroll mode
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIGenerateKeySetRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.SecureBootKeySet'
+      security:
+      - AdminBearer: []
+      summary: Generate a SecureBoot key set
+      tags:
+      - SecureBoot
+  /api/v1/secureboot-keys/import:
+    post:
+      consumes:
+      - multipart/form-data
+      parameters:
+      - description: Override the manifest name to avoid a collision
+        in: query
+        name: name
+        type: string
+      - description: tar.gz produced by the export endpoint
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.SecureBootKeySet'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Import a key set exported from another instance
+      tags:
+      - SecureBoot
+  /api/v1/settings/registration-token:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APIRegistrationTokenResponse'
+      security:
+      - AdminBearer: []
+      summary: Read the current registration token
+      tags:
+      - Settings
+  /api/v1/settings/registration-token/rotate:
+    post:
+      description: Generates and persists a new token. Already-registered nodes keep
+        working because they authenticate with their api-key.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APIRegistrationTokenResponse'
+      security:
+      - AdminBearer: []
+      summary: Rotate the registration token
+      tags:
+      - Settings
+securityDefinitions:
+  AdminBearer:
+    description: Supply as "Bearer <admin-password>".
+    in: header
+    name: Authorization
+    type: apiKey
+  NodeAPIKey:
+    description: Supply as "Bearer <api-key>" returned from POST /api/v1/nodes/register.
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

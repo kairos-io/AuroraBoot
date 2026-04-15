@@ -4,14 +4,15 @@ ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
+# Build the React UI. vite.config.ts writes to ../internal/ui/dist
+# relative to ui/, so we lay out the workdir as /work/ui and the dist
+# lands at /work/internal/ui/dist where the Go builder stage copies it.
 FROM node:24 AS js
-WORKDIR /app
-RUN rm -rf node_modules package-lock.json 
-COPY internal/web/app .
-RUN npm install tailwindcss @tailwindcss/cli --save-dev
+WORKDIR /work/ui
+COPY ui/package.json ui/package-lock.json* ./
 RUN npm install
-RUN npx esbuild ./index.js --bundle --outfile=bundle.js
-RUN npx tailwindcss -i ./assets/css/tailwind.css -o output.css --minify
+COPY ui/ .
+RUN npm run build
 
 FROM fedora:$FEDORA_VERSION AS base
 ARG TARGETARCH
@@ -61,26 +62,22 @@ FROM golang:1.26 AS with-swagger
 WORKDIR /app
 RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
-RUN swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+RUN swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
 FROM golang:1.26 AS without-swagger
 WORKDIR /app
-RUN mkdir -p internal/web/app
-RUN touch internal/web/app/swagger.json internal/web/app/redoc.html
 
 FROM ${SWAGGER_STAGE} AS swagger
 
 FROM golang:1.26 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
-COPY --from=js /app/bundle.js ./internal/web/app/bundle.js
-COPY --from=js /app/output.css ./internal/web/app/output.css
-COPY --from=swagger /app/internal/web/app/swagger.json ./internal/web/app/swagger.json
-COPY --from=swagger /app/internal/web/app/redoc.html ./internal/web/app/redoc.html
 ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
+COPY --from=js /work/internal/ui/dist ./internal/ui/dist
+COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
