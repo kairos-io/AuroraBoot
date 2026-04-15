@@ -18,17 +18,17 @@ type NodeHandler struct {
 	commands    store.CommandStore
 	groups      store.GroupStore
 	regToken    string
-	daedalusURL string
+	aurorabootURL string
 }
 
 // NewNodeHandler creates a new NodeHandler.
-func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups store.GroupStore, regToken string, daedalusURL string) *NodeHandler {
+func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups store.GroupStore, regToken string, aurorabootURL string) *NodeHandler {
 	return &NodeHandler{
 		nodes:       nodes,
 		commands:    commands,
 		groups:      groups,
 		regToken:    regToken,
-		daedalusURL: daedalusURL,
+		aurorabootURL: aurorabootURL,
 	}
 }
 
@@ -311,40 +311,40 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 // InstallScript handles GET /api/v1/install-agent.
 func (h *NodeHandler) InstallScript(c echo.Context) error {
 	script := fmt.Sprintf(`#!/bin/bash
-# Daedalus agent install script
-# Usage: curl -sSL %s/api/v1/install-agent | DAEDALUS_GROUP=mygroup bash
+# AuroraBoot agent install script
+# Usage: curl -sSL %s/api/v1/install-agent | AURORABOOT_GROUP=mygroup bash
 
 set -e
 
-DAEDALUS_URL="${DAEDALUS_URL:-%s}"
+AURORABOOT_URL="${AURORABOOT_URL:-%s}"
 REG_TOKEN="${REGISTRATION_TOKEN:-}"
 
-if [ -z "$DAEDALUS_URL" ]; then
-    echo "Error: DAEDALUS_URL is required"
+if [ -z "$AURORABOOT_URL" ]; then
+    echo "Error: AURORABOOT_URL is required"
     exit 1
 fi
 if [ -z "$REG_TOKEN" ]; then
     echo "Error: REGISTRATION_TOKEN is required"
     exit 1
 fi
-GROUP="${DAEDALUS_GROUP:-}"
+GROUP="${AURORABOOT_GROUP:-}"
 
-echo "Installing Daedalus agent..."
-echo "Server: ${DAEDALUS_URL}"
+echo "Installing AuroraBoot agent..."
+echo "Server: ${AURORABOOT_URL}"
 
 # Write phonehome config to /oem/ (Kairos standard config location)
 mkdir -p /oem
 cat > /oem/phonehome.yaml << EOF
 #cloud-config
 phonehome:
-  url: "${DAEDALUS_URL}"
+  url: "${AURORABOOT_URL}"
   registration_token: "${REG_TOKEN}"
   group: "${GROUP}"
 EOF
 
 echo "Config written to /oem/phonehome.yaml"
 
-# Start kairos-agent which auto-detects the daedalus config in /oem and
+# Start kairos-agent which auto-detects the auroraboot config in /oem and
 # installs + starts the kairos-agent-phonehome systemd service.
 if ! command -v kairos-agent >/dev/null 2>&1; then
   echo "Error: kairos-agent not found. Install it first — phonehome requires kairos-agent to run." >&2
@@ -354,8 +354,8 @@ echo "Starting kairos-agent..."
 kairos-agent start
 echo "kairos-agent-phonehome service installed and started."
 
-echo "Daedalus agent installation complete."
-`, h.daedalusURL, h.daedalusURL)
+echo "AuroraBoot agent installation complete."
+`, h.aurorabootURL, h.aurorabootURL)
 
 	return c.String(http.StatusOK, script)
 }

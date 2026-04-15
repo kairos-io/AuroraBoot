@@ -1042,7 +1042,7 @@
                 "password": {
                     "type": "string"
                 },
-                "registerDaedalus": {
+                "registerAuroraBoot": {
                     "type": "boolean"
                 },
                 "sshKeys": {
@@ -1407,7 +1407,7 @@
                 "rawDisk": {
                     "type": "boolean"
                 },
-                "registerDaedalus": {
+                "registerAuroraBoot": {
                     "type": "boolean"
                 },
                 "saved": {

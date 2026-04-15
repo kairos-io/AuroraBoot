@@ -163,7 +163,7 @@ var _ = Describe("SecureBootHandler export/import", func() {
 			}
 			Expect(json.Unmarshal(found["manifest.json"].data, &manifest)).To(Succeed())
 			Expect(manifest.Version).To(Equal(1))
-			Expect(manifest.Kind).To(Equal("daedalus.secureboot-keyset"))
+			Expect(manifest.Kind).To(Equal("auroraboot.secureboot-keyset"))
 			Expect(manifest.Name).To(Equal("prod"))
 			Expect(manifest.SecureBootEnroll).To(Equal("if-safe"))
 
@@ -296,7 +296,7 @@ var _ = Describe("SecureBootHandler export/import", func() {
 		})
 
 		It("rejects archives with path traversal entries", func() {
-			manifest := []byte(`{"version":1,"kind":"daedalus.secureboot-keyset","name":"evil"}`)
+			manifest := []byte(`{"version":1,"kind":"auroraboot.secureboot-keyset","name":"evil"}`)
 			archive := makeCustomTarGz([]tarEntry{
 				{name: "manifest.json", data: manifest, mode: 0o644},
 				{name: "keys/../../etc/passwd", data: []byte("root:x:0:0"), mode: 0o600},

@@ -145,7 +145,7 @@ type APIArtifactSigning struct {
 // APIArtifactProvisioning holds cloud-config injection options.
 type APIArtifactProvisioning struct {
 	AutoInstall      bool   `json:"autoInstall"`
-	RegisterDaedalus bool   `json:"registerDaedalus"`
+	RegisterAuroraBoot bool   `json:"registerAuroraBoot"`
 	TargetGroupID    string `json:"targetGroupId"`
 	UserMode         string `json:"userMode" enums:"default,custom,none"`
 	Username         string `json:"username"`

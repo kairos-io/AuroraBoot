@@ -14,7 +14,7 @@ type NodeGroup struct {
 	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
-// ManagedNode represents a Kairos node managed by daedalus.
+// ManagedNode represents a Kairos node managed by auroraboot.
 type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
@@ -143,7 +143,7 @@ type ArtifactRecord struct {
 	UKI               bool   `json:"uki"`
 	KairosInitImage   string `json:"kairosInitImage,omitempty"`
 	AutoInstall       bool   `json:"autoInstall"`
-	RegisterDaedalus  bool   `json:"registerDaedalus"`
+	RegisterAuroraBoot  bool   `json:"registerAuroraBoot"`
 	Dockerfile        string `json:"dockerfile,omitempty"`
 	CloudConfig       string `json:"cloudConfig,omitempty" gorm:"type:text"`
 	KubernetesDistro  string `json:"kubernetesDistro,omitempty"`

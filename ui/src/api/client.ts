@@ -1,4 +1,4 @@
-const TOKEN_KEY = "daedalus_token";
+const TOKEN_KEY = "auroraboot_token";
 
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);

@@ -32,7 +32,7 @@ type keySetManifest struct {
 	SecureBootEnroll string `json:"secureBootEnroll,omitempty"`
 }
 
-const keySetManifestKind = "daedalus.secureboot-keyset"
+const keySetManifestKind = "auroraboot.secureboot-keyset"
 const keySetManifestName = "manifest.json"
 
 // SecureBootHandler manages SecureBoot key sets.

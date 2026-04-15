@@ -1049,7 +1049,7 @@ const docTemplate = `{
                 "password": {
                     "type": "string"
                 },
-                "registerDaedalus": {
+                "registerAuroraBoot": {
                     "type": "boolean"
                 },
                 "sshKeys": {
@@ -1414,7 +1414,7 @@ const docTemplate = `{
                 "rawDisk": {
                     "type": "boolean"
                 },
-                "registerDaedalus": {
+                "registerAuroraBoot": {
                     "type": "boolean"
                 },
                 "saved": {

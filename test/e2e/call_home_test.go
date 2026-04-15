@@ -39,8 +39,8 @@ var _ = Describe("Call-Home E2E Flow", Label("e2e", "call-home"), func() {
 		}
 	})
 
-	It("should boot, auto-install, register with daedalus, and execute commands", func() {
-		By("Creating datasource with auto-install + daedalus config")
+	It("should boot, auto-install, register with auroraboot, and execute commands", func() {
+		By("Creating datasource with auto-install + auroraboot config")
 		cloudConfig := fmt.Sprintf(`#cloud-config
 install:
   auto: true
@@ -57,7 +57,7 @@ stages:
           passwd: kairos
           groups:
             - admin
-`, vmDaedalusURL, regToken)
+`, vmAuroraBootURL, regToken)
 		datasource := createDatasource(cloudConfig)
 		defer os.RemoveAll(filepath.Dir(datasource))
 
@@ -74,7 +74,7 @@ stages:
 		Expect(out).To(ContainSubstring("KAIROS"))
 
 		By("Waiting for phone-home service to be auto-started by kairos-agent start")
-		// The daedalus config is in /oem/95_userdata/userdata.yaml (from datasource).
+		// The auroraboot config is in /oem/95_userdata/userdata.yaml (from datasource).
 		// Kairos init runs kairos-agent start on boot, which calls enablePhoneHomeIfConfigured()
 		// to auto-install and start the phone-home systemd service.
 		// This may take a moment after SSH becomes available.
@@ -86,7 +86,7 @@ stages:
 		out, _ = vm.Sudo("systemctl status kairos-agent-phonehome 2>&1")
 		GinkgoWriter.Printf("Phone-home service:\n%s\n", out)
 
-		By("Waiting for node to register with daedalus")
+		By("Waiting for node to register with auroraboot")
 		var nodeID string
 		Eventually(func() bool {
 			resp := adminGet("/api/v1/nodes")
@@ -128,10 +128,10 @@ stages:
 		node := decodeJSON(resp)
 		GinkgoWriter.Printf("Node details: %v\n", node)
 
-		By("Sending exec command to the node via daedalus API")
+		By("Sending exec command to the node via auroraboot API")
 		resp = adminPost(fmt.Sprintf("/api/v1/nodes/%s/commands", nodeID), map[string]interface{}{
 			"command": "exec",
-			"args":    map[string]string{"command": "echo daedalus-e2e-test > /tmp/daedalus-marker"},
+			"args":    map[string]string{"command": "echo auroraboot-e2e-test > /tmp/auroraboot-marker"},
 		})
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 		cmd := decodeJSON(resp)
@@ -170,9 +170,9 @@ stages:
 		}, 60*time.Second, 2*time.Second).Should(Equal("Completed"))
 
 		By("Verifying the command actually executed on the VM via SSH")
-		out, err = vm.Sudo("cat /tmp/daedalus-marker")
+		out, err = vm.Sudo("cat /tmp/auroraboot-marker")
 		Expect(err).ToNot(HaveOccurred(), out)
-		Expect(out).To(ContainSubstring("daedalus-e2e-test"))
+		Expect(out).To(ContainSubstring("auroraboot-e2e-test"))
 
 		By("Rebooting VM to test reconnection")
 		vm.Sudo("reboot")
@@ -198,7 +198,7 @@ stages:
 
 		By("Checking that kairos-agent start auto-installs phone-home service after reboot")
 		// After reboot, Kairos init runs kairos-agent start, which should:
-		// 1. Find daedalus config in /oem/95_userdata/userdata.yaml
+		// 1. Find auroraboot config in /oem/95_userdata/userdata.yaml
 		// 2. Auto-install and start the kairos-agent-phonehome systemd service
 		// Give it time to boot and run the agent
 		time.Sleep(10 * time.Second)

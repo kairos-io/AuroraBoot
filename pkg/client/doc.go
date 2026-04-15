@@ -1,6 +1,6 @@
-// Package client is the official Go client for the Daedalus REST API.
+// Package client is the official Go client for the AuroraBoot REST API.
 //
-// Daedalus is a self-hosted Kairos node manager. This package wraps
+// AuroraBoot is a self-hosted Kairos node manager. This package wraps
 // the HTTP routes documented in /api/v1/openapi.yaml (also served at
 // /api/docs when the server is running) with a small, typed interface
 // so third-party automation and the integration tests can talk to a
@@ -8,7 +8,7 @@
 //
 // Basic usage:
 //
-//	cli := client.New("http://daedalus.local:8080",
+//	cli := client.New("http://auroraboot.local:8080",
 //	    client.WithAdminPassword("s3cret"))
 //	nodes, err := cli.Nodes.List(ctx, nil)
 //

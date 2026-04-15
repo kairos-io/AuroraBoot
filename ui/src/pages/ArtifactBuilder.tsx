@@ -317,13 +317,13 @@ const EMPTY_SIGNING = {
 
 const EMPTY_PROVISIONING = {
   autoInstall: true,
-  registerDaedalus: true,
+  registerAuroraBoot: true,
   targetGroupId: "",
 };
 
 // Default artifact version when the user doesn't provide one. This value
 // ends up in the image as /etc/kairos-release's KAIROS_RELEASE and is
-// what daedalus compares against when deciding whether a node needs an
+// what auroraboot compares against when deciding whether a node needs an
 // upgrade, so we give brand-new builds a sensible starting version
 // instead of leaving the field blank.
 const DEFAULT_ARTIFACT_VERSION = "v1.0";
@@ -423,7 +423,7 @@ export function ArtifactBuilder() {
   // --- Export / Import build config -------------------------------------------------
   // The exported JSON is self-contained and portable: groups and secure-boot
   // key sets are referenced by *name*, not by local database ID, so a config
-  // shared between two daedalus instances can find its referents by name.
+  // shared between two auroraboot instances can find its referents by name.
   // Raw secrets (manual UKI key/cert paths, advanced cloud-config passwords)
   // are intentionally included as-is because users need them on the target
   // instance too; if you're sharing a config more widely, strip them first.
@@ -460,7 +460,7 @@ export function ArtifactBuilder() {
       return;
     }
     if (parsed?.kind !== BUILD_CONFIG_KIND) {
-      toast("Import failed: not a daedalus build config", "error");
+      toast("Import failed: not a auroraboot build config", "error");
       return;
     }
     if (parsed.version !== BUILD_CONFIG_VERSION) {
@@ -502,7 +502,7 @@ export function ArtifactBuilder() {
       provisioning: {
         ...EMPTY_PROVISIONING,
         autoInstall: prov.autoInstall ?? true,
-        registerDaedalus: prov.registerDaedalus ?? true,
+        registerAuroraBoot: prov.registerAuroraBoot ?? true,
         targetGroupId: resolvedGroupId,
       },
     });
@@ -569,7 +569,7 @@ export function ArtifactBuilder() {
           signing: { ...EMPTY_SIGNING },
           provisioning: {
             autoInstall: a.autoInstall ?? true,
-            registerDaedalus: a.registerDaedalus ?? true,
+            registerAuroraBoot: a.registerAuroraBoot ?? true,
             targetGroupId: a.targetGroupId || "",
           },
         });
@@ -626,7 +626,7 @@ export function ArtifactBuilder() {
       lines.push("  reboot: true");
     }
 
-    if (form.provisioning.registerDaedalus) {
+    if (form.provisioning.registerAuroraBoot) {
       const groupName = groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || "";
       lines.push("phonehome:");
       lines.push(`  url: "<server-url>"`);
@@ -903,7 +903,7 @@ export function ArtifactBuilder() {
               <Label className="mb-2 block text-sm font-medium">
                 Name
                 <InfoTooltip>
-                  Friendly identifier shown throughout Daedalus. Not used in the generated artifact filenames.
+                  Friendly identifier shown throughout AuroraBoot. Not used in the generated artifact filenames.
                 </InfoTooltip>
               </Label>
               <Input
@@ -1244,7 +1244,7 @@ export function ArtifactBuilder() {
                     Artifact version
                     <InfoTooltip>
                       The version <em>you</em> are releasing with this build. It gets
-                      baked into the image and is how Daedalus decides whether a node is
+                      baked into the image and is how AuroraBoot decides whether a node is
                       up-to-date or needs an upgrade.
                       <br />
                       <br />
@@ -1625,18 +1625,18 @@ export function ArtifactBuilder() {
                     <label className="flex items-center gap-2 text-sm font-medium">
                       <input
                         type="checkbox"
-                        checked={form.provisioning.registerDaedalus}
-                        onChange={(e) => updateProvisioning("registerDaedalus", e.target.checked)}
+                        checked={form.provisioning.registerAuroraBoot}
+                        onChange={(e) => updateProvisioning("registerAuroraBoot", e.target.checked)}
                         className="rounded border-input"
                       />
-                      Register with Daedalus
+                      Register with AuroraBoot
                     </label>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Node will phone home to this Daedalus on boot.
+                      Node will phone home to this AuroraBoot on boot.
                     </p>
                   </div>
 
-                  {form.provisioning.registerDaedalus && (
+                  {form.provisioning.registerAuroraBoot && (
                     <div className="grid gap-2 pt-1">
                       <Label className="text-xs">
                         Target Group
@@ -1817,7 +1817,7 @@ export function ArtifactBuilder() {
                         className="font-mono text-xs"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Appended to the generated config. Daedalus registration is auto-injected by the server.
+                        Appended to the generated config. AuroraBoot registration is auto-injected by the server.
                       </p>
                     </div>
                     <div className="grid gap-2">
@@ -1942,9 +1942,9 @@ export function ArtifactBuilder() {
                     </div>
                     <div className="flex gap-2">
                       <span className="text-muted-foreground w-28 shrink-0">Register:</span>
-                      <span>{form.provisioning.registerDaedalus ? "Yes" : "No"}</span>
+                      <span>{form.provisioning.registerAuroraBoot ? "Yes" : "No"}</span>
                     </div>
-                    {form.provisioning.registerDaedalus && form.provisioning.targetGroupId && (
+                    {form.provisioning.registerAuroraBoot && form.provisioning.targetGroupId && (
                       <div className="flex gap-2">
                         <span className="text-muted-foreground w-28 shrink-0">Target Group:</span>
                         <span>{groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || form.provisioning.targetGroupId}</span>

@@ -32,7 +32,7 @@ type Config struct {
 	AdminPassword          string
 	RegToken       string
 	RegTokenFile   string // path where reg token is persisted (for rotation)
-	DaedalusURL    string
+	AuroraBootURL    string
 	ArtifactsDir   string
 	KeysDir        string  // base directory for SecureBoot key sets
 	Hub            *ws.Hub // optional, created if nil
@@ -77,9 +77,9 @@ func New(cfg Config) *echo.Echo {
 	})
 
 	// Create handlers
-	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, regToken, cfg.DaedalusURL)
+	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, regToken, cfg.AuroraBootURL)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
-	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.DaedalusURL)
+	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile)
 

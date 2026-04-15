@@ -20,7 +20,7 @@ const swaggerUIPage = `<!DOCTYPE html>
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Daedalus API — Swagger UI</title>
+  <title>AuroraBoot API — Swagger UI</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5/swagger-ui.css" />
   <style>
     body { margin: 0; background: #fafafa; }
@@ -45,7 +45,7 @@ const swaggerUIPage = `<!DOCTYPE html>
 <body>
   <noscript>
     <div class="fallback">
-      <h1>Daedalus API</h1>
+      <h1>AuroraBoot API</h1>
       <p>Swagger UI needs JavaScript. The raw spec is still available at:</p>
       <ul>
         <li><a href="/api/v1/openapi.yaml"><code>GET /api/v1/openapi.yaml</code></a></li>
@@ -59,7 +59,7 @@ const swaggerUIPage = `<!DOCTYPE html>
     window.addEventListener("load", function () {
       if (typeof SwaggerUIBundle === "undefined") {
         document.getElementById("swagger-ui").innerHTML =
-          '<div class="fallback"><h1>Daedalus API</h1>' +
+          '<div class="fallback"><h1>AuroraBoot API</h1>' +
           '<p>Swagger UI failed to load from the CDN. The raw spec is at ' +
           '<a href="/api/v1/openapi.yaml">/api/v1/openapi.yaml</a> or ' +
           '<a href="/api/v1/openapi.json">/api/v1/openapi.json</a>.</p></div>';

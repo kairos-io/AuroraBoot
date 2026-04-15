@@ -1,4 +1,4 @@
-// Shared serialization for the "daedalus build config" portable format
+// Shared serialization for the "auroraboot build config" portable format
 // used by the Artifact Builder (export current form state) and the Artifact
 // Detail page (export an already-built artifact). A single kind/version pair
 // keeps exports from both paths importable back into the Builder.
@@ -6,7 +6,7 @@
 import type { Artifact, CreateArtifactInput, SecureBootKeySet } from "@/api/artifacts";
 import type { Group } from "@/api/groups";
 
-export const BUILD_CONFIG_KIND = "daedalus.build-config";
+export const BUILD_CONFIG_KIND = "auroraboot.build-config";
 export const BUILD_CONFIG_VERSION = 1;
 
 export type UserMode = "default" | "custom" | "none";
@@ -36,7 +36,7 @@ export interface BuildConfigPayload {
   };
   provisioning: {
     autoInstall: boolean;
-    registerDaedalus: boolean;
+    registerAuroraBoot: boolean;
     targetGroupName?: string;
     userMode: UserMode;
     username?: string;
@@ -84,7 +84,7 @@ export function payloadFromBuilder(args: {
     },
     provisioning: {
       autoInstall: form.provisioning.autoInstall,
-      registerDaedalus: form.provisioning.registerDaedalus,
+      registerAuroraBoot: form.provisioning.registerAuroraBoot,
       targetGroupName: groupName,
       userMode,
       username: userMode === "custom" ? username : undefined,
@@ -134,7 +134,7 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
     signing: {},
     provisioning: {
       autoInstall: artifact.autoInstall ?? true,
-      registerDaedalus: artifact.registerDaedalus ?? true,
+      registerAuroraBoot: artifact.registerAuroraBoot ?? true,
       targetGroupName: groupName,
       userMode: "default",
     },
@@ -149,7 +149,7 @@ export function downloadBuildConfig(payload: BuildConfigPayload): string {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   const slug = (payload.name || "build-config").trim().toLowerCase().replace(/[^a-z0-9-]+/g, "-");
-  const filename = `${slug || "build-config"}.daedalus.json`;
+  const filename = `${slug || "build-config"}.auroraboot.json`;
   a.href = url;
   a.download = filename;
   a.click();

@@ -23,7 +23,7 @@ export interface Artifact {
   trustedBoot: boolean;
   kairosInitImage?: string;
   autoInstall: boolean;
-  registerDaedalus: boolean;
+  registerAuroraBoot: boolean;
   dockerfile?: string;
   cloudConfig?: string;
   kubernetesDistro?: string;
@@ -59,7 +59,7 @@ export interface CreateArtifactSigning {
 
 export interface CreateArtifactProvisioning {
   autoInstall: boolean;
-  registerDaedalus: boolean;
+  registerAuroraBoot: boolean;
   targetGroupId: string;
   userMode?: "default" | "custom" | "none";
   username?: string;
@@ -114,7 +114,7 @@ export function deleteSecureBootKeySet(id: string): Promise<void> {
 // exportSecureBootKeySet fetches the tar.gz export for a key set as a Blob.
 // Uses raw fetch so we can surface a binary body; apiFetch assumes JSON.
 export async function exportSecureBootKeySet(id: string): Promise<{ blob: Blob; filename: string }> {
-  const token = localStorage.getItem("daedalus_token");
+  const token = localStorage.getItem("auroraboot_token");
   const res = await fetch(`/api/v1/secureboot-keys/${id}/export`, {
     headers: token ? { Authorization: `Bearer ${token}` } : undefined,
   });
@@ -132,7 +132,7 @@ export async function exportSecureBootKeySet(id: string): Promise<{ blob: Blob; 
 // from the archive's manifest (useful when importing into an instance that
 // already has a key set with the same name).
 export async function importSecureBootKeySet(file: File, name?: string): Promise<SecureBootKeySet> {
-  const token = localStorage.getItem("daedalus_token");
+  const token = localStorage.getItem("auroraboot_token");
   const fd = new FormData();
   fd.append("file", file);
   const qs = name ? `?name=${encodeURIComponent(name)}` : "";
@@ -174,7 +174,7 @@ export function cancelArtifact(id: string): Promise<void> {
 }
 
 export function artifactDownloadUrl(id: string, filename: string): string {
-  const token = localStorage.getItem("daedalus_token") || "";
+  const token = localStorage.getItem("auroraboot_token") || "";
   return `/api/v1/artifacts/${id}/download/${filename}?token=${token}`;
 }
 
@@ -201,7 +201,7 @@ export async function uploadOverlayFiles(files: FileList | File[]): Promise<stri
   for (const file of Array.from(files)) {
     formData.append("files", file);
   }
-  const token = localStorage.getItem("daedalus_token") || "";
+  const token = localStorage.getItem("auroraboot_token") || "";
   const res = await fetch("/api/v1/artifacts/upload-overlay", {
     method: "POST",
     headers: { Authorization: `Bearer ${token}` },

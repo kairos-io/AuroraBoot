@@ -139,7 +139,7 @@ var _ = Describe("Server", func() {
 			Builder:       &fakeBuilder{},
 			AdminPassword: "admin-pass",
 			RegToken:      "reg-token",
-			DaedalusURL:   "http://localhost:8080",
+			AuroraBootURL:   "http://localhost:8080",
 		})
 		e = httptest.NewServer(echoApp)
 	})

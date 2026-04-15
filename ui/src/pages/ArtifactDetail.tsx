@@ -592,7 +592,7 @@ export function ArtifactDetail() {
                   Container image (for upgrades)
                 </p>
                 <a
-                  href={`/api/v1/artifacts/${id}/image?token=${localStorage.getItem("daedalus_token") || ""}`}
+                  href={`/api/v1/artifacts/${id}/image?token=${localStorage.getItem("auroraboot_token") || ""}`}
                   download
                   className="inline-flex items-center gap-2 text-xs font-mono text-[#EE5007] hover:underline break-all"
                 >
@@ -741,13 +741,13 @@ export function ArtifactDetail() {
                 <span>{artifact.autoInstall ? "Auto-install on boot" : "Manual install"}</span>
               </div>
               <div className="flex items-center gap-2">
-                {artifact.registerDaedalus ? (
+                {artifact.registerAuroraBoot ? (
                   <Check className="h-4 w-4 text-emerald-600" />
                 ) : (
                   <XCircle className="h-4 w-4 text-amber-600" />
                 )}
                 <span>
-                  {artifact.registerDaedalus ? "Auto-register with Daedalus" : "No auto-registration"}
+                  {artifact.registerAuroraBoot ? "Auto-register with AuroraBoot" : "No auto-registration"}
                 </span>
               </div>
               {targetGroupName && (

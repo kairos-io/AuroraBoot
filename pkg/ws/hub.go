@@ -115,7 +115,7 @@ func (h *UIHub) Broadcast(msg any) {
 // BroadcastLogChunk fans out a chunk of build log to every connected UI
 // client as a {"type":"build-log","data":{"id":…,"chunk":…}} envelope.
 // Clients filter by build ID on the receive side; broadcasting to all is
-// cheap and matches the single-tenant deployment model of daedalus.
+// cheap and matches the single-tenant deployment model of auroraboot.
 func (h *UIHub) BroadcastLogChunk(buildID string, chunk string) {
 	h.Broadcast(map[string]any{
 		"type": "build-log",

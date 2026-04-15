@@ -103,7 +103,7 @@ var _ = BeforeSuite(func() {
 		Builder:       newMockArtifactBuilder(),
 		AdminPassword: testAdminPassword,
 		RegToken:      testRegToken,
-		DaedalusURL:   "http://localhost",
+		AuroraBootURL:   "http://localhost",
 		Hub:           hub,
 	}
 

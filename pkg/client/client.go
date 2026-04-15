@@ -14,7 +14,7 @@ import (
 // Option configures a Client.
 type Option func(*Client)
 
-// Client talks to a Daedalus instance. It is safe for concurrent use.
+// Client talks to a AuroraBoot instance. It is safe for concurrent use.
 //
 // A single Client can carry either an admin password (for operator /
 // automation callers) or a node API key (for a registered Kairos node
@@ -43,13 +43,13 @@ type Client struct {
 // include a trailing slash or any path — the client adds /api/v1/...
 // itself.
 //
-//	cli := client.New("http://daedalus.local:8080",
+//	cli := client.New("http://auroraboot.local:8080",
 //	    client.WithAdminPassword("s3cret"))
 func New(baseURL string, opts ...Option) *Client {
 	c := &Client{
 		baseURL:    strings.TrimRight(baseURL, "/"),
 		httpClient: http.DefaultClient,
-		userAgent:  "daedalus-go-client/0.1",
+		userAgent:  "auroraboot-go-client/0.1",
 	}
 	for _, o := range opts {
 		o(c)
@@ -131,12 +131,12 @@ type APIError struct {
 // Error implements the error interface.
 func (e *APIError) Error() string {
 	if e.Detail != "" {
-		return fmt.Sprintf("daedalus api: %d %s: %s", e.StatusCode, e.ErrorMsg, e.Detail)
+		return fmt.Sprintf("auroraboot api: %d %s: %s", e.StatusCode, e.ErrorMsg, e.Detail)
 	}
 	if e.ErrorMsg != "" {
-		return fmt.Sprintf("daedalus api: %d %s", e.StatusCode, e.ErrorMsg)
+		return fmt.Sprintf("auroraboot api: %d %s", e.StatusCode, e.ErrorMsg)
 	}
-	return fmt.Sprintf("daedalus api: %d", e.StatusCode)
+	return fmt.Sprintf("auroraboot api: %d", e.StatusCode)
 }
 
 // IsNotFound reports whether err is an APIError with a 404 status.

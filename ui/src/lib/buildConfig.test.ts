@@ -46,7 +46,7 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
     },
     provisioning: {
       autoInstall: true,
-      registerDaedalus: true,
+      registerAuroraBoot: true,
       targetGroupId: "",
     },
     cloudConfig: "",
@@ -76,7 +76,7 @@ function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
     fips: false,
     trustedBoot: false,
     autoInstall: true,
-    registerDaedalus: true,
+    registerAuroraBoot: true,
     artifacts: [],
     createdAt: "2026-01-01T00:00:00Z",
     updatedAt: "2026-01-01T00:00:00Z",
@@ -163,7 +163,7 @@ describe("payloadFromBuilder", () => {
       form: makeForm({
         provisioning: {
           autoInstall: true,
-          registerDaedalus: true,
+          registerAuroraBoot: true,
           targetGroupId: "grp-2",
         },
         signing: {

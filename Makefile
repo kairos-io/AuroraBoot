@@ -77,8 +77,8 @@ clean: clean-ui-deps clean-ui clean-go ## Clean all build artifacts including de
 build-docker: ## Build the Docker image
 	docker build -t auroraboot:local .
 
-# Run tests
-test: ## Run Go tests
+# Run tests (UI dist is embedded via go:embed, so it must exist before `go test`)
+test: ui-build ## Run Go tests
 	go test ./...
 
 # Install development dependencies

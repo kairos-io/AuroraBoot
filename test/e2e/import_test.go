@@ -40,7 +40,7 @@ var _ = Describe("Import Flow E2E", Label("e2e", "import"), func() {
 	})
 
 	It("should boot a vanilla VM and register via import script", func() {
-		By("Creating datasource with auto-install only (no daedalus config)")
+		By("Creating datasource with auto-install only (no auroraboot config)")
 		cloudConfig := `#cloud-config
 install:
   auto: true
@@ -57,7 +57,7 @@ stages:
 		datasource := createDatasource(cloudConfig)
 		defer os.RemoveAll(filepath.Dir(datasource))
 
-		By("Booting vanilla VM (no daedalus config)")
+		By("Booting vanilla VM (no auroraboot config)")
 		vm = startVM(vanillaISO, stateDir, datasource)
 		vmStarted = true
 
@@ -75,34 +75,34 @@ stages:
 		nodesBefore := decodeJSONArray(resp)
 		countBefore := len(nodesBefore)
 
-		By("Getting the install-agent script from daedalus")
+		By("Getting the install-agent script from auroraboot")
 		resp = adminGet("/api/v1/install-agent")
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		script := readBody(resp)
-		Expect(script).To(ContainSubstring("DAEDALUS_URL"))
+		Expect(script).To(ContainSubstring("AURORABOOT_URL"))
 
 		// Replace the host URL with VM-accessible URL in the script
-		script = strings.Replace(script, daedalusURL, vmDaedalusURL, -1)
+		script = strings.Replace(script, aurorabootURL, vmAuroraBootURL, -1)
 
 		By("Writing the install script to the VM")
-		scriptFile := filepath.Join(tmpDir, "install-daedalus.sh")
+		scriptFile := filepath.Join(tmpDir, "install-auroraboot.sh")
 		Expect(os.WriteFile(scriptFile, []byte(script), 0755)).To(Succeed())
-		err = vm.Scp(scriptFile, "/tmp/install-daedalus.sh", "0755")
+		err = vm.Scp(scriptFile, "/tmp/install-auroraboot.sh", "0755")
 		Expect(err).ToNot(HaveOccurred())
 
 		By("Running the import script on the VM")
 		out, err = vm.Sudo(fmt.Sprintf(
-			"DAEDALUS_URL=%s REGISTRATION_TOKEN=%s sh /tmp/install-daedalus.sh",
-			vmDaedalusURL, regToken,
+			"AURORABOOT_URL=%s REGISTRATION_TOKEN=%s sh /tmp/install-auroraboot.sh",
+			vmAuroraBootURL, regToken,
 		))
 		Expect(err).ToNot(HaveOccurred(), out)
 		GinkgoWriter.Printf("Import script output: %s\n", out)
 
-		// The install script writes /oem/daedalus.yaml and runs kairos-agent start
+		// The install script writes /oem/auroraboot.yaml and runs kairos-agent start
 		// which auto-installs and starts the phone-home service. No manual intervention needed.
 		time.Sleep(10 * time.Second)
 
-		By("Waiting for the imported node to appear in daedalus")
+		By("Waiting for the imported node to appear in auroraboot")
 		Eventually(func() int {
 			resp := adminGet("/api/v1/nodes")
 			if resp.StatusCode != http.StatusOK {

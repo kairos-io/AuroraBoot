@@ -2,7 +2,7 @@ package client
 
 import "time"
 
-// These types describe the JSON wire format of the Daedalus REST API.
+// These types describe the JSON wire format of the AuroraBoot REST API.
 // They intentionally live in pkg/client rather than being imported
 // from internal/store so that third-party consumers can pull this
 // package in without dragging the private GORM layer with them.
@@ -20,7 +20,7 @@ const (
 	NodePhaseOffline    NodePhase = "Offline"
 )
 
-// Node describes a Kairos node known to Daedalus.
+// Node describes a Kairos node known to AuroraBoot.
 type Node struct {
 	ID            string            `json:"id"`
 	MachineID     string            `json:"machineID"`
@@ -168,7 +168,7 @@ type Artifact struct {
 	FIPS             bool          `json:"fips"`
 	TrustedBoot      bool          `json:"trustedBoot"`
 	AutoInstall      bool          `json:"autoInstall"`
-	RegisterDaedalus bool          `json:"registerDaedalus"`
+	RegisterAuroraBoot bool          `json:"registerAuroraBoot"`
 	Dockerfile       string        `json:"dockerfile,omitempty"`
 	CloudConfig      string        `json:"cloudConfig,omitempty"`
 	TargetGroupID    string        `json:"targetGroupId,omitempty"`
@@ -227,7 +227,7 @@ type ArtifactSigning struct {
 // ArtifactProvisioning describes cloud-config injection options.
 type ArtifactProvisioning struct {
 	AutoInstall      bool   `json:"autoInstall"`
-	RegisterDaedalus bool   `json:"registerDaedalus"`
+	RegisterAuroraBoot bool   `json:"registerAuroraBoot"`
 	TargetGroupID    string `json:"targetGroupId,omitempty"`
 	UserMode         string `json:"userMode,omitempty"`
 	Username         string `json:"username,omitempty"`

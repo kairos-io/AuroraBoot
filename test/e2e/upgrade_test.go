@@ -88,7 +88,7 @@ var _ = Describe("Upgrade E2E Flow", Label("e2e", "upgrade"), func() {
 		GinkgoWriter.Printf("Artifact container image: %s\n", containerImage)
 
 		// --- Phase 2: Boot VM and register node ---
-		By("Creating datasource with daedalus config")
+		By("Creating datasource with auroraboot config")
 		cloudConfig := fmt.Sprintf(`#cloud-config
 install:
   auto: true
@@ -105,7 +105,7 @@ stages:
           passwd: kairos
           groups:
             - admin
-`, vmDaedalusURL, regToken)
+`, vmAuroraBootURL, regToken)
 		datasource := createDatasource(cloudConfig)
 		defer os.RemoveAll(filepath.Dir(datasource))
 

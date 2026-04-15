@@ -15,7 +15,7 @@ var _ = Describe("Install Script", func() {
 
 		body := readBody(resp)
 		Expect(body).To(ContainSubstring("#!/bin/bash"))
-		Expect(body).To(ContainSubstring("DAEDALUS_URL"))
+		Expect(body).To(ContainSubstring("AURORABOOT_URL"))
 		Expect(body).To(ContainSubstring("/oem/phonehome.yaml"))
 		Expect(body).To(ContainSubstring("kairos-agent-phonehome"))
 	})

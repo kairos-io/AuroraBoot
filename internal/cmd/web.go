@@ -175,7 +175,7 @@ func runWeb(c *cli.Context) error {
 		AdminPassword:         adminPassword,
 		RegToken:              regToken,
 		RegTokenFile:          regTokenFile,
-		DaedalusURL:           externalURL,
+		AuroraBootURL:           externalURL,
 		ArtifactsDir:          artifactsDir,
 		KeysDir:               keysDir,
 		Hub:                   wsHub,

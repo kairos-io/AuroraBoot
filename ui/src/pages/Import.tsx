@@ -33,7 +33,7 @@ export function Import() {
 
   const baseUrl = window.location.origin;
   const groupName = selectedGroup && selectedGroup !== "__none__" ? selectedGroup : "";
-  const curlCommand = `curl -sfL ${baseUrl}/api/v1/install-agent | DAEDALUS_URL=${baseUrl} REGISTRATION_TOKEN=${token || "<token>"}${groupName ? ` GROUP=${groupName}` : ""} sh`;
+  const curlCommand = `curl -sfL ${baseUrl}/api/v1/install-agent | AURORABOOT_URL=${baseUrl} REGISTRATION_TOKEN=${token || "<token>"}${groupName ? ` GROUP=${groupName}` : ""} sh`;
 
   function handleCopy() {
     navigator.clipboard.writeText(curlCommand);
@@ -43,7 +43,7 @@ export function Import() {
 
   return (
     <div>
-      <PageHeader title="Import Nodes" description="Register new machines with Daedalus" />
+      <PageHeader title="Import Nodes" description="Register new machines with AuroraBoot" />
 
       <Card className="mb-6">
         <CardHeader>
@@ -79,7 +79,7 @@ export function Import() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground mb-4">
-            Run this command on each node you want to register with Daedalus.
+            Run this command on each node you want to register with AuroraBoot.
           </p>
           <div className="relative">
             <pre className="terminal-output rounded-md p-4 text-sm font-mono overflow-x-auto">
@@ -100,7 +100,7 @@ export function Import() {
           </div>
           <div className="mt-6 space-y-2 text-sm text-muted-foreground">
             <p>
-              The install script will download and configure the Daedalus agent
+              The install script will download and configure the AuroraBoot agent
               on the target node. The agent will register with this server and
               appear in the Nodes list.
             </p>

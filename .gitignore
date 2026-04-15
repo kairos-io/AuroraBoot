@@ -4,10 +4,16 @@ dist/
 build/
 coverage.out
 coverage.out.*
-AuroraBoot
-auroraboot
-internal/web/app/node_modules/
-internal/web/app/bundle.js
-e2e/web/node_modules/
-e2e/web/cypress/screenshots/
+/AuroraBoot
+/auroraboot
 node_modules
+
+# UI dev output mirror (we commit internal/ui/dist as the canonical
+# embed source so `go install` produces a working binary)
+ui/dist/
+
+# Local fleet-server data dir
+data/
+
+# Local e2e log dumps
+test/e2e/logs/

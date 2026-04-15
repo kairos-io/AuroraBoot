@@ -29,7 +29,7 @@ definitions:
         type: boolean
       password:
         type: string
-      registerDaedalus:
+      registerAuroraBoot:
         type: boolean
       sshKeys:
         type: string
@@ -278,7 +278,7 @@ definitions:
         type: string
       rawDisk:
         type: boolean
-      registerDaedalus:
+      registerAuroraBoot:
         type: boolean
       saved:
         type: boolean

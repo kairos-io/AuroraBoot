@@ -39,7 +39,7 @@ type SigningOptions struct {
 // ProvisioningOptions controls post-build provisioning behaviour.
 type ProvisioningOptions struct {
 	AutoInstall      bool
-	RegisterDaedalus bool
+	RegisterAuroraBoot bool
 	TargetGroupID    string
 }
 

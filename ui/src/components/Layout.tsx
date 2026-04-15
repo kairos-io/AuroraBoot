@@ -87,10 +87,7 @@ export function Layout() {
         <div className="flex flex-col items-center gap-3 px-6 pt-6 pb-4">
           <KairosLogo className="h-14 w-auto" />
           <div className="text-center">
-            <span className="font-bold text-base text-white block leading-tight">Daedalus</span>
-            <span className="block text-[10px] text-sidebar-fg opacity-60 tracking-wider uppercase mt-0.5">
-              Node Manager
-            </span>
+            <span className="font-bold text-base text-white block leading-tight">AuroraBoot</span>
           </div>
         </div>
         <div className="mx-4 border-t border-white/10" />

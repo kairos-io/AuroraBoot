@@ -23,19 +23,19 @@ type ArtifactHandler struct {
 	groups         store.GroupStore
 	secureBootKeys store.SecureBootKeySetStore
 	regToken       string
-	daedalusURL    string
+	aurorabootURL    string
 	artifactsDir   string
 }
 
 // NewArtifactHandler creates a new ArtifactHandler.
-func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactStore, groups store.GroupStore, secureBootKeys store.SecureBootKeySetStore, artifactsDir string, regToken string, daedalusURL string) *ArtifactHandler {
+func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactStore, groups store.GroupStore, secureBootKeys store.SecureBootKeySetStore, artifactsDir string, regToken string, aurorabootURL string) *ArtifactHandler {
 	return &ArtifactHandler{
 		builder:        b,
 		store:          artifactStore,
 		groups:         groups,
 		secureBootKeys: secureBootKeys,
 		regToken:       regToken,
-		daedalusURL:    daedalusURL,
+		aurorabootURL:    aurorabootURL,
 		artifactsDir:   artifactsDir,
 	}
 }
@@ -87,7 +87,7 @@ type signingConfig struct {
 
 type provisioningConfig struct {
 	AutoInstall      *bool  `json:"autoInstall"`
-	RegisterDaedalus *bool  `json:"registerDaedalus"`
+	RegisterAuroraBoot *bool  `json:"registerAuroraBoot"`
 	TargetGroupId    string `json:"targetGroupId"`
 	UserMode         string `json:"userMode"` // "default", "custom", "none" (defaults to "default")
 	Username         string `json:"username"`
@@ -120,9 +120,9 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	if req.Provisioning.AutoInstall != nil {
 		autoInstall = *req.Provisioning.AutoInstall
 	}
-	registerDaedalus := true
-	if req.Provisioning.RegisterDaedalus != nil {
-		registerDaedalus = *req.Provisioning.RegisterDaedalus
+	registerAuroraBoot := true
+	if req.Provisioning.RegisterAuroraBoot != nil {
+		registerAuroraBoot = *req.Provisioning.RegisterAuroraBoot
 	}
 
 	// UKI key set resolution.
@@ -198,7 +198,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	}
 	opts.Provisioning = builder.ProvisioningOptions{
 		AutoInstall:      autoInstall,
-		RegisterDaedalus: registerDaedalus,
+		RegisterAuroraBoot: registerAuroraBoot,
 		TargetGroupID:    req.Provisioning.TargetGroupId,
 	}
 
@@ -216,8 +216,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// keys when the user customizes the advanced section.
 	opts.CloudConfig = buildCloudConfig(cloudConfigParams{
 		autoInstall:      autoInstall,
-		registerDaedalus: registerDaedalus,
-		daedalusURL:      h.daedalusURL,
+		registerAuroraBoot: registerAuroraBoot,
+		aurorabootURL:      h.aurorabootURL,
 		regToken:         h.regToken,
 		groupName:        groupName,
 		userMode:         req.Provisioning.UserMode,
@@ -256,7 +256,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			UKI:               req.Outputs.UKI,
 			KairosInitImage:   req.KairosInitImage,
 			AutoInstall:       autoInstall,
-			RegisterDaedalus:  registerDaedalus,
+			RegisterAuroraBoot:  registerAuroraBoot,
 			Dockerfile:        req.Dockerfile,
 			CloudConfig:       opts.CloudConfig,
 			KubernetesDistro:  req.KubernetesDistro,
@@ -604,8 +604,8 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 	// Multi-layer OCI images can have conflicting symlinks across layers
 	// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer).
 	// Pipeline: docker create → docker export (flat tar) → docker import (single-layer image) → docker save (OCI tar)
-	flatImage := fmt.Sprintf("daedalus-flat:%s", id)
-	cid := fmt.Sprintf("daedalus-export-%s", id)
+	flatImage := fmt.Sprintf("auroraboot-flat:%s", id)
+	cid := fmt.Sprintf("auroraboot-export-%s", id)
 
 	// Create container and export flat tar, pipe into docker import
 	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, rec.ContainerImage, "true")
@@ -646,8 +646,8 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 // cloudConfigParams collects the inputs needed to assemble a node's cloud-config.
 type cloudConfigParams struct {
 	autoInstall      bool
-	registerDaedalus bool
-	daedalusURL      string
+	registerAuroraBoot bool
+	aurorabootURL      string
 	regToken         string
 	groupName        string
 	userMode         string // "default", "custom", "none"
@@ -661,7 +661,7 @@ type cloudConfigParams struct {
 // provisioning fields. It's the single source of truth — the frontend never builds
 // its own document, only sends the structured fields plus optional extra YAML.
 //
-// The result has at most one top-level key for each of install/daedalus/stages,
+// The result has at most one top-level key for each of install/auroraboot/stages,
 // avoiding the duplicate-key problem that arose when frontend and user input both
 // emitted overlapping sections. When the extra YAML provides its own stages block
 // (e.g. boot, after-install), it is merged under the canonical stages key rather
@@ -677,9 +677,9 @@ func buildCloudConfig(p cloudConfigParams) string {
 		}
 	}
 
-	if p.registerDaedalus {
-		doc["daedalus"] = map[string]interface{}{
-			"url":                p.daedalusURL,
+	if p.registerAuroraBoot {
+		doc["auroraboot"] = map[string]interface{}{
+			"url":                p.aurorabootURL,
 			"registration_token": p.regToken,
 			"group":              p.groupName,
 		}

@@ -37,12 +37,12 @@ import (
 
 func TestE2E(t *testing.T) {
 	RegisterFailHandler(Fail)
-	RunSpecs(t, "Daedalus E2E Suite")
+	RunSpecs(t, "AuroraBoot E2E Suite")
 }
 
 var (
 	// Server
-	daedalusURL  string
+	aurorabootURL  string
 	adminPass    = "e2e-admin"
 	regToken     = "e2e-token"
 
@@ -51,11 +51,11 @@ var (
 	artifactsDir string
 
 	// Built ISO paths
-	callHomeISO string // ISO with daedalus config (auto-registers)
-	vanillaISO  string // ISO without daedalus config (for import test)
+	callHomeISO string // ISO with auroraboot config (auto-registers)
+	vanillaISO  string // ISO without auroraboot config (for import test)
 
 	// VM-accessible URL (host reachable from QEMU via 10.0.2.2)
-	vmDaedalusURL string
+	vmAuroraBootURL string
 
 	// Config from env
 	kairosBaseImage  string
@@ -92,12 +92,12 @@ var _ = BeforeSuite(func() {
 	}
 
 	// Create temp directories
-	tmpDir, err = os.MkdirTemp("", "daedalus-e2e-*")
+	tmpDir, err = os.MkdirTemp("", "auroraboot-e2e-*")
 	Expect(err).ToNot(HaveOccurred())
 	artifactsDir = filepath.Join(tmpDir, "artifacts")
 	Expect(os.MkdirAll(artifactsDir, 0755)).To(Succeed())
 
-	// Start daedalus server
+	// Start auroraboot server
 	store, err := gormstore.New(filepath.Join(tmpDir, "e2e.db"))
 	Expect(err).ToNot(HaveOccurred())
 
@@ -108,11 +108,11 @@ var _ = BeforeSuite(func() {
 	hub := ws.NewHub()
 
 	// Pick a free port and compute URLs before creating the server
-	// (so DaedalusURL is available for the install script handler)
+	// (so AuroraBootURL is available for the install script handler)
 	serverPort, err := getFreePort()
 	Expect(err).ToNot(HaveOccurred())
-	daedalusURL = fmt.Sprintf("http://127.0.0.1:%d", serverPort)
-	vmDaedalusURL = fmt.Sprintf("http://10.0.2.2:%d", serverPort)
+	aurorabootURL = fmt.Sprintf("http://127.0.0.1:%d", serverPort)
+	vmAuroraBootURL = fmt.Sprintf("http://10.0.2.2:%d", serverPort)
 
 	builder := auroraboot.New(artifactsDir, nil, artifactStore)
 
@@ -124,7 +124,7 @@ var _ = BeforeSuite(func() {
 		Builder:       builder,
 		AdminPassword: adminPass,
 		RegToken:      regToken,
-		DaedalusURL:   daedalusURL,
+		AuroraBootURL:   aurorabootURL,
 		ArtifactsDir:  artifactsDir,
 		Hub:           hub,
 	})
@@ -135,7 +135,7 @@ var _ = BeforeSuite(func() {
 	}()
 	// Wait for server to be ready
 	Eventually(func() error {
-		resp, err := http.Get(daedalusURL + "/api/v1/install-agent")
+		resp, err := http.Get(aurorabootURL + "/api/v1/install-agent")
 		if err != nil {
 			return err
 		}
@@ -143,8 +143,8 @@ var _ = BeforeSuite(func() {
 		return nil
 	}, 5*time.Second, 100*time.Millisecond).Should(Succeed())
 
-	GinkgoWriter.Printf("Daedalus running at %s\n", daedalusURL)
-	GinkgoWriter.Printf("VM-accessible daedalus URL: %s\n", vmDaedalusURL)
+	GinkgoWriter.Printf("AuroraBoot running at %s\n", aurorabootURL)
+	GinkgoWriter.Printf("VM-accessible auroraboot URL: %s\n", vmAuroraBootURL)
 
 	// Create e2e-test group
 	resp := adminPost("/api/v1/groups", map[string]string{
@@ -181,7 +181,7 @@ var _ = AfterSuite(func() {
 
 // buildCustomImage creates a Docker image from the base image with custom agent binary.
 func buildCustomImage(overlayDir string) string {
-	imageName := "daedalus-e2e-custom:latest"
+	imageName := "auroraboot-e2e-custom:latest"
 
 	// Create a Dockerfile that copies our custom agent on top of the base image
 	dockerfileContent := fmt.Sprintf(`FROM %s
@@ -370,7 +370,6 @@ func startVM(isoPath, stateDir, datasource string) VM {
 		types.WithSSHPass("kairos"),
 		types.WithStateDir(stateDir),
 		types.WithDataSource(datasource),
-		types.WithArch("x86_64"),
 		types.OnFailure(func(p *process.Process) {
 			var serial string
 			out, _ := os.ReadFile(p.StdoutPath())
@@ -486,7 +485,7 @@ func createDatasource(cloudConfig string) string {
 // --- HTTP helpers ---
 
 func adminGet(path string) *http.Response {
-	req, err := http.NewRequest(http.MethodGet, daedalusURL+path, nil)
+	req, err := http.NewRequest(http.MethodGet, aurorabootURL+path, nil)
 	Expect(err).ToNot(HaveOccurred())
 	req.Header.Set("Authorization", "Bearer "+adminPass)
 	resp, err := http.DefaultClient.Do(req)
@@ -497,7 +496,7 @@ func adminGet(path string) *http.Response {
 func adminPost(path string, body interface{}) *http.Response {
 	data, err := json.Marshal(body)
 	Expect(err).ToNot(HaveOccurred())
-	req, err := http.NewRequest(http.MethodPost, daedalusURL+path, bytes.NewReader(data))
+	req, err := http.NewRequest(http.MethodPost, aurorabootURL+path, bytes.NewReader(data))
 	Expect(err).ToNot(HaveOccurred())
 	req.Header.Set("Authorization", "Bearer "+adminPass)
 	req.Header.Set("Content-Type", "application/json")

@@ -456,7 +456,7 @@ export function CommandDialog({
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Written to /oem/99_daedalus_remote.yaml. Reboot the node to apply.
+                  Written to /oem/99_auroraboot_remote.yaml. Reboot the node to apply.
                 </p>
               </div>
             )}
