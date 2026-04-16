@@ -661,7 +661,7 @@ type cloudConfigParams struct {
 // provisioning fields. It's the single source of truth — the frontend never builds
 // its own document, only sends the structured fields plus optional extra YAML.
 //
-// The result has at most one top-level key for each of install/auroraboot/stages,
+// The result has at most one top-level key for each of install/phonehome/stages,
 // avoiding the duplicate-key problem that arose when frontend and user input both
 // emitted overlapping sections. When the extra YAML provides its own stages block
 // (e.g. boot, after-install), it is merged under the canonical stages key rather
@@ -678,7 +678,7 @@ func buildCloudConfig(p cloudConfigParams) string {
 	}
 
 	if p.registerAuroraBoot {
-		doc["auroraboot"] = map[string]interface{}{
+		doc["phonehome"] = map[string]interface{}{
 			"url":                p.aurorabootURL,
 			"registration_token": p.regToken,
 			"group":              p.groupName,
