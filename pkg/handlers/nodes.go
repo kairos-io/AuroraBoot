@@ -9,25 +9,34 @@ import (
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
+	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
 )
 
+// decommissionTimeout bounds how long we're willing to let a remote teardown
+// run before the UI offers "force delete anyway". The value is also baked
+// into the command's ExpiresAt so the DB reflects the same deadline — a node
+// that comes online after the window is closed will not run the teardown.
+const decommissionTimeout = 30 * time.Second
+
 // NodeHandler handles node-related REST endpoints.
 type NodeHandler struct {
-	nodes       store.NodeStore
-	commands    store.CommandStore
-	groups      store.GroupStore
-	regToken    string
+	nodes         store.NodeStore
+	commands      store.CommandStore
+	groups        store.GroupStore
+	hub           *ws.Hub // optional; when nil, Decommission reports the node as offline
+	regToken      string
 	aurorabootURL string
 }
 
 // NewNodeHandler creates a new NodeHandler.
-func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups store.GroupStore, regToken string, aurorabootURL string) *NodeHandler {
+func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups store.GroupStore, hub *ws.Hub, regToken string, aurorabootURL string) *NodeHandler {
 	return &NodeHandler{
-		nodes:       nodes,
-		commands:    commands,
-		groups:      groups,
-		regToken:    regToken,
+		nodes:         nodes,
+		commands:      commands,
+		groups:        groups,
+		hub:           hub,
+		regToken:      regToken,
 		aurorabootURL: aurorabootURL,
 	}
 }
@@ -173,6 +182,82 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete node"})
 	}
 	return c.NoContent(http.StatusNoContent)
+}
+
+// decommissionResponse is returned by POST /api/v1/nodes/:nodeID/decommission.
+// When NodeOnline is true, CommandID identifies the teardown command the UI
+// should subscribe to via the UI WebSocket; when false, no command was issued
+// and the UI should fall back to warning the operator to run
+// `kairos-agent phone-home uninstall` manually on the box.
+type decommissionResponse struct {
+	CommandID  string `json:"commandID"`
+	NodeOnline bool   `json:"nodeOnline"`
+}
+
+// Decommission handles POST /api/v1/nodes/:nodeID/decommission.
+//
+// Unlike DELETE, this endpoint does NOT remove the node from the database.
+// It only dispatches a remote `unregister` command so the agent can stop the
+// phone-home service and drop its local state; the UI then calls DELETE as a
+// second step once the command reaches a terminal phase (or the operator
+// decides to force-delete). Splitting the two lets the UI show real teardown
+// progress to the operator instead of a blind one-shot delete.
+//
+//	@Summary		Dispatch remote teardown before deleting a node
+//	@Description	Sends an `unregister` command to the node if it is currently online. The UI subscribes to the returned commandID via the UI WebSocket for live progress, then issues DELETE /api/v1/nodes/{nodeID} when the command reaches Completed. When the node is offline, this returns nodeOnline=false with an empty commandID — the operator should then force-delete and run `kairos-agent phone-home uninstall` on the box manually.
+//	@Tags			Nodes
+//	@Security		AdminBearer
+//	@Param			nodeID	path		string	true	"Node ID"
+//	@Success		200		{object}	decommissionResponse
+//	@Failure		404		{object}	APIError
+//	@Router			/api/v1/nodes/{nodeID}/decommission [post]
+func (h *NodeHandler) Decommission(c echo.Context) error {
+	nodeID := c.Param("nodeID")
+	ctx := c.Request().Context()
+
+	// Verify the node exists; otherwise return 404 so the UI doesn't proceed
+	// to issue a DELETE against a non-existent record.
+	if _, err := h.nodes.GetByID(ctx, nodeID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
+	}
+
+	online := h.hub != nil && h.hub.IsOnline(nodeID)
+	if !online {
+		// Offline nodes can't run the teardown remotely. The UI surfaces the
+		// CLI fallback; we still return 200 with nodeOnline=false so the
+		// caller can switch into the "force delete + instructions" branch
+		// without having to treat this as an error.
+		return c.JSON(http.StatusOK, decommissionResponse{CommandID: "", NodeOnline: false})
+	}
+
+	expires := time.Now().Add(decommissionTimeout)
+	cmd := &store.NodeCommand{
+		ID:            uuid.New().String(),
+		ManagedNodeID: nodeID,
+		Command:       "unregister",
+		Args:          nil,
+		Phase:         store.CommandPending,
+		ExpiresAt:     &expires,
+	}
+	if err := h.commands.Create(ctx, cmd); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to queue unregister command"})
+	}
+
+	payload := struct {
+		ID      string            `json:"id"`
+		Command string            `json:"command"`
+		Args    map[string]string `json:"args,omitempty"`
+	}{
+		ID:      cmd.ID,
+		Command: cmd.Command,
+	}
+	// Errors from SendCommand are best-effort — the command is already
+	// persisted, and the WS layer will pick it up on the next reconnect if
+	// the agent happens to drop between IsOnline and the write. The UI has
+	// the ExpiresAt to decide when to give up.
+	_ = h.hub.SendCommand(nodeID, payload)
+
+	return c.JSON(http.StatusOK, decommissionResponse{CommandID: cmd.ID, NodeOnline: true})
 }
 
 // setLabelsRequest is the expected body for setting labels.

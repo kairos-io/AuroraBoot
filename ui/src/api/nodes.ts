@@ -49,6 +49,21 @@ export function deleteNode(id: string): Promise<void> {
   return apiFetch<void>(`/api/v1/nodes/${id}`, { method: "DELETE" });
 }
 
+// Response from POST /api/v1/nodes/:id/decommission. When nodeOnline is
+// true, commandID identifies the `unregister` command the UI should watch
+// via the UI WebSocket; when false, the UI should fall back to showing the
+// manual `kairos-agent phone-home uninstall` instructions.
+export interface DecommissionResult {
+  commandID: string;
+  nodeOnline: boolean;
+}
+
+export function decommissionNode(id: string): Promise<DecommissionResult> {
+  return apiFetch<DecommissionResult>(`/api/v1/nodes/${id}/decommission`, {
+    method: "POST",
+  });
+}
+
 export function setLabels(
   id: string,
   labels: Record<string, string>

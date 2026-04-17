@@ -519,6 +519,15 @@ func decodeJSONArray(resp *http.Response) []map[string]interface{} {
 	return result
 }
 
+func adminDelete(path string) *http.Response {
+	req, err := http.NewRequest(http.MethodDelete, aurorabootURL+path, nil)
+	Expect(err).ToNot(HaveOccurred())
+	req.Header.Set("Authorization", "Bearer "+adminPass)
+	resp, err := http.DefaultClient.Do(req)
+	Expect(err).ToNot(HaveOccurred())
+	return resp
+}
+
 func readBody(resp *http.Response) string {
 	defer resp.Body.Close()
 	b, _ := io.ReadAll(resp.Body)

@@ -77,7 +77,7 @@ func New(cfg Config) *echo.Echo {
 	})
 
 	// Create handlers
-	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, regToken, cfg.AuroraBootURL)
+	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, hub, regToken, cfg.AuroraBootURL)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
@@ -117,6 +117,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.GET("/nodes", nodeHandler.List)
 	adminGroup.GET("/nodes/:nodeID", nodeHandler.Get)
 	adminGroup.DELETE("/nodes/:nodeID", nodeHandler.Delete)
+	adminGroup.POST("/nodes/:nodeID/decommission", nodeHandler.Decommission)
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
 	adminGroup.GET("/nodes/:nodeID/commands", nodeHandler.GetCommands)

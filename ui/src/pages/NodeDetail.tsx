@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { getNode, sendCommand, setLabels, setGroup, deleteNode, type Node } from "@/api/nodes";
+import { getNode, sendCommand, setLabels, setGroup, type Node } from "@/api/nodes";
+import { DecommissionDialog } from "@/components/DecommissionDialog";
 import { listNodeCommands, deleteCommand, clearCommandHistory, type Command } from "@/api/commands";
 import { listGroups, type Group } from "@/api/groups";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -160,11 +161,7 @@ export function NodeDetail() {
     setEditingLabels(false);
   }
 
-  async function handleDelete() {
-    if (!id) return;
-    await deleteNode(id);
-    navigate("/nodes");
-  }
+  const [decommissionOpen, setDecommissionOpen] = useState(false);
 
   if (!node) {
     return <div className="text-muted-foreground">Loading...</div>;
@@ -187,14 +184,8 @@ export function NodeDetail() {
         <Button
           variant="destructive"
           size="icon"
-          onClick={() =>
-            setConfirmState({
-              open: true,
-              title: "Delete Node",
-              description: "Are you sure you want to delete this node? This cannot be undone.",
-              action: handleDelete,
-            })
-          }
+          onClick={() => setDecommissionOpen(true)}
+          aria-label="Decommission node"
         >
           <Trash2 className="h-4 w-4" />
         </Button>
@@ -461,6 +452,13 @@ export function NodeDetail() {
         confirmLabel="Confirm"
         destructive
         onConfirm={confirmState.action}
+      />
+
+      <DecommissionDialog
+        open={decommissionOpen}
+        onOpenChange={setDecommissionOpen}
+        node={node}
+        onDeleted={() => navigate("/nodes")}
       />
     </div>
   );

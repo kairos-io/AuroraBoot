@@ -186,6 +186,7 @@ Run `auroraboot help` for the full list.
 - **One binary, one container.** Go backend, React frontend bundled into the binary at build time and served by the same process. SQLite by default, Postgres optional.
 - **CLI and fleet server share the same image factory.** Both call `deployer.Deploy`, `pkg/uki.Build` and `pkg/secureboot.GenerateKeySet` in-process — whatever the CLI builds, the server builds the same way, and streams the logs into the dashboard as they come out of the deployer.
 - **Nodes auto-register** via the `phonehome:` cloud-config stage baked into every artifact AuroraBoot produces. First boot → node shows up in the UI. The artifact builder also bakes an explicit `allowed_commands` list (default: `upgrade`, `upgrade-recovery`, `reboot`); tick the destructive checkboxes — `exec`, `reset`, `apply-cloud-config` — only on fleets where you need them.
+- **Deleting a node** runs a remote teardown: AuroraBoot sends an `unregister` command, the agent stops the phone-home service and drops its credentials + cloud-config files, then the DB record is removed. The UI shows live progress. For offline nodes, SSH in and run `kairos-agent phone-home uninstall` to do the same teardown by hand before force-deleting the record.
 
 ---
 

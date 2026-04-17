@@ -12,16 +12,18 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
+	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
 )
 
 var _ = Describe("NodeHandler", func() {
 	var (
-		e        *echo.Echo
-		ns       *fakeNodeStore
-		cs       *fakeCommandStore
-		gs       *fakeGroupStore
-		handler  *handlers.NodeHandler
+		e       *echo.Echo
+		ns      *fakeNodeStore
+		cs      *fakeCommandStore
+		gs      *fakeGroupStore
+		hub     *ws.Hub
+		handler *handlers.NodeHandler
 	)
 
 	BeforeEach(func() {
@@ -29,7 +31,8 @@ var _ = Describe("NodeHandler", func() {
 		ns = &fakeNodeStore{}
 		cs = &fakeCommandStore{}
 		gs = &fakeGroupStore{}
-		handler = handlers.NewNodeHandler(ns, cs, gs, "reg-token", "http://localhost:8080")
+		hub = ws.NewHub()
+		handler = handlers.NewNodeHandler(ns, cs, gs, hub, "reg-token", "http://localhost:8080")
 	})
 
 	Describe("Register", func() {
@@ -180,6 +183,49 @@ var _ = Describe("NodeHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusNoContent))
 		})
+	})
+
+	// Decommission is the remote-teardown entry point: it creates an
+	// `unregister` NodeCommand and pushes it down the node's live WS
+	// connection (if any). It does NOT delete the node record — the UI
+	// drives DELETE as a second step once the command finishes.
+	Describe("Decommission", func() {
+		decommission := func(nodeID string) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/"+nodeID+"/decommission", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues(nodeID)
+			Expect(handler.Decommission(c)).To(Succeed())
+			return rec
+		}
+
+		It("returns 404 when the node doesn't exist", func() {
+			rec := decommission("missing")
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
+
+		It("reports nodeOnline=false and queues no command when the node is offline", func() {
+			ns.nodes = []*store.ManagedNode{{ID: "node-offline"}}
+			// hub has no registered connection for node-offline, so IsOnline is false
+
+			rec := decommission("node-offline")
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var resp map[string]interface{}
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["nodeOnline"]).To(Equal(false))
+			Expect(resp["commandID"]).To(Equal(""))
+			// Nothing is persisted for the offline path — the operator will
+			// force-delete and run the CLI fallback on the box.
+			Expect(cs.cmds).To(BeEmpty())
+		})
+
+		// Online-path coverage lives in the integration test (needs a real
+		// *websocket.Conn inside the hub to satisfy IsOnline). Hub exposes
+		// no test hook for synthesizing an online node in unit tests, so
+		// asserting the persisted command's shape there would require
+		// reaching into unexported hub state — deliberately skipped here.
 	})
 
 	Describe("SetLabels", func() {
