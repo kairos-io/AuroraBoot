@@ -86,14 +86,22 @@ type signingConfig struct {
 }
 
 type provisioningConfig struct {
-	AutoInstall      *bool  `json:"autoInstall"`
-	RegisterAuroraBoot *bool  `json:"registerAuroraBoot"`
-	TargetGroupId    string `json:"targetGroupId"`
-	UserMode         string `json:"userMode"` // "default", "custom", "none" (defaults to "default")
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	SSHKeys          string `json:"sshKeys"` // newline-separated public keys
+	AutoInstall        *bool    `json:"autoInstall"`
+	RegisterAuroraBoot *bool    `json:"registerAuroraBoot"`
+	TargetGroupId      string   `json:"targetGroupId"`
+	UserMode           string   `json:"userMode"` // "default", "custom", "none" (defaults to "default")
+	Username           string   `json:"username"`
+	Password           string   `json:"password"`
+	SSHKeys            string   `json:"sshKeys"` // newline-separated public keys
+	AllowedCommands    []string `json:"allowedCommands"`
 }
+
+// phonehomeSafeDefaults is the conservative set of commands AuroraBoot bakes
+// into cloud-configs when the operator has not specified a custom selection.
+// This list must stay aligned with kairos-agent's DefaultAllowedCommands so
+// the UX's "default safe set" label corresponds to what the agent actually
+// permits if the emitted list were ever absent.
+var phonehomeSafeDefaults = []string{"upgrade", "upgrade-recovery", "reboot"}
 
 // Create handles POST /api/v1/artifacts.
 //
@@ -196,10 +204,19 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	if req.Signing != nil {
 		opts.Signing.UKISecureBootEnroll = req.Signing.UKISecureBootEnroll
 	}
+	// Substitute the safe defaults when the client omits allowedCommands, so
+	// the generated cloud-config always carries an explicit phonehome.allowed_commands.
+	// An empty-but-non-nil slice is preserved verbatim (observe-only mode).
+	allowedCommands := req.Provisioning.AllowedCommands
+	if allowedCommands == nil {
+		allowedCommands = append([]string(nil), phonehomeSafeDefaults...)
+	}
+
 	opts.Provisioning = builder.ProvisioningOptions{
-		AutoInstall:      autoInstall,
+		AutoInstall:        autoInstall,
 		RegisterAuroraBoot: registerAuroraBoot,
-		TargetGroupID:    req.Provisioning.TargetGroupId,
+		TargetGroupID:      req.Provisioning.TargetGroupId,
+		AllowedCommands:    allowedCommands,
 	}
 
 	// Resolve target group name for cloud-config injection.
@@ -215,16 +232,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// Advanced field), NOT a full document — this prevents duplicate top-level
 	// keys when the user customizes the advanced section.
 	opts.CloudConfig = buildCloudConfig(cloudConfigParams{
-		autoInstall:      autoInstall,
+		autoInstall:        autoInstall,
 		registerAuroraBoot: registerAuroraBoot,
 		aurorabootURL:      h.aurorabootURL,
-		regToken:         h.regToken,
-		groupName:        groupName,
-		userMode:         req.Provisioning.UserMode,
-		username:         req.Provisioning.Username,
-		password:         req.Provisioning.Password,
-		sshKeys:          req.Provisioning.SSHKeys,
-		extraYAML:        req.CloudConfig,
+		regToken:           h.regToken,
+		groupName:          groupName,
+		allowedCommands:    allowedCommands,
+		userMode:           req.Provisioning.UserMode,
+		username:           req.Provisioning.Username,
+		password:           req.Provisioning.Password,
+		sshKeys:            req.Provisioning.SSHKeys,
+		extraYAML:          req.CloudConfig,
 	})
 
 	status, err := h.builder.Build(ctx, opts)
@@ -645,16 +663,19 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 
 // cloudConfigParams collects the inputs needed to assemble a node's cloud-config.
 type cloudConfigParams struct {
-	autoInstall      bool
+	autoInstall        bool
 	registerAuroraBoot bool
 	aurorabootURL      string
-	regToken         string
-	groupName        string
-	userMode         string // "default", "custom", "none"
-	username         string
-	password         string
-	sshKeys          string // newline-separated public keys
-	extraYAML        string // optional: appended verbatim after the canonical block
+	regToken           string
+	groupName          string
+	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
+	// Callers substitute phonehomeSafeDefaults for nil input before calling.
+	allowedCommands []string
+	userMode        string // "default", "custom", "none"
+	username        string
+	password        string
+	sshKeys         string // newline-separated public keys
+	extraYAML       string // optional: appended verbatim after the canonical block
 }
 
 // buildCloudConfig assembles a Kairos cloud-config YAML document from structured
@@ -678,10 +699,24 @@ func buildCloudConfig(p cloudConfigParams) string {
 	}
 
 	if p.registerAuroraBoot {
+		// allowed_commands is *always* emitted: AuroraBoot is the operator-facing
+		// surface and the list is an explicit decision, not an agent-side default.
+		// Callers that pass nil must have already substituted phonehomeSafeDefaults.
+		allowed := p.allowedCommands
+		if allowed == nil {
+			allowed = phonehomeSafeDefaults
+		}
+		// Convert to []interface{} so yaml.v3 emits a proper sequence even when
+		// allowed is empty (-> `[]` rather than a missing key).
+		allowedYAML := make([]interface{}, len(allowed))
+		for i, c := range allowed {
+			allowedYAML[i] = c
+		}
 		doc["phonehome"] = map[string]interface{}{
 			"url":                p.aurorabootURL,
 			"registration_token": p.regToken,
 			"group":              p.groupName,
+			"allowed_commands":   allowedYAML,
 		}
 	}
 

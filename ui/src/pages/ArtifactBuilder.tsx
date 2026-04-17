@@ -9,6 +9,10 @@ import {
   type SecureBootKeySet,
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
+import {
+  PHONEHOME_SAFE_DEFAULTS,
+  PHONEHOME_DESTRUCTIVE_COMMANDS,
+} from "@/lib/buildConfig";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -319,6 +323,9 @@ const EMPTY_PROVISIONING = {
   autoInstall: true,
   registerAuroraBoot: true,
   targetGroupId: "",
+  // Start with the safe-default command set pre-selected; the UI always
+  // submits this list verbatim so the baked cloud-config is authoritative.
+  allowedCommands: [...PHONEHOME_SAFE_DEFAULTS] as string[],
 };
 
 // Default artifact version when the user doesn't provide one. This value
@@ -354,6 +361,88 @@ type UserMode = "default" | "custom" | "none";
 type FieldError = { field: string; step: number; message: string };
 
 const STEPS = ["Source", "Configure", "Output", "Review"];
+
+// AllowedCommandsPicker renders two checkbox rows (safe / destructive) that
+// drive phonehome.allowed_commands in the generated cloud-config. The list is
+// submitted verbatim — matching the UI to what the node will actually honor.
+// An empty selection is a valid (observe-only) choice but we flag it because
+// it's almost always a mistake; the user probably meant to untick "Register".
+function AllowedCommandsPicker({
+  value,
+  onChange,
+}: {
+  value: string[];
+  onChange: (next: string[]) => void;
+}) {
+  const set = new Set(value);
+  const toggle = (cmd: string) => {
+    const next = new Set(set);
+    if (next.has(cmd)) {
+      next.delete(cmd);
+    } else {
+      next.add(cmd);
+    }
+    // Preserve the canonical order (safe → destructive) so the emitted YAML
+    // is stable regardless of click order.
+    const ordered = [
+      ...PHONEHOME_SAFE_DEFAULTS,
+      ...PHONEHOME_DESTRUCTIVE_COMMANDS,
+    ].filter((c) => next.has(c));
+    onChange(ordered);
+  };
+
+  const row = (cmds: readonly string[]) =>
+    cmds.map((cmd) => (
+      <label key={cmd} className="flex items-center gap-2 text-sm">
+        <input
+          type="checkbox"
+          checked={set.has(cmd)}
+          onChange={() => toggle(cmd)}
+          className="rounded border-input"
+        />
+        <code className="font-mono text-xs">{cmd}</code>
+      </label>
+    ));
+
+  return (
+    <div className="grid gap-3 pt-1">
+      <div>
+        <Label className="text-xs">
+          Allowed remote commands
+          <InfoTooltip>
+            The node will only execute the commands you tick here. Commands
+            that aren't listed are refused even if the server requests them.
+            This lives in phonehome.allowed_commands in the baked cloud-config.
+          </InfoTooltip>
+        </Label>
+        <p className="text-xs text-muted-foreground mt-1">
+          Commands not listed here will be denied by the node.
+        </p>
+      </div>
+
+      <div className="grid gap-2 ml-1">
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+          Safe
+        </div>
+        <div className="grid gap-1.5 ml-2">{row(PHONEHOME_SAFE_DEFAULTS)}</div>
+
+        <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 mt-2">
+          Destructive (opt-in)
+        </div>
+        <div className="grid gap-1.5 ml-2">{row(PHONEHOME_DESTRUCTIVE_COMMANDS)}</div>
+      </div>
+
+      {value.length === 0 && (
+        <div className="rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
+          No commands selected — the node will still register and send
+          heartbeats, but no remote management will be possible. You probably
+          don&apos;t want this; if you don&apos;t need any management, untick{" "}
+          <strong>Register with AuroraBoot</strong> instead.
+        </div>
+      )}
+    </div>
+  );
+}
 
 export function ArtifactBuilder() {
   const navigate = useNavigate();
@@ -504,6 +593,10 @@ export function ArtifactBuilder() {
         autoInstall: prov.autoInstall ?? true,
         registerAuroraBoot: prov.registerAuroraBoot ?? true,
         targetGroupId: resolvedGroupId,
+        // Legacy exports may omit allowedCommands; fall back to safe defaults.
+        allowedCommands: prov.allowedCommands
+          ? [...prov.allowedCommands]
+          : [...PHONEHOME_SAFE_DEFAULTS],
       },
     });
     setBuildMode(parsed.buildMode === "dockerfile" ? "dockerfile" : "image");
@@ -571,6 +664,9 @@ export function ArtifactBuilder() {
             autoInstall: a.autoInstall ?? true,
             registerAuroraBoot: a.registerAuroraBoot ?? true,
             targetGroupId: a.targetGroupId || "",
+            // Cloned artifacts start with the safe default list — the artifact
+            // record doesn't persist allowedCommands, only the baked YAML does.
+            allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
           },
         });
         if (a.dockerfile) setBuildMode("dockerfile");
@@ -632,6 +728,15 @@ export function ArtifactBuilder() {
       lines.push(`  url: "<server-url>"`);
       lines.push(`  registration_token: "<token>"`);
       lines.push(`  group: "${groupName}"`);
+      const allowed = form.provisioning.allowedCommands ?? [];
+      if (allowed.length === 0) {
+        lines.push("  allowed_commands: []");
+      } else {
+        lines.push("  allowed_commands:");
+        for (const cmd of allowed) {
+          lines.push(`    - ${cmd}`);
+        }
+      }
     }
 
     if (userMode !== "none") {
@@ -1662,6 +1767,13 @@ export function ArtifactBuilder() {
                       </Select>
                     </div>
                   )}
+
+                  {form.provisioning.registerAuroraBoot && (
+                    <AllowedCommandsPicker
+                      value={form.provisioning.allowedCommands ?? []}
+                      onChange={(next) => updateProvisioning("allowedCommands", next)}
+                    />
+                  )}
                 </CardContent>
               </Card>
 
@@ -1948,6 +2060,18 @@ export function ArtifactBuilder() {
                       <div className="flex gap-2">
                         <span className="text-muted-foreground w-28 shrink-0">Target Group:</span>
                         <span>{groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || form.provisioning.targetGroupId}</span>
+                      </div>
+                    )}
+                    {form.provisioning.registerAuroraBoot && (
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-28 shrink-0">Allowed cmds:</span>
+                        {(form.provisioning.allowedCommands ?? []).length === 0 ? (
+                          <span className="text-amber-700 dark:text-amber-300">Observe-only (no commands)</span>
+                        ) : (
+                          <span className="font-mono text-xs">
+                            {(form.provisioning.allowedCommands ?? []).join(", ")}
+                          </span>
+                        )}
                       </div>
                     )}
                   </div>

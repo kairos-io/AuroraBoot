@@ -38,9 +38,14 @@ type SigningOptions struct {
 
 // ProvisioningOptions controls post-build provisioning behaviour.
 type ProvisioningOptions struct {
-	AutoInstall      bool
+	AutoInstall        bool
 	RegisterAuroraBoot bool
-	TargetGroupID    string
+	TargetGroupID      string
+	// AllowedCommands is the explicit phonehome.allowed_commands list baked
+	// into the cloud-config. The AuroraBoot backend substitutes the safe
+	// default set when the caller leaves this nil, so the emitted YAML always
+	// carries the key — nodes never inherit an implicit agent-side default.
+	AllowedCommands []string
 }
 
 // BuildOptions describes what to build.

@@ -65,6 +65,12 @@ export interface CreateArtifactProvisioning {
   username?: string;
   password?: string;
   sshKeys?: string;
+  /**
+   * Explicit list baked into phonehome.allowed_commands on the node.
+   * Always sent by the ArtifactBuilder UI; omit/null means "use AuroraBoot's
+   * safe defaults". Empty array means deny-all (observe-only node).
+   */
+  allowedCommands?: string[];
 }
 
 export interface CreateArtifactInput {

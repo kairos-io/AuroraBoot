@@ -329,6 +329,19 @@ if [ -z "$REG_TOKEN" ]; then
 fi
 GROUP="${AURORABOOT_GROUP:-}"
 
+# Build the phonehome.allowed_commands list. The env var is comma-separated;
+# when unset, fall back to AuroraBoot's safe-default set so the emitted YAML
+# always carries the key (never rely on implicit agent-side defaults).
+# Set AURORABOOT_ALLOWED_COMMANDS="" explicitly and you will get the safe
+# defaults too — deny-all must be configured from the AuroraBoot UI instead.
+ALLOWED_RAW="${AURORABOOT_ALLOWED_COMMANDS:-upgrade,upgrade-recovery,reboot}"
+ALLOWED_YAML=""
+IFS=',' read -ra _cmds <<< "$ALLOWED_RAW"
+for c in "${_cmds[@]}"; do
+    c=$(echo "$c" | xargs)  # trim whitespace
+    [ -n "$c" ] && ALLOWED_YAML="${ALLOWED_YAML}    - ${c}"$'\n'
+done
+
 echo "Installing AuroraBoot agent..."
 echo "Server: ${AURORABOOT_URL}"
 
@@ -340,7 +353,8 @@ phonehome:
   url: "${AURORABOOT_URL}"
   registration_token: "${REG_TOKEN}"
   group: "${GROUP}"
-EOF
+  allowed_commands:
+${ALLOWED_YAML}EOF
 
 echo "Config written to /oem/phonehome.yaml"
 

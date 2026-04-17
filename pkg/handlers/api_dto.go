@@ -144,13 +144,17 @@ type APIArtifactSigning struct {
 
 // APIArtifactProvisioning holds cloud-config injection options.
 type APIArtifactProvisioning struct {
-	AutoInstall      bool   `json:"autoInstall"`
-	RegisterAuroraBoot bool   `json:"registerAuroraBoot"`
-	TargetGroupID    string `json:"targetGroupId"`
-	UserMode         string `json:"userMode" enums:"default,custom,none"`
-	Username         string `json:"username"`
-	Password         string `json:"password"`
-	SSHKeys          string `json:"sshKeys"`
+	AutoInstall        bool     `json:"autoInstall"`
+	RegisterAuroraBoot bool     `json:"registerAuroraBoot"`
+	TargetGroupID      string   `json:"targetGroupId"`
+	UserMode           string   `json:"userMode" enums:"default,custom,none"`
+	Username           string   `json:"username"`
+	Password           string   `json:"password"`
+	SSHKeys            string   `json:"sshKeys"`
+	// AllowedCommands is the explicit list emitted under phonehome.allowed_commands.
+	// Nil means "use AuroraBoot's safe default set". An empty slice means deny-all
+	// (observe-only node) — the UI warns when the operator picks this.
+	AllowedCommands []string `json:"allowedCommands"`
 }
 
 // APIUpdateArtifactRequest is the JSON body of PATCH /api/v1/artifacts/:id.

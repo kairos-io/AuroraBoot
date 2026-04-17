@@ -11,6 +11,25 @@ export const BUILD_CONFIG_VERSION = 1;
 
 export type UserMode = "default" | "custom" | "none";
 
+// Phonehome command catalogue. Keep the order stable — the UI renders two
+// rows of checkboxes in this exact sequence.
+export const PHONEHOME_SAFE_DEFAULTS: readonly string[] = [
+  "upgrade",
+  "upgrade-recovery",
+  "reboot",
+];
+
+export const PHONEHOME_DESTRUCTIVE_COMMANDS: readonly string[] = [
+  "exec",
+  "reset",
+  "apply-cloud-config",
+];
+
+export const PHONEHOME_ALL_COMMANDS: readonly string[] = [
+  ...PHONEHOME_SAFE_DEFAULTS,
+  ...PHONEHOME_DESTRUCTIVE_COMMANDS,
+];
+
 export interface BuildConfigPayload {
   version: typeof BUILD_CONFIG_VERSION;
   kind: typeof BUILD_CONFIG_KIND;
@@ -41,6 +60,12 @@ export interface BuildConfigPayload {
     userMode: UserMode;
     username?: string;
     sshKeys?: string;
+    /**
+     * Explicit phonehome.allowed_commands list. Always present in fresh
+     * exports. Legacy exports may omit it; re-import substitutes the safe
+     * defaults in that case.
+     */
+    allowedCommands?: string[];
   };
   advancedCloudConfig?: string;
 }
@@ -89,6 +114,9 @@ export function payloadFromBuilder(args: {
       userMode,
       username: userMode === "custom" ? username : undefined,
       sshKeys: userMode !== "none" && sshKeys.trim() ? sshKeys : undefined,
+      // Verbatim from the form — no "default omitted" compression; the UI
+      // state is authoritative and survives the round-trip as-is.
+      allowedCommands: [...(form.provisioning.allowedCommands ?? PHONEHOME_SAFE_DEFAULTS)],
     },
     advancedCloudConfig: advancedConfig || undefined,
   };
@@ -137,6 +165,10 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
       registerAuroraBoot: artifact.registerAuroraBoot ?? true,
       targetGroupName: groupName,
       userMode: "default",
+      // The Artifact record doesn't carry the baked-in allowed list (the
+      // backend strips it before storing), so exports from an already-built
+      // artifact use the UI's safe defaults on re-import.
+      allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
     },
     advancedCloudConfig: artifact.cloudConfig || undefined,
   };

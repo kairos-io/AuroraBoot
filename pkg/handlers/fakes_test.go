@@ -421,13 +421,15 @@ func (f *fakeGroupStore) Delete(_ context.Context, id string) error {
 
 // fakeBuilder implements builder.ArtifactBuilder for testing.
 type fakeBuilder struct {
-	mu     sync.Mutex
-	builds []*builder.BuildStatus
+	mu       sync.Mutex
+	builds   []*builder.BuildStatus
+	lastOpts builder.BuildOptions // lets tests assert on the generated cloud-config
 }
 
 func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastOpts = opts
 	status := &builder.BuildStatus{
 		ID:    opts.ID,
 		Phase: builder.BuildPending,

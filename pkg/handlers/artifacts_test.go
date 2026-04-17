@@ -47,6 +47,51 @@ var _ = Describe("ArtifactHandler", func() {
 		})
 	})
 
+	// The allowed_commands block in the generated phonehome cloud-config is
+	// AuroraBoot's only lever for gating destructive remote commands, so we
+	// pin its behavior in integration tests through the public Create endpoint.
+	Describe("Create — phonehome allowed_commands", func() {
+		post := func(body string) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+		}
+
+		It("substitutes safe defaults when allowedCommands is omitted", func() {
+			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(ConsistOf("upgrade", "upgrade-recovery", "reboot"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("phonehome:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("allowed_commands:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- upgrade"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- reboot"))
+		})
+
+		It("passes through a custom allowedCommands list verbatim", func() {
+			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"allowedCommands":["exec","reboot"]}}`)
+			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(Equal([]string{"exec", "reboot"}))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- exec"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- reboot"))
+			// The destructive command the user did NOT pick must not leak in.
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("- reset"))
+		})
+
+		It("emits an empty list when the operator opts into observe-only", func() {
+			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"allowedCommands":[]}}`)
+			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(HaveLen(0))
+			Expect(fb.lastOpts.Provisioning.AllowedCommands).NotTo(BeNil())
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("allowed_commands: []"))
+		})
+
+		It("omits the phonehome stanza entirely when registerAuroraBoot is false", func() {
+			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":false}}`)
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("phonehome:"))
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("allowed_commands"))
+		})
+	})
+
 	Describe("List", func() {
 		It("should list all builds", func() {
 			fb.builds = []*builder.BuildStatus{

@@ -3,6 +3,7 @@ import { describe, it, expect } from "vitest";
 import {
   BUILD_CONFIG_KIND,
   BUILD_CONFIG_VERSION,
+  PHONEHOME_SAFE_DEFAULTS,
   payloadFromArtifact,
   payloadFromBuilder,
 } from "./buildConfig";
@@ -48,6 +49,7 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
       autoInstall: true,
       registerAuroraBoot: true,
       targetGroupId: "",
+      allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
     },
     cloudConfig: "",
     ...overrides,
@@ -249,6 +251,92 @@ describe("payloadFromBuilder", () => {
 
     expect(payloadFromBuilder({ ...base, userMode: "default" }).provisioning.sshKeys).toBe("ssh-rsa AAA user@host");
     expect(payloadFromBuilder({ ...base, userMode: "none" }).provisioning.sshKeys).toBeUndefined();
+  });
+
+  // phonehome.allowed_commands is the opt-in gate on destructive remote
+  // commands. The UI is authoritative: whatever is in form state must ride
+  // through to the payload verbatim (no "omit-when-default" compression).
+  it("exports form.provisioning.allowedCommands verbatim", () => {
+    const p = payloadFromBuilder({
+      form: makeForm({
+        provisioning: {
+          autoInstall: true,
+          registerAuroraBoot: true,
+          targetGroupId: "",
+          allowedCommands: ["exec", "reboot"],
+        },
+      }),
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+    expect(p.provisioning.allowedCommands).toEqual(["exec", "reboot"]);
+  });
+
+  it("exports the safe defaults when the form hasn't customized them", () => {
+    const p = payloadFromBuilder({
+      form: makeForm({
+        provisioning: {
+          autoInstall: true,
+          registerAuroraBoot: true,
+          targetGroupId: "",
+          allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
+        },
+      }),
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+    expect(p.provisioning.allowedCommands).toEqual([...PHONEHOME_SAFE_DEFAULTS]);
+  });
+
+  it("preserves an empty allowedCommands list (observe-only)", () => {
+    const p = payloadFromBuilder({
+      form: makeForm({
+        provisioning: {
+          autoInstall: true,
+          registerAuroraBoot: true,
+          targetGroupId: "",
+          allowedCommands: [],
+        },
+      }),
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+    expect(p.provisioning.allowedCommands).toEqual([]);
+  });
+
+  it("falls back to safe defaults when form state omits allowedCommands", () => {
+    // Older in-memory form state (e.g. hydrated from a legacy import path)
+    // may not carry the field — the export helper should substitute the
+    // safe defaults rather than emitting undefined.
+    const form = makeForm();
+    // Intentionally strip the field the makeForm default set.
+    delete (form.provisioning as { allowedCommands?: string[] }).allowedCommands;
+    const p = payloadFromBuilder({
+      form,
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+    expect(p.provisioning.allowedCommands).toEqual([...PHONEHOME_SAFE_DEFAULTS]);
   });
 
   it("exposes the dockerfile payload only in dockerfile build mode", () => {
