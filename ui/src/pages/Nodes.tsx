@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { listNodes, sendBulkCommand, type Node, type NodeListParams } from "@/api/nodes";
 import { listGroups, type Group } from "@/api/groups";
@@ -29,21 +29,29 @@ export function Nodes() {
   const [confirmState, setConfirmState] = useState<{ open: boolean; action: () => void }>({ open: false, action: () => {} });
   const navigate = useNavigate();
 
-  function load() {
+  const load = useCallback(() => {
     const params: NodeListParams = {};
     if (groupFilter && groupFilter !== "__all__") params.group_id = groupFilter;
     if (labelFilter) params.label = labelFilter;
     if (phaseFilter && phaseFilter !== "__all__") params.phase = phaseFilter;
     listNodes(params).then(setNodes).catch(() => {});
-  }
+  }, [groupFilter, labelFilter, phaseFilter]);
 
   useEffect(() => {
     listGroups().then(setGroups).catch(() => {});
   }, []);
 
+  // Poll the node list so newly-registered machines appear without a
+  // manual refresh. Five seconds matches the kairos-agent's default
+  // reconnect backoff, so a freshly-booted node typically shows up on
+  // the next tick after it phones home. The interval re-arms whenever
+  // the filters change (via `load`'s deps), so we always poll with the
+  // currently-selected filter set.
   useEffect(() => {
     load();
-  }, [groupFilter, labelFilter, phaseFilter]);
+    const id = setInterval(load, 5000);
+    return () => clearInterval(id);
+  }, [load]);
 
   const filteredNodes = nodes.filter(
     (n) => !hostnameSearch || n.hostname.toLowerCase().includes(hostnameSearch.toLowerCase())
