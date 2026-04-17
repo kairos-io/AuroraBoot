@@ -362,11 +362,24 @@ type FieldError = { field: string; step: number; message: string };
 
 const STEPS = ["Source", "Configure", "Output", "Review"];
 
-// AllowedCommandsPicker renders two checkbox rows (safe / destructive) that
-// drive phonehome.allowed_commands in the generated cloud-config. The list is
-// submitted verbatim — matching the UI to what the node will actually honor.
-// An empty selection is a valid (observe-only) choice but we flag it because
-// it's almost always a mistake; the user probably meant to untick "Register".
+// Per-command descriptions surfaced below each checkbox. Kept short so the
+// row matches the "Auto-install" / "Register" rhythm in the parent card —
+// a single line of secondary copy, not a paragraph.
+const COMMAND_DESCRIPTIONS: Record<string, string> = {
+  upgrade: "Pull a new OS image and reboot into it.",
+  "upgrade-recovery": "Update the recovery partition without rebooting.",
+  reboot: "Reboot the node on demand.",
+  exec: "Run arbitrary shell commands on the node.",
+  reset: "Factory-reset the node, wiping persistent data.",
+  "apply-cloud-config": "Write a new cloud-config to the OEM partition.",
+};
+
+// AllowedCommandsPicker renders phonehome.allowed_commands as two stacked
+// groups of checkboxes. Safe commands are listed first at the card's baseline
+// rhythm; the destructive group sits below a divider so operators have to
+// cross a visible boundary before enabling anything that can wipe or own a
+// node. The list is submitted verbatim — an empty selection is valid
+// (observe-only) but we flag it because it's almost always a mistake.
 function AllowedCommandsPicker({
   value,
   onChange,
@@ -391,52 +404,53 @@ function AllowedCommandsPicker({
     onChange(ordered);
   };
 
-  const row = (cmds: readonly string[]) =>
-    cmds.map((cmd) => (
-      <label key={cmd} className="flex items-center gap-2 text-sm">
+  const commandRow = (cmd: string) => (
+    <div key={cmd}>
+      <label className="flex items-center gap-2 text-sm font-medium">
         <input
           type="checkbox"
           checked={set.has(cmd)}
           onChange={() => toggle(cmd)}
           className="rounded border-input"
         />
-        <code className="font-mono text-xs">{cmd}</code>
+        <code className="font-mono">{cmd}</code>
       </label>
-    ));
+      <p className="text-xs text-muted-foreground mt-1 ml-6">
+        {COMMAND_DESCRIPTIONS[cmd]}
+      </p>
+    </div>
+  );
 
   return (
-    <div className="grid gap-3 pt-1">
-      <div>
-        <Label className="text-xs">
-          Allowed remote commands
-          <InfoTooltip>
-            The node will only execute the commands you tick here. Commands
-            that aren't listed are refused even if the server requests them.
-            This lives in phonehome.allowed_commands in the baked cloud-config.
-          </InfoTooltip>
-        </Label>
-        <p className="text-xs text-muted-foreground mt-1">
-          Commands not listed here will be denied by the node.
-        </p>
+    <div>
+      <Label className="text-xs">
+        Allowed remote commands
+        <InfoTooltip>
+          Baked into <code className="font-mono">phonehome.allowed_commands</code> in the
+          node's cloud-config. Commands not ticked here are refused by the
+          node, even if AuroraBoot requests them.
+        </InfoTooltip>
+      </Label>
+      <p className="text-xs text-muted-foreground mt-1">
+        Commands not listed here will be denied by the node.
+      </p>
+
+      <div className="mt-3 space-y-3">
+        {PHONEHOME_SAFE_DEFAULTS.map(commandRow)}
       </div>
 
-      <div className="grid gap-2 ml-1">
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Safe
-        </div>
-        <div className="grid gap-1.5 ml-2">{row(PHONEHOME_SAFE_DEFAULTS)}</div>
-
-        <div className="text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-300 mt-2">
-          Destructive (opt-in)
-        </div>
-        <div className="grid gap-1.5 ml-2">{row(PHONEHOME_DESTRUCTIVE_COMMANDS)}</div>
+      <div className="mt-4 pt-3 border-t border-border/60 space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Destructive — opt in per fleet.
+        </p>
+        {PHONEHOME_DESTRUCTIVE_COMMANDS.map(commandRow)}
       </div>
 
       {value.length === 0 && (
-        <div className="rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
+        <div className="mt-3 rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
           No commands selected — the node will still register and send
-          heartbeats, but no remote management will be possible. You probably
-          don&apos;t want this; if you don&apos;t need any management, untick{" "}
+          heartbeats, but no remote management will be possible. If you
+          don&apos;t need any management, untick{" "}
           <strong>Register with AuroraBoot</strong> instead.
         </div>
       )}
