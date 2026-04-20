@@ -416,9 +416,8 @@ export function CommandDialog({
                     />
                     Reset OEM partition
                   </label>
-                  <p className="text-xs text-muted-foreground">
-                    The persistent partition is reformatted as part of every reset — that's Kairos' default
-                    behaviour, so there's no separate toggle for it here.
+                  <p className="text-xs text-amber-700 dark:text-amber-300">
+                    Reset will wipe all persistent data on the node. This action is irreversible.
                   </p>
                 </div>
                 <div className="grid gap-2">
