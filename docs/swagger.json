@@ -1,0 +1,1585 @@
+{
+    "swagger": "2.0",
+    "info": {
+        "description": "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer — Authorization: Bearer \u003cadmin-password\u003e. Human/UI/automation callers.\n* NodeAPIKey — Authorization: Bearer \u003capi-key\u003e. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws — agent command channel (auth via ?token=\u003capi-key\u003e).\n* GET /api/v1/ws/ui — UI live update channel (auth via ?token=\u003cadmin-password\u003e).",
+        "title": "AuroraBoot API",
+        "contact": {
+            "name": "Kairos authors",
+            "url": "https://github.com/kairos-io/AuroraBoot"
+        },
+        "license": {
+            "name": "Apache-2.0",
+            "url": "https://www.apache.org/licenses/LICENSE-2.0"
+        },
+        "version": "0.1.0"
+    },
+    "basePath": "/",
+    "paths": {
+        "/api/v1/artifacts": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "List artifacts",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.ArtifactRecord"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Kicks off an asynchronous build. The response is the initial record with phase Pending. Subscribe to /api/v1/ws/ui or poll GET /api/v1/artifacts/{id} to watch it progress through Building then Ready/Error.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Start a build",
+                "parameters": [
+                    {
+                        "description": "Build specification",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APICreateArtifactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.ArtifactRecord"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Get an artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.ArtifactRecord"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Delete an artifact and its output files",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            },
+            "patch": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Update artifact metadata (name / saved flag)",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Fields to update",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIUpdateArtifactRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.ArtifactRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}/cancel": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Cancel a running build",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}/logs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the full concatenated log as text/plain. For real-time updates subscribe to the UI WebSocket and filter {type:\"build-log\"} envelopes.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Get build log snapshot",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/groups": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "List groups",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.NodeGroup"
+                            }
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Create a group",
+                "parameters": [
+                    {
+                        "description": "Group payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APICreateGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.NodeGroup"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/groups/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Get a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.NodeGroup"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Update a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Update payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIUpdateGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.NodeGroup"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Member nodes are detached in the same transaction; nodes are never deleted.",
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Delete a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns every registered node. Optional group/label filters.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "List nodes",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Filter by group ID",
+                        "name": "group",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Filter by a single key:value label pair",
+                        "name": "label",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.ManagedNode"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/register": {
+            "post": {
+                "description": "Idempotent by machineID: if a node with the same machineID already exists, the existing record is returned so the agent can resume with its persisted API key. Authenticated by the registrationToken inside the request body.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agent bootstrap"
+                ],
+                "summary": "Register a node",
+                "parameters": [
+                    {
+                        "description": "Registration payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIRegisterRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIRegisterResponse"
+                        }
+                    },
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIRegisterResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.ManagedNode"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Delete a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}/commands": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Commands"
+                ],
+                "summary": "Queue a command for a single node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Command payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APICreateCommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.NodeCommand"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}/group": {
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Assign a node to a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Target group",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APISetGroupRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}/heartbeat": {
+            "post": {
+                "security": [
+                    {
+                        "NodeAPIKey": []
+                    }
+                ],
+                "description": "Transitions the node to Online and records the latest agent version and OS info.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Agent"
+                ],
+                "summary": "Agent heartbeat",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Heartbeat payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIHeartbeatRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}/labels": {
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Replace a node's labels",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Labels payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APISetLabelsRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/v1/secureboot-keys": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SecureBoot"
+                ],
+                "summary": "List SecureBoot key sets",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.SecureBootKeySet"
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/secureboot-keys/generate": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SecureBoot"
+                ],
+                "summary": "Generate a SecureBoot key set",
+                "parameters": [
+                    {
+                        "description": "Key set name + enroll mode",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIGenerateKeySetRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.SecureBootKeySet"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/secureboot-keys/import": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "SecureBoot"
+                ],
+                "summary": "Import a key set exported from another instance",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Override the manifest name to avoid a collision",
+                        "name": "name",
+                        "in": "query"
+                    },
+                    {
+                        "type": "file",
+                        "description": "tar.gz produced by the export endpoint",
+                        "name": "file",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.SecureBootKeySet"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/secureboot-keys/{id}": {
+            "delete": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Removes the database record. Key files on disk are left in place.",
+                "tags": [
+                    "SecureBoot"
+                ],
+                "summary": "Delete a key set record",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Key set ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/api/v1/secureboot-keys/{id}/export": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Streams a gzipped tar with manifest.json at the root and every key file under keys/. File permissions preserved so private keys remain 0600.",
+                "produces": [
+                    "application/gzip"
+                ],
+                "tags": [
+                    "SecureBoot"
+                ],
+                "summary": "Export a key set as a portable tar.gz",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Key set ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/settings/registration-token": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Read the current registration token",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIRegistrationTokenResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/settings/registration-token/rotate": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Generates and persists a new token. Already-registered nodes keep working because they authenticate with their api-key.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Rotate the registration token",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIRegistrationTokenResponse"
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "definitions": {
+        "handlers.APIArtifactOutputs": {
+            "type": "object",
+            "properties": {
+                "cloudImage": {
+                    "type": "boolean"
+                },
+                "fips": {
+                    "type": "boolean"
+                },
+                "gce": {
+                    "type": "boolean"
+                },
+                "iso": {
+                    "type": "boolean"
+                },
+                "netboot": {
+                    "type": "boolean"
+                },
+                "rawDisk": {
+                    "type": "boolean"
+                },
+                "tar": {
+                    "type": "boolean"
+                },
+                "trustedBoot": {
+                    "type": "boolean"
+                },
+                "uki": {
+                    "type": "boolean"
+                },
+                "vhd": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.APIArtifactProvisioning": {
+            "type": "object",
+            "properties": {
+                "autoInstall": {
+                    "type": "boolean"
+                },
+                "password": {
+                    "type": "string"
+                },
+                "registerAuroraBoot": {
+                    "type": "boolean"
+                },
+                "sshKeys": {
+                    "type": "string"
+                },
+                "targetGroupId": {
+                    "type": "string"
+                },
+                "userMode": {
+                    "type": "string",
+                    "enum": [
+                        "default",
+                        "custom",
+                        "none"
+                    ]
+                },
+                "username": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.APIArtifactSigning": {
+            "type": "object",
+            "properties": {
+                "ukiKeySetId": {
+                    "type": "string"
+                },
+                "ukiPublicKeysDir": {
+                    "type": "string"
+                },
+                "ukiSecureBootCert": {
+                    "type": "string"
+                },
+                "ukiSecureBootEnroll": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "manual",
+                        "if-safe",
+                        "force"
+                    ]
+                },
+                "ukiSecureBootKey": {
+                    "type": "string"
+                },
+                "ukiTpmPcrKey": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.APICreateArtifactRequest": {
+            "type": "object",
+            "properties": {
+                "arch": {
+                    "type": "string",
+                    "enum": [
+                        "amd64",
+                        "arm64"
+                    ],
+                    "example": "amd64"
+                },
+                "baseImage": {
+                    "type": "string"
+                },
+                "cloudConfig": {
+                    "type": "string"
+                },
+                "dockerfile": {
+                    "type": "string"
+                },
+                "kairosInitImage": {
+                    "type": "string"
+                },
+                "kairosVersion": {
+                    "type": "string",
+                    "example": "v1.0"
+                },
+                "kubernetesDistro": {
+                    "type": "string",
+                    "enum": [
+                        "k3s",
+                        "k0s"
+                    ]
+                },
+                "kubernetesVersion": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string",
+                    "example": "generic"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "outputs": {
+                    "$ref": "#/definitions/handlers.APIArtifactOutputs"
+                },
+                "overlayRootfs": {
+                    "type": "string"
+                },
+                "provisioning": {
+                    "$ref": "#/definitions/handlers.APIArtifactProvisioning"
+                },
+                "signing": {
+                    "$ref": "#/definitions/handlers.APIArtifactSigning"
+                },
+                "variant": {
+                    "type": "string",
+                    "enum": [
+                        "core",
+                        "standard"
+                    ],
+                    "example": "core"
+                }
+            }
+        },
+        "handlers.APICreateCommandRequest": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "command": {
+                    "type": "string",
+                    "enum": [
+                        "upgrade",
+                        "upgrade-recovery",
+                        "reset",
+                        "apply-cloud-config",
+                        "reboot",
+                        "exec"
+                    ],
+                    "example": "upgrade"
+                }
+            }
+        },
+        "handlers.APICreateGroupRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string",
+                    "example": "Production fleet nodes"
+                },
+                "name": {
+                    "type": "string",
+                    "example": "production"
+                }
+            }
+        },
+        "handlers.APIError": {
+            "type": "object",
+            "properties": {
+                "detail": {
+                    "type": "string"
+                },
+                "error": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.APIGenerateKeySetRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "example": "production"
+                },
+                "secureBootEnroll": {
+                    "type": "string",
+                    "enum": [
+                        "off",
+                        "manual",
+                        "if-safe",
+                        "force"
+                    ]
+                }
+            }
+        },
+        "handlers.APIHeartbeatRequest": {
+            "type": "object",
+            "properties": {
+                "agentVersion": {
+                    "type": "string",
+                    "example": "v2.27.0"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "osRelease": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.APIRegisterRequest": {
+            "type": "object",
+            "properties": {
+                "agentVersion": {
+                    "type": "string",
+                    "example": "v2.27.0"
+                },
+                "hostname": {
+                    "type": "string",
+                    "example": "kairos-node-01"
+                },
+                "machineID": {
+                    "type": "string",
+                    "example": "a1b2c3d4e5f6"
+                },
+                "registrationToken": {
+                    "type": "string",
+                    "example": "74a7e7452f9da2fd7739557f027bca0f"
+                }
+            }
+        },
+        "handlers.APIRegisterResponse": {
+            "type": "object",
+            "properties": {
+                "apiKey": {
+                    "type": "string",
+                    "example": "3db2c1e4f5a6b7c8d9e0f1a2b3c4d5e6"
+                },
+                "id": {
+                    "type": "string",
+                    "example": "c8a4fb46-1836-4c70-97c8-29490ad110bc"
+                }
+            }
+        },
+        "handlers.APIRegistrationTokenResponse": {
+            "type": "object",
+            "properties": {
+                "registrationToken": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.APISetGroupRequest": {
+            "type": "object",
+            "properties": {
+                "groupID": {
+                    "type": "string",
+                    "example": "b1db4f35-6195-410a-94f2-09e66e0a6a83"
+                }
+            }
+        },
+        "handlers.APISetLabelsRequest": {
+            "type": "object",
+            "properties": {
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.APIUpdateArtifactRequest": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "saved": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.APIUpdateGroupRequest": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.ArtifactRecord": {
+            "type": "object",
+            "properties": {
+                "arch": {
+                    "type": "string"
+                },
+                "artifacts": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "autoInstall": {
+                    "type": "boolean"
+                },
+                "baseImage": {
+                    "type": "string"
+                },
+                "cloudConfig": {
+                    "type": "string"
+                },
+                "cloudImage": {
+                    "type": "boolean"
+                },
+                "containerImage": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "dockerfile": {
+                    "type": "string"
+                },
+                "fips": {
+                    "type": "boolean"
+                },
+                "gce": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "iso": {
+                    "type": "boolean"
+                },
+                "kairosInitImage": {
+                    "type": "string"
+                },
+                "kairosVersion": {
+                    "type": "string"
+                },
+                "kubernetesDistro": {
+                    "type": "string"
+                },
+                "kubernetesVersion": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "model": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "netboot": {
+                    "type": "boolean"
+                },
+                "overlayRootfs": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "rawDisk": {
+                    "type": "boolean"
+                },
+                "registerAuroraBoot": {
+                    "type": "boolean"
+                },
+                "saved": {
+                    "type": "boolean"
+                },
+                "tar": {
+                    "type": "boolean"
+                },
+                "targetGroupId": {
+                    "type": "string"
+                },
+                "trustedBoot": {
+                    "type": "boolean"
+                },
+                "uki": {
+                    "type": "boolean"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "variant": {
+                    "type": "string"
+                },
+                "vhd": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "store.ManagedNode": {
+            "type": "object",
+            "properties": {
+                "agentVersion": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "group": {
+                    "$ref": "#/definitions/store.NodeGroup"
+                },
+                "groupID": {
+                    "type": "string"
+                },
+                "hostname": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "lastHeartbeat": {
+                    "type": "string"
+                },
+                "machineID": {
+                    "type": "string"
+                },
+                "osRelease": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.NodeCommand": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "command": {
+                    "type": "string"
+                },
+                "completedAt": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "deliveredAt": {
+                    "type": "string"
+                },
+                "expiresAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "managedNodeID": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "result": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.NodeGroup": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "description": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.SecureBootKeySet": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "keysDir": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secureBootEnroll": {
+                    "type": "string"
+                },
+                "tpmPcrKeyPath": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        }
+    },
+    "securityDefinitions": {
+        "AdminBearer": {
+            "description": "Supply as \"Bearer \u003cadmin-password\u003e\".",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        },
+        "NodeAPIKey": {
+            "description": "Supply as \"Bearer \u003capi-key\u003e\" returned from POST /api/v1/nodes/register.",
+            "type": "apiKey",
+            "name": "Authorization",
+            "in": "header"
+        }
+    }
+}

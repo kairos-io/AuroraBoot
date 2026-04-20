@@ -103,7 +103,20 @@ func (d *Deployer) StepDumpSource() error {
 
 func (d *Deployer) StepGenISO() error {
 	return d.Add(constants.OpGenISO,
-		herd.EnableIf(func() bool { return d.fromImage() && !d.rawDiskIsSet() }),
+		// Only gen the ISO when something actually needs one: the ISO itself
+		// is a requested output, or netboot is requested and has to extract
+		// its artifacts out of a generated ISO. Building from a container
+		// while the caller asked for only raw/tar/uki/cloud-image outputs
+		// used to still spend several minutes (and GBs of disk) generating
+		// an ISO nobody would read.
+		herd.EnableIf(func() bool {
+			if !d.fromImage() || d.rawDiskIsSet() {
+				return false
+			}
+			isoRequested := !d.Config.DisableISOboot
+			netbootRequested := !d.Config.DisableNetboot
+			return isoRequested || netbootRequested
+		}),
 		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO)))
 }
 

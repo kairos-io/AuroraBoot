@@ -1,7 +1,7 @@
 # AuroraBoot Makefile
 # Development and build targets for AuroraBoot
 
-.PHONY: help dev build-js build-go build clean clean-js clean-go run-docker build-docker test
+.PHONY: help dev ui-install ui-build build-go build clean clean-ui clean-go run-docker build-docker test openapi fmt lint install-deps
 
 # Default target
 help: ## Show this help message
@@ -11,40 +11,36 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@awk 'BEGIN {FS = ":.*?## "} /^[a-zA-Z_-]+:.*?## / {printf "  %-15s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "Usage examples:"
-	@echo "  make dev                           # Run with default settings"
-	@echo "  make dev ARGS=\"--builds-dir /builds\"  # Run with custom builds directory"
-	@echo "  make dev ARGS=\"--address :9090 --create-worker\"  # Run with custom address and worker"
-	@echo ""
-	@echo "Available web command flags:"
-	@echo "  --address string     Listen address (default: :8080)"
-	@echo "  --artifact-dir string Artifact directory (default: /tmp/artifacts)"
-	@echo "  --builds-dir string  Directory to store build jobs (default: /tmp/kairos-builds)"
-	@echo "  --create-worker      Start a local worker in a goroutine"
+	@echo "Common workflows:"
+	@echo "  make build                          # Build React UI + Go binary"
+	@echo "  make dev                            # Build and run server in Docker"
+	@echo "  make openapi                        # Regenerate Swagger spec from annotations"
 
-# Development target - builds everything and runs with local binary
-dev: build-js build-go ## Build JS assets, compile Go binary, and run Docker image with mounted binary
-	@echo "Starting AuroraBoot in development mode..."
-	@mkdir -p builds
+# Development target - builds everything and runs the server in Docker
+dev: build ## Build everything and run AuroraBoot server in Docker
+	@echo "Starting AuroraBoot server in development mode..."
+	@mkdir -p data
 	docker run --rm \
 		--privileged \
 		--net host \
 		--entrypoint /usr/sbin/auroraboot \
 		-v $(PWD)/auroraboot:/usr/sbin/auroraboot \
-		-v $(PWD)/builds:/builds \
+		-v $(PWD)/data:/data \
 		-v /dev:/dev \
 		-v /var/run/docker.sock:/var/run/docker.sock \
-		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker $(ARGS) --default-kairos-init-version v0.4.9
+		quay.io/kairos/auroraboot web --data-dir /data $(ARGS)
 
-# Build JavaScript assets (only if needed)
-build-js: internal/web/app/package.json ## Build JavaScript and CSS assets
-	@echo "Installing JS dependencies..."
-	npm install --prefix internal/web/app
-	@echo "Bundling JavaScript..."
-	npx --prefix internal/web/app esbuild ./internal/web/app/index.js --bundle --outfile=internal/web/app/bundle.js
-	@echo "Building CSS with Tailwind..."
-	npx --prefix internal/web/app tailwindcss -i ./internal/web/app/assets/css/tailwind.css -o internal/web/app/output.css --minify
-	@echo "JS assets built successfully!"
+# Install React UI dependencies
+ui-install: ## Install React UI npm dependencies
+	@echo "Installing UI dependencies..."
+	cd ui && npm install
+
+# Build React UI bundle. vite.config.ts already writes to internal/ui/dist
+# so the Go build can pick it up via go:embed.
+ui-build: ui-install ## Build the React UI bundle
+	@echo "Building React UI..."
+	cd ui && npm run build
+	@echo "UI built to internal/ui/dist"
 
 # Build Go binary
 build-go: ## Build the Go binary
@@ -53,21 +49,20 @@ build-go: ## Build the Go binary
 	@echo "Go binary built successfully!"
 
 # Build everything
-build: build-js build-go ## Build all assets and Go binary
+build: ui-build build-go ## Build React UI and Go binary
 
-# Clean JavaScript build artifacts (but keep node_modules)
-clean-js: ## Clean JavaScript build artifacts (keeps node_modules)
-	@echo "Cleaning JS build artifacts..."
-	rm -f internal/web/app/bundle.js
-	rm -f internal/web/app/output.css
-	@echo "JS artifacts cleaned!"
+# Clean UI build artifacts (keeps node_modules)
+clean-ui: ## Clean UI build artifacts (keeps node_modules)
+	@echo "Cleaning UI build artifacts..."
+	rm -rf internal/ui/dist
+	rm -rf ui/dist
+	@echo "UI artifacts cleaned!"
 
-# Clean JavaScript dependencies (removes node_modules)
-clean-js-deps: ## Clean JavaScript dependencies (removes node_modules)
-	@echo "Cleaning JS dependencies..."
-	rm -rf internal/web/app/node_modules
-	rm -f internal/web/app/package-lock.json
-	@echo "JS dependencies cleaned!"
+# Clean UI dependencies (removes node_modules)
+clean-ui-deps: ## Clean UI dependencies (removes node_modules)
+	@echo "Cleaning UI dependencies..."
+	rm -rf ui/node_modules
+	@echo "UI dependencies cleaned!"
 
 # Clean Go build artifacts
 clean-go: ## Clean Go build artifacts
@@ -76,35 +71,22 @@ clean-go: ## Clean Go build artifacts
 	@echo "Go artifacts cleaned!"
 
 # Clean everything (including node_modules)
-clean: clean-js-deps clean-go ## Clean all build artifacts including dependencies
-
-# Clean build artifacts only (keep dependencies)
-clean-build: clean-js clean-go ## Clean build artifacts only (keep dependencies)
-
-# Run the Docker image (assumes binary is already built)
-run-docker: ## Run the Docker image with mounted binary
-	@if [ ! -f auroraboot ]; then echo "Error: auroraboot binary not found. Run 'make build-go' first."; exit 1; fi
-	@mkdir -p builds
-	docker run --rm \
-		--net host \
-		-v $(PWD)/auroraboot:/usr/sbin/auroraboot \
-		-v $(PWD)/builds:/builds \
-		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker $(ARGS)
+clean: clean-ui-deps clean-ui clean-go ## Clean all build artifacts including dependencies
 
 # Build Docker image
 build-docker: ## Build the Docker image
 	docker build -t auroraboot:local .
 
-# Run tests
-test: ## Run tests
+# Run tests (UI dist is embedded via go:embed, so it must exist before `go test`)
+test: ui-build ## Run Go tests
 	go test ./...
 
-# Install dependencies (for development)
+# Install development dependencies
 install-deps: ## Install development dependencies
 	@echo "Installing Go dependencies..."
 	go mod download
-	@echo "Installing JS dependencies..."
-	npm install --prefix internal/web/app
+	@echo "Installing UI dependencies..."
+	cd ui && npm install
 	@echo "Dependencies installed!"
 
 # Format code
@@ -115,78 +97,10 @@ fmt: ## Format Go code
 lint: ## Lint Go code
 	golangci-lint run
 
-# Generate swagger docs
-swagger: ## Generate swagger documentation
-	swag init -g main.go --output internal/web/app --parseDependency --parseInternal --parseDepth 1 --parseVendor
+# Generate OpenAPI spec from swag annotations on internal/cmd/web.go
+openapi: ## Regenerate Swagger/OpenAPI documentation
+	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
+	swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
-# Quick development cycle (build and run)
-quick: build-js build-go run-docker ## Quick build and run cycle
-
-
-# Test targets
-test-js: build-js build-go ## Run JavaScript E2E tests (starts server, runs tests, stops server)
-	@echo "Starting AuroraBoot server for testing..."
-	@mkdir -p builds
-	@# Start server in background and capture PID
-	@docker run --rm -d \
-		--name auroraboot-test-server \
-		--net host \
-		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
-		-v $(PWD)/builds:/builds \
-		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker > /tmp/auroraboot-test.pid || true
-	@echo "Waiting for server to be ready..."
-	@# Wait for server to be ready (up to 30 seconds)
-	@for i in $$(seq 1 30); do \
-		if curl -s http://localhost:8080 > /dev/null 2>&1; then \
-			echo "Server is ready!"; \
-			break; \
-		fi; \
-		echo "Waiting for server... ($$i/30)"; \
-		sleep 1; \
-	done
-	@# Run the tests with proper cleanup
-	@echo "Running JavaScript E2E tests..."
-	@cd e2e/web && npm install && npm test; \
-	TEST_EXIT_CODE=$$?; \
-	echo "Stopping test server..."; \
-	docker stop auroraboot-test-server > /dev/null 2>&1 || true; \
-	rm -f /tmp/auroraboot-test.pid; \
-	echo "Tests completed!"; \
-	exit $$TEST_EXIT_CODE
-
-test-js-open: build-js build-go ## Run JavaScript E2E tests in interactive mode (starts server, opens Cypress, stops server)
-	@echo "Starting AuroraBoot server for testing..."
-	@mkdir -p builds
-	@# Start server in background
-	@docker run --rm -d \
-		--name auroraboot-test-server \
-		--net host \
-		-v $(PWD)/auroraboot:/usr/bin/auroraboot \
-		-v $(PWD)/builds:/builds \
-		quay.io/kairos/auroraboot web --builds-dir /builds --create-worker > /tmp/auroraboot-test.pid || true
-	@echo "Waiting for server to be ready..."
-	@# Wait for server to be ready (up to 30 seconds)
-	@for i in $$(seq 1 30); do \
-		if curl -s http://localhost:8080 > /dev/null 2>&1; then \
-			echo "Server is ready!"; \
-			break; \
-		fi; \
-		echo "Waiting for server... ($$i/30)"; \
-		sleep 1; \
-	done
-	@# Run the tests in interactive mode with proper cleanup
-	@echo "Opening Cypress in interactive mode..."
-	@cd e2e/web && npm install && npm run test:open; \
-	TEST_EXIT_CODE=$$?; \
-	echo "Stopping test server..."; \
-	docker stop auroraboot-test-server > /dev/null 2>&1 || true; \
-	rm -f /tmp/auroraboot-test.pid; \
-	echo "Interactive tests completed!"; \
-	exit $$TEST_EXIT_CODE
-
-test-js-stop: ## Stop any running test server
-	@echo "Stopping test server..."
-	@docker stop auroraboot-test-server > /dev/null 2>&1 || true
-	@rm -f /tmp/auroraboot-test.pid
-	@echo "Test server stopped!"
-
+# Backwards-compat alias
+swagger: openapi

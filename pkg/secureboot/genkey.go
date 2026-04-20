@@ -1,7 +1,7 @@
 // Package secureboot exposes Secure Boot key generation as a reusable Go API.
 //
 // This package mirrors the behavior of the `auroraboot genkey` CLI command but
-// is callable as a library so external tools (for example, daedalus) don't need
+// is callable as a library so external tools (for example, auroraboot) don't need
 // to shell out to the auroraboot binary just to generate a key set.
 //
 // The generation pipeline still relies on `openssl` being available on PATH for

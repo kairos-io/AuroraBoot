@@ -1,225 +1,230 @@
-<h1 align="center">
-  <br>
-     <img width="184" alt="kairos-white-column 5bc2fe34" src="https://user-images.githubusercontent.com/2420543/193010398-72d4ba6e-7efe-4c2e-b7ba-d3a826a55b7d.png"><br>
-    AuroraBoot
-<br>
-</h1>
-
-<h3 align="center">The Kairos bootstrapper</h3>
 <p align="center">
-  <a href="https://opensource.org/licenses/">
-    <img src="https://img.shields.io/badge/licence-APL2-brightgreen"
-         alt="license">
-  </a>
-  <a href="https://github.com/kairos-io/AuroraBoot/issues"><img src="https://img.shields.io/github/issues/kairos-io/AuroraBoot"></a>
-  <a href="https://kairos.io/docs/" target=_blank> <img src="https://img.shields.io/badge/Documentation-blue"
-         alt="docs"></a>
-  <img src="https://img.shields.io/badge/made%20with-Go-blue">
-  <img src="https://goreportcard.com/badge/github.com/kairos-io/AuroraBoot" alt="go report card" />
+  <img src="docs/screenshots/dashboard-zero-state.png" alt="AuroraBoot dashboard" width="820" />
 </p>
 
-
-With Kairos you can build immutable, bootable Kubernetes and OS images for your edge devices as easily as writing a Dockerfile. Optional P2P mesh with distributed ledger automates node bootstrapping and coordination. Updating nodes is as easy as CI/CD: push a new image to your container registry and let secure, risk-free A/B atomic upgrades do the rest.
-
-
-<table>
-<tr>
-<th align="center">
-<img width="640" height="1px">
-<p> 
-<small>
-Documentation
-</small>
+<h1 align="center">AuroraBoot</h1>
+<p align="center">
+  <strong>The Kairos bootstrapper — build images, provision machines, manage the fleet.</strong>
 </p>
-</th>
-<th align="center">
-<img width="640" height="1">
-<p> 
-<small>
-Contribute
-</small>
+
+<p align="center">
+  <a href="https://opensource.org/licenses/"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue" /></a>
+  <a href="https://github.com/kairos-io/AuroraBoot/issues"><img alt="Issues" src="https://img.shields.io/github/issues/kairos-io/AuroraBoot"></a>
+  <a href="https://kairos.io/docs/" target="_blank"><img alt="docs" src="https://img.shields.io/badge/Documentation-blue"></a>
+  <img alt="Made with Go" src="https://img.shields.io/badge/made%20with-Go-blue">
+  <img alt="Go report" src="https://goreportcard.com/badge/github.com/kairos-io/AuroraBoot" />
 </p>
-</th>
-</tr>
-<tr>
-<td>
 
- 📚 [Getting started with Kairos](https://kairos.io/docs/getting-started) <br> :bulb: [Examples](https://kairos.io/docs/examples) <br> :movie_camera: [Video](https://kairos.io/docs/media/) <br> :open_hands:[Engage with the Community](https://kairos.io/community/)
-  
-</td>
-<td>
-  
-🙌[ CONTRIBUTING.md ]( https://github.com/kairos-io/kairos/blob/master/CONTRIBUTING.md ) <br> :raising_hand: [ GOVERNANCE ]( https://github.com/kairos-io/kairos/blob/master/GOVERNANCE.md ) <br>:construction_worker:[Code of conduct](https://github.com/kairos-io/kairos/blob/master/CODE_OF_CONDUCT.md) 
-  
-</td>
-</tr>
-</table>
+AuroraBoot is the official bootstrapper for [Kairos](https://kairos.io). With a single binary you can:
 
+- **Build** bootable images — ISO, UKI, raw disks, sysextensions — from any Kairos flavor or container image.
+- **Provision** machines over the network via PXE/netboot, Redfish, or plain USB.
+- **Customize** installation media with cloud-configs so machines install themselves unattended.
+- **Manage** a whole fleet from a browser once nodes come online.
 
-## Description
+Two ways to run it, same binary:
 
-`AuroraBoot` is an automatic boostrapper for `Kairos`:
+1. **One-shot CLI** — `auroraboot build-iso`, `auroraboot build-uki`, `auroraboot netboot`, … for quick builds and scripted pipelines.
+2. **Fleet server** — `auroraboot web` (or `docker compose up`) gives you a self-hosted dashboard, REST API, node manager, SecureBoot key store and netboot server, all in one place.
 
-- **Download** release assets in order to provision a machine
-- **Prepare** automatically the environment to boot from network
-- **Provision** machines from network with a version of Kairos and cloud config
-- **Customize** The installation media for installations from USB
+---
 
-Check out the full [reference of AuroraBoot  in our documentation](https://kairos.io/docs/reference/auroraboot/).
-
-## Usage
-
-`AuroraBoot` can be used with its container image to provision machines on the same network that will attempt to netboot. 
-
-For instance, in one machine from your workstation, you can run:
+## Getting started with the fleet server
 
 ```bash
-$ docker run --rm -ti --net host quay.io/kairos/auroraboot --set "artifact_version=v2.4.2" --set "release_version=v2.4.2" --set "flavor=rockylinux"--set "flavor_release=9"  --set repository="kairos-io/kairos" --cloud-config /....
+git clone https://github.com/kairos-io/AuroraBoot
+cd AuroraBoot
+docker compose up --build -d
 ```
 
-And then start machines attempting to boot over network.
+On first boot AuroraBoot generates an admin password and a node registration token under `./data/secrets/`:
 
-This command will:
-- **Download all the needed artifacts**
-- **Create a custom ISO with the cloud config attached to drive automated installations**
-- **Provision Kairos from network, with the same settings**
-
-### Use container images
-
-Auroraboot can also boostrap nodes by using custom container images or [the official kairos releases](https://kairos.io/docs/reference/image_matrix/), for instance:
-
-```
-docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=oci://quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
+```bash
+cat data/secrets/admin-password
+cat data/secrets/registration-token
 ```
 
-This command will:
-- **Use the image in the docker daemon running in the local host to boot it over network**
-- **Create a custom ISO with the cloud config attached to drive automated installations**
-- **Provision Kairos from network, with the same settings**
+Open **http://localhost:9099**, sign in, and the welcome wizard walks you through the three steps: build an artifact, deploy it, manage the nodes that come online.
 
-### Pulling without docker
+### What you get
 
-If you don't have a running docker daemon, Auroraboot can also pull directly from remotes, for instance:
+- **A guided Artifact Builder** with ready-made templates for Ubuntu, Fedora, Debian, openSUSE, Alpine, Rocky and Hadron. Pick architecture, model, variant — the UI filters the choices so you only see what Kairos actually supports.
+- **A deployment surface** — download the image, PXE-boot a rack of machines into it, hand it off to a Redfish BMC, or upgrade a node you already registered.
+- **A node manager** — every machine AuroraBoot builds an image for phones home automatically and shows up in the Nodes list. From there you can send commands: upgrade, reboot, reset, apply a cloud-config, or run arbitrary shell with captured output.
+- **A SecureBoot key store** for full PK / KEK / db sets plus TPM PCR policy keys, generated on demand and referenced by name from UKI builds. Keys can be exported as a signed archive and imported on another instance.
+- **A REST API and Go client** mirroring the UI one-to-one, with Swagger UI at `/api/docs` and a first-class client at [`pkg/client`](pkg/client).
 
+### Common settings
 
-```
-docker run --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
-```
+| Flag / env var | What it does |
+|---|---|
+| `--listen :8080` | HTTP listen address |
+| `--data-dir ./data` | Where the DB, artifacts, keys and secrets live |
+| `--db <dsn>` | Override DB DSN (SQLite by default, Postgres supported) |
+| `--url https://…` | External URL of this instance, injected into cloud-configs so nodes know where to phone home |
+| `AURORABOOT_ADMIN_PASSWORD` | Override admin password |
+| `AURORABOOT_REG_TOKEN` | Override registration token |
 
-This command will:
-- **Pull an image remotely to boot it over network**
-- **Create a custom ISO with the cloud config attached to drive automated installations**
-- **Provision Kairos from network, with the same settings**
+See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
 
-### Specifying architecture
+---
 
-When pulling container images for a different architecture than the host (e.g., pulling ARM64 images on an AMD64 host), you need to specify the `arch` option:
+## Using the CLI
 
-```
+You don't need the fleet server to get value out of AuroraBoot. The historical one-shot CLI is fully preserved, and it's often all you need for a quick build or a one-off netboot.
+
+### Netboot a machine from a Kairos release
+
+Run this on a machine on the same network as the target, and let the target PXE-boot:
+
+```bash
 docker run --rm -ti --net host quay.io/kairos/auroraboot \
-  --set container_image=quay.io/kairos/alpine:3.21-standard-arm64-rpi4-v3.6.0-rc5-k3s-v1.32.9-k3s1 \
-  --set arch=arm64
+    --set "artifact_version=v2.4.2" \
+    --set "release_version=v2.4.2" \
+    --set "flavor=rockylinux" \
+    --set "flavor_release=9" \
+    --set "repository=kairos-io/kairos" \
+    --cloud-config /path/to/cloud-config.yaml
 ```
 
-Supported architectures:
-- `amd64` (default, matches x86_64)
-- `arm64` (matches aarch64)
+This downloads the needed artifacts, bakes your cloud-config into a custom ISO, and serves it over the network.
 
-**Note**: If you don't specify `arch` when pulling images for a different architecture, AuroraBoot will default to the host architecture (`amd64` on x86_64 systems), which will fail when the image doesn't have a matching platform variant.
+### Use a container image instead
 
-### Disable Netboot
+Point AuroraBoot at any Kairos container image (or your own) and it will boot that:
 
-To disable netboot, and allow only ISO generation (for offline usage), use `--set disable_netboot=true`:
-
-```
-docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host quay.io/kairos/auroraboot --set container_image=quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2 --set disable_netboot=true
+```bash
+docker run --rm -ti --net host quay.io/kairos/auroraboot \
+    --set container_image=quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2
 ```
 
-### Configuration
+Add `-v /var/run/docker.sock:/var/run/docker.sock` if you want to use an image already sitting in your local Docker daemon instead of pulling from a remote.
 
-`AuroraBoot` takes configuration settings either from the CLI arguments or from a `YAML` configuration file.
+### Cross-architecture builds
 
-A configuration file can be for instance:
+When pulling images for a different architecture than the host, set `arch`:
+
+```bash
+docker run --rm -ti --net host quay.io/kairos/auroraboot \
+    --set container_image=quay.io/kairos/alpine:3.21-standard-arm64-rpi4-v3.6.0 \
+    --set arch=arm64
+```
+
+Supported: `amd64` (default) and `arm64`.
+
+### Offline ISO, no netboot
+
+To generate an ISO without starting the PXE server, pass `disable_netboot=true`:
+
+```bash
+docker run -v /var/run/docker.sock:/var/run/docker.sock --rm -ti --net host \
+    quay.io/kairos/auroraboot \
+    --set container_image=quay.io/kairos/rockylinux:9-core-amd64-generic-v2.4.2 \
+    --set disable_netboot=true
+```
+
+### Configuration file
+
+Everything on the `--set` flag can also live in a YAML file:
 
 ```yaml
 artifact_version: "v2.4.2"
 release_version: "v2.4.2"
 container_image: "..."
-arch: "amd64"  # Optional: architecture to use when pulling container images (amd64 or arm64)
+arch: "amd64"
 flavor: "rockylinux"
 flavor_release: "9"
 repository: "kairos-io/kairos"
 
 cloud_config: |
+  #cloud-config
+  install:
+    device: "auto"
+    auto: true
+    reboot: true
+  users:
+    - name: kairos
+      passwd: kairos
 ```
 
-Any field of the `YAML` file, excluding `cloud_config` can be configured with the `--set` argument in the CLI. And by passing "-" to `--cloud-config`, the cloud config can be passed from the STDIN, for example:
+Passing `-` to `--cloud-config` reads it from stdin, which is handy in CI pipelines.
+
+### Other subcommands
 
 ```bash
-cat <<EOF | docker run --rm -i --net host quay.io/kairos/auroraboot \
-                    --cloud-config - \
-                    --set "container_image=quay.io/kairos/kairos-opensuse-leap:v1.5.1-k3sv1.21.14-k3s1"
-#cloud-config
+# Build an ISO from a Kairos release
+auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+    --output ./out --name kairos.iso
 
-install:
- device: "auto"
- auto: true
- reboot: true
+# Build a UKI from a container image
+auroraboot build-uki --image quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
+    --output-dir ./out
 
-hostname: metal-bundle-test-{{ trunc 4 .MachineID }}
+# Generate a SecureBoot key set
+auroraboot genkey my-keys --output ./keys
 
-users:
-- name: kairos
-  # Change to your pass here
-  passwd: kairos
-  ssh_authorized_keys:
-  # Replace with your github user and un-comment the line below:
-  - github:mudler
+# Generate a sysextension from a container image
+auroraboot sysext my-ext quay.io/myorg/my-tool:latest
 
-k3s:
-  enabled: true
+# Redfish-driven deploy to a BMC
+auroraboot redfish --endpoint https://bmc/redfish/v1 --user admin --pass secret --image kairos.iso
 
-# Specify the bundle to use
-bundles:
-- targets:
-  - run://quay.io/kairos/community-bundles:system-upgrade-controller_latest
-  - run://quay.io/kairos/community-bundles:cert-manager_latest
-  - run://quay.io/kairos/community-bundles:kairos_latest
-
-kairos:
-  entangle:
-    enable: true
-EOF
+# Extract netboot artifacts from an ISO
+auroraboot netboot kairos.iso ./netboot-out
 ```
 
-**Note**
-
-- Specifying a `container_image` takes precedence over the specified artifacts.
+Run `auroraboot help` for the full list.
 
 ### Experimental
 
-- [Redfish](./redfish.md)
+- [Redfish deploy notes](./redfish.md)
 
-### Development
+---
 
-After doing your changes to the sources you can build the docker image locally by running the following command (feel free to change the image name and tag)
+## Under the hood
 
-```
+- **One binary, one container.** Go backend, React frontend bundled into the binary at build time and served by the same process. SQLite by default, Postgres optional.
+- **CLI and fleet server share the same image factory.** Both call `deployer.Deploy`, `pkg/uki.Build` and `pkg/secureboot.GenerateKeySet` in-process — whatever the CLI builds, the server builds the same way, and streams the logs into the dashboard as they come out of the deployer.
+- **Nodes auto-register** via the `phonehome:` cloud-config stage baked into every artifact AuroraBoot produces. First boot → node shows up in the UI. The artifact builder also bakes an explicit `allowed_commands` list (default: `upgrade`, `upgrade-recovery`, `reboot`, `unregister`); tick the destructive checkboxes — `exec`, `reset`, `apply-cloud-config` — only on fleets where you need them.
+- **Deleting a node** runs a remote teardown: AuroraBoot sends an `unregister` command, the agent stops the phone-home service and drops its credentials + cloud-config files, then the DB record is removed. The UI shows live progress. For offline nodes, SSH in and run `kairos-agent phone-home uninstall` to do the same teardown by hand before force-deleting the record.
+
+---
+
+## Development
+
+```bash
+# Backend (Go 1.26+)
+go build ./...
+go test ./...
+
+# Frontend (Node 22+)
+cd ui
+npm install
+npm run dev     # Vite dev server on :5173, proxies /api to :8080
+npm run build
+npm test
+
+# Regenerate the OpenAPI spec
+make openapi
+
+# Local Docker build
 docker build -t quay.io/kairos/auroraboot:local .
-```
-
-Building the swagger api can take a while, if you don't need it during development, you can pass the `SWAGGER_STAGE=without-swagger` build argument to speed up the process:
-
-```
+# Skip the Swagger stage for faster iteration:
 docker build --build-arg=SWAGGER_STAGE=without-swagger -t quay.io/kairos/auroraboot:local .
 ```
 
-Then you can run one of AuroraBoot's different commands like for example the web UI
+---
 
-```
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-           --privileged \
-           -v $PWD/build/:/output \
-           -p 8080:8080 \
-           quay.io/kairos/auroraboot:local web --create-worker
-```
+## Documentation & links
+
+- [Kairos documentation](https://kairos.io/docs/) — the underlying OS
+- [Getting started with Kairos](https://kairos.io/docs/getting-started)
+- [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) — full CLI reference
+- [Examples](https://kairos.io/docs/examples)
+- [Community](https://kairos.io/community/)
+
+---
+
+## License
+
+Apache 2.0 — see [LICENSE](LICENSE).

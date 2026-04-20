@@ -1,6 +1,6 @@
 // Package uki exposes the `auroraboot build-uki` pipeline as a reusable Go
 // API. It mirrors the behavior of the CLI command so external tools (for
-// example, daedalus) can drive UKI builds without shelling out to the
+// example, auroraboot) can drive UKI builds without shelling out to the
 // auroraboot binary.
 //
 // The pipeline still relies on a handful of host binaries being available on
