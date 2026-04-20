@@ -81,7 +81,13 @@ func DownloadMiddleware(password string, nodeStore store.NodeStore) echo.Middlew
 // RegistrationTokenAuth returns an Echo middleware that reads the JSON body,
 // checks for a "registrationToken" field matching the expected token, and
 // resets the body so downstream handlers can read it again.
-func RegistrationTokenAuth(token string) echo.MiddlewareFunc {
+//
+// The token is supplied as a pointer because SettingsHandler.RotateRegistrationToken
+// updates it in place; the middleware must read the current value on every
+// request, otherwise rotated tokens wouldn't actually invalidate old ones
+// (a pre-rotation registration would keep succeeding against the middleware's
+// captured copy).
+func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			bodyBytes, err := io.ReadAll(c.Request().Body)
@@ -100,7 +106,11 @@ func RegistrationTokenAuth(token string) echo.MiddlewareFunc {
 			// Reset body for downstream handler
 			c.Request().Body = io.NopCloser(bytes.NewReader(bodyBytes))
 
-			if body.RegistrationToken != token {
+			current := ""
+			if token != nil {
+				current = *token
+			}
+			if body.RegistrationToken != current {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid registration token"})
 			}
 			return next(c)

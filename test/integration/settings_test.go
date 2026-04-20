@@ -8,6 +8,29 @@ import (
 )
 
 var _ = Describe("Settings", func() {
+	// Rotation specs mutate the server's registration token, which every
+	// other spec in the suite depends on via the package-global
+	// `testRegToken`. The rotation middleware now correctly reads the
+	// live pointer on every request (was a latent bug: it captured the
+	// pre-rotation value at server startup), so a rotation here really
+	// does invalidate the token every other test uses.
+	//
+	// After each rotation spec, refresh `testRegToken` from the server so
+	// whatever spec runs next (in any order, parallel or serial) sees the
+	// current token. Cheaper than refactoring to per-spec servers.
+	AfterEach(func() {
+		resp := adminGet(testServerURL, "/api/v1/settings/registration-token", testAdminPassword)
+		if resp.StatusCode != http.StatusOK {
+			resp.Body.Close()
+			return
+		}
+		var cur map[string]string
+		decodeJSON(resp, &cur)
+		if t := cur["registrationToken"]; t != "" {
+			testRegToken = t
+		}
+	})
+
 	It("should get registration token", func() {
 		resp := adminGet(testServerURL, "/api/v1/settings/registration-token", testAdminPassword)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))

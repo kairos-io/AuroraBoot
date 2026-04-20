@@ -194,7 +194,10 @@ var _ = Describe("RegistrationTokenAuth", func() {
 
 	BeforeEach(func() {
 		e = echo.New()
-		middleware = auth.RegistrationTokenAuth("reg-token-123")
+		// Pointer so the rotation test below can mutate what the middleware
+		// sees on subsequent requests.
+		tok := "reg-token-123"
+		middleware = auth.RegistrationTokenAuth(&tok)
 	})
 
 	It("should allow requests with a valid registration token", func() {

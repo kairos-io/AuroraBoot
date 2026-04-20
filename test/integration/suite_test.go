@@ -23,10 +23,16 @@ import (
 
 const (
 	testAdminPassword = "test-admin-password"
-	testRegToken      = "test-reg-token"
 )
 
 var (
+	// testRegToken starts at a fixed seed value and is kept in sync with
+	// the server's active token by the Settings rotation specs — rotating
+	// the token invalidates the previous value (RegistrationTokenAuth reads
+	// it through a pointer), so any spec that registers after a rotation
+	// must use the refreshed value.
+	testRegToken = "test-reg-token"
+
 	testServer    *httptest.Server
 	testServerURL string
 

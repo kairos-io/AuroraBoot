@@ -99,7 +99,7 @@ func New(cfg Config) *echo.Echo {
 
 	// Agent registration (registration token auth)
 	regGroup := e.Group("/api/v1/nodes")
-	regGroup.Use(auth.RegistrationTokenAuth(regToken))
+	regGroup.Use(auth.RegistrationTokenAuth(&regToken))
 	regGroup.POST("/register", nodeHandler.Register)
 
 	// Agent node endpoints (node API key auth)
