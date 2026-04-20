@@ -28,7 +28,7 @@ definitions:
       allowedCommands:
         description: |
           Explicit list baked into phonehome.allowed_commands. Omit (or send null)
-          to use AuroraBoot's safe defaults ("upgrade", "upgrade-recovery", "reboot").
+          to use AuroraBoot's safe defaults ("upgrade", "upgrade-recovery", "reboot", "unregister").
           Include "exec", "reset", or "apply-cloud-config" to enable remote execution
           of those destructive commands. An empty array means deny-all (observe-only).
         items:

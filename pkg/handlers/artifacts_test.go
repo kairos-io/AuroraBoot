@@ -62,7 +62,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("substitutes safe defaults when allowedCommands is omitted", func() {
 			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`)
-			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(ConsistOf("upgrade", "upgrade-recovery", "reboot"))
+			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(ConsistOf("upgrade", "upgrade-recovery", "reboot", "unregister"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("phonehome:"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("allowed_commands:"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- upgrade"))

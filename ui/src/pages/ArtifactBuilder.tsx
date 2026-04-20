@@ -369,6 +369,7 @@ const COMMAND_DESCRIPTIONS: Record<string, string> = {
   upgrade: "Pull a new OS image and reboot into it.",
   "upgrade-recovery": "Update the recovery partition without rebooting.",
   reboot: "Reboot the node on demand.",
+  unregister: "Stop the phone-home service and clean up its files (used by Delete).",
   exec: "Run arbitrary shell commands on the node.",
   reset: "Factory-reset the node, wiping persistent data.",
   "apply-cloud-config": "Write a new cloud-config to the OEM partition.",

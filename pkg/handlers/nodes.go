@@ -419,7 +419,7 @@ GROUP="${AURORABOOT_GROUP:-}"
 # always carries the key (never rely on implicit agent-side defaults).
 # Set AURORABOOT_ALLOWED_COMMANDS="" explicitly and you will get the safe
 # defaults too — deny-all must be configured from the AuroraBoot UI instead.
-ALLOWED_RAW="${AURORABOOT_ALLOWED_COMMANDS:-upgrade,upgrade-recovery,reboot}"
+ALLOWED_RAW="${AURORABOOT_ALLOWED_COMMANDS:-upgrade,upgrade-recovery,reboot,unregister}"
 ALLOWED_YAML=""
 IFS=',' read -ra _cmds <<< "$ALLOWED_RAW"
 for c in "${_cmds[@]}"; do

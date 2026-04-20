@@ -101,7 +101,13 @@ type provisioningConfig struct {
 // This list must stay aligned with kairos-agent's DefaultAllowedCommands so
 // the UX's "default safe set" label corresponds to what the agent actually
 // permits if the emitted list were ever absent.
-var phonehomeSafeDefaults = []string{"upgrade", "upgrade-recovery", "reboot"}
+// `unregister` is in the safe defaults so the Decommission flow works
+// out of the box. It's a self-destruct of the management link, not a
+// privilege escalation — a rogue server can only ever terminate its own
+// connection. Operators who want to disable remote decommission can
+// untick it in the UI; they'll then have to SSH in and run
+// `kairos-agent phone-home uninstall` to tear down a node by hand.
+var phonehomeSafeDefaults = []string{"upgrade", "upgrade-recovery", "reboot", "unregister"}
 
 // Create handles POST /api/v1/artifacts.
 //

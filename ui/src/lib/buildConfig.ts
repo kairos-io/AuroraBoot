@@ -12,11 +12,16 @@ export const BUILD_CONFIG_VERSION = 1;
 export type UserMode = "default" | "custom" | "none";
 
 // Phonehome command catalogue. Keep the order stable — the UI renders two
-// rows of checkboxes in this exact sequence.
+// rows of checkboxes in this exact sequence. `unregister` is in the safe
+// set so the Decommission UI works out of the box: it's a self-destruct
+// of the management link, not privilege escalation. Mirrors the
+// kairos-agent's DefaultAllowedCommands and the backend's
+// phonehomeSafeDefaults — keep all three lists aligned.
 export const PHONEHOME_SAFE_DEFAULTS: readonly string[] = [
   "upgrade",
   "upgrade-recovery",
   "reboot",
+  "unregister",
 ];
 
 export const PHONEHOME_DESTRUCTIVE_COMMANDS: readonly string[] = [

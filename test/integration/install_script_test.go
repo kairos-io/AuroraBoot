@@ -32,7 +32,7 @@ var _ = Describe("Install Script", func() {
 		Expect(body).To(ContainSubstring("AURORABOOT_ALLOWED_COMMANDS"))
 		// The default set must be in the script so an unset env still produces
 		// a concrete allowed_commands list rather than a silent fallback.
-		Expect(body).To(ContainSubstring("upgrade,upgrade-recovery,reboot"))
+		Expect(body).To(ContainSubstring("upgrade,upgrade-recovery,reboot,unregister"))
 		// The key itself is always emitted by the heredoc.
 		Expect(body).To(ContainSubstring("allowed_commands:"))
 	})
