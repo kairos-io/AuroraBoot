@@ -159,7 +159,6 @@ export function CommandDialog({
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
   const [resetOem, setResetOem] = useState(false);
-  const [resetPersistent, setResetPersistent] = useState(false);
   const [resetConfig, setResetConfig] = useState("");
 
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
@@ -178,7 +177,6 @@ export function CommandDialog({
       setUpgradeSourceMode("image");
       setSelectedArtifactId("");
       setResetOem(false);
-      setResetPersistent(false);
       setResetConfig("");
     }
   }, [open, defaultCommand]);
@@ -212,7 +210,6 @@ export function CommandDialog({
 
     if (command === "reset") {
       if (resetOem) args["reset-oem"] = "true";
-      if (resetPersistent) args["reset-persistent"] = "true";
       if (resetConfig.trim()) args.config = resetConfig.trim();
     }
 
@@ -419,15 +416,10 @@ export function CommandDialog({
                     />
                     Reset OEM partition
                   </label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={resetPersistent}
-                      onChange={(e) => setResetPersistent(e.target.checked)}
-                      className="rounded border-input"
-                    />
-                    Reset persistent data
-                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    The persistent partition is reformatted as part of every reset — that's Kairos' default
+                    behaviour, so there's no separate toggle for it here.
+                  </p>
                 </div>
                 <div className="grid gap-2">
                   <Label>Cloud config to apply after reset (optional)</Label>
