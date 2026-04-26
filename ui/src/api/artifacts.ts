@@ -25,6 +25,7 @@ export interface Artifact {
   autoInstall: boolean;
   registerAuroraBoot: boolean;
   dockerfile?: string;
+  extendCmdline?: string;
   cloudConfig?: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
@@ -84,6 +85,7 @@ export interface CreateArtifactInput {
   kubernetesVersion?: string;
   dockerfile?: string;
   overlayRootfs?: string;
+  extendCmdline?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;
   signing: CreateArtifactSigning;

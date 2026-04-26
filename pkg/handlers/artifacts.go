@@ -53,6 +53,7 @@ type createArtifactRequest struct {
 	Dockerfile        string `json:"dockerfile"`
 	BuildContextDir   string `json:"buildContextDir"`
 	OverlayRootfs     string `json:"overlayRootfs"`
+	ExtendCmdline     string `json:"extendCmdline"`
 	KairosInitImage   string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
@@ -177,6 +178,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		OverlayRootfs:     req.OverlayRootfs,
 		Dockerfile:        req.Dockerfile,
 		BuildContextDir:   req.BuildContextDir,
+		ExtendCmdline:     req.ExtendCmdline,
 		KairosInitImage:   req.KairosInitImage,
 	}
 	// Set grouped fields.
@@ -282,6 +284,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			AutoInstall:       autoInstall,
 			RegisterAuroraBoot:  registerAuroraBoot,
 			Dockerfile:        req.Dockerfile,
+			ExtendCmdline:     req.ExtendCmdline,
 			CloudConfig:       opts.CloudConfig,
 			KubernetesDistro:  req.KubernetesDistro,
 			KubernetesVersion: req.KubernetesVersion,

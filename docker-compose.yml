@@ -6,7 +6,7 @@ services:
       - "${PORT:-9099}:8080"
     volumes:
       - auroraboot-data:/data
-      - /var/run/docker.sock:/var/run/docker.sock
+      - ${AURORABOOT_DOCKER_SOCKET:-/var/run/docker.sock}:/var/run/docker.sock
     environment:
       - AURORABOOT_URL=${AURORABOOT_URL:-}
       - AURORABOOT_ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
