@@ -111,6 +111,7 @@ type APICreateArtifactRequest struct {
 	KubernetesVersion string                  `json:"kubernetesVersion"`
 	Dockerfile        string                  `json:"dockerfile"`
 	OverlayRootfs     string                  `json:"overlayRootfs"`
+	ExtendCmdline     string                  `json:"extendCmdline"`
 	KairosInitImage   string                  `json:"kairosInitImage"`
 	Outputs           APIArtifactOutputs      `json:"outputs"`
 	Signing           APIArtifactSigning      `json:"signing"`

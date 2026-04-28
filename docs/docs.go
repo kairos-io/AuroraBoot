@@ -1150,6 +1150,9 @@ const docTemplate = `{
                 "overlayRootfs": {
                     "type": "string"
                 },
+                "extendCmdline": {
+                    "type": "string"
+                },
                 "provisioning": {
                     "$ref": "#/definitions/handlers.APIArtifactProvisioning"
                 },
@@ -1406,6 +1409,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "overlayRootfs": {
+                    "type": "string"
+                },
+                "extendCmdline": {
                     "type": "string"
                 },
                 "phase": {

@@ -346,6 +346,7 @@ const EMPTY_FORM: CreateArtifactInput = {
   kubernetesVersion: "",
   dockerfile: "",
   overlayRootfs: "",
+  extendCmdline: "",
   kairosInitImage: "",
   outputs: { ...EMPTY_OUTPUTS },
   signing: { ...EMPTY_SIGNING },
@@ -596,6 +597,7 @@ export function ArtifactBuilder() {
       kubernetesVersion: src.kubernetesVersion || "",
       dockerfile: parsed.dockerfile || "",
       overlayRootfs: parsed.overlayRootfs || "",
+      extendCmdline: src.extendCmdline || "",
       kairosInitImage: src.kairosInitImage || "",
       outputs: { ...EMPTY_OUTPUTS, ...out },
       signing: {
@@ -661,6 +663,7 @@ export function ArtifactBuilder() {
           kubernetesDistro: a.kubernetesDistro || "",
           kubernetesVersion: a.kubernetesVersion || "",
           dockerfile: a.dockerfile || "",
+          extendCmdline: a.extendCmdline || "",
           kairosInitImage: a.kairosInitImage || "",
           outputs: {
             iso: a.iso,
@@ -904,6 +907,7 @@ export function ArtifactBuilder() {
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion : undefined,
       dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
+      extendCmdline: form.extendCmdline || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
       outputs: { ...form.outputs },
       signing: { ...form.signing },
@@ -1945,6 +1949,31 @@ export function ArtifactBuilder() {
                       />
                       <p className="text-xs text-muted-foreground">
                         Appended to the generated config. AuroraBoot registration is auto-injected by the server.
+                      </p>
+                    </div>
+                    <div className="grid gap-2">
+                      <Label className="text-xs">
+                        Extend Cmdline
+                        <InfoTooltip>
+                          Extra kernel command line arguments. Advanced — leave empty to use the default.{" "}
+                          <a
+                            href="https://kairos.io/docs/reference/kairos-factory/"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="underline"
+                          >
+                            Docs
+                          </a>
+                        </InfoTooltip>
+                      </Label>
+                      <Input
+                        placeholder="e.g. intel_iommu=on"
+                        value={form.extendCmdline || ""}
+                        onChange={(e) => update("extendCmdline", e.target.value)}
+                        className="font-mono text-xs"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Extra kernel command line arguments.
                       </p>
                     </div>
                     <div className="grid gap-2">

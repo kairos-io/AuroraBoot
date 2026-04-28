@@ -108,6 +108,8 @@ definitions:
         $ref: '#/definitions/handlers.APIArtifactOutputs'
       overlayRootfs:
         type: string
+      extendCmdline:
+        type: string
       provisioning:
         $ref: '#/definitions/handlers.APIArtifactProvisioning'
       signing:
@@ -282,6 +284,8 @@ definitions:
       netboot:
         type: boolean
       overlayRootfs:
+        type: string
+      extendCmdline:
         type: string
       phase:
         type: string
