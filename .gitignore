@@ -8,6 +8,9 @@ coverage.out.*
 /auroraboot
 node_modules
 
+# Experimental web app build artifacts
+internal/web/
+
 # UI dev output mirror (we commit internal/ui/dist as the canonical
 # embed source so `go install` produces a working binary)
 ui/dist/

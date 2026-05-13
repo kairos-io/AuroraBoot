@@ -1,0 +1,44 @@
+---
+name: 'Test RISC-V build'
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # allows manual trigger from Actions tab
+
+jobs:
+  build-linux-riscv64:
+    runs-on: 'ubuntu-24.04-riscv'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.24'
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+
+      - name: Build binary
+        run: |
+          go build -v -o auroraboot .
+
+      - name: Run tests
+        run: |
+          go test -v ./...
+
+      - name: Show binary info
+        run: |
+          file auroraboot
+          ./auroraboot --version || true

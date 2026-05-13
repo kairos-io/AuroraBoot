@@ -47,8 +47,9 @@ const (
 	EfiFs                     = "vfat"
 	IsoRootFile               = "rootfs.squashfs"
 	ISOLabel                  = "COS_LIVE"
-	ShimEfiDest               = EfiBootPath + "/bootx64.efi"
-	ShimEfiArmDest            = EfiBootPath + "/bootaa64.efi"
+	ShimEfiDest                = EfiBootPath + "/bootx64.efi"
+	ShimEfiArmDest             = EfiBootPath + "/bootaa64.efi"
+	ShimEfiRiscv64Dest         = EfiBootPath + "/bootriscv64.efi"
 	BuildImgName              = "elemental"
 	GrubCfg                   = "grub.cfg"
 	GrubPrefixDir             = "/boot/grub2"
@@ -79,6 +80,7 @@ const (
 	Archx86     = "x86_64"
 	ArchAmd64   = "amd64"
 	Archaarch64 = "aarch64"
+	ArchRiscv64 = "riscv64"
 
 	UkiCmdline                = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
 	UkiCmdlineInstall         = "install-mode"
@@ -91,8 +93,9 @@ const (
 	UkiSystemdBootStubArmName = "linuxaa64.efi.stub"
 	UkiSystemdBootStubArmPath = "/arm/systemd-boot/" + UkiSystemdBootStubArmName
 
-	EfiFallbackNamex86 = "BOOTX64.EFI"
-	EfiFallbackNameArm = "BOOTAA64.EFI"
+	EfiFallbackNamex86     = "BOOTX64.EFI"
+	EfiFallbackNameArm     = "BOOTAA64.EFI"
+	EfiFallbackNameRiscv64 = "BOOTRISCV64.EFI"
 
 	ArtifactBaseName   = "norole"
 	DefaultCloudConfig = `#cloud-config

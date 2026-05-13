@@ -58,7 +58,7 @@ var BuildISOCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  "arch",
-			Usage: "Architecture to use when pulling container images (amd64 or arm64). Defaults to host architecture if not specified.",
+			Usage: "Architecture to use when pulling container images (amd64, arm64, or riscv64). Defaults to host architecture if not specified.",
 		},
 		&cli.StringFlag{
 			Name:  "extend-live-cmdline",
@@ -83,7 +83,7 @@ var BuildISOCmd = cli.Command{
 		// Validate arch flag if provided
 		arch := ctx.String("arch")
 		if arch != "" {
-			validArchs := []string{"amd64", "arm64"}
+			validArchs := []string{"amd64", "arm64", "riscv64"}
 			isValid := false
 			for _, valid := range validArchs {
 				if arch == valid {
@@ -92,7 +92,7 @@ var BuildISOCmd = cli.Command{
 				}
 			}
 			if !isValid {
-				return fmt.Errorf("invalid architecture '%s': must be 'amd64' or 'arm64'", arch)
+				return fmt.Errorf("invalid architecture '%s': must be 'amd64', 'arm64', or 'riscv64'", arch)
 			}
 		}
 

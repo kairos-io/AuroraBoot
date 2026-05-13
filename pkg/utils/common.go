@@ -60,6 +60,8 @@ func GolangArchToArch(arch string) (string, error) {
 		return constants.Archx86, nil
 	case constants.ArchArm64:
 		return constants.ArchArm64, nil
+	case constants.ArchRiscv64:
+		return constants.ArchRiscv64, nil
 	default:
 		return "", fmt.Errorf("invalid arch")
 	}
@@ -286,6 +288,10 @@ func IsAmd64(arch string) bool {
 
 func IsArm64(arch string) bool {
 	return arch == constants.ArchArm64 || arch == constants.Archaarch64
+}
+
+func IsRiscv64(arch string) bool {
+	return arch == constants.ArchRiscv64
 }
 
 // NameFromCmdline returns the name of the efi/conf file based on the cmdline

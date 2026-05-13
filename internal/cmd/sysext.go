@@ -76,7 +76,7 @@ func commonFlagsSysextConfext() []cli.Flag {
 		&cli.StringFlag{
 			Name:  "arch",
 			Value: "amd64",
-			Usage: "Arch to get the image from and build the sysext for. Accepts amd64 and arm64 values.",
+			Usage: "Arch to get the image from and build the sysext for. Accepts amd64, arm64, and riscv64 values.",
 		},
 		&cli.BoolFlag{
 			Name:  "debug",
@@ -89,7 +89,7 @@ func commonFlagsSysextConfext() []cli.Flag {
 // validateSysextConfextArgs validates the arguments for both sysext and confext commands
 func validateSysextConfextArgs(ctx *cli.Context) error {
 	arch := ctx.String("arch")
-	if arch != "amd64" && arch != "arm64" {
+	if arch != "amd64" && arch != "arm64" && arch != "riscv64" {
 		return fmt.Errorf("unsupported architecture: %s", arch)
 	}
 	if ctx.NArg() < 2 {

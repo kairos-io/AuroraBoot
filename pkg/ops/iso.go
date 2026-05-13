@@ -462,6 +462,25 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
 		return err
 	}
+
+	// For RISC-V, create startup.nsh to auto-boot since some UEFI implementations
+	// don't automatically load the fallback boot path (BOOTRISCV64.EFI)
+	arch, err := utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
+	if err != nil {
+		return err
+	}
+	if utils.IsRiscv64(arch) {
+		startupScript := "\\EFI\\BOOT\\bootriscv64.efi\n"
+		if err = b.cfg.Fs.WriteFile(filepath.Join(temp, "startup.nsh"), []byte(startupScript), constants.FilePerm); err != nil {
+			b.cfg.Logger.Errorf("Failed writing startup.nsh: %v", err)
+			return err
+		}
+		if err = b.cfg.Fs.WriteFile(filepath.Join(isoDir, "startup.nsh"), []byte(startupScript), constants.FilePerm); err != nil {
+			b.cfg.Logger.Errorf("Failed writing startup.nsh: %v", err)
+			return err
+		}
+		b.cfg.Logger.Debugf("Created startup.nsh for RISC-V auto-boot")
+	}
 	// Ubuntu efi searches for the grub.cfg file under /EFI/ubuntu/grub.cfg while we store it under /boot/grub2/grub.cfg
 	// workaround this by copying it there as well
 	// read the kairos-release from the rootfs to know if we are creating a ubuntu based iso
@@ -555,6 +574,13 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	if err != nil {
 		return err
 	}
+
+	// RISC-V doesn't use shim - it boots grub directly via EFI
+	if utils.IsRiscv64(arch) {
+		b.cfg.Logger.Debugf("Skipping shim copy for riscv64 - will use grub directly")
+		return nil
+	}
+
 	shimFiles := sdkutils.GetEfiShimFiles(arch)
 	// Calculate shim path based on arch
 	var shimDest string
@@ -617,6 +643,20 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	return err
 }
 
+// getEfiGrubFilesForArch returns the possible grub EFI file paths for the given architecture
+// This extends the SDK's GetEfiGrubFiles with riscv64 support
+func getEfiGrubFilesForArch(arch string) []string {
+	if utils.IsRiscv64(arch) {
+		return []string{
+			"/usr/share/efi/riscv64/grub.efi",
+			"/usr/lib/grub/riscv64-efi/grubriscv64.efi",
+			"/boot/efi/EFI/BOOT/BOOTRISCV64.EFI",
+			"/boot/efi/EFI/fedora/grubriscv64.efi",
+		}
+	}
+	return sdkutils.GetEfiGrubFiles(arch)
+}
+
 // copyGrub copies the shim files into the EFI partition
 // tempdir is the temp dir where the EFI image is generated from
 // rootdir is the rootfs where the shim files are searched for
@@ -625,17 +665,24 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	var err error
 
 	arch, err := utils.GetArchFromRootfs(rootdir, b.cfg.Logger)
+	if err != nil {
+		return err
+	}
+
 	switch arch {
 	case constants.ArchAmd64, constants.Archx86:
 		fallBackGrub = filepath.Join("/amd/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	case constants.ArchArm64:
 		fallBackGrub = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
+	case constants.ArchRiscv64:
+		// RISC-V doesn't have pre-packaged grub artifacts, rely on rootfs grub
+		fallBackGrub = ""
 	default:
 		return fmt.Errorf("not supported architecture: %v", arch)
 	}
 
 	// Get possible grub file paths
-	grubFiles := sdkutils.GetEfiGrubFiles(arch)
+	grubFiles := getEfiGrubFilesForArch(arch)
 	var grubDone bool
 	for _, f := range grubFiles {
 		stat, err := b.cfg.Fs.Stat(filepath.Join(rootdir, f))
@@ -643,8 +690,14 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 			b.cfg.Logger.Debugf("skip copying %s: not found", filepath.Join(rootdir, f))
 			continue
 		}
-		// Same name as the source, shim looks for that name. We need to remove the .signed suffix
-		nameDest := filepath.Join(tempdir, "EFI/BOOT", cleanupGrubName(stat.Name()))
+		// For riscv64, copy grub to the EFI fallback location since there's no shim
+		var nameDest string
+		if utils.IsRiscv64(arch) {
+			nameDest = filepath.Join(tempdir, constants.ShimEfiRiscv64Dest)
+		} else {
+			// Same name as the source, shim looks for that name. We need to remove the .signed suffix
+			nameDest = filepath.Join(tempdir, "EFI/BOOT", cleanupGrubName(stat.Name()))
+		}
 		b.cfg.Logger.Debugf("Copying %s to %s", filepath.Join(rootdir, f), nameDest)
 
 		err = utils.CopyFile(
@@ -660,6 +713,10 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 		break
 	}
 	if !grubDone {
+		if fallBackGrub == "" {
+			b.cfg.Logger.Debugf("List of grub files searched for: %s", grubFiles)
+			return fmt.Errorf("could not find any grub efi file to copy for %s", arch)
+		}
 		// All failed...maybe we are on alpine which doesnt provide shim/grub.efi ?
 		// In that case, we can just use the luet packaged artifacts
 		err = utils.CopyFile(
@@ -786,11 +843,20 @@ func WithArch(arch string) func(r *sdkConfig.Config) error {
 			}
 			r.Arch = convertedArch
 			// Also set Platform since DumpSource uses Platform.String() not Arch
-			platform, err := platform.NewPlatformFromArch(arch)
-			if err != nil {
-				return fmt.Errorf("invalid architecture for platform %s: %w", arch, err)
+			// The SDK's platform package doesn't support riscv64, so we handle it manually
+			if utils.IsRiscv64(arch) {
+				r.Platform = &platform.Platform{
+					OS:         "linux",
+					Arch:       arch,
+					GolangArch: arch,
+				}
+			} else {
+				p, err := platform.NewPlatformFromArch(arch)
+				if err != nil {
+					return fmt.Errorf("invalid architecture for platform %s: %w", arch, err)
+				}
+				r.Platform = p
 			}
-			r.Platform = platform
 		}
 		return nil
 	}
