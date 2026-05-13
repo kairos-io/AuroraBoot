@@ -32,7 +32,8 @@ jobs:
 
       - name: Run tests
         run: |
-          go test -v ./...
+          # Skip e2e tests - they require Docker images that may not exist for riscv64
+          go test -v $(go list ./... | grep -v /e2e)
 
       - name: Show binary info
         run: |
