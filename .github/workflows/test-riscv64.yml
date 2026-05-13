@@ -19,16 +19,12 @@ jobs:
         with:
           go-version: '1.24'
 
-      - name: Set up Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: '22'
-
-      - name: Build UI
-        working-directory: ui
+      - name: Create placeholder UI dist
         run: |
-          npm ci
-          npm run build
+          # Skip UI build on riscv64 - Node.js/V8 has known issues on this arch
+          # https://github.com/nodejs/build/issues/4099
+          mkdir -p internal/ui/dist
+          echo '<!DOCTYPE html><html><body>Placeholder</body></html>' > internal/ui/dist/index.html
 
       - name: Build binary
         run: |
