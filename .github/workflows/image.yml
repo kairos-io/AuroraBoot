@@ -60,7 +60,9 @@ jobs:
           push: true
           tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-arm64
   build-linux-riscv64:
-    runs-on: 'ubuntu-24.04-riscv'
+    # Run on amd64 with QEMU for riscv64 - more stable than native riscv64
+    # runner trying to emulate amd64 for the js stage (npm install crashes)
+    runs-on: 'ubuntu-latest'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
