@@ -6,10 +6,7 @@ ARG TARGETARCH
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 # Build the React UI. Output is platform-independent.
-# Uses native platform by default. For riscv64 builds, pass:
-#   --build-arg JS_PLATFORM=linux/amd64 (node:24 lacks riscv64 support)
-ARG JS_PLATFORM
-FROM ${JS_PLATFORM:+--platform=$JS_PLATFORM} node:24 AS js
+FROM node:24 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm install

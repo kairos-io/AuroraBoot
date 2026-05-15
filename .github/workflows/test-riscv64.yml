@@ -53,9 +53,7 @@ jobs:
         uses: docker/build-push-action@v6
         with:
           context: .
-          file: ./Dockerfile
+          file: ./Dockerfile.riscv64
           platforms: linux/riscv64
-          build-args: |
-            JS_PLATFORM=linux/amd64
           push: false
           load: false

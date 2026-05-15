@@ -78,9 +78,9 @@ jobs:
       - name: Build
         uses: docker/build-push-action@v6
         with:
+          file: ./Dockerfile.riscv64
           build-args: |
             VERSION=${{ github.ref_name }}
-            JS_PLATFORM=linux/amd64
           provenance: false
           platforms: linux/riscv64
           push: true
