@@ -82,16 +82,20 @@ const (
 	Archaarch64 = "aarch64"
 	ArchRiscv64 = "riscv64"
 
-	UkiCmdline                = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
-	UkiCmdlineInstall         = "install-mode"
-	UkiSystemdBootx86Name     = "systemd-bootx64.efi"
-	UkiSystemdBootx86Path     = "/amd/systemd-boot/" + UkiSystemdBootx86Name
-	UkiSystemdBootStubx86Name = "linuxx64.efi.stub"
-	UkiSystemdBootStubx86Path = "/amd/systemd-boot/" + UkiSystemdBootStubx86Name
-	UkiSystemdBootArmName     = "systemd-bootaa64.efi"
-	UkiSystemdBootArmPath     = "/arm/systemd-boot/" + UkiSystemdBootArmName
-	UkiSystemdBootStubArmName = "linuxaa64.efi.stub"
-	UkiSystemdBootStubArmPath = "/arm/systemd-boot/" + UkiSystemdBootStubArmName
+	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
+	UkiCmdlineInstall             = "install-mode"
+	UkiSystemdBootx86Name         = "systemd-bootx64.efi"
+	UkiSystemdBootx86Path         = "/amd/systemd-boot/" + UkiSystemdBootx86Name
+	UkiSystemdBootStubx86Name     = "linuxx64.efi.stub"
+	UkiSystemdBootStubx86Path     = "/amd/systemd-boot/" + UkiSystemdBootStubx86Name
+	UkiSystemdBootArmName         = "systemd-bootaa64.efi"
+	UkiSystemdBootArmPath         = "/arm/systemd-boot/" + UkiSystemdBootArmName
+	UkiSystemdBootStubArmName     = "linuxaa64.efi.stub"
+	UkiSystemdBootStubArmPath     = "/arm/systemd-boot/" + UkiSystemdBootStubArmName
+	UkiSystemdBootRiscv64Name     = "systemd-bootriscv64.efi"
+	UkiSystemdBootRiscv64Path     = "/riscv64/systemd-boot/" + UkiSystemdBootRiscv64Name
+	UkiSystemdBootStubRiscv64Name = "linuxriscv64.efi.stub"
+	UkiSystemdBootStubRiscv64Path = "/riscv64/systemd-boot/" + UkiSystemdBootStubRiscv64Name
 
 	EfiFallbackNamex86     = "BOOTX64.EFI"
 	EfiFallbackNameArm     = "BOOTAA64.EFI"

@@ -675,8 +675,7 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	case constants.ArchArm64:
 		fallBackGrub = filepath.Join("/arm/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	case constants.ArchRiscv64:
-		// RISC-V doesn't have pre-packaged grub artifacts, rely on rootfs grub
-		fallBackGrub = ""
+		fallBackGrub = filepath.Join("/riscv64/raw/grubartifacts", constants.EfiBootPath, "grub.efi")
 	default:
 		return fmt.Errorf("not supported architecture: %v", arch)
 	}

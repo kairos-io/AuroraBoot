@@ -455,6 +455,16 @@ func resolveSdBootFiles(sourceDir, arch string, inSource bool) (stub, sdBoot, ou
 				return "", "", "", fmt.Errorf("finding systemd-boot in source: %w", err)
 			}
 			outEfi = constants.EfiFallbackNameArm
+		case utils.IsRiscv64(arch):
+			stub, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootStubRiscv64Name)
+			if err != nil {
+				return "", "", "", fmt.Errorf("finding systemd-boot stub in source: %w", err)
+			}
+			sdBoot, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootRiscv64Name)
+			if err != nil {
+				return "", "", "", fmt.Errorf("finding systemd-boot in source: %w", err)
+			}
+			outEfi = constants.EfiFallbackNameRiscv64
 		default:
 			return "", "", "", fmt.Errorf("unsupported arch: %s", arch)
 		}
@@ -470,6 +480,8 @@ func resolveSdBootFiles(sourceDir, arch string, inSource bool) (stub, sdBoot, ou
 		return stub, constants.UkiSystemdBootx86Path, constants.EfiFallbackNamex86, nil
 	case utils.IsArm64(arch):
 		return stub, constants.UkiSystemdBootArmPath, constants.EfiFallbackNameArm, nil
+	case utils.IsRiscv64(arch):
+		return stub, constants.UkiSystemdBootRiscv64Path, constants.EfiFallbackNameRiscv64, nil
 	default:
 		return "", "", "", fmt.Errorf("unsupported arch: %s", arch)
 	}
@@ -501,6 +513,8 @@ func getEfiNeededFiles(arch string) ([]string, error) {
 		return []string{constants.UkiSystemdBootStubx86Path, constants.UkiSystemdBootx86Path}, nil
 	case utils.IsArm64(arch):
 		return []string{constants.UkiSystemdBootStubArmPath, constants.UkiSystemdBootArmPath}, nil
+	case utils.IsRiscv64(arch):
+		return []string{constants.UkiSystemdBootStubRiscv64Path, constants.UkiSystemdBootRiscv64Path}, nil
 	default:
 		return nil, fmt.Errorf("unsupported arch: %s", arch)
 	}
@@ -702,6 +716,8 @@ func getEfiStub(arch string) (string, error) {
 		return constants.UkiSystemdBootStubx86Path, nil
 	case utils.IsArm64(arch):
 		return constants.UkiSystemdBootStubArmPath, nil
+	case utils.IsRiscv64(arch):
+		return constants.UkiSystemdBootStubRiscv64Path, nil
 	default:
 		return "", nil
 	}
