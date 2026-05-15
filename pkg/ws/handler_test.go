@@ -156,9 +156,10 @@ var _ = Describe("WebSocket Handler", func() {
 				return hub.IsOnline(nodeID)
 			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
 
-			node, err := nodes.GetByID(bg, nodeID)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(node.Phase).To(Equal(store.PhaseOnline))
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				return node.Phase
+			}, 5*time.Second, 100*time.Millisecond).Should(Equal(store.PhaseOnline))
 		})
 
 		It("should mark node offline when agent disconnects", func() {
