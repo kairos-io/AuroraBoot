@@ -714,7 +714,7 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 	}
 	if !grubDone {
 		if fallBackGrub == "" {
-			b.cfg.Logger.Debugf("List of grub files searched for: %s", grubFiles)
+			b.cfg.Logger.Debugf("List of grub files searched for: %v", grubFiles)
 			return fmt.Errorf("could not find any grub efi file to copy for %s", arch)
 		}
 		// All failed...maybe we are on alpine which doesnt provide shim/grub.efi ?
@@ -725,7 +725,7 @@ func (b BuildISOAction) copyGrub(tempdir, rootdir string) error {
 			filepath.Join(tempdir, "EFI/BOOT/grub.efi"),
 		)
 		if err != nil {
-			b.cfg.Logger.Debugf("List of grub files searched for: %s", grubFiles)
+			b.cfg.Logger.Debugf("List of grub files searched for: %v", grubFiles)
 			return fmt.Errorf("could not find any grub efi file to copy")
 		}
 		b.cfg.Logger.Debugf("Using fallback grub file %s", fallBackGrub)

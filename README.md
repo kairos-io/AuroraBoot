@@ -115,7 +115,7 @@ docker run --rm -ti --net host quay.io/kairos/auroraboot \
     --set arch=arm64
 ```
 
-Supported: `amd64` (default) and `arm64`.
+Supported: `amd64` (default), `arm64`, and `riscv64`.
 
 ### Offline ISO, no netboot
 
