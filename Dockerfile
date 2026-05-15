@@ -2,6 +2,7 @@ ARG FEDORA_VERSION=42
 ARG LUET_VERSION=0.36.5
 ARG SWAGGER_STAGE=with-swagger
 ARG TARGETARCH
+ARG JS_PLATFORM=linux/amd64
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
@@ -9,7 +10,7 @@ FROM quay.io/luet/base:$LUET_VERSION AS luet
 # relative to ui/, so we lay out the workdir as /work/ui and the dist
 # lands at /work/internal/ui/dist where the Go builder stage copies it.
 # Force amd64 since node:24 lacks riscv64 and JS output is platform-independent.
-FROM --platform=linux/amd64 node:24 AS js
+FROM --platform=$JS_PLATFORM node:24 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm install
