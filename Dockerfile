@@ -82,6 +82,32 @@ ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 
+# RISC-V 64 stage - uses Fedora packages instead of luet (no luet packages for riscv64 yet)
+FROM base AS riscv64
+# Install systemd-boot for UKI building and grub2 EFI for ISO building
+RUN dnf install -y \
+    systemd-boot-unsigned \
+    grub2-efi-riscv64 \
+    grub2-efi-riscv64-modules \
+    shim-unsigned-riscv64 || true
+
+# Set up systemd-boot artifacts in the expected location for UKI building
+# The code expects files at /riscv64/systemd-boot/linuxriscv64.efi.stub and systemd-bootriscv64.efi
+RUN mkdir -p /riscv64/systemd-boot && \
+    cp /usr/lib/systemd/boot/efi/linuxriscv64.efi.stub /riscv64/systemd-boot/ 2>/dev/null || true && \
+    cp /usr/lib/systemd/boot/efi/systemd-bootriscv64.efi /riscv64/systemd-boot/ 2>/dev/null || true
+
+# Set up grub artifacts for riscv64 ISO/raw image building
+RUN mkdir -p /riscv64/raw/grubartifacts/EFI/BOOT && \
+    cp /usr/lib/grub/riscv64-efi/grub.efi /riscv64/raw/grubartifacts/EFI/BOOT/grub.efi 2>/dev/null || \
+    grub2-mkimage -O riscv64-efi -o /riscv64/raw/grubartifacts/EFI/BOOT/grub.efi -p /boot/grub2 \
+        part_gpt part_msdos fat ext2 iso9660 linux boot chain configfile normal search search_label search_fs_file search_fs_uuid ls || true
+
+COPY --from=builder /work/auroraboot /usr/bin/auroraboot
+
+ENTRYPOINT ["/usr/bin/auroraboot"]
+
+# Default stage for amd64/arm64 - uses luet packages
 FROM base AS default
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 # copy both arches
@@ -149,31 +175,6 @@ RUN rm -d /arm/raw/grubefi/var || true
 
 # ARM helpers
 COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
-
-COPY --from=builder /work/auroraboot /usr/bin/auroraboot
-
-ENTRYPOINT ["/usr/bin/auroraboot"]
-
-# RISC-V 64 stage - uses Fedora packages instead of luet (no luet packages for riscv64 yet)
-FROM base AS riscv64
-# Install systemd-boot for UKI building and grub2 EFI for ISO building
-RUN dnf install -y \
-    systemd-boot-unsigned \
-    grub2-efi-riscv64 \
-    grub2-efi-riscv64-modules \
-    shim-unsigned-riscv64 || true
-
-# Set up systemd-boot artifacts in the expected location for UKI building
-# The code expects files at /riscv64/systemd-boot/linuxriscv64.efi.stub and systemd-bootriscv64.efi
-RUN mkdir -p /riscv64/systemd-boot && \
-    cp /usr/lib/systemd/boot/efi/linuxriscv64.efi.stub /riscv64/systemd-boot/ 2>/dev/null || true && \
-    cp /usr/lib/systemd/boot/efi/systemd-bootriscv64.efi /riscv64/systemd-boot/ 2>/dev/null || true
-
-# Set up grub artifacts for riscv64 ISO/raw image building
-RUN mkdir -p /riscv64/raw/grubartifacts/EFI/BOOT && \
-    cp /usr/lib/grub/riscv64-efi/grub.efi /riscv64/raw/grubartifacts/EFI/BOOT/grub.efi 2>/dev/null || \
-    grub2-mkimage -O riscv64-efi -o /riscv64/raw/grubartifacts/EFI/BOOT/grub.efi -p /boot/grub2 \
-        part_gpt part_msdos fat ext2 iso9660 linux boot chain configfile normal search search_label search_fs_file search_fs_uuid ls || true
 
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
