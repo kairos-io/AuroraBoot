@@ -77,7 +77,6 @@ jobs:
             VERSION=${{ github.ref_name }}
           provenance: false
           platforms: linux/riscv64
-          target: riscv64
           push: true
           tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-riscv64
   build:

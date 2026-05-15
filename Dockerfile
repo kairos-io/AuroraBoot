@@ -1,6 +1,7 @@
 ARG FEDORA_VERSION=42
 ARG LUET_VERSION=0.36.5
 ARG SWAGGER_STAGE=with-swagger
+ARG TARGETARCH
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
@@ -107,8 +108,8 @@ COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
 ENTRYPOINT ["/usr/bin/auroraboot"]
 
-# Default stage for amd64/arm64 - uses luet packages
-FROM base AS default
+# Luet-based stage for amd64/arm64
+FROM base AS luet-base
 COPY --from=luet /usr/bin/luet /usr/bin/luet
 # copy both arches
 COPY image-assets/luet-arm64.yaml /tmp/luet-arm64.yaml
@@ -179,3 +180,10 @@ COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
 ENTRYPOINT ["/usr/bin/auroraboot"]
+
+# Architecture aliases - amd64/arm64 use luet-base, riscv64 is defined above
+FROM luet-base AS amd64
+FROM luet-base AS arm64
+
+# Final stage - dynamically selects based on TARGETARCH
+FROM ${TARGETARCH} AS default
