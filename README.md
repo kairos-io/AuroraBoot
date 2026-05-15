@@ -89,6 +89,11 @@ docker run --rm -ti --net host quay.io/kairos/auroraboot \
 
 This downloads the needed artifacts, bakes your cloud-config into a custom ISO, and serves it over the network.
 
+Supported architectures:
+- `amd64` (default, matches x86_64)
+- `arm64` (matches aarch64)
+- `riscv64`
+
 ### Use a container image instead
 
 Point AuroraBoot at any Kairos container image (or your own) and it will boot that:
@@ -110,7 +115,7 @@ docker run --rm -ti --net host quay.io/kairos/auroraboot \
     --set arch=arm64
 ```
 
-Supported: `amd64` (default) and `arm64`.
+Supported: `amd64` (default), `arm64`, and `riscv64`.
 
 ### Offline ISO, no netboot
 
@@ -131,7 +136,7 @@ Everything on the `--set` flag can also live in a YAML file:
 artifact_version: "v2.4.2"
 release_version: "v2.4.2"
 container_image: "..."
-arch: "amd64"
+arch: "amd64"  # Optional: architecture to use when pulling container images (amd64, arm64, or riscv64)
 flavor: "rockylinux"
 flavor_release: "9"
 repository: "kairos-io/kairos"

@@ -1,0 +1,44 @@
+---
+name: 'Test RISC-V build'
+
+on:
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:  # allows manual trigger from Actions tab
+
+permissions:
+  contents: read
+
+jobs:
+  build-linux-riscv64:
+    runs-on: 'ubuntu-24.04-riscv'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Create placeholder UI dist
+        run: |
+          # Skip UI build on riscv64 - Node.js/V8 has known issues on this arch
+          # https://github.com/nodejs/build/issues/4099
+          mkdir -p internal/ui/dist
+          echo '<!DOCTYPE html><html><body>Placeholder</body></html>' > internal/ui/dist/index.html
+
+      - name: Build binary
+        run: |
+          go build -v -o auroraboot .
+
+      - name: Run tests
+        run: |
+          # Skip e2e tests - they require Docker images that may not exist for riscv64
+          go test -v $(go list ./... | grep -v /e2e)
+
+      - name: Show binary info
+        run: |
+          file auroraboot
+          ./auroraboot --version || true
