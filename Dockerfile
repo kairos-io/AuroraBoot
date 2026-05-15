@@ -83,14 +83,20 @@ ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 
-# RISC-V 64 stage - uses Fedora packages instead of luet (no luet packages for riscv64 yet)
-FROM base AS riscv64
-# Install systemd-boot for UKI building and grub2 EFI for ISO building
-RUN dnf install -y \
-    systemd-boot-unsigned \
-    grub2-efi-riscv64 \
-    grub2-efi-riscv64-modules \
-    shim-unsigned-riscv64 || true
+# RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
+FROM fedorariscv/base:41 AS riscv64
+ENV BUILDKIT_PROGRESS=plain
+ENV TMPDIR=/tmp
+# Install base dependencies (same as main base stage)
+RUN dnf -y update && \
+    dnf -y install dnf-plugins-core && \
+    dnf in -y bc binutils curl dosfstools e2fsprogs erofs-utils gdisk genisoimage \
+              grub2 jq kpartx lvm2 llvm mtools openssl parted rsync squashfs-tools \
+              sudo udev util-linux xorriso zstd && \
+    dnf install -y \
+        systemd-boot-unsigned \
+        grub2-efi-riscv64 \
+        grub2-efi-riscv64-modules || true
 
 # Set up systemd-boot artifacts in the expected location for UKI building
 # The code expects files at /riscv64/systemd-boot/linuxriscv64.efi.stub and systemd-bootriscv64.efi
