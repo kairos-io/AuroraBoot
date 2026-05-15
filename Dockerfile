@@ -5,9 +5,7 @@ ARG TARGETARCH
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
-# Build the React UI. vite.config.ts writes to ../internal/ui/dist
-# relative to ui/, so we lay out the workdir as /work/ui and the dist
-# lands at /work/internal/ui/dist where the Go builder stage copies it.
+# Build the React UI. Output is platform-independent.
 FROM node:24 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
