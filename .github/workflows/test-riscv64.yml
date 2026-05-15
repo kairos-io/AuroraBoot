@@ -42,3 +42,15 @@ jobs:
         run: |
           file auroraboot
           ./auroraboot --version || true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Test Docker image build for riscv64
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/riscv64
+          push: false
+          load: false

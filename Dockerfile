@@ -8,7 +8,8 @@ FROM quay.io/luet/base:$LUET_VERSION AS luet
 # Build the React UI. vite.config.ts writes to ../internal/ui/dist
 # relative to ui/, so we lay out the workdir as /work/ui and the dist
 # lands at /work/internal/ui/dist where the Go builder stage copies it.
-FROM node:24 AS js
+# Force amd64 since node:24 lacks riscv64 and JS output is platform-independent.
+FROM --platform=linux/amd64 node:24 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm install
