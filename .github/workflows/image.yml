@@ -13,6 +13,29 @@ concurrency:
   group: ci-image-${{ github.head_ref || github.ref }}-${{ github.repository }}
   cancel-in-progress: false # we never want to cancel a running job on release
 jobs:
+  build-ui:
+    # Build UI on amd64 for riscv64 - QEMU emulation of amd64 on riscv64 is unstable
+    runs-on: 'ubuntu-latest'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'npm'
+          cache-dependency-path: ui/package-lock.json
+      - name: Build UI
+        working-directory: ui
+        run: |
+          npm ci
+          npm run build
+      - name: Upload UI artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/ui/dist
+          retention-days: 1
   build-linux-amd64:
     runs-on: 'ubuntu-24.04'
     steps:
@@ -61,11 +84,15 @@ jobs:
           tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-arm64
   build-linux-riscv64:
     runs-on: 'ubuntu-24.04-riscv'
+    needs: build-ui
     steps:
       - name: Checkout
         uses: actions/checkout@v6
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
+      - name: Download UI artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: ui-dist
+          path: internal/ui/dist
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
         with:

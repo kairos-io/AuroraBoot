@@ -4,14 +4,8 @@ ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
-# Build the React UI on amd64 (node:24 lacks riscv64 support).
-# Output is platform-independent.
-FROM --platform=linux/amd64 node:24 AS js
-WORKDIR /work/ui
-COPY ui/package.json ui/package-lock.json* ./
-RUN npm install
-COPY ui/ .
-RUN npm run build
+# UI is pre-built and passed via build context (internal/ui/dist)
+# This avoids QEMU emulation issues on riscv64 runners.
 
 FROM golang:1.26 AS with-swagger
 WORKDIR /app
@@ -31,7 +25,7 @@ ADD go.mod .
 ADD go.sum .
 RUN go mod download
 ADD . .
-COPY --from=js /work/internal/ui/dist ./internal/ui/dist
+# UI is pre-built and included in the build context
 COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
