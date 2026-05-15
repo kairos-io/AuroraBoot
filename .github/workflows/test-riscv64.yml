@@ -7,6 +7,9 @@ on:
       - main
   workflow_dispatch:  # allows manual trigger from Actions tab
 
+permissions:
+  contents: read
+
 jobs:
   build-linux-riscv64:
     runs-on: 'ubuntu-24.04-riscv'
