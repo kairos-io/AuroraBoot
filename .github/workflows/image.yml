@@ -55,7 +55,6 @@ jobs:
         with:
           build-args: |
             VERSION=${{ github.ref_name }}
-            JS_PLATFORM=linux/arm64
           provenance: false
           platforms: linux/arm64
           push: true
@@ -81,6 +80,7 @@ jobs:
         with:
           build-args: |
             VERSION=${{ github.ref_name }}
+            JS_PLATFORM=linux/amd64
           provenance: false
           platforms: linux/riscv64
           push: true

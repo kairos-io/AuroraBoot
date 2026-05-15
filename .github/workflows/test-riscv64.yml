@@ -55,5 +55,7 @@ jobs:
           context: .
           file: ./Dockerfile
           platforms: linux/riscv64
+          build-args: |
+            JS_PLATFORM=linux/amd64
           push: false
           load: false
