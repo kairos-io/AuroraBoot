@@ -2,14 +2,13 @@ ARG FEDORA_VERSION=42
 ARG LUET_VERSION=0.36.5
 ARG SWAGGER_STAGE=with-swagger
 ARG TARGETARCH
-ARG JS_PLATFORM=linux/amd64
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
-# Build the React UI. vite.config.ts writes to ../internal/ui/dist
-# relative to ui/, so we lay out the workdir as /work/ui and the dist
-# lands at /work/internal/ui/dist where the Go builder stage copies it.
-# Force amd64 since node:24 lacks riscv64 and JS output is platform-independent.
+# Build the React UI. Output is platform-independent.
+# For local arm64 builds: docker build --build-arg JS_PLATFORM=linux/arm64 .
+# For riscv64: must use linux/amd64 since node:24 lacks riscv64 support.
+ARG JS_PLATFORM=linux/amd64
 FROM --platform=$JS_PLATFORM node:24 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
