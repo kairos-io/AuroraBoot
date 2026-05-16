@@ -24,9 +24,14 @@ describe("AuroraBoot web smoke", () => {
   });
 
   // The SPA router owns unknown paths and the server falls back to
-  // index.html so deep links work on reload.
+  // index.html so deep links work on reload. The server checks for
+  // text/html in the Accept header before serving the SPA shell.
   it("serves the SPA shell on an arbitrary deep link", () => {
-    cy.request({ url: "/nodes", failOnStatusCode: true }).then((res) => {
+    cy.request({
+      url: "/nodes",
+      failOnStatusCode: true,
+      headers: { Accept: "text/html" },
+    }).then((res) => {
       expect(res.status).to.eq(200);
       expect(res.body).to.match(/<!doctype html/i);
     });
