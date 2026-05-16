@@ -263,7 +263,7 @@ jobs:
        uses: cypress-io/github-action@v6
        with:
          working-directory: e2e/web/
-         start: docker run --network=host --rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web --create-worker
+         start: docker run --network=host --rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web
          wait-on: 'http://localhost:8080'
          wait-on-timeout: 60
      - name: Upload Cypress screenshots
