@@ -105,6 +105,7 @@ jobs:
       - name: Build
         uses: docker/build-push-action@v6
         with:
+          context: .
           file: ./Dockerfile.riscv64
           build-args: |
             VERSION=${{ github.ref_name }}
