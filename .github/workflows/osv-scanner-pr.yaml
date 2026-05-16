@@ -2,6 +2,8 @@ name: OSV-Scanner PR Scan
 
 # Change "main" to your default branch if you use a different name, i.e. "master"
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
   merge_group:
@@ -17,3 +19,9 @@ permissions:
 jobs:
   scan-pr:
     uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8"
+    with:
+      # Apply ignores (e.g. unfixed Moby client CVEs) to all scanned manifests under ./ 
+      scan-args: |-
+        --config=./osv-scanner.toml
+        -r
+        ./
