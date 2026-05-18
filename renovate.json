@@ -76,7 +76,8 @@
         "/ui/src/pages/ArtifactBuilder\\.tsx$/"
       ],
       "matchStrings": [
-        "//\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*baseImage:\\s*\"[^\"]+:(?<currentValue>[^\"]+)\""
+        "//\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*baseImage:\\s*\"[^\"]+:(?<currentValue>[^\"]+)\"",
+        "//\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)(?:\\s+extractVersion=(?<extractVersion>\\S+))?\\s*\\n\\s*const\\s+\\w+\\s*=\\s*\"(?<currentValue>[^\"]+)\""
       ]
     }
   ]

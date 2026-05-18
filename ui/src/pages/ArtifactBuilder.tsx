@@ -204,13 +204,18 @@ interface BuildTemplate {
   values: Partial<CreateArtifactInput>;
 }
 
+// renovate: datasource=docker depName=ghcr.io/kairos-io/hadron extractVersion=^(?<version>v\d+\.\d+\.\d+)
+const HADRON_VERSION = "v0.0.4";
+// renovate: datasource=github-releases depName=kairos-io/kairos
+const KAIROS_VERSION = "v4.0.3";
+
 const TEMPLATES: BuildTemplate[] = [
   {
     name: "Hadron + K3s",
     description: "Hadron Linux with K3s, generic model, ISO",
     values: {
-      baseImage: "quay.io/kairos/hadron:v0.0.4-core-amd64-generic-v4.0.3",
-      kairosVersion: "v4.0.3",
+      baseImage: `quay.io/kairos/hadron:${HADRON_VERSION}-core-amd64-generic-${KAIROS_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -224,7 +229,7 @@ const TEMPLATES: BuildTemplate[] = [
     values: {
       // renovate: datasource=docker depName=ubuntu
       baseImage: "ubuntu:24.04",
-      kairosVersion: "v4.0.3",
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -237,7 +242,7 @@ const TEMPLATES: BuildTemplate[] = [
     values: {
       // renovate: datasource=docker depName=fedora
       baseImage: "fedora:40",
-      kairosVersion: "v4.0.3",
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -250,7 +255,7 @@ const TEMPLATES: BuildTemplate[] = [
     values: {
       // renovate: datasource=docker depName=opensuse/leap
       baseImage: "opensuse/leap:15.6",
-      kairosVersion: "v4.0.3",
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -263,7 +268,7 @@ const TEMPLATES: BuildTemplate[] = [
     values: {
       // renovate: datasource=docker depName=debian
       baseImage: "debian:12",
-      kairosVersion: "v4.0.3",
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -276,7 +281,7 @@ const TEMPLATES: BuildTemplate[] = [
     values: {
       // renovate: datasource=docker depName=alpine
       baseImage: "alpine:3.21",
-      kairosVersion: "v4.0.3",
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -289,7 +294,7 @@ const TEMPLATES: BuildTemplate[] = [
     values: {
       // renovate: datasource=docker depName=rockylinux
       baseImage: "rockylinux:9",
-      kairosVersion: "v4.0.3",
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
