@@ -69,6 +69,15 @@
       ],
       "datasourceTemplate": "docker",
       "depNameTemplate": "quay.io/kairos/kairos-init"
+    },
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/ui/src/pages/ArtifactBuilder\\.tsx$/"
+      ],
+      "matchStrings": [
+        "//\\s*renovate:\\s*datasource=(?<datasource>\\S+)\\s+depName=(?<depName>\\S+)\\s*\\n\\s*baseImage:\\s*\"[^\"]+:(?<currentValue>[^\"]+)\""
+      ]
     }
   ]
 }

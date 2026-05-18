@@ -222,6 +222,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Ubuntu 24.04",
     description: "Ubuntu base, auto-kairosified, ISO",
     values: {
+      // renovate: datasource=docker depName=ubuntu
       baseImage: "ubuntu:24.04",
       kairosVersion: "v4.0.3",
       model: "generic",
@@ -234,6 +235,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Fedora 40",
     description: "Fedora base, auto-kairosified, ISO",
     values: {
+      // renovate: datasource=docker depName=fedora
       baseImage: "fedora:40",
       kairosVersion: "v4.0.3",
       model: "generic",
@@ -246,6 +248,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "openSUSE Leap 15.6",
     description: "openSUSE Leap base, auto-kairosified, ISO",
     values: {
+      // renovate: datasource=docker depName=opensuse/leap
       baseImage: "opensuse/leap:15.6",
       kairosVersion: "v4.0.3",
       model: "generic",
@@ -258,6 +261,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Debian 12",
     description: "Debian Bookworm base, auto-kairosified, ISO",
     values: {
+      // renovate: datasource=docker depName=debian
       baseImage: "debian:12",
       kairosVersion: "v4.0.3",
       model: "generic",
@@ -270,6 +274,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Alpine 3.21",
     description: "Alpine Linux base, auto-kairosified, ISO",
     values: {
+      // renovate: datasource=docker depName=alpine
       baseImage: "alpine:3.21",
       kairosVersion: "v4.0.3",
       model: "generic",
@@ -282,6 +287,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Rocky Linux 9",
     description: "Rocky Linux 9 base, auto-kairosified, ISO",
     values: {
+      // renovate: datasource=docker depName=rockylinux
       baseImage: "rockylinux:9",
       kairosVersion: "v4.0.3",
       model: "generic",
