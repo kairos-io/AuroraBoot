@@ -204,13 +204,30 @@ interface BuildTemplate {
   values: Partial<CreateArtifactInput>;
 }
 
+// renovate: datasource=docker depName=ghcr.io/kairos-io/hadron extractVersion=^(?<version>v\d+\.\d+\.\d+)
+const HADRON_VERSION = "v0.0.4";
+// renovate: datasource=github-releases depName=kairos-io/kairos
+const KAIROS_VERSION = "v4.0.3";
+// renovate: datasource=docker depName=ubuntu
+const UBUNTU_VERSION = "24.04";
+// renovate: datasource=docker depName=fedora
+const FEDORA_VERSION = "40";
+// renovate: datasource=docker depName=opensuse/leap
+const OPENSUSE_LEAP_VERSION = "15.6";
+// renovate: datasource=docker depName=debian
+const DEBIAN_VERSION = "12";
+// renovate: datasource=docker depName=alpine
+const ALPINE_VERSION = "3.21";
+// renovate: datasource=docker depName=rockylinux
+const ROCKYLINUX_VERSION = "9";
+
 const TEMPLATES: BuildTemplate[] = [
   {
     name: "Hadron + K3s",
     description: "Hadron Linux with K3s, generic model, ISO",
     values: {
-      baseImage: "quay.io/kairos/hadron:v0.0.4-core-amd64-generic-v4.0.3",
-      kairosVersion: "v4.0.3",
+      baseImage: `quay.io/kairos/hadron:${HADRON_VERSION}-core-amd64-generic-${KAIROS_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -222,8 +239,8 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Ubuntu 24.04",
     description: "Ubuntu base, auto-kairosified, ISO",
     values: {
-      baseImage: "ubuntu:24.04",
-      kairosVersion: "v4.0.3",
+      baseImage: `ubuntu:${UBUNTU_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -234,8 +251,8 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Fedora 40",
     description: "Fedora base, auto-kairosified, ISO",
     values: {
-      baseImage: "fedora:40",
-      kairosVersion: "v4.0.3",
+      baseImage: `fedora:${FEDORA_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -246,8 +263,8 @@ const TEMPLATES: BuildTemplate[] = [
     name: "openSUSE Leap 15.6",
     description: "openSUSE Leap base, auto-kairosified, ISO",
     values: {
-      baseImage: "opensuse/leap:15.6",
-      kairosVersion: "v4.0.3",
+      baseImage: `opensuse/leap:${OPENSUSE_LEAP_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -258,8 +275,8 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Debian 12",
     description: "Debian Bookworm base, auto-kairosified, ISO",
     values: {
-      baseImage: "debian:12",
-      kairosVersion: "v4.0.3",
+      baseImage: `debian:${DEBIAN_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -270,8 +287,8 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Alpine 3.21",
     description: "Alpine Linux base, auto-kairosified, ISO",
     values: {
-      baseImage: "alpine:3.21",
-      kairosVersion: "v4.0.3",
+      baseImage: `alpine:${ALPINE_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
@@ -282,8 +299,8 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Rocky Linux 9",
     description: "Rocky Linux 9 base, auto-kairosified, ISO",
     values: {
-      baseImage: "rockylinux:9",
-      kairosVersion: "v4.0.3",
+      baseImage: `rockylinux:${ROCKYLINUX_VERSION}`,
+      kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
       variant: "core",
