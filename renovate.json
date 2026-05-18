@@ -62,10 +62,10 @@
     {
       "customType": "regex",
       "managerFilePatterns": [
-        "/internal/builder/auroraboot/builder\\.go$/"
+        "/internal/builder/auroraboot/constants\\.go$/"
       ],
       "matchStrings": [
-        "kairosInitImage\\s*=\\s*\"quay\\.io/kairos/kairos-init:v(?<currentValue>[0-9.]+)\""
+        "defaultKairosInitVersion\\s*=\\s*\"v(?<currentValue>[0-9.]+)\""
       ],
       "datasourceTemplate": "docker",
       "depNameTemplate": "quay.io/kairos/kairos-init"
