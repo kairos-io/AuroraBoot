@@ -439,7 +439,7 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 		kairosInitImage = os.Getenv("KAIROS_INIT_IMAGE")
 	}
 	if kairosInitImage == "" {
-		kairosInitImage = "quay.io/kairos/kairos-init:v0.8.4"
+		kairosInitImage = defaultKairosInitImage + ":" + defaultKairosInitVersion
 	}
 
 	// Build kairos-init flags
