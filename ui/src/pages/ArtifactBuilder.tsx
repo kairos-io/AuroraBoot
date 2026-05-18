@@ -208,6 +208,18 @@ interface BuildTemplate {
 const HADRON_VERSION = "v0.0.4";
 // renovate: datasource=github-releases depName=kairos-io/kairos
 const KAIROS_VERSION = "v4.0.3";
+// renovate: datasource=docker depName=ubuntu
+const UBUNTU_VERSION = "24.04";
+// renovate: datasource=docker depName=fedora
+const FEDORA_VERSION = "40";
+// renovate: datasource=docker depName=opensuse/leap
+const OPENSUSE_LEAP_VERSION = "15.6";
+// renovate: datasource=docker depName=debian
+const DEBIAN_VERSION = "12";
+// renovate: datasource=docker depName=alpine
+const ALPINE_VERSION = "3.21";
+// renovate: datasource=docker depName=rockylinux
+const ROCKYLINUX_VERSION = "9";
 
 const TEMPLATES: BuildTemplate[] = [
   {
@@ -227,8 +239,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Ubuntu 24.04",
     description: "Ubuntu base, auto-kairosified, ISO",
     values: {
-      // renovate: datasource=docker depName=ubuntu
-      baseImage: "ubuntu:24.04",
+      baseImage: `ubuntu:${UBUNTU_VERSION}`,
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
@@ -240,8 +251,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Fedora 40",
     description: "Fedora base, auto-kairosified, ISO",
     values: {
-      // renovate: datasource=docker depName=fedora
-      baseImage: "fedora:40",
+      baseImage: `fedora:${FEDORA_VERSION}`,
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
@@ -253,8 +263,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "openSUSE Leap 15.6",
     description: "openSUSE Leap base, auto-kairosified, ISO",
     values: {
-      // renovate: datasource=docker depName=opensuse/leap
-      baseImage: "opensuse/leap:15.6",
+      baseImage: `opensuse/leap:${OPENSUSE_LEAP_VERSION}`,
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
@@ -266,8 +275,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Debian 12",
     description: "Debian Bookworm base, auto-kairosified, ISO",
     values: {
-      // renovate: datasource=docker depName=debian
-      baseImage: "debian:12",
+      baseImage: `debian:${DEBIAN_VERSION}`,
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
@@ -279,8 +287,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Alpine 3.21",
     description: "Alpine Linux base, auto-kairosified, ISO",
     values: {
-      // renovate: datasource=docker depName=alpine
-      baseImage: "alpine:3.21",
+      baseImage: `alpine:${ALPINE_VERSION}`,
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
@@ -292,8 +299,7 @@ const TEMPLATES: BuildTemplate[] = [
     name: "Rocky Linux 9",
     description: "Rocky Linux 9 base, auto-kairosified, ISO",
     values: {
-      // renovate: datasource=docker depName=rockylinux
-      baseImage: "rockylinux:9",
+      baseImage: `rockylinux:${ROCKYLINUX_VERSION}`,
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
