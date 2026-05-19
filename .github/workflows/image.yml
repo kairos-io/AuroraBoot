@@ -31,7 +31,7 @@ jobs:
           npm ci
           npm run build
       - name: Upload UI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-dist
           path: internal/ui/dist
@@ -89,7 +89,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Download UI artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ui-dist
           path: internal/ui/dist
