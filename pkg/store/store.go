@@ -151,6 +151,7 @@ type ArtifactRecord struct {
 	TargetGroupID     string `json:"targetGroupId,omitempty"`
 	ContainerImage    string `json:"containerImage,omitempty"`
 	OverlayRootfs string    `json:"overlayRootfs,omitempty"`
+	ExtendCmdline     string `json:"extendCmdline,omitempty"`
 	ArtifactFiles []string  `json:"artifacts" gorm:"serializer:json"`
 	Logs          string    `json:"-" gorm:"type:text"`
 	CreatedAt     time.Time `json:"createdAt"`

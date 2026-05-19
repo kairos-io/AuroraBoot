@@ -53,6 +53,7 @@ export interface BuildConfigPayload {
   };
   dockerfile?: string;
   overlayRootfs?: string;
+  extendCmdline?: string;
   outputs: CreateArtifactInput["outputs"];
   signing: {
     ukiKeySetName?: string;
@@ -107,6 +108,7 @@ export function payloadFromBuilder(args: {
     },
     dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
     overlayRootfs: form.overlayRootfs || undefined,
+    extendCmdline: form.extendCmdline || undefined,
     outputs: { ...form.outputs },
     signing: {
       ukiKeySetName: keySetName,
@@ -152,6 +154,7 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
       kairosInitImage: artifact.kairosInitImage || undefined,
     },
     dockerfile: buildMode === "dockerfile" ? artifact.dockerfile : undefined,
+    extendCmdline: artifact.extendCmdline || undefined,
     outputs: {
       iso: artifact.iso,
       cloudImage: artifact.cloudImage,
