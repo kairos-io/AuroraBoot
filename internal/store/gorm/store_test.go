@@ -559,4 +559,30 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.ExtensionHierarchies.Confext).To(BeNil())
 		})
 	})
+
+	Describe("ExtensionRecord schema", func() {
+		It("creates the extensions table on AutoMigrate", func() {
+			var count int64
+			Expect(s.UnsafeDB().Model(&store.ExtensionRecord{}).Count(&count).Error).To(Succeed())
+			Expect(count).To(BeZero())
+		})
+
+		It("round-trips Hierarchies", func() {
+			rec := &store.ExtensionRecord{
+				ID:          "e-1",
+				Name:        "tailscale-agent",
+				Type:        "sysext",
+				Phase:       "Ready",
+				Arch:        "amd64",
+				Version:     "v1.74.0",
+				SourceMode:  "image",
+				SourceImage: "quay.io/myorg/tailscale:1.74",
+				Hierarchies: []string{"/opt", "/srv"},
+			}
+			Expect(s.UnsafeDB().Create(rec).Error).To(Succeed())
+			var got store.ExtensionRecord
+			Expect(s.UnsafeDB().First(&got, "id = ?", "e-1").Error).To(Succeed())
+			Expect(got.Hierarchies).To(Equal([]string{"/opt", "/srv"}))
+		})
+	})
 })

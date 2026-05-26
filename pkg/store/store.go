@@ -176,6 +176,37 @@ const (
 	ArtifactError    = "Error"
 )
 
+// ExtensionRecord is one sysext or confext build managed by AuroraBoot.
+// .raw output lives at <artifactsDir>/extensions/<ID>/<Name>.<Type>.raw.
+type ExtensionRecord struct {
+	ID      string `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"index"      json:"name"`
+	Type    string `json:"type"`  // "sysext" | "confext"
+	Phase   string `json:"phase"` // Pending | Building | Ready | Error
+	Message string `json:"message"`
+
+	Arch    string `json:"arch"`
+	Version string `json:"version"`
+
+	SourceMode       string `json:"sourceMode"` // artifact | image | dockerfile
+	SourceArtifactID string `json:"sourceArtifactId"`
+	SourceImage      string `json:"sourceImage"`
+	Dockerfile       string `gorm:"type:text" json:"dockerfile,omitempty"`
+	ExtraSteps       string `gorm:"type:text" json:"extraSteps,omitempty"`
+
+	SigningKeySetID string   `json:"signingKeySetId"`
+	Hierarchies     []string `gorm:"serializer:json" json:"hierarchies"`
+	ServiceReload   bool     `json:"serviceReload"`
+
+	ContainerImage string `json:"containerImage"`
+	RawFilename    string `json:"rawFilename"`
+
+	Logs string `gorm:"type:text" json:"-"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
 // ArtifactStore manages build artifact records.
 type ArtifactStore interface {
 	Create(ctx context.Context, rec *ArtifactRecord) error
