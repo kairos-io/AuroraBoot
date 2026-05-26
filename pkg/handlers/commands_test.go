@@ -1,7 +1,9 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -31,7 +33,7 @@ var _ = Describe("CommandHandler", func() {
 			},
 		}
 		cs = &fakeCommandStore{}
-		handler = handlers.NewCommandHandler(cs, ns, nil)
+		handler = handlers.NewCommandHandler(cs, ns, nil, nil, nil)
 	})
 
 	Describe("Create", func() {
@@ -208,5 +210,139 @@ var _ = Describe("CommandHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
+	})
+})
+
+var _ = Describe("CommandHandler.UpdateStatus — node_extensions tracking", func() {
+	var (
+		e       *echo.Echo
+		cs      *fakeCommandStore
+		ns      *fakeNodeStore
+		nes     *fakeNodeExtensionStore
+		es      *fakeExtensionStore
+		handler *handlers.CommandHandler
+		ctx     = context.Background()
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		cs = newFakeCommandStore()
+		ns = &fakeNodeStore{}
+		nes = newFakeNodeExtensionStore()
+		es = newFakeExtensionStore()
+		handler = handlers.NewCommandHandler(cs, ns, nil, nes, es)
+	})
+
+	putStatus := func(nodeID, cmdID, phase string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPut,
+			"/api/v1/nodes/"+nodeID+"/commands/"+cmdID+"/status",
+			strings.NewReader(fmt.Sprintf(`{"phase":%q}`, phase)))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetParamNames("nodeID", "commandID")
+		c.SetParamValues(nodeID, cmdID)
+		Expect(handler.UpdateStatus(c)).To(Succeed())
+		return rec
+	}
+
+	It("upserts a node_extensions row on a successful manual install", func() {
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-1", ManagedNodeID: "n-1", Command: store.CmdExtension,
+			Args: map[string]string{"type": "sysext", "action": "install",
+				"name": "tailscale-agent", "bootState": "common"},
+		})
+		_ = es.Create(ctx, &store.ExtensionRecord{
+			ID: "e-1", Name: "tailscale-agent", Type: "sysext",
+			Version: "v1.74.0", Phase: "Ready",
+		})
+
+		Expect(putStatus("n-1", "c-1", store.CommandCompleted).Code).To(Equal(http.StatusOK))
+
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0].Name).To(Equal("tailscale-agent"))
+		Expect(rows[0].BootState).To(Equal("common"))
+		Expect(rows[0].Version).To(Equal("v1.74.0"))
+		Expect(rows[0].ExtensionID).To(Equal("e-1"))
+	})
+
+	It("does nothing for a Failed manual install", func() {
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-2", ManagedNodeID: "n-1", Command: store.CmdExtension,
+			Args: map[string]string{"type": "sysext", "action": "install",
+				"name": "x", "bootState": "common"},
+		})
+		Expect(putStatus("n-1", "c-2", store.CommandFailed).Code).To(Equal(http.StatusOK))
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(BeEmpty())
+	})
+
+	It("deletes the scope row on a successful manual disable", func() {
+		_ = nes.Upsert(ctx, &store.NodeExtensionRow{NodeID: "n-1", Name: "ts", Type: "sysext", BootState: "common"})
+		_ = nes.Upsert(ctx, &store.NodeExtensionRow{NodeID: "n-1", Name: "ts", Type: "sysext", BootState: "active"})
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-3", ManagedNodeID: "n-1", Command: store.CmdExtension,
+			Args: map[string]string{"type": "sysext", "action": "disable",
+				"name": "ts", "bootState": "common"},
+		})
+		Expect(putStatus("n-1", "c-3", store.CommandCompleted).Code).To(Equal(http.StatusOK))
+
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0].BootState).To(Equal("active"))
+	})
+
+	It("deletes every scope row on a successful manual remove", func() {
+		for _, scope := range []string{"common", "active"} {
+			_ = nes.Upsert(ctx, &store.NodeExtensionRow{NodeID: "n-1", Name: "ts", Type: "sysext", BootState: scope})
+		}
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-4", ManagedNodeID: "n-1", Command: store.CmdExtension,
+			Args: map[string]string{"type": "sysext", "action": "remove", "name": "ts"},
+		})
+		Expect(putStatus("n-1", "c-4", store.CommandCompleted).Code).To(Equal(http.StatusOK))
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(BeEmpty())
+	})
+
+	It("upserts every bundled extension at --active on a successful upgrade", func() {
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-5", ManagedNodeID: "n-1", Command: store.CmdUpgrade,
+			Args: map[string]string{
+				"source":     "artifact:a-1",
+				"extensions": `[{"type":"sysext","name":"tailscale-agent","source":"https://x/y","version":"v1.74.0"},{"type":"confext","name":"fluent-bit","source":"https://x/z","version":"2026.05.20"}]`,
+			},
+		})
+		Expect(putStatus("n-1", "c-5", store.CommandCompleted).Code).To(Equal(http.StatusOK))
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(HaveLen(2))
+		for _, r := range rows {
+			Expect(r.BootState).To(Equal("active"))
+		}
+	})
+
+	It("upserts bundled extensions at --recovery on a successful upgrade-recovery", func() {
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-6", ManagedNodeID: "n-1", Command: store.CmdUpgradeRecovery,
+			Args: map[string]string{
+				"source":     "artifact:a-1",
+				"extensions": `[{"type":"sysext","name":"rescue-tools","source":"https://x/r","version":"v3"}]`,
+			},
+		})
+		Expect(putStatus("n-1", "c-6", store.CommandCompleted).Code).To(Equal(http.StatusOK))
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(HaveLen(1))
+		Expect(rows[0].BootState).To(Equal("recovery"))
+	})
+
+	It("is a no-op for upgrade with no extensions arg (backward compat)", func() {
+		_ = cs.Create(ctx, &store.NodeCommand{
+			ID: "c-7", ManagedNodeID: "n-1", Command: store.CmdUpgrade,
+			Args: map[string]string{"source": "artifact:a-1"},
+		})
+		Expect(putStatus("n-1", "c-7", store.CommandCompleted).Code).To(Equal(http.StatusOK))
+		rows, _ := nes.ListForNode(ctx, "n-1")
+		Expect(rows).To(BeEmpty())
 	})
 })

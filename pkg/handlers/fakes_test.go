@@ -185,6 +185,9 @@ type fakeCommandStore struct {
 	cmds []*store.NodeCommand
 }
 
+// newFakeCommandStore returns an empty fakeCommandStore.
+func newFakeCommandStore() *fakeCommandStore { return &fakeCommandStore{} }
+
 func (f *fakeCommandStore) Create(_ context.Context, cmd *store.NodeCommand) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -462,6 +465,82 @@ func (f *fakeBuilder) List(_ context.Context) ([]*builder.BuildStatus, error) {
 }
 
 func (f *fakeBuilder) Cancel(_ context.Context, id string) error {
+	return nil
+}
+
+// --- fakeNodeExtensionStore --------------------------------------------
+
+type fakeNodeExtensionStore struct {
+	mu   sync.Mutex
+	rows []store.NodeExtensionRow
+}
+
+func newFakeNodeExtensionStore() *fakeNodeExtensionStore {
+	return &fakeNodeExtensionStore{}
+}
+
+func (f *fakeNodeExtensionStore) Upsert(_ context.Context, row *store.NodeExtensionRow) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, r := range f.rows {
+		if r.NodeID == row.NodeID && r.Name == row.Name && r.Type == row.Type && r.BootState == row.BootState {
+			f.rows[i] = *row
+			return nil
+		}
+	}
+	f.rows = append(f.rows, *row)
+	return nil
+}
+
+func (f *fakeNodeExtensionStore) ListForNode(_ context.Context, nodeID string) ([]store.NodeExtensionRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []store.NodeExtensionRow{}
+	for _, r := range f.rows {
+		if r.NodeID == nodeID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeNodeExtensionStore) ListForExtensionByName(_ context.Context, extType, name string) ([]store.NodeExtensionRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []store.NodeExtensionRow{}
+	for _, r := range f.rows {
+		if r.Type == extType && r.Name == name {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeNodeExtensionStore) DeleteByScope(_ context.Context, nodeID, extType, name, bootState string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.rows[:0]
+	for _, r := range f.rows {
+		if r.NodeID == nodeID && r.Type == extType && r.Name == name && r.BootState == bootState {
+			continue
+		}
+		out = append(out, r)
+	}
+	f.rows = out
+	return nil
+}
+
+func (f *fakeNodeExtensionStore) DeleteByName(_ context.Context, nodeID, extType, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.rows[:0]
+	for _, r := range f.rows {
+		if r.NodeID == nodeID && r.Type == extType && r.Name == name {
+			continue
+		}
+		out = append(out, r)
+	}
+	f.rows = out
 	return nil
 }
 

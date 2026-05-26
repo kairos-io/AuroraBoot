@@ -27,6 +27,8 @@ type Config struct {
 	SecureBootKeySetStore  store.SecureBootKeySetStore
 	ExtensionStore               store.ExtensionStore
 	ArtifactExtensionBundleStore store.ArtifactExtensionBundleStore
+	NodeExtensionStore           store.NodeExtensionStore
+	ExtensionBuilder             builder.ExtensionBuilder
 	NetbootManager         *netbootpkg.Manager
 	DeploymentStore        store.DeploymentStore
 	BMCTargetStore         store.BMCTargetStore
@@ -80,7 +82,7 @@ func New(cfg Config) *echo.Echo {
 
 	// Create handlers
 	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, hub, regToken, cfg.AuroraBootURL)
-	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
+	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile)
