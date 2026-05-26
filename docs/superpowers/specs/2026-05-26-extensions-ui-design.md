@@ -30,30 +30,26 @@ The same `extension` build artifact can reach a node by two paths, and operators
 
 Both flows share: the same Extensions table; the same `.raw` build artifact; the same authenticated download endpoint; the same per-node version tracking. They differ only in *which* phonehome command carries them and *which* boot scope the agent installs into.
 
-## Partition semantics during upgrade
+## Extension storage and boot scopes
 
-Kairos has dual-root (active / passive) plus a separate recovery partition. `kairos-agent upgrade` writes the new OS to **passive**, marks it next-boot, reboots. After the reboot **passive becomes active** and **old-active becomes the new passive (rollback)**.
+Verified against `kairos-agent/pkg/action/sysext.go`. **Extensions are partition-independent.** All `.raw` files live in one persistent location: `/var/lib/kairos/extensions/<filename>.raw` for sysexts, `/var/lib/kairos/confexts/<filename>.raw` for confexts. An OS upgrade does not move them; the active↔passive partition flip does not touch them.
 
-A `kairos-agent <type> install --<scope>` places the extension under the matching partition's sysext store:
+The four "boot scopes" — `active`, `passive`, `recovery`, `common` — are subdirectories of each type's parent (`/var/lib/kairos/extensions/{active,passive,recovery,common}/` for sysexts, `/var/lib/kairos/confexts/{active,passive,recovery,common}/` for confexts). They contain **symlinks** to the `.raw` files. Each symlink says "enable this extension when the node boots in this state." At boot, immucore reads the current boot state and creates symlinks under `/run/extensions/` (or `/run/confexts/`) pointing at the matching scope's entries (plus `common`, which always applies). systemd-sysext / systemd-confext then mount what's there.
 
-| Install scope | After an OS upgrade reboot |
-|---|---|
-| `--active`   | Followed old-active into the new passive — gone from the running OS. |
-| `--passive`  | Followed old-passive into the new active — promoted with the OS upgrade. |
-| `--common`   | Partition-independent store — unchanged, survives the flip. |
-| `--recovery` | Recovery store — unchanged. |
+`kairos-agent <type> install <uri>` only downloads the `.raw` into the persistent dir; it does **not** enable it. Enabling is a separate `enable <name> --<scope> [--now]` step that creates the symlink. `kairos-agent <type> remove <name>` deletes all symlinks and the `.raw` itself.
 
-This shapes both flows:
+**Re-installing the same name overwrites the `.raw` file in place.** Any symlinks that previously pointed at it (in any scope) automatically resolve to the new content — there is no need to remove old symlinks before upgrading an extension.
 
-**Manual flow defaults to `--common`.** Operator intent for a manual install is "make this stick"; common is the scope that survives the partition flip. The install dialog still allows `--active` and `--passive` as overrides, but picking `--active` surfaces an amber callout — *"This extension lives in the active partition only. The next OS upgrade will retire it to the rollback partition; it won't be available on the new OS."* The vanishing behavior is opted into knowingly.
+**Manual flow defaults to `common`.** Operator intent for a manual install is "make this stick across boots and rollbacks"; `common` is the scope honored regardless of which boot state the node is in. The install dialog allows `active`, `passive`, `recovery` as overrides. Picking **Active** surfaces an amber callout — *"This extension is only enabled when the node is booted in active mode. If the node is rolled back to passive, this extension won't be loaded."* — so the scoped behavior is opted into knowingly. (The `.raw` itself still survives a rollback; only the symlink scope determines whether it's enabled.) The dialog dispatches `kairos-agent <type> install` followed by `kairos-agent <type> enable --<scope> [--now]`.
 
-**Bundled flow uses `--passive`.** Bundled extensions ride with the OS upgrade into what becomes the new active. The agent's compound dispatch installs each `extensions[]` entry at `--passive` so the upgrade's reboot brings both online together.
+**Bundled flow enables at `active` for new extensions, overwrites in place for existing ones.** The agent's compound dispatch, for each `extensions[]` entry:
 
-**Same-name replacement.** Before installing a bundled extension to `--passive`, the agent's compound dispatch issues `kairos-agent <type> remove <name>` against any same-named extension that currently exists in the **common** store. This guarantees that after the reboot there is exactly one instance per name (the bundled one) — no silent collision where two `.raw` files try to overlay `/usr`. Same-named extensions in `--active` scope are left alone (they follow the partition flip into rollback by design); same-named extensions in `--passive` scope are overwritten by `install --passive` (kairos-agent's existing behavior).
+1. `kairos-agent <type> install <source>` — downloads the `.raw` into the persistent dir, overwriting any prior file at the same name. If the extension was previously enabled at any scope, the existing symlinks now resolve to the new content; no further work is needed for them.
+2. If, after step 1, the extension is **not** enabled at any scope on this node, issue `kairos-agent <type> enable --active` **without** `--now`. The `active` scope ensures the post-reboot active boot enables it; omitting `--now` keeps the current OS from reloading and mounting it against a kernel/userspace it wasn't built for. New extensions land enabled-on-next-boot.
 
-**Server-side `node_extensions` scope rotation.** When the agent reports a successful compound upgrade back over the WebSocket, the server rotates rows for that node: rows scoped `active` flip to `passive`, rows scoped `passive` (just installed) flip to `active`, `common` rows stay common, replaced common rows are deleted and new `active` rows are written for the bundled replacement. The node detail page's "Installed extensions" view stays accurate.
+Step 2's "if not already enabled anywhere" decision preserves operator intent: if the operator previously chose `common`, the bundle leaves the scope as `common`; if previously `active`, leaves it `active`; only first-time installs get the `active` default. There is no same-name common-remove step — re-install overwrites the `.raw` in place and the symlink picks it up automatically.
 
-**Pre-action diff** in the upgrade dialog reports three lines (see *UI surfaces*): the OS transition, each bundled extension's per-node version transition (with replacement counts), and a summary of common-scoped extensions that carry forward unchanged.
+**Pre-action diff** in the upgrade dialog reports three lines (see *UI surfaces*): the OS transition, each bundled extension's per-node version transition (with replace/first-install counts), and a summary of extensions already enabled on the target nodes that the bundle isn't touching (carry-forward).
 
 ## Architecture overview
 
@@ -77,14 +73,19 @@ This shapes both flows:
   ┌────────────────┐  POST /commands {extension, …}  ┌────────────────┐
   │ Install dialog │ ──────────────────────────────▶ │ CommandHandler │
   └────────────────┘                                 └───────┬────────┘
-                                                             ▼  WS
+                              WS push                        │
+                  (pkg/ws/handler.go SendCommand)            ▼
                                                   ┌─────────────────────┐
                                                   │ kairos-agent        │
                                                   │  case "extension":  │
                                                   │   → sysext install  │
-                                                  │   → enable/disable  │
-                                                  │   → remove          │
-                                                  └─────────────────────┘
+                                                  │   → sysext enable   │
+                                                  │   → disable / remove│
+                                                  └──────────┬──────────┘
+                                                             │ status callback
+                                                  PUT /commands/:id/status
+                                                             ▼
+                                                       AuroraBoot
 
   FLOW 2 — bundled
   ┌─────────────────────┐  POST /commands {upgrade, extensions[], …}
@@ -94,8 +95,11 @@ This shapes both flows:
                                                            │ kairos-agent        │
                                                            │  case "upgrade":    │
                                                            │   1. for each ext:  │
-                                                           │      install into   │
-                                                           │      PASSIVE        │
+                                                           │      install (.raw  │
+                                                           │      overwrite),    │
+                                                           │      enable --active│
+                                                           │      iff not already│
+                                                           │      enabled        │
                                                            │   2. kairos-agent   │
                                                            │      upgrade        │
                                                            │   3. reboot         │
@@ -187,9 +191,9 @@ updated_at     timestamp
 (primary key: node_id + extension_id + boot_state)
 ```
 
-The agent reports back over the existing WebSocket on a successful install/upgrade/remove; the server updates `node_extensions` accordingly. Failures leave the row untouched (or remove it, for `remove` actions).
+The agent reports back via the existing REST status endpoint (`PUT /api/v1/nodes/:nodeID/commands/:commandID/status`, the same path the existing `upgrade` flow uses to mark itself `Completed`/`Failed`) on success/failure of an install / enable / disable / remove. The server then updates `node_extensions` accordingly: an `install`+`enable` writes/upserts a row, a `disable` deletes the row for the relevant scope only, a `remove` deletes all rows for that name on that node. Failures leave existing rows untouched.
 
-After a successful **compound upgrade** WS callback, the server performs a scope rotation for that node: rows with `boot_state = active` flip to `passive`, rows with `boot_state = passive` (just installed by this command) flip to `active`, `common` rows stay common, and the rows replaced by the bundle's same-name common-remove step are deleted and replaced with fresh `active` rows pointing at the bundled extension version. This rotation is what keeps the node detail page's "Installed extensions" view aligned with what's actually running after the partition flip.
+Because extensions are partition-independent (see *Extension storage and boot scopes*), an OS upgrade does **not** rotate `node_extensions` rows — scope choices made by the operator (or by the bundle's "enable --active iff not already enabled" rule) persist across upgrades. The compound-upgrade status callback writes the bundled extensions as new rows the first time they're installed on a node, and leaves prior rows untouched (overwritten `.raw` content is captured by bumping `version`).
 
 The existing `Artifact` table gains one nullable column:
 
@@ -209,8 +213,7 @@ PATCH /api/v1/extensions/:id                     → Extension      (name only)
 DELETE /api/v1/extensions/:id                    → ()
 GET   /api/v1/extensions/:id/logs                → text
 POST  /api/v1/extensions/:id/cancel              → ()
-GET   /api/v1/extensions/:id/download/:filename  → file (Bearer)
-GET   /api/v1/extensions/:id/file?token=…        → file (signed URL, used by nodes)
+GET   /api/v1/extensions/:id/download/:filename  → file (admin or node, via DownloadMiddleware)
 GET   /api/v1/extensions/:id/nodes               → []NodeExtensionRow
 
 # bundles attached to an artifact:
@@ -268,7 +271,7 @@ Validation rules (client and server):
 
 Server returns 400 with `{field: "hierarchies[N]", message: "…"}` (or `extraSteps`) on the first failing entry.
 
-The signed-URL endpoint mirrors how artifact image downloads work today: the server signs a URL whose TTL matches the lifetime of the command that triggered it (token expires when the parent command is marked `expired` or `completed`). Single-use is *not* enforced — the agent may retry the download on transient failures during a single command execution.
+The download endpoint reuses the existing **`DownloadMiddleware`** (`pkg/auth/middleware.go:57-79`), which accepts either the admin password or a registered node's API key — supplied via the `Authorization: Bearer …` header or a `?token=…` query parameter. This is exactly the auth model the existing `GET /api/v1/artifacts/:id/image` endpoint uses for agent-driven downloads, so we do not introduce signed-URL/TTL machinery. The agent composes `https://<server>/api/v1/extensions/<id>/download/<filename>?token=<node-api-key>` and `kairos-agent <type> install` follows the `https:` URI via its existing `httpSource` path (`kairos-agent/pkg/action/sysext.go:392-394`).
 
 ## Phonehome commands
 
@@ -283,23 +286,24 @@ Two commands are touched:
     "type":      "sysext",
     "action":    "install",
     "name":      "tailscale-agent",
-    "source":    "https://aurora/api/v1/extensions/3f9c…/file?token=…",
+    "source":    "https://aurora/api/v1/extensions/3f9c…/download/tailscale-agent.sysext.raw?token=…",
     "bootState": "common",
     "now":       true
   }
 }
 ```
 
-Dispatched in `kairos-agent/internal/phonehome/handlers.go` as a new switch case:
+Dispatched in `kairos-agent/internal/phonehome/handlers.go` as a new switch case. Note that `install` requires **two** CLI calls (download + enable), reflecting that `kairos-agent <type> install` only writes the `.raw` and `kairos-agent <type> enable` is what creates the boot-scope symlink:
 
 ```
 install → kairos-agent <type> install <source>
+          && kairos-agent <type> enable <name> --<bootState> [--now]
 enable  → kairos-agent <type> enable  <name> --<bootState> [--now]
 disable → kairos-agent <type> disable <name> --<bootState> [--now]
 remove  → kairos-agent <type> remove  <name>            [--now]
 ```
 
-Arg requirements per action: `source` is required for `install` and ignored otherwise; `bootState` is required for `enable` and `disable`, ignored otherwise; `name` is required for everything except `install` (the install URI carries it), but the server populates it for consistency. The agent's handler validates these before shelling out and returns a structured error if anything is missing.
+Arg requirements per action: `source` is required for `install` and ignored otherwise; `bootState` is required for `install`, `enable`, and `disable`, ignored otherwise; `name` is required for every action. The agent's handler validates these before shelling out and returns a structured error if anything is missing.
 
 `extension` is **not** in the phonehome safe-default allow list. It is treated as destructive (it can drop arbitrary OCI content into `/usr`, `/etc`, or declared hierarchies) and must be explicitly enabled per fleet in the ArtifactBuilder's allowed-commands picker.
 
@@ -316,9 +320,9 @@ The existing args grow one optional field, `extensions[]`:
     "source": "artifact:…",
     "extensions": [
       { "type": "sysext",  "name": "tailscale-agent",
-        "source": "https://aurora/api/v1/extensions/…/file?token=…" },
+        "source": "https://aurora/api/v1/extensions/…/download/tailscale-agent.sysext.raw?token=…" },
       { "type": "confext", "name": "fluent-bit-config",
-        "source": "https://aurora/api/v1/extensions/…/file?token=…" }
+        "source": "https://aurora/api/v1/extensions/…/download/fluent-bit-config.confext.raw?token=…" }
     ]
   }
 }
@@ -327,13 +331,13 @@ The existing args grow one optional field, `extensions[]`:
 `handleUpgrade` is extended:
 
 1. For each entry in `extensions[]`, in array order:
-   - Issue `kairos-agent <type> remove <name>` against any same-named extension currently in the **common** store. Errors of the "not installed" shape are silently ignored; any other failure aborts (see step-1 abort policy below). This ensures only one instance per name survives the post-reboot state.
-   - Shell out to `kairos-agent <type> install <source> --passive`. Same-named extensions already in `--passive` scope are overwritten by kairos-agent's existing install semantics; same-named extensions in `--active` scope are left alone (they ride into the new passive on reboot, as a rollback artifact).
-2. If any step-1 install returns non-zero, abort: do **not** invoke `kairos-agent upgrade`, do **not** schedule the reboot, return the failed extension's output as the command result so the operator sees which one broke. The node stays on the old OS with no half-applied state — the common-removes done so far are intentionally not rolled back (they were superseded by the bundle anyway and would be re-added if the operator retries).
+   - Shell out to `kairos-agent <type> install <source>`. This downloads the `.raw` into the persistent dir (`/var/lib/kairos/{extensions,confexts}/<filename>.raw`), overwriting any prior file at the same name. If the extension was previously enabled at any scope (active/passive/recovery/common), the existing symlinks now resolve to the new content — no further action needed for those.
+   - Query the persistent dir's `{active,passive,recovery,common}/` subdirs for an existing symlink with this name. If none exists, shell out to `kairos-agent <type> enable <name> --active` **without** `--now` to enable for the post-reboot active boot, without reloading systemd-sysext against the current (about-to-be-replaced) OS.
+2. If any step-1 install/enable returns non-zero, abort: do **not** invoke `kairos-agent upgrade`, do **not** schedule the reboot, return the failed extension's output as the command result so the operator sees which one broke. The node stays on the old OS with the `.raw` files already overwritten in place — operators can retry the same compound command safely (the install step is idempotent).
 3. Run `kairos-agent upgrade --source <source>` (existing logic).
-4. Schedule the existing 10-second reboot. On reboot, passive becomes active and the extensions move with it.
+4. Schedule the existing 10-second reboot. On reboot, immucore creates `/run/extensions/<name>` symlinks from the matching scope's dir (plus `common`) and systemd-sysext mounts them on the new OS.
 
-`upgrade-recovery` gets the same `extensions[]` arg but `install --recovery` instead of `--passive`, and skips the same-name common-remove (recovery is partition-isolated). Recovery-bundled extensions are uncommon but cheap to support since the dispatch is otherwise identical.
+`upgrade-recovery` gets the same `extensions[]` arg but the conditional enable uses `--recovery` instead of `--active` (so the extension is enabled only in the recovery boot state). Recovery-bundled extensions are uncommon but cheap to support since the dispatch is otherwise identical.
 
 No new allow-list opt-in is required for the extension ride-along: the operator has already opted into `upgrade` and `upgrade-recovery`. The fact that those commands now optionally carry extensions is an extension of an already-approved capability.
 
@@ -362,7 +366,7 @@ No changes to the `confext` command (its allowlist is `/etc`-only by definition)
 
 The docker build step reuses whichever mechanism `ArtifactBuilder` already uses for Dockerfile-mode artifacts — to be confirmed during plan-writing by reading `pkg/builder/auroraboot`. If the existing builder uses a host docker daemon, the extension builder follows suit; if it uses buildkit-in-container, same.
 
-The same WebSocket log stream used by Artifact builds is reused — logs are tagged with `kind=extension` and `id=…` so the UI can subscribe by record.
+The same log-streaming machinery used by Artifact builds is reused: build logs go through a `dbLogWriter` (`internal/builder/auroraboot/builder.go:78-114`) that buffers and appends to the extension's `Logs` field plus broadcasts chunks through the existing `LogBroadcaster` (UI WS fan-out). Logs are tagged with `kind=extension` and `id=…` so the UI subscribes by record id.
 
 ## Signing keysets
 
@@ -424,7 +428,7 @@ The implementation must satisfy these gates, derived from the design critique an
 
 **Bundling.** ArtifactBuilder's bundled-extensions card lists only Ready extensions matching the artifact's arch (cross-arch bundling is rejected client- and server-side). The artifact upgrade dialog's "Also push these extensions" section shows bundled extensions pre-selected and pinned-version resolved; pre-action diff renders three lines (OS, bundled changes with per-node replace/first-install counts, carry-forward summary). If any bundled extension is in phase `Error` at send time, the dialog blocks send with an inline explanation.
 
-**Partition semantics.** Manual-flow install dialog defaults to Common scope; picking Active reveals the amber "lives in active partition only" callout below the boot-scope row. Compound upgrade dispatch issues `<type> remove <name>` for any same-named extension currently in the common store before installing the bundled one to `--passive`. After a successful compound upgrade WS callback, the server rotates `node_extensions` rows (active↔passive flip; common rows unchanged; replaced rows rewritten).
+**Boot-scope semantics.** Manual-flow install dialog defaults to Common scope; picking Active reveals the amber "only enabled when booted in active mode" callout below the boot-scope row. Compound upgrade dispatch installs (overwrites) the `.raw` first; if the extension is not already enabled at any scope on the node, the agent then issues `<type> enable --active` (without `--now`) so the post-reboot active boot picks it up. There is no same-name remove step and no scope rotation in `node_extensions` — scope choices persist across upgrades because extensions are partition-independent.
 
 **Accessibility.** All chips carry accessible names. Disclosures (`<details>` / Radix Collapsible) are keyboard-operable. Install dialog's payload preview has an `aria-label`. Focus returns to the row's Install trigger on dialog close. The cross-check strip differentiates green/amber/red also by glyph (`✓` / `⚠` / `✕`).
 
@@ -453,8 +457,8 @@ Backend:
 - Handler tests for `PUT /api/v1/artifacts/:id/bundle-extensions` validating arch-matching.
 - Builder tests covering each source mode (artifact, image, dockerfile, artifact+steps).
 - Phonehome handler tests for the `extension` command across all four actions and both types.
-- Phonehome handler tests for the extended `upgrade` / `upgrade-recovery` commands: same-name common-remove fires before each `--passive` install, the install order matches `extensions[]` order, abort on extension failure does not invoke `kairos-agent upgrade`, the parent upgrade still runs when `extensions[]` is empty/absent (backward-compat).
-- Handler tests for the `node_extensions` scope rotation triggered by a successful compound-upgrade WS callback (active↔passive flip, common preserved, replaced rows rewritten).
+- Phonehome handler tests for the extended `upgrade` / `upgrade-recovery` commands: each `extensions[]` entry triggers an `install` then a conditional `enable --active` (only when not already enabled at any scope), the install order matches `extensions[]` order, an abort on extension install/enable failure does **not** invoke `kairos-agent upgrade`, and the parent upgrade still runs when `extensions[]` is empty/absent (backward-compat).
+- Handler tests for the REST status-callback path (`PUT /api/v1/nodes/:nodeID/commands/:commandID/status`): on success for the manual `extension` command, the server upserts a `node_extensions` row keyed by `(node_id, name, type, scope)`; on `remove`, it deletes rows for that name on that node; on failure, rows are untouched.
 - Migration test ensuring `extensions`, `artifact_extension_bundles`, `node_extensions` tables and `artifacts.extension_hierarchies` column are created on a fresh DB.
 
 Agent:
@@ -472,7 +476,7 @@ End-to-end:
 Single PR, but landed in this internal order to keep diffs reviewable. **Step 0 is a separate PR in the `kairos-agent` repo** — the agent changes (new `extension` command + extended `upgrade` dispatch) ship there first, get tagged, and AuroraBoot vendors the new version before the rest of the PR is merged.
 
 0. **kairos-agent** (separate, prerequisite PR): add `extension` phonehome command + handler, extend `handleUpgrade` to install `extensions[]` into the passive partition before the OS upgrade, add tests, tag a release.
-1. AuroraBoot backend: `extensions` table, `artifact_extension_bundles` table, `node_extensions` table, `artifacts.extension_hierarchies` column, stores, handlers, builder, signed-URL endpoint.
+1. AuroraBoot backend: `extensions` table, `artifact_extension_bundles` table, `node_extensions` table, `artifacts.extension_hierarchies` column on `store.ArtifactRecord`, stores, handlers, ExtensionBuilder under `pkg/builder` mirroring `internal/builder/auroraboot/builder.go`'s async `go b.run(...)` entry, download endpoint wired through the existing `auth.DownloadMiddleware`. Add `extension` to the command-type constants at `pkg/store/store.go:67-74`.
 2. CLI: `--include-path` flag with `--with-opt` deprecation warning.
 3. Vendor the new kairos-agent into AuroraBoot.
 4. Frontend: API client, list page, builder wizard, detail page, install dialog, artifact upgrade dialog extension multi-select, ArtifactBuilder hierarchies disclosure + bundled-extensions card, node detail "Installed extensions" section.
