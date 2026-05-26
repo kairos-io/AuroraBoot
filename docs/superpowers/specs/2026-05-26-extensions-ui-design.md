@@ -317,7 +317,16 @@ A second install over the same name is the upgrade path — there is no separate
 
 ### `upgrade` / `upgrade-recovery` — bundled flow (extended)
 
-The existing args grow one optional field, `extensions[]`:
+The existing args grow one optional field, `extensions`. **`CommandData.Args` is `map[string]string`** in `kairos-agent/internal/phonehome/config.go:140-144`, so the value is a **JSON-encoded string** (not a native array). The on-wire shape is:
+
+```jsonc
+{ "command": "upgrade",
+  "args": { "source": "artifact:…",
+            "extensions": "[{\"type\":\"sysext\", \"name\":\"…\", \"source\":\"…\"}, …]" }
+}
+```
+
+The agent parses `args["extensions"]` (if non-empty) into a slice; the rest of the dispatch follows. Conceptually the field is:
 
 ```jsonc
 {
