@@ -4,114 +4,152 @@
 
 **Goal:** Add a new `extension` phonehome command (manual install/enable/disable/remove) and extend the existing `upgrade` / `upgrade-recovery` commands to install bundled extensions before the OS upgrade reboot. Ship as a tagged kairos-agent release that AuroraBoot will vendor.
 
-**Architecture:** All work lives in `kairos-agent/internal/phonehome/`. A new sibling file `handlers_extension.go` holds the new dispatch logic so `handlers.go` stays focused. The dispatch shells out via `exec.Command("kairos-agent", ...)` to invoke the existing `sysext|confext` CLI subcommands (matches the pattern that `handleUpgrade` already uses for `kairos-agent upgrade`). For compound upgrades, the `extensions` field is JSON-encoded into the existing `CommandData.Args map[string]string` (no breaking schema change).
+**Architecture:** All work lives in `kairos-agent/internal/phonehome/`. A new sibling file `handlers_extension.go` holds the new dispatch logic so `handlers.go` stays focused. The dispatch shells out via a swappable `execCommand` indirection (matches the pattern that `handleUpgrade` already uses for `kairos-agent upgrade`). For compound upgrades, the `extensions` field is JSON-encoded into the existing `CommandData.Args map[string]string` (no breaking schema change). Tests use **ginkgo v2 + gomega** matching the existing suite at `internal/phonehome/`; new whitebox test seams are exposed via the existing `export_test.go` pattern (`Set*` helpers that return a restorer).
 
-**Tech Stack:** Go 1.23+, urfave/cli v2, ginkgo/gomega for tests (existing repo conventions).
+**Tech Stack:** Go 1.23+, urfave/cli v2, ginkgo v2 / gomega.
 
 **Repository:** `/home/mudler/_git/kairos-agent`
 
 ---
 
-## Reference: existing surfaces (read these before starting)
+## Reference — read these before starting
 
 | File | What it does |
 |---|---|
 | `internal/phonehome/config.go:140-144` | `CommandData` shape: `ID`, `Command`, `Args map[string]string`. |
-| `internal/phonehome/handlers.go:28-65` | `DefaultCommandHandler` — the switch statement we extend. |
+| `internal/phonehome/handlers.go:28-65` | `DefaultCommandHandler` — the switch we extend. |
 | `internal/phonehome/handlers.go:89-164` | `handleUpgrade` — we extend this to install bundled extensions first. |
+| `internal/phonehome/handlers.go:235-242` | `scheduleReboot` — we route through a seam so tests can assert "no reboot scheduled on failure". |
+| `internal/phonehome/export_test.go` | Test-only exports pattern (`SetUninstallRunners` is the model to copy). |
+| `internal/phonehome/suite_test.go` | Existing ginkgo entry point — already in place, no changes needed. |
+| `internal/phonehome/config_test.go:130-188` | Existing `Describe("DefaultCommandHandler policy gating", …)` block — copy this style. |
 | `pkg/action/sysext.go:35-52` | Storage layout constants (sysextDir, confExtDir, scope sub-dirs). |
-| `pkg/action/sysext.go:154-218` | `EnableExtension` — idempotent symlink creation. |
-| `pkg/action/sysext.go:283-305` | `InstallExtension` — download into the persistent dir. |
-| `pkg/action/sysext.go:311-367` | `RemoveExtension` — symlink + .raw teardown. |
-| `main.go:1222-1488` | The sysext/confext subcommands wired into the CLI; verify flag names and order before shelling out from the handler. |
-| `internal/phonehome/handlers_test.go` (if exists) or `internal/phonehome/config_test.go:130-200` | Existing test patterns for the dispatcher. |
+| `pkg/action/sysext.go:154-218` | `EnableExtension` (referenced for behavior only — we shell out to the CLI, not call directly). |
+| `pkg/action/sysext.go:283-305` | `InstallExtension` (ditto). |
+| `main.go:1222-1488` | The sysext/confext subcommands wired into the CLI; verify flag names + order before shelling out from the handler. |
 
 ---
 
-## Task 1: New file scaffold and `ExtensionArgs` type
+## Task 1: New file + `parseExtensionArgs` validator
 
 **Files:**
 - Create: `internal/phonehome/handlers_extension.go`
 - Create: `internal/phonehome/handlers_extension_test.go`
+- Modify: `internal/phonehome/export_test.go` (add `SetExecCommand`)
 
-- [ ] **Step 1: Write the failing test for `parseExtensionArgs`**
+The validator parses and type-checks the new `extension` command's `Args` map. No CLI calls yet — just a pure function with full coverage.
 
-Create `internal/phonehome/handlers_extension_test.go` with:
+- [ ] **Step 1: Write the failing ginkgo spec**
+
+Create `internal/phonehome/handlers_extension_test.go`:
 
 ```go
-package phonehome
+package phonehome_test
 
 import (
-	"testing"
-
+	"github.com/kairos-io/kairos-agent/v2/internal/phonehome"
+	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
 
-func TestParseExtensionArgs_Install(t *testing.T) {
-	g := NewWithT(t)
-	args := map[string]string{
-		"type":      "sysext",
-		"action":    "install",
-		"name":      "tailscale-agent",
-		"source":    "https://aurora/api/v1/extensions/abc/download/tailscale-agent.sysext.raw?token=k",
-		"bootState": "common",
-		"now":       "true",
-	}
-	got, err := parseExtensionArgs(args)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(got.Type).To(Equal("sysext"))
-	g.Expect(got.Action).To(Equal("install"))
-	g.Expect(got.Name).To(Equal("tailscale-agent"))
-	g.Expect(got.BootState).To(Equal("common"))
-	g.Expect(got.Now).To(BeTrue())
-}
+var _ = Describe("parseExtensionArgs", func() {
+	It("parses a complete install request", func() {
+		got, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type":      "sysext",
+			"action":    "install",
+			"name":      "tailscale-agent",
+			"source":    "https://aurora/api/v1/extensions/abc/download/tailscale-agent.sysext.raw?token=k",
+			"bootState": "common",
+			"now":       "true",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got.Type).To(Equal("sysext"))
+		Expect(got.Action).To(Equal("install"))
+		Expect(got.Name).To(Equal("tailscale-agent"))
+		Expect(got.BootState).To(Equal("common"))
+		Expect(got.Now).To(BeTrue())
+	})
 
-func TestParseExtensionArgs_MissingType(t *testing.T) {
-	g := NewWithT(t)
-	_, err := parseExtensionArgs(map[string]string{"action": "install"})
-	g.Expect(err).To(MatchError(ContainSubstring("type")))
-}
+	It("rejects missing type", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{"action": "install"})
+		Expect(err).To(MatchError(ContainSubstring("type")))
+	})
 
-func TestParseExtensionArgs_InvalidType(t *testing.T) {
-	g := NewWithT(t)
-	_, err := parseExtensionArgs(map[string]string{"type": "blob", "action": "install", "name": "x"})
-	g.Expect(err).To(MatchError(ContainSubstring("type")))
-}
+	It("rejects an unsupported type", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type": "blob", "action": "install", "name": "x",
+		})
+		Expect(err).To(MatchError(ContainSubstring("type")))
+	})
 
-func TestParseExtensionArgs_MissingActionRequiredField(t *testing.T) {
-	g := NewWithT(t)
-	// install requires source
-	_, err := parseExtensionArgs(map[string]string{"type": "sysext", "action": "install", "name": "x", "bootState": "common"})
-	g.Expect(err).To(MatchError(ContainSubstring("source")))
+	It("requires source for action=install", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type": "sysext", "action": "install", "name": "x", "bootState": "common",
+		})
+		Expect(err).To(MatchError(ContainSubstring("source")))
+	})
 
-	// enable/disable require bootState
-	_, err = parseExtensionArgs(map[string]string{"type": "sysext", "action": "enable", "name": "x"})
-	g.Expect(err).To(MatchError(ContainSubstring("bootState")))
+	It("requires bootState for action=enable", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type": "sysext", "action": "enable", "name": "x",
+		})
+		Expect(err).To(MatchError(ContainSubstring("bootState")))
+	})
 
-	// every action requires name
-	_, err = parseExtensionArgs(map[string]string{"type": "sysext", "action": "remove"})
-	g.Expect(err).To(MatchError(ContainSubstring("name")))
+	It("requires bootState for action=disable", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type": "sysext", "action": "disable", "name": "x",
+		})
+		Expect(err).To(MatchError(ContainSubstring("bootState")))
+	})
+
+	It("requires name for every action", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type": "sysext", "action": "remove",
+		})
+		Expect(err).To(MatchError(ContainSubstring("name")))
+	})
+
+	It("rejects unsupported bootState", func() {
+		_, err := phonehome.ParseExtensionArgsForTest(map[string]string{
+			"type": "sysext", "action": "enable", "name": "x", "bootState": "wat",
+		})
+		Expect(err).To(MatchError(ContainSubstring("bootState")))
+	})
+})
+```
+
+- [ ] **Step 2: Add the test-only export for `parseExtensionArgs`**
+
+Append to `internal/phonehome/export_test.go` (this stays in `package phonehome`):
+
+```go
+// ParseExtensionArgsForTest is the test-only entry point for the package-private
+// parseExtensionArgs validator. Keeping the production function unexported lets
+// us reshape it without breaking external callers.
+func ParseExtensionArgsForTest(in map[string]string) (ExtensionArgs, error) {
+	return parseExtensionArgs(in)
 }
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+(Don't worry that `ExtensionArgs` and `parseExtensionArgs` don't exist yet — they're about to.)
+
+- [ ] **Step 3: Run the spec to verify it fails**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestParseExtensionArgs -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="parseExtensionArgs" -v
 ```
 
-Expected: FAIL with "undefined: parseExtensionArgs"
+Expected: BUILD FAIL — `ExtensionArgs` / `parseExtensionArgs` not defined.
 
-- [ ] **Step 3: Implement `parseExtensionArgs`**
+- [ ] **Step 4: Create `handlers_extension.go` with the validator**
 
 Create `internal/phonehome/handlers_extension.go`:
 
 ```go
 package phonehome
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // ExtensionArgs is the validated, typed shape of an `extension` command's args.
 type ExtensionArgs struct {
@@ -119,8 +157,8 @@ type ExtensionArgs struct {
 	Action    string // "install" | "enable" | "disable" | "remove"
 	Name      string
 	Source    string // required for action=install
-	BootState string // required for action in {install,enable,disable}; "active"|"passive"|"recovery"|"common"
-	Now       bool   // optional; default false
+	BootState string // required for action in {install,enable,disable}
+	Now       bool   // optional
 }
 
 func parseExtensionArgs(in map[string]string) (ExtensionArgs, error) {
@@ -158,20 +196,20 @@ func parseExtensionArgs(in map[string]string) (ExtensionArgs, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests, verify they pass**
+- [ ] **Step 5: Run the spec, verify it passes**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestParseExtensionArgs -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="parseExtensionArgs" -v
 ```
 
-Expected: PASS (4 subtests).
+Expected: PASS for all 8 `It` blocks.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
 cd ~/_git/kairos-agent
-git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go
-git commit -m "phonehome: add ExtensionArgs parser for new extension command"
+git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go internal/phonehome/export_test.go
+git commit -m "phonehome: add ExtensionArgs validator for new extension command"
 ```
 
 ---
@@ -179,81 +217,113 @@ git commit -m "phonehome: add ExtensionArgs parser for new extension command"
 ## Task 2: Dispatch skeleton wired into `DefaultCommandHandler`
 
 **Files:**
-- Modify: `internal/phonehome/handlers.go` (add case to switch at lines 36-63)
-- Modify: `internal/phonehome/handlers_extension.go` (add stub)
-- Modify: `internal/phonehome/handlers_extension_test.go` (add dispatch test)
+- Modify: `internal/phonehome/handlers.go` (add a case to the switch at lines 36-63)
+- Modify: `internal/phonehome/handlers_extension.go` (add `handleExtension` stub)
+- Modify: `internal/phonehome/handlers_extension_test.go` (dispatch specs)
 
-- [ ] **Step 1: Write a failing test for the dispatch wiring**
+- [ ] **Step 1: Write the failing dispatch specs**
 
 Append to `internal/phonehome/handlers_extension_test.go`:
 
 ```go
-func TestDispatchExtension_PolicyGate(t *testing.T) {
-	g := NewWithT(t)
-	// isAllowed returns false: extension command must be rejected.
-	denyAll := func(string) bool { return false }
-	handler := DefaultCommandHandler("http://example", func() string { return "" }, denyAll, nil)
-	_, err := handler(CommandData{ID: "c1", Command: "extension",
-		Args: map[string]string{"type": "sysext", "action": "remove", "name": "x"}})
-	g.Expect(err).To(MatchError(ContainSubstring("not permitted")))
-}
+var _ = Describe("DefaultCommandHandler — extension command", func() {
+	It("rejects the command when isAllowed returns false", func() {
+		denyAll := func(string) bool { return false }
+		handler := phonehome.DefaultCommandHandler("http://example", func() string { return "" }, denyAll, nil)
+		_, err := handler(phonehome.CommandData{
+			ID: "c1", Command: "extension",
+			Args: map[string]string{"type": "sysext", "action": "remove", "name": "x"},
+		})
+		Expect(err).To(MatchError(ContainSubstring("not permitted")))
+	})
 
-func TestDispatchExtension_BadArgs(t *testing.T) {
-	g := NewWithT(t)
-	allow := func(string) bool { return true }
-	handler := DefaultCommandHandler("http://example", func() string { return "" }, allow, nil)
-	_, err := handler(CommandData{ID: "c1", Command: "extension",
-		Args: map[string]string{"type": "wat"}})
-	g.Expect(err).To(MatchError(ContainSubstring("unsupported type")))
-}
+	It("surfaces parse errors when args are malformed", func() {
+		allow := func(string) bool { return true }
+		handler := phonehome.DefaultCommandHandler("http://example", func() string { return "" }, allow, nil)
+		_, err := handler(phonehome.CommandData{
+			ID: "c1", Command: "extension",
+			Args: map[string]string{"type": "wat"},
+		})
+		Expect(err).To(MatchError(ContainSubstring("unsupported type")))
+	})
+
+	It("dispatches to handleExtension when args validate", func() {
+		// The stub introduced in this task returns 'not yet implemented';
+		// later tasks will replace it with real CLI calls.
+		allow := func(string) bool { return true }
+		handler := phonehome.DefaultCommandHandler("http://example", func() string { return "" }, allow, nil)
+		_, err := handler(phonehome.CommandData{
+			ID: "c1", Command: "extension",
+			Args: map[string]string{
+				"type": "sysext", "action": "remove", "name": "tailscale-agent",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("not yet implemented")))
+	})
+})
 ```
 
-- [ ] **Step 2: Run the test to verify it fails**
+- [ ] **Step 2: Run the specs to verify they fail**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestDispatchExtension -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="extension command" -v
 ```
 
-Expected: FAIL — `extension` falls through to the `default` arm and returns "unknown command".
+Expected: FAIL — the dispatch case doesn't exist; `extension` falls into the `default:` arm and returns "unknown command".
 
 - [ ] **Step 3: Add the switch case and a stub `handleExtension`**
 
-In `internal/phonehome/handlers.go`, in the switch in `DefaultCommandHandler`, add **before** the `default:` arm (existing line 61):
+In `internal/phonehome/handlers.go`, inside `DefaultCommandHandler`'s switch (between the `unregister` and `default` arms, around line 60), add:
 
 ```go
 		case "extension":
 			return handleExtension(ctx, cmd)
 ```
 
-In `internal/phonehome/handlers_extension.go`, append:
+In `internal/phonehome/handlers_extension.go`, replace the file body with:
 
 ```go
+package phonehome
+
 import (
 	"context"
+	"fmt"
 )
 
-// handleExtension dispatches the manual-flow extension command. Stub for now;
-// each action is implemented in subsequent tasks.
+// ExtensionArgs is the validated, typed shape of an `extension` command's args.
+type ExtensionArgs struct {
+	Type      string
+	Action    string
+	Name      string
+	Source    string
+	BootState string
+	Now       bool
+}
+
+func parseExtensionArgs(in map[string]string) (ExtensionArgs, error) {
+	// ... keep the body from Task 1 unchanged ...
+}
+
+// handleExtension dispatches the manual-flow extension command. The stub
+// returned here is replaced in subsequent tasks with the install/enable/
+// disable/remove action implementations.
 func handleExtension(ctx context.Context, cmd CommandData) (string, error) {
 	args, err := parseExtensionArgs(cmd.Args)
 	if err != nil {
 		return "", err
 	}
 	_ = ctx
-	_ = args
 	return "", fmt.Errorf("extension: action %q not yet implemented", args.Action)
 }
 ```
 
-(Add `"context"` to the existing imports if not already there.)
-
-- [ ] **Step 4: Run the dispatch tests, verify the policy + bad-args tests pass and a third lookup test now returns "not yet implemented"**
+- [ ] **Step 4: Run the dispatch specs, verify they pass**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestDispatchExtension -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="extension command" -v
 ```
 
-Expected: both tests PASS.
+Expected: PASS (3 `It` blocks).
 
 - [ ] **Step 5: Commit**
 
@@ -264,97 +334,142 @@ git commit -m "phonehome: wire `extension` command into DefaultCommandHandler"
 
 ---
 
-## Task 3: Implement `install` action (download + enable)
+## Task 3: `execCommand` seam + `install` action
 
 **Files:**
-- Modify: `internal/phonehome/handlers_extension.go`
-- Modify: `internal/phonehome/handlers_extension_test.go`
+- Modify: `internal/phonehome/handlers_extension.go` (add `execCommand` var + `extInstall`)
+- Modify: `internal/phonehome/export_test.go` (add `SetExecCommand`)
+- Modify: `internal/phonehome/handlers_extension_test.go` (install specs)
 
-The `install` action requires two CLI calls because `kairos-agent sysext install` only downloads — `enable` creates the symlink (see `pkg/action/sysext.go:283-305` vs `:154-218`).
+`install` is two CLI calls — `kairos-agent <type> install <source>` downloads the `.raw`, `kairos-agent <type> enable …` creates the symlink. Tests use a recorder injected through the `execCommand` seam.
 
-- [ ] **Step 1: Write the failing test for the install command shape**
+- [ ] **Step 1: Add the `SetExecCommand` test-only export**
+
+Append to `internal/phonehome/export_test.go`:
+
+```go
+import (
+	"os/exec"
+)
+
+// SetExecCommand swaps the shell-out indirection used by the extension
+// handlers and (once Task 7 lands) by handleUpgrade. Returns a restorer.
+//
+// Tests typically pass a function that records args and returns
+// `exec.Command("/bin/true")` for success or `exec.Command("/bin/false")`
+// to simulate a non-zero exit.
+func SetExecCommand(fn func(name string, args ...string) *exec.Cmd) func() {
+	prev := execCommand
+	execCommand = fn
+	return func() { execCommand = prev }
+}
+```
+
+(Add `"os/exec"` to the existing imports if not already imported by the file.)
+
+- [ ] **Step 2: Write the failing install specs**
 
 Append to `internal/phonehome/handlers_extension_test.go`:
 
 ```go
 import (
-	// ...existing imports plus:
+	// ... existing imports
 	"os/exec"
 )
 
-// commandRecorder replaces exec.Command for tests, capturing the args and
-// returning a synthetic command that always succeeds.
+// commandRecorder captures shell-outs and always returns a command that
+// exits successfully. Tests that need failure use a failingRecorder
+// instead (added in Task 5).
 type commandRecorder struct {
 	calls [][]string
 }
 
 func (r *commandRecorder) record(name string, args ...string) *exec.Cmd {
 	r.calls = append(r.calls, append([]string{name}, args...))
-	// Use /bin/true so the resulting command exits 0 immediately.
 	return exec.Command("/bin/true")
 }
 
-func TestHandleExtension_Install_BuildsCorrectCLIArgs(t *testing.T) {
-	g := NewWithT(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
+var _ = Describe("handleExtension — install action", func() {
+	var rec *commandRecorder
+	var restore func()
 
-	cmd := CommandData{
-		ID:      "c1",
-		Command: "extension",
-		Args: map[string]string{
-			"type": "sysext", "action": "install",
-			"name":   "tailscale-agent",
-			"source": "https://aurora/api/v1/extensions/abc/download/tailscale-agent.sysext.raw?token=k",
-			"bootState": "common", "now": "true",
-		},
-	}
-	out, err := handleExtension(context.Background(), cmd)
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(out).To(ContainSubstring("installed"))
-	g.Expect(rec.calls).To(HaveLen(2))
-	g.Expect(rec.calls[0]).To(Equal([]string{"kairos-agent", "sysext", "install",
-		"https://aurora/api/v1/extensions/abc/download/tailscale-agent.sysext.raw?token=k"}))
-	g.Expect(rec.calls[1]).To(Equal([]string{"kairos-agent", "sysext", "enable",
-		"tailscale-agent", "--common", "--now"}))
-}
-
-func TestHandleExtension_Install_OmitsNowFlagWhenFalse(t *testing.T) {
-	g := NewWithT(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-
-	_, err := handleExtension(context.Background(), CommandData{
-		Command: "extension",
-		Args: map[string]string{
-			"type": "confext", "action": "install",
-			"name": "fluent-bit-config",
-			"source": "https://x/file?token=k",
-			"bootState": "active",
-		},
+	BeforeEach(func() {
+		rec = &commandRecorder{}
+		restore = phonehome.SetExecCommand(rec.record)
 	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(HaveLen(2))
-	g.Expect(rec.calls[1]).To(Equal([]string{"kairos-agent", "confext", "enable",
-		"fluent-bit-config", "--active"}))
+	AfterEach(func() { restore() })
+
+	It("issues install + enable with --now when now=true", func() {
+		out, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			ID: "c1", Command: "extension",
+			Args: map[string]string{
+				"type":   "sysext",
+				"action": "install",
+				"name":   "tailscale-agent",
+				"source": "https://aurora/api/v1/extensions/abc/download/tailscale-agent.sysext.raw?token=k",
+				"bootState": "common",
+				"now":       "true",
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(out).To(ContainSubstring("installed"))
+		Expect(rec.calls).To(HaveLen(2))
+		Expect(rec.calls[0]).To(Equal([]string{
+			"kairos-agent", "sysext", "install",
+			"https://aurora/api/v1/extensions/abc/download/tailscale-agent.sysext.raw?token=k",
+		}))
+		Expect(rec.calls[1]).To(Equal([]string{
+			"kairos-agent", "sysext", "enable", "tailscale-agent", "--common", "--now",
+		}))
+	})
+
+	It("omits --now when now=false", func() {
+		_, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			Command: "extension",
+			Args: map[string]string{
+				"type": "confext", "action": "install",
+				"name": "fluent-bit-config",
+				"source": "https://x/file?token=k",
+				"bootState": "active",
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.calls).To(HaveLen(2))
+		Expect(rec.calls[1]).To(Equal([]string{
+			"kairos-agent", "confext", "enable", "fluent-bit-config", "--active",
+		}))
+	})
+})
+```
+
+- [ ] **Step 3: Add `HandleExtensionForTest` to the test exports**
+
+Append to `internal/phonehome/export_test.go`:
+
+```go
+import (
+	"context"
+)
+
+// HandleExtensionForTest is the test-only entry point for the package-private
+// handleExtension dispatcher. (DefaultCommandHandler also reaches it via the
+// switch case, but going through DefaultCommandHandler in every spec is noisy.)
+func HandleExtensionForTest(cmd CommandData) (string, error) {
+	return handleExtension(context.Background(), cmd)
 }
 ```
 
-- [ ] **Step 2: Run the tests, verify they fail**
+- [ ] **Step 4: Run the specs to verify they fail**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestHandleExtension_Install -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="install action" -v
 ```
 
-Expected: FAIL — `execCommand` variable doesn't exist, `handleExtension` returns "not yet implemented".
+Expected: FAIL — `execCommand` and `SetExecCommand` not yet introduced; `handleExtension` is still the stub returning "not yet implemented".
 
-- [ ] **Step 3: Introduce the `execCommand` indirection and implement install**
+- [ ] **Step 5: Implement the seam + `extInstall`**
 
-Replace the stub `handleExtension` in `internal/phonehome/handlers_extension.go` with:
+Replace the body of `internal/phonehome/handlers_extension.go`:
 
 ```go
 package phonehome
@@ -366,12 +481,21 @@ import (
 	"strings"
 )
 
-// execCommand is a seam for tests to capture the shell-outs.
+// execCommand is a seam for tests. Production code path is exec.Command.
 var execCommand = exec.Command
 
-// ExtensionArgs ... (keep existing)
+type ExtensionArgs struct {
+	Type      string
+	Action    string
+	Name      string
+	Source    string
+	BootState string
+	Now       bool
+}
 
-func parseExtensionArgs(in map[string]string) (ExtensionArgs, error) { /* existing */ }
+func parseExtensionArgs(in map[string]string) (ExtensionArgs, error) {
+	// ... unchanged from Task 1 ...
+}
 
 func handleExtension(ctx context.Context, cmd CommandData) (string, error) {
 	args, err := parseExtensionArgs(cmd.Args)
@@ -381,27 +505,20 @@ func handleExtension(ctx context.Context, cmd CommandData) (string, error) {
 	switch args.Action {
 	case "install":
 		return extInstall(ctx, args)
-	case "enable":
-		return extToggle(ctx, args, "enable")
-	case "disable":
-		return extToggle(ctx, args, "disable")
-	case "remove":
-		return extRemove(ctx, args)
 	default:
-		return "", fmt.Errorf("extension: unsupported action %q", args.Action)
+		return "", fmt.Errorf("extension: action %q not yet implemented", args.Action)
 	}
 }
 
-// extInstall is install + enable. kairos-agent's `install` only downloads the
-// .raw; `enable` creates the symlink under the chosen scope. We do both so
-// AuroraBoot's "Install" action card is one atomic round-trip from the operator's view.
+// extInstall is install + enable. kairos-agent's `install` subcommand only
+// downloads the .raw; `enable` creates the symlink under the chosen scope.
+// We do both so AuroraBoot's "Install" action card is one atomic round-trip
+// from the operator's view.
 func extInstall(ctx context.Context, a ExtensionArgs) (string, error) {
-	// 1) download / overwrite the .raw
 	out1, err := runCLI(ctx, a.Type, "install", a.Source)
 	if err != nil {
 		return out1, fmt.Errorf("extension install: %w: %s", err, out1)
 	}
-	// 2) enable for the chosen scope
 	enableArgs := []string{a.Type, "enable", a.Name, "--" + a.BootState}
 	if a.Now {
 		enableArgs = append(enableArgs, "--now")
@@ -414,6 +531,125 @@ func extInstall(ctx context.Context, a ExtensionArgs) (string, error) {
 		a.Name, a.BootState, strings.TrimSpace(out1), strings.TrimSpace(out2)), nil
 }
 
+func runCLI(ctx context.Context, args ...string) (string, error) {
+	_ = ctx
+	out, err := execCommand("kairos-agent", args...).CombinedOutput()
+	return string(out), err
+}
+```
+
+- [ ] **Step 6: Run the install specs, verify they pass**
+
+```
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="install action" -v
+```
+
+Expected: PASS (2 `It` blocks).
+
+- [ ] **Step 7: Commit**
+
+```bash
+git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go internal/phonehome/export_test.go
+git commit -m "phonehome: implement extension install (download + enable)"
+```
+
+---
+
+## Task 4: `enable`, `disable`, `remove` actions
+
+**Files:**
+- Modify: `internal/phonehome/handlers_extension.go` (add `extToggle`, `extRemove`, dispatch cases)
+- Modify: `internal/phonehome/handlers_extension_test.go` (specs)
+
+- [ ] **Step 1: Write the failing specs**
+
+Append to `internal/phonehome/handlers_extension_test.go`:
+
+```go
+var _ = Describe("handleExtension — enable/disable/remove", func() {
+	var rec *commandRecorder
+	var restore func()
+
+	BeforeEach(func() {
+		rec = &commandRecorder{}
+		restore = phonehome.SetExecCommand(rec.record)
+	})
+	AfterEach(func() { restore() })
+
+	It("issues enable without --now when now=false", func() {
+		_, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			Command: "extension",
+			Args: map[string]string{
+				"type": "sysext", "action": "enable",
+				"name": "tailscale-agent", "bootState": "passive", "now": "false",
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.calls).To(Equal([][]string{
+			{"kairos-agent", "sysext", "enable", "tailscale-agent", "--passive"},
+		}))
+	})
+
+	It("issues disable with --now when now=true", func() {
+		_, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			Command: "extension",
+			Args: map[string]string{
+				"type": "confext", "action": "disable",
+				"name": "fluent-bit-config", "bootState": "common", "now": "true",
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.calls).To(Equal([][]string{
+			{"kairos-agent", "confext", "disable", "fluent-bit-config", "--common", "--now"},
+		}))
+	})
+
+	It("issues remove with --now when now=true", func() {
+		_, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			Command: "extension",
+			Args: map[string]string{
+				"type": "sysext", "action": "remove",
+				"name": "tailscale-agent", "now": "true",
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.calls).To(Equal([][]string{
+			{"kairos-agent", "sysext", "remove", "tailscale-agent", "--now"},
+		}))
+	})
+})
+```
+
+- [ ] **Step 2: Run the specs to verify they fail**
+
+```
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="enable/disable/remove" -v
+```
+
+Expected: FAIL — `handleExtension` only routes `install` so far.
+
+- [ ] **Step 3: Add `extToggle` + `extRemove` and extend the dispatch**
+
+In `internal/phonehome/handlers_extension.go`, replace the `switch args.Action` in `handleExtension` with:
+
+```go
+	switch args.Action {
+	case "install":
+		return extInstall(ctx, args)
+	case "enable":
+		return extToggle(ctx, args, "enable")
+	case "disable":
+		return extToggle(ctx, args, "disable")
+	case "remove":
+		return extRemove(ctx, args)
+	default:
+		return "", fmt.Errorf("extension: action %q not yet implemented", args.Action)
+	}
+```
+
+Append to the same file:
+
+```go
 func extToggle(ctx context.Context, a ExtensionArgs, action string) (string, error) {
 	cliArgs := []string{a.Type, action, a.Name, "--" + a.BootState}
 	if a.Now {
@@ -437,284 +673,200 @@ func extRemove(ctx context.Context, a ExtensionArgs) (string, error) {
 	}
 	return strings.TrimSpace(out), nil
 }
-
-func runCLI(ctx context.Context, args ...string) (string, error) {
-	cmd := execCommand("kairos-agent", args...)
-	// execCommand returns *exec.Cmd; the ctx is informational here (we don't
-	// kill mid-install — the existing handleUpgrade pattern uses background
-	// context too because the upgrade must survive WS disconnects).
-	_ = ctx
-	out, err := cmd.CombinedOutput()
-	return string(out), err
-}
 ```
 
-- [ ] **Step 4: Run the tests, verify they pass**
+- [ ] **Step 4: Run the specs, verify they pass**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestHandleExtension_Install -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="enable/disable/remove" -v
 ```
 
-Expected: PASS.
+Expected: PASS (3 `It` blocks).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go
-git commit -m "phonehome: implement extension install (download + enable)"
+git commit -m "phonehome: implement extension enable/disable/remove"
 ```
 
 ---
 
-## Task 4: Tests for `enable`, `disable`, `remove`
+## Task 5: install/enable failure paths
 
 **Files:**
 - Modify: `internal/phonehome/handlers_extension_test.go`
 
-The implementation already exists from Task 3 (in `extToggle` and `extRemove`); this task adds the coverage.
+The implementation already returns errors on non-zero CLI exit (`runCLI` propagates the error). This task adds coverage that exercises the abort behavior.
 
-- [ ] **Step 1: Write the failing tests for enable/disable/remove**
+- [ ] **Step 1: Write the failing specs**
 
 Append to `internal/phonehome/handlers_extension_test.go`:
 
 ```go
-func TestHandleExtension_Enable(t *testing.T) {
-	g := NewWithT(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-
-	_, err := handleExtension(context.Background(), CommandData{
-		Command: "extension",
-		Args: map[string]string{
-			"type": "sysext", "action": "enable",
-			"name": "tailscale-agent", "bootState": "passive", "now": "false",
-		},
-	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(Equal([][]string{
-		{"kairos-agent", "sysext", "enable", "tailscale-agent", "--passive"},
-	}))
-}
-
-func TestHandleExtension_Disable(t *testing.T) {
-	g := NewWithT(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-
-	_, err := handleExtension(context.Background(), CommandData{
-		Command: "extension",
-		Args: map[string]string{
-			"type": "confext", "action": "disable",
-			"name": "fluent-bit-config", "bootState": "common", "now": "true",
-		},
-	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(Equal([][]string{
-		{"kairos-agent", "confext", "disable", "fluent-bit-config", "--common", "--now"},
-	}))
-}
-
-func TestHandleExtension_Remove(t *testing.T) {
-	g := NewWithT(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-
-	_, err := handleExtension(context.Background(), CommandData{
-		Command: "extension",
-		Args: map[string]string{
-			"type": "sysext", "action": "remove",
-			"name": "tailscale-agent", "now": "true",
-		},
-	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(Equal([][]string{
-		{"kairos-agent", "sysext", "remove", "tailscale-agent", "--now"},
-	}))
-}
-```
-
-- [ ] **Step 2: Run the tests, verify they pass**
-
-```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestHandleExtension -v
-```
-
-Expected: all four `TestHandleExtension_*` PASS.
-
-- [ ] **Step 3: Commit**
-
-```bash
-git add internal/phonehome/handlers_extension_test.go
-git commit -m "phonehome: tests for extension enable/disable/remove"
-```
-
----
-
-## Task 5: Failure path — install/enable error aborts cleanly
-
-**Files:**
-- Modify: `internal/phonehome/handlers_extension_test.go`
-
-- [ ] **Step 1: Write the failing test**
-
-Add to `internal/phonehome/handlers_extension_test.go`:
-
-```go
-// failingRecorder lets the test request a specific call to fail.
+// failingRecorder is like commandRecorder but lets the test request a
+// specific call (0-based) to exit non-zero.
 type failingRecorder struct {
-	calls   [][]string
-	failOn  int // index (0-based) of the call to fail; -1 means never
+	calls  [][]string
+	failOn int
 }
 
 func (r *failingRecorder) record(name string, args ...string) *exec.Cmd {
 	idx := len(r.calls)
 	r.calls = append(r.calls, append([]string{name}, args...))
 	if r.failOn == idx {
-		// /bin/false exits 1 with no output.
 		return exec.Command("/bin/false")
 	}
 	return exec.Command("/bin/true")
 }
 
-func TestHandleExtension_InstallAbortsIfDownloadFails(t *testing.T) {
-	g := NewWithT(t)
-	rec := &failingRecorder{failOn: 0}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
+var _ = Describe("handleExtension — install error paths", func() {
+	It("returns the install error and does NOT call enable when download fails", func() {
+		rec := &failingRecorder{failOn: 0}
+		restore := phonehome.SetExecCommand(rec.record)
+		defer restore()
 
-	_, err := handleExtension(context.Background(), CommandData{
-		Command: "extension",
-		Args: map[string]string{
-			"type": "sysext", "action": "install",
-			"name": "x", "source": "https://x/y", "bootState": "common",
-		},
+		_, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			Command: "extension",
+			Args: map[string]string{
+				"type": "sysext", "action": "install",
+				"name": "x", "source": "https://x/y", "bootState": "common",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("extension install")))
+		Expect(rec.calls).To(HaveLen(1))
 	})
-	g.Expect(err).To(MatchError(ContainSubstring("extension install")))
-	g.Expect(rec.calls).To(HaveLen(1)) // enable NOT attempted after install failure
-}
 
-func TestHandleExtension_InstallAbortsIfEnableFails(t *testing.T) {
-	g := NewWithT(t)
-	rec := &failingRecorder{failOn: 1}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
+	It("returns the enable error when symlink creation fails after a successful download", func() {
+		rec := &failingRecorder{failOn: 1}
+		restore := phonehome.SetExecCommand(rec.record)
+		defer restore()
 
-	_, err := handleExtension(context.Background(), CommandData{
-		Command: "extension",
-		Args: map[string]string{
-			"type": "sysext", "action": "install",
-			"name": "x", "source": "https://x/y", "bootState": "common",
-		},
+		_, err := phonehome.HandleExtensionForTest(phonehome.CommandData{
+			Command: "extension",
+			Args: map[string]string{
+				"type": "sysext", "action": "install",
+				"name": "x", "source": "https://x/y", "bootState": "common",
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("extension enable")))
+		Expect(rec.calls).To(HaveLen(2))
 	})
-	g.Expect(err).To(MatchError(ContainSubstring("extension enable")))
-	g.Expect(rec.calls).To(HaveLen(2))
-}
+})
 ```
 
-- [ ] **Step 2: Run the tests, verify they pass**
+- [ ] **Step 2: Run the specs, verify they pass**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestHandleExtension -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="install error paths" -v
 ```
 
-Expected: both new tests PASS — the existing implementation already returns errors on non-zero CLI exit.
+Expected: PASS (both `It` blocks). The implementation from Task 3 already returns errors on non-zero exit — this task only adds the coverage.
 
 - [ ] **Step 3: Commit**
 
 ```bash
 git add internal/phonehome/handlers_extension_test.go
-git commit -m "phonehome: tests for extension install error paths"
+git commit -m "phonehome: cover extension install error paths"
 ```
 
 ---
 
-## Task 6: Extend `handleUpgrade` — parse `args[\"extensions\"]`
+## Task 6: Bundled-extensions JSON parser
 
 **Files:**
-- Modify: `internal/phonehome/handlers.go` (the existing `handleUpgrade` at lines 89-164)
 - Modify: `internal/phonehome/handlers_extension.go` (add `BundledExtension` + parser)
-- Modify: `internal/phonehome/handlers_extension_test.go`
+- Modify: `internal/phonehome/export_test.go` (export the parser)
+- Modify: `internal/phonehome/handlers_extension_test.go` (parser specs)
 
-- [ ] **Step 1: Write the failing test for the bundle parser**
+The compound `upgrade` command passes its extensions list as a JSON-encoded string under `Args["extensions"]`. This task adds the parser; Task 7 wires it into `handleUpgrade`.
+
+- [ ] **Step 1: Write the failing specs**
 
 Append to `internal/phonehome/handlers_extension_test.go`:
 
 ```go
 import (
-	// ... existing imports
+	// ... existing
 	"encoding/json"
 )
 
-func TestParseBundledExtensions_Empty(t *testing.T) {
-	g := NewWithT(t)
-	got, err := parseBundledExtensions("")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(got).To(BeEmpty())
-}
-
-func TestParseBundledExtensions_Valid(t *testing.T) {
-	g := NewWithT(t)
-	raw, _ := json.Marshal([]BundledExtension{
-		{Type: "sysext", Name: "tailscale-agent", Source: "https://x/a"},
-		{Type: "confext", Name: "fluent-bit-config", Source: "https://x/b"},
+var _ = Describe("parseBundledExtensions", func() {
+	It("returns an empty slice for an empty input", func() {
+		got, err := phonehome.ParseBundledExtensionsForTest("")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).To(BeEmpty())
 	})
-	got, err := parseBundledExtensions(string(raw))
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(got).To(HaveLen(2))
-	g.Expect(got[0].Name).To(Equal("tailscale-agent"))
-	g.Expect(got[1].Type).To(Equal("confext"))
-}
 
-func TestParseBundledExtensions_RejectsBadType(t *testing.T) {
-	g := NewWithT(t)
-	_, err := parseBundledExtensions(`[{"type":"blob","name":"x","source":"https://x"}]`)
-	g.Expect(err).To(MatchError(ContainSubstring("type")))
-}
+	It("decodes a well-formed array", func() {
+		raw, _ := json.Marshal([]phonehome.BundledExtension{
+			{Type: "sysext", Name: "tailscale-agent", Source: "https://x/a"},
+			{Type: "confext", Name: "fluent-bit-config", Source: "https://x/b"},
+		})
+		got, err := phonehome.ParseBundledExtensionsForTest(string(raw))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).To(HaveLen(2))
+		Expect(got[0].Name).To(Equal("tailscale-agent"))
+		Expect(got[1].Type).To(Equal("confext"))
+	})
 
-func TestParseBundledExtensions_RequiresFields(t *testing.T) {
-	g := NewWithT(t)
-	_, err := parseBundledExtensions(`[{"type":"sysext","source":"https://x"}]`)
-	g.Expect(err).To(MatchError(ContainSubstring("name")))
-	_, err = parseBundledExtensions(`[{"type":"sysext","name":"x"}]`)
-	g.Expect(err).To(MatchError(ContainSubstring("source")))
+	It("rejects an unsupported type", func() {
+		_, err := phonehome.ParseBundledExtensionsForTest(
+			`[{"type":"blob","name":"x","source":"https://x"}]`)
+		Expect(err).To(MatchError(ContainSubstring("type")))
+	})
+
+	It("rejects a missing name", func() {
+		_, err := phonehome.ParseBundledExtensionsForTest(
+			`[{"type":"sysext","source":"https://x"}]`)
+		Expect(err).To(MatchError(ContainSubstring("name")))
+	})
+
+	It("rejects a missing source", func() {
+		_, err := phonehome.ParseBundledExtensionsForTest(
+			`[{"type":"sysext","name":"x"}]`)
+		Expect(err).To(MatchError(ContainSubstring("source")))
+	})
+})
+```
+
+- [ ] **Step 2: Add the test-only export**
+
+Append to `internal/phonehome/export_test.go`:
+
+```go
+func ParseBundledExtensionsForTest(raw string) ([]BundledExtension, error) {
+	return parseBundledExtensions(raw)
 }
 ```
 
-- [ ] **Step 2: Run the tests, verify they fail**
+- [ ] **Step 3: Run the specs, verify they fail**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestParseBundledExtensions -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="parseBundledExtensions" -v
 ```
 
-Expected: FAIL — `BundledExtension` and `parseBundledExtensions` don't exist.
+Expected: BUILD FAIL — `BundledExtension` / `parseBundledExtensions` not defined.
 
-- [ ] **Step 3: Implement the bundle parser**
+- [ ] **Step 4: Implement the parser**
 
 Append to `internal/phonehome/handlers_extension.go`:
 
 ```go
 import (
-	"encoding/json"
 	// ... existing
+	"encoding/json"
 )
 
 // BundledExtension is one entry inside the upgrade command's `extensions` arg.
+// The on-wire shape is a JSON-encoded array passed as a string under
+// CommandData.Args["extensions"] because Args is map[string]string.
 type BundledExtension struct {
-	Type   string `json:"type"`   // "sysext" | "confext"
+	Type   string `json:"type"`
 	Name   string `json:"name"`
-	Source string `json:"source"` // download URI
+	Source string `json:"source"`
 }
 
-// parseBundledExtensions reads the JSON-encoded array passed in
-// CommandData.Args["extensions"]. Empty string => empty list, no error.
 func parseBundledExtensions(raw string) ([]BundledExtension, error) {
 	if strings.TrimSpace(raw) == "" {
 		return nil, nil
@@ -738,33 +890,33 @@ func parseBundledExtensions(raw string) ([]BundledExtension, error) {
 }
 ```
 
-- [ ] **Step 4: Run the tests, verify they pass**
+- [ ] **Step 5: Run the specs, verify they pass**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestParseBundledExtensions -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="parseBundledExtensions" -v
 ```
 
-Expected: PASS.
+Expected: PASS (5 `It` blocks).
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go
+git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go internal/phonehome/export_test.go
 git commit -m "phonehome: parse bundled extensions arg for compound upgrade"
 ```
 
 ---
 
-## Task 7: Compound upgrade — install + conditional enable + abort policy
+## Task 7: Compound upgrade — `extensionEnabledAnywhere` + `installBundledExtension`
 
 **Files:**
-- Modify: `internal/phonehome/handlers.go` (extend `handleUpgrade` lines 89-164)
-- Modify: `internal/phonehome/handlers_extension.go` (add `installBundledExtension` helper + `extensionEnabledAnywhere`)
-- Modify: `internal/phonehome/handlers_extension_test.go`
+- Modify: `internal/phonehome/handlers_extension.go` (add filesystem scanner + bundle install helper)
+- Modify: `internal/phonehome/export_test.go` (expose the persistent-root seam + helper entry point)
+- Modify: `internal/phonehome/handlers_extension_test.go` (specs)
 
-This is the meat of the bundled flow. For each extension entry: install (download/overwrite), then check if it's already enabled at any scope on the node — only enable `--active` (without `--now`) if not already enabled anywhere.
+This task adds the pieces; Task 8 wires them into `handleUpgrade`.
 
-- [ ] **Step 1: Write the failing test for `extensionEnabledAnywhere`**
+- [ ] **Step 1: Write the failing specs for `extensionEnabledAnywhere`**
 
 Append to `internal/phonehome/handlers_extension_test.go`:
 
@@ -775,53 +927,74 @@ import (
 	"path/filepath"
 )
 
-// withTempPersistentDir sets a fake /var/lib/kairos/extensions root under t.TempDir
-// and returns the path. The test patches extensionsPersistentRoot for the duration.
-func withTempPersistentDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
+var _ = Describe("extensionEnabledAnywhere", func() {
+	var rootRestore func()
+	var tmpRoot string
+
+	BeforeEach(func() {
+		tmpRoot = GinkgoT().TempDir()
+		rootRestore = phonehome.SetExtensionsPersistentRoot(func(extType string) string {
+			return filepath.Join(tmpRoot, extType+"s")
+		})
+	})
+	AfterEach(func() { rootRestore() })
+
+	It("returns false when no scope dir contains the extension", func() {
+		Expect(phonehome.ExtensionEnabledAnywhereForTest("sysext", "tailscale-agent")).To(BeFalse())
+	})
+
+	It("returns true when a symlink exists under active/", func() {
+		scopeDir := filepath.Join(tmpRoot, "sysexts", "active")
+		Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent.sysext.raw"), nil, 0o644)).To(Succeed())
+		Expect(phonehome.ExtensionEnabledAnywhereForTest("sysext", "tailscale-agent")).To(BeTrue())
+	})
+
+	It("returns true when a symlink exists under common/", func() {
+		scopeDir := filepath.Join(tmpRoot, "sysexts", "common")
+		Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent.sysext.raw"), nil, 0o644)).To(Succeed())
+		Expect(phonehome.ExtensionEnabledAnywhereForTest("sysext", "tailscale-agent")).To(BeTrue())
+	})
+
+	It("matches by prefix-then-dot so a longer-named neighbour doesn't false-positive", func() {
+		scopeDir := filepath.Join(tmpRoot, "sysexts", "common")
+		Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent-helper.sysext.raw"), nil, 0o644)).To(Succeed())
+		Expect(phonehome.ExtensionEnabledAnywhereForTest("sysext", "tailscale-agent")).To(BeFalse())
+	})
+})
+```
+
+- [ ] **Step 2: Add the test exports**
+
+Append to `internal/phonehome/export_test.go`:
+
+```go
+func SetExtensionsPersistentRoot(fn func(extType string) string) func() {
 	prev := extensionsPersistentRoot
-	extensionsPersistentRoot = func(extType string) string {
-		return filepath.Join(dir, extType+"s") // matches kairos-agent's "extensions"/"confexts" pattern
-	}
-	t.Cleanup(func() { extensionsPersistentRoot = prev })
-	return dir
+	extensionsPersistentRoot = fn
+	return func() { extensionsPersistentRoot = prev }
 }
 
-func TestExtensionEnabledAnywhere_None(t *testing.T) {
-	g := NewWithT(t)
-	withTempPersistentDir(t)
-	g.Expect(extensionEnabledAnywhere("sysext", "tailscale-agent")).To(BeFalse())
+func ExtensionEnabledAnywhereForTest(extType, name string) bool {
+	return extensionEnabledAnywhere(extType, name)
 }
 
-func TestExtensionEnabledAnywhere_PresentInActive(t *testing.T) {
-	g := NewWithT(t)
-	root := withTempPersistentDir(t)
-	scopeDir := filepath.Join(root, "sysexts", "active")
-	g.Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
-	g.Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent.sysext.raw"), nil, 0o644)).To(Succeed())
-	g.Expect(extensionEnabledAnywhere("sysext", "tailscale-agent")).To(BeTrue())
-}
-
-func TestExtensionEnabledAnywhere_PresentInCommon(t *testing.T) {
-	g := NewWithT(t)
-	root := withTempPersistentDir(t)
-	scopeDir := filepath.Join(root, "sysexts", "common")
-	g.Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
-	g.Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent.sysext.raw"), nil, 0o644)).To(Succeed())
-	g.Expect(extensionEnabledAnywhere("sysext", "tailscale-agent")).To(BeTrue())
+func InstallBundledExtensionForTest(e BundledExtension, scope string) error {
+	return installBundledExtension(context.Background(), e, scope)
 }
 ```
 
-- [ ] **Step 2: Run the tests, verify they fail**
+- [ ] **Step 3: Run the scanner specs, verify they fail**
 
 ```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestExtensionEnabledAnywhere -v
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="extensionEnabledAnywhere" -v
 ```
 
-Expected: FAIL — `extensionsPersistentRoot` and `extensionEnabledAnywhere` don't exist.
+Expected: BUILD FAIL — `extensionsPersistentRoot`, `extensionEnabledAnywhere`, `installBundledExtension` not defined.
 
-- [ ] **Step 3: Implement the persistent-dir scanner**
+- [ ] **Step 4: Implement the scanner + helper**
 
 Append to `internal/phonehome/handlers_extension.go`:
 
@@ -832,12 +1005,10 @@ import (
 	"path/filepath"
 )
 
-// extensionsPersistentRoot returns the persistent-dir base path for the given
-// extension type. Test seam.
-//
-// Production layout (see kairos-agent/pkg/action/sysext.go:35-52):
-//   /var/lib/kairos/extensions/{active,passive,recovery,common}/   (sysext)
-//   /var/lib/kairos/confexts/{active,passive,recovery,common}/    (confext)
+// extensionsPersistentRoot returns the persistent-dir base path for the
+// given extension type. Test seam — production wraps the constants from
+// pkg/action/sysext.go (sysextDir = /var/lib/kairos/extensions,
+// confExtDir = /var/lib/kairos/confexts).
 var extensionsPersistentRoot = func(extType string) string {
 	if extType == "confext" {
 		return "/var/lib/kairos/confexts"
@@ -845,328 +1016,37 @@ var extensionsPersistentRoot = func(extType string) string {
 	return "/var/lib/kairos/extensions"
 }
 
-// extensionEnabledAnywhere reports whether a symlink for the named extension
-// exists in any of the four scope dirs. Pattern match is by filename prefix
-// since the on-disk filename is "<name>.<type>.raw" (per auroraboot sysext
-// output convention).
+// extensionEnabledAnywhere reports whether any of the four scope dirs
+// (active/passive/recovery/common) contains a symlink or file named like
+// "<name>.<type>.raw" — the convention produced by `auroraboot sysext`.
+//
+// Matching uses prefix-then-dot so `tailscale-agent` does NOT match
+// `tailscale-agent-helper`. Per the spec, this check preserves the
+// operator's prior scope choice during a compound upgrade.
 func extensionEnabledAnywhere(extType, name string) bool {
 	base := extensionsPersistentRoot(extType)
+	prefix := name + "."
 	for _, scope := range []string{"active", "passive", "recovery", "common"} {
 		entries, err := os.ReadDir(filepath.Join(base, scope))
 		if err != nil {
-			continue // missing scope dir is fine
+			continue
 		}
 		for _, e := range entries {
 			if e.IsDir() {
 				continue
 			}
-			if strings.HasPrefix(e.Name(), name+".") {
+			if strings.HasPrefix(e.Name(), prefix) {
 				return true
 			}
 		}
 	}
 	return false
 }
-```
 
-- [ ] **Step 4: Run the scanner tests, verify they pass**
-
-```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestExtensionEnabledAnywhere -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 5: Write the failing test for `installBundledExtension`**
-
-Append to `internal/phonehome/handlers_extension_test.go`:
-
-```go
-func TestInstallBundledExtension_NewExtensionEnablesActive(t *testing.T) {
-	g := NewWithT(t)
-	withTempPersistentDir(t) // empty -> not enabled anywhere
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-
-	err := installBundledExtension(context.Background(), BundledExtension{
-		Type: "sysext", Name: "tailscale-agent", Source: "https://x/y",
-	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(Equal([][]string{
-		{"kairos-agent", "sysext", "install", "https://x/y"},
-		{"kairos-agent", "sysext", "enable", "tailscale-agent", "--active"},
-	}))
-}
-
-func TestInstallBundledExtension_ExistingExtensionSkipsEnable(t *testing.T) {
-	g := NewWithT(t)
-	root := withTempPersistentDir(t)
-	scopeDir := filepath.Join(root, "sysexts", "common")
-	g.Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
-	g.Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent.sysext.raw"), nil, 0o644)).To(Succeed())
-
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-
-	err := installBundledExtension(context.Background(), BundledExtension{
-		Type: "sysext", Name: "tailscale-agent", Source: "https://x/y",
-	})
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(Equal([][]string{
-		{"kairos-agent", "sysext", "install", "https://x/y"},
-	}))
-}
-```
-
-- [ ] **Step 6: Implement `installBundledExtension`**
-
-Append to `internal/phonehome/handlers_extension.go`:
-
-```go
-// installBundledExtension downloads the .raw (overwriting if same name) and
-// enables it at --active scope iff the extension is not already enabled at any
-// scope. --now is intentionally omitted: the OS upgrade about to reboot will
-// pick the extension up on the new active boot.
-func installBundledExtension(ctx context.Context, e BundledExtension) error {
-	if out, err := runCLI(ctx, e.Type, "install", e.Source); err != nil {
-		return fmt.Errorf("install %s/%s: %w: %s", e.Type, e.Name, err, out)
-	}
-	if extensionEnabledAnywhere(e.Type, e.Name) {
-		return nil // preserve operator's prior scope choice
-	}
-	if out, err := runCLI(ctx, e.Type, "enable", e.Name, "--active"); err != nil {
-		return fmt.Errorf("enable %s/%s --active: %w: %s", e.Type, e.Name, err, out)
-	}
-	return nil
-}
-```
-
-- [ ] **Step 7: Run the bundle-install tests, verify they pass**
-
-```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestInstallBundledExtension -v
-```
-
-Expected: PASS.
-
-- [ ] **Step 8: Write the failing test for the extended `handleUpgrade`**
-
-Add to `internal/phonehome/handlers_extension_test.go`:
-
-```go
-func TestHandleUpgrade_NoExtensions_BackwardCompat(t *testing.T) {
-	g := NewWithT(t)
-	withTempPersistentDir(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-	// scheduleReboot is best-effort; replace with no-op for test.
-	prevR := scheduleRebootFn
-	scheduleRebootFn = func() {}
-	t.Cleanup(func() { scheduleRebootFn = prevR })
-
-	_, err := handleUpgrade(context.Background(), CommandData{
-		Command: "upgrade",
-		Args:    map[string]string{"source": "oci:quay.io/myorg/edge-os:v4.2.0"},
-	}, "http://example", "key")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(HaveLen(1)) // only the upgrade itself
-	g.Expect(rec.calls[0]).To(ContainElement("upgrade"))
-}
-
-func TestHandleUpgrade_InstallsBundleBeforeUpgrade(t *testing.T) {
-	g := NewWithT(t)
-	withTempPersistentDir(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-	prevR := scheduleRebootFn
-	scheduleRebootFn = func() {}
-	t.Cleanup(func() { scheduleRebootFn = prevR })
-
-	raw, _ := json.Marshal([]BundledExtension{
-		{Type: "sysext", Name: "tailscale-agent", Source: "https://x/a"},
-		{Type: "confext", Name: "fluent-bit-config", Source: "https://x/b"},
-	})
-	_, err := handleUpgrade(context.Background(), CommandData{
-		Command: "upgrade",
-		Args: map[string]string{
-			"source":     "oci:quay.io/myorg/edge-os:v4.2.0",
-			"extensions": string(raw),
-		},
-	}, "http://example", "key")
-	g.Expect(err).ToNot(HaveOccurred())
-	// Order: install ext1, enable ext1 (new), install ext2, enable ext2 (new), then upgrade.
-	g.Expect(rec.calls).To(HaveLen(5))
-	g.Expect(rec.calls[0][1:3]).To(Equal([]string{"sysext", "install"}))
-	g.Expect(rec.calls[1][1:3]).To(Equal([]string{"sysext", "enable"}))
-	g.Expect(rec.calls[2][1:3]).To(Equal([]string{"confext", "install"}))
-	g.Expect(rec.calls[3][1:3]).To(Equal([]string{"confext", "enable"}))
-	g.Expect(rec.calls[4][:1]).To(Equal([]string{"kairos-agent"}))
-	g.Expect(rec.calls[4]).To(ContainElement("upgrade"))
-}
-
-func TestHandleUpgrade_AbortsBeforeUpgradeOnExtensionFailure(t *testing.T) {
-	g := NewWithT(t)
-	withTempPersistentDir(t)
-	// Fail on the first install call.
-	rec := &failingRecorder{failOn: 0}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-	prevR := scheduleRebootFn
-	scheduleRebootFn = func() { t.Fatalf("scheduleReboot must not be called when an extension install fails") }
-	t.Cleanup(func() { scheduleRebootFn = prevR })
-
-	raw, _ := json.Marshal([]BundledExtension{{Type: "sysext", Name: "x", Source: "https://x/a"}})
-	_, err := handleUpgrade(context.Background(), CommandData{
-		Command: "upgrade",
-		Args: map[string]string{
-			"source":     "oci:quay.io/myorg/edge-os:v4.2.0",
-			"extensions": string(raw),
-		},
-	}, "http://example", "key")
-	g.Expect(err).To(MatchError(ContainSubstring("install sysext/x")))
-	g.Expect(rec.calls).To(HaveLen(1)) // only the failed install; no enable, no upgrade
-}
-```
-
-- [ ] **Step 9: Extract `scheduleReboot` into a test seam**
-
-In `internal/phonehome/handlers.go`, replace the existing `scheduleReboot()` function (around lines 235-242) so it routes through a swappable function:
-
-```go
-// scheduleRebootFn is a seam for tests.
-var scheduleRebootFn = scheduleRebootImpl
-
-func scheduleReboot() {
-	scheduleRebootFn()
-}
-
-func scheduleRebootImpl() {
-	go func() {
-		_ = exec.Command("sync").Run()
-		time.Sleep(10 * time.Second)
-		_ = exec.Command("reboot").Run()
-	}()
-}
-```
-
-(Replace the original `scheduleReboot` body — keep the `//nosec` comments inline on the exec lines.)
-
-Also route the existing `exec.Command("kairos-agent", args...)` call inside `handleUpgrade` (line 150) through the `execCommand` seam introduced in Task 3, so the bundle tests can assert the upgrade call as well:
-
-```go
-out, err := execCommand("kairos-agent", args...).CombinedOutput() //nosec G204
-```
-
-- [ ] **Step 10: Extend `handleUpgrade` to install bundled extensions first**
-
-In `handleUpgrade`, immediately after the existing source-resolution block (after line 142, where `args` for the upgrade call has been built but before `exec.Command`), insert:
-
-```go
-	// Install bundled extensions before the OS upgrade. Each install is
-	// idempotent (kairos-agent install overwrites the .raw in place), so
-	// retrying the same compound command after a partial failure is safe.
-	bundled, err := parseBundledExtensions(cmd.Args["extensions"])
-	if err != nil {
-		return "", err
-	}
-	for _, e := range bundled {
-		if err := installBundledExtension(ctx, e); err != nil {
-			// Do NOT proceed to the OS upgrade if any extension fails.
-			return "", err
-		}
-	}
-```
-
-- [ ] **Step 11: Run the upgrade tests, verify they pass**
-
-```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestHandleUpgrade -v
-```
-
-Expected: PASS for the three new tests plus any pre-existing upgrade tests still green.
-
-- [ ] **Step 12: Run the full package test suite to verify no regressions**
-
-```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -v
-```
-
-Expected: all green.
-
-- [ ] **Step 13: Commit**
-
-```bash
-git add internal/phonehome/handlers.go internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go
-git commit -m "phonehome: install bundled extensions before OS upgrade"
-```
-
----
-
-## Task 8: `upgrade-recovery` parity
-
-**Files:**
-- Modify: `internal/phonehome/handlers_extension.go` (variant of `installBundledExtension`)
-- Modify: `internal/phonehome/handlers.go` (route `upgrade-recovery` through the same parse/install loop with `--recovery` scope)
-- Modify: `internal/phonehome/handlers_extension_test.go`
-
-`handleUpgrade` is shared by `upgrade` and `upgrade-recovery` (see the existing switch case at handlers.go:46). The bundle loop runs for both, but recovery-mode extensions should enable at `--recovery` scope, not `--active`.
-
-- [ ] **Step 1: Write the failing test**
-
-Add to `internal/phonehome/handlers_extension_test.go`:
-
-```go
-func TestHandleUpgradeRecovery_EnablesAtRecoveryScope(t *testing.T) {
-	g := NewWithT(t)
-	withTempPersistentDir(t)
-	rec := &commandRecorder{}
-	prev := execCommand
-	execCommand = rec.record
-	t.Cleanup(func() { execCommand = prev })
-	prevR := scheduleRebootFn
-	scheduleRebootFn = func() {}
-	t.Cleanup(func() { scheduleRebootFn = prevR })
-
-	raw, _ := json.Marshal([]BundledExtension{{Type: "sysext", Name: "rescue-tools", Source: "https://x/r"}})
-	_, err := handleUpgrade(context.Background(), CommandData{
-		Command: "upgrade-recovery",
-		Args: map[string]string{
-			"source":     "oci:quay.io/myorg/edge-os:v4.2.0",
-			"recovery":   "true",
-			"extensions": string(raw),
-		},
-	}, "http://example", "key")
-	g.Expect(err).ToNot(HaveOccurred())
-	g.Expect(rec.calls).To(HaveLen(3))
-	g.Expect(rec.calls[1]).To(Equal([]string{"kairos-agent", "sysext", "enable", "rescue-tools", "--recovery"}))
-}
-```
-
-- [ ] **Step 2: Run the test, verify it fails**
-
-```
-cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestHandleUpgradeRecovery -v
-```
-
-Expected: FAIL — the current `installBundledExtension` hard-codes `--active`.
-
-- [ ] **Step 3: Generalize `installBundledExtension` with a scope parameter**
-
-In `internal/phonehome/handlers_extension.go`, change the helper signature:
-
-```go
 // installBundledExtension downloads (overwriting) and conditionally enables
-// the extension at the given scope. scope is "active" for `upgrade`, "recovery"
-// for `upgrade-recovery`.
+// the extension at the given scope. `scope` is "active" for `upgrade`,
+// "recovery" for `upgrade-recovery`. --now is intentionally omitted: the OS
+// upgrade about to reboot will pick the extension up on the new active boot.
 func installBundledExtension(ctx context.Context, e BundledExtension, scope string) error {
 	if out, err := runCLI(ctx, e.Type, "install", e.Source); err != nil {
 		return fmt.Errorf("install %s/%s: %w: %s", e.Type, e.Name, err, out)
@@ -1181,50 +1061,311 @@ func installBundledExtension(ctx context.Context, e BundledExtension, scope stri
 }
 ```
 
-- [ ] **Step 4: Update the caller in `handleUpgrade` to pick the scope**
+- [ ] **Step 5: Run the scanner specs, verify they pass**
 
-In `internal/phonehome/handlers.go`, in `handleUpgrade`, change the bundle loop to:
+```
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="extensionEnabledAnywhere" -v
+```
+
+Expected: PASS (4 `It` blocks).
+
+- [ ] **Step 6: Write the failing specs for `installBundledExtension`**
+
+Append to `internal/phonehome/handlers_extension_test.go`:
 
 ```go
+var _ = Describe("installBundledExtension", func() {
+	var rec *commandRecorder
+	var restoreExec, restoreRoot func()
+	var tmpRoot string
+
+	BeforeEach(func() {
+		tmpRoot = GinkgoT().TempDir()
+		restoreRoot = phonehome.SetExtensionsPersistentRoot(func(extType string) string {
+			return filepath.Join(tmpRoot, extType+"s")
+		})
+		rec = &commandRecorder{}
+		restoreExec = phonehome.SetExecCommand(rec.record)
+	})
+	AfterEach(func() {
+		restoreExec()
+		restoreRoot()
+	})
+
+	It("installs and enables a brand-new extension at --active", func() {
+		// tmpRoot is empty, so the helper considers the extension not enabled.
+		Expect(phonehome.InstallBundledExtensionForTest(
+			phonehome.BundledExtension{Type: "sysext", Name: "tailscale-agent", Source: "https://x/y"},
+			"active",
+		)).To(Succeed())
+		Expect(rec.calls).To(Equal([][]string{
+			{"kairos-agent", "sysext", "install", "https://x/y"},
+			{"kairos-agent", "sysext", "enable", "tailscale-agent", "--active"},
+		}))
+	})
+
+	It("skips enable when the extension is already present at common scope", func() {
+		scopeDir := filepath.Join(tmpRoot, "sysexts", "common")
+		Expect(os.MkdirAll(scopeDir, 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(scopeDir, "tailscale-agent.sysext.raw"), nil, 0o644)).To(Succeed())
+
+		Expect(phonehome.InstallBundledExtensionForTest(
+			phonehome.BundledExtension{Type: "sysext", Name: "tailscale-agent", Source: "https://x/y"},
+			"active",
+		)).To(Succeed())
+		// install only — the existing symlink is preserved.
+		Expect(rec.calls).To(Equal([][]string{
+			{"kairos-agent", "sysext", "install", "https://x/y"},
+		}))
+	})
+
+	It("enables at the recovery scope when called with scope=recovery", func() {
+		Expect(phonehome.InstallBundledExtensionForTest(
+			phonehome.BundledExtension{Type: "sysext", Name: "rescue-tools", Source: "https://x/r"},
+			"recovery",
+		)).To(Succeed())
+		Expect(rec.calls).To(Equal([][]string{
+			{"kairos-agent", "sysext", "install", "https://x/r"},
+			{"kairos-agent", "sysext", "enable", "rescue-tools", "--recovery"},
+		}))
+	})
+})
+```
+
+- [ ] **Step 7: Run the helper specs, verify they pass**
+
+```
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="installBundledExtension" -v
+```
+
+Expected: PASS (3 `It` blocks).
+
+- [ ] **Step 8: Commit**
+
+```bash
+git add internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go internal/phonehome/export_test.go
+git commit -m "phonehome: scanner + installBundledExtension helper"
+```
+
+---
+
+## Task 8: Extend `handleUpgrade` to install the bundle first
+
+**Files:**
+- Modify: `internal/phonehome/handlers.go` (route `scheduleReboot` and the upgrade exec through seams, add the bundle loop)
+- Modify: `internal/phonehome/export_test.go` (add `SetScheduleReboot`)
+- Modify: `internal/phonehome/handlers_extension_test.go` (specs)
+
+- [ ] **Step 1: Write the failing specs**
+
+Append to `internal/phonehome/handlers_extension_test.go`:
+
+```go
+var _ = Describe("handleUpgrade — extensions bundle", func() {
+	var rec *commandRecorder
+	var restoreExec, restoreRoot, restoreReboot func()
+	var rebootCalled bool
+
+	BeforeEach(func() {
+		tmpRoot := GinkgoT().TempDir()
+		restoreRoot = phonehome.SetExtensionsPersistentRoot(func(extType string) string {
+			return filepath.Join(tmpRoot, extType+"s")
+		})
+		rec = &commandRecorder{}
+		restoreExec = phonehome.SetExecCommand(rec.record)
+		rebootCalled = false
+		restoreReboot = phonehome.SetScheduleReboot(func() { rebootCalled = true })
+	})
+	AfterEach(func() {
+		restoreExec()
+		restoreRoot()
+		restoreReboot()
+	})
+
+	It("is a no-op for extensions when the arg is empty (backward compat)", func() {
+		_, err := phonehome.HandleUpgradeForTest(phonehome.CommandData{
+			ID: "u1", Command: "upgrade",
+			Args: map[string]string{"source": "oci:quay.io/myorg/edge-os:v4.2.0"},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		// One CLI call: the upgrade itself.
+		Expect(rec.calls).To(HaveLen(1))
+		Expect(rec.calls[0]).To(ContainElement("upgrade"))
+		Expect(rebootCalled).To(BeTrue())
+	})
+
+	It("installs every bundled extension before running upgrade", func() {
+		raw, _ := json.Marshal([]phonehome.BundledExtension{
+			{Type: "sysext", Name: "tailscale-agent", Source: "https://x/a"},
+			{Type: "confext", Name: "fluent-bit-config", Source: "https://x/b"},
+		})
+		_, err := phonehome.HandleUpgradeForTest(phonehome.CommandData{
+			Command: "upgrade",
+			Args: map[string]string{
+				"source":     "oci:quay.io/myorg/edge-os:v4.2.0",
+				"extensions": string(raw),
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.calls).To(HaveLen(5))
+		Expect(rec.calls[0][1:3]).To(Equal([]string{"sysext", "install"}))
+		Expect(rec.calls[1][1:3]).To(Equal([]string{"sysext", "enable"}))
+		Expect(rec.calls[1]).To(ContainElement("--active"))
+		Expect(rec.calls[2][1:3]).To(Equal([]string{"confext", "install"}))
+		Expect(rec.calls[3][1:3]).To(Equal([]string{"confext", "enable"}))
+		Expect(rec.calls[4]).To(ContainElement("upgrade"))
+		Expect(rebootCalled).To(BeTrue())
+	})
+
+	It("aborts before the OS upgrade when an extension install fails", func() {
+		failRec := &failingRecorder{failOn: 0}
+		restoreExec()
+		restoreExec = phonehome.SetExecCommand(failRec.record)
+
+		raw, _ := json.Marshal([]phonehome.BundledExtension{
+			{Type: "sysext", Name: "x", Source: "https://x/a"},
+		})
+		_, err := phonehome.HandleUpgradeForTest(phonehome.CommandData{
+			Command: "upgrade",
+			Args: map[string]string{
+				"source":     "oci:quay.io/myorg/edge-os:v4.2.0",
+				"extensions": string(raw),
+			},
+		})
+		Expect(err).To(MatchError(ContainSubstring("install sysext/x")))
+		Expect(failRec.calls).To(HaveLen(1))
+		Expect(rebootCalled).To(BeFalse())
+	})
+
+	It("enables bundled extensions at --recovery scope for upgrade-recovery", func() {
+		raw, _ := json.Marshal([]phonehome.BundledExtension{
+			{Type: "sysext", Name: "rescue-tools", Source: "https://x/r"},
+		})
+		_, err := phonehome.HandleUpgradeForTest(phonehome.CommandData{
+			Command: "upgrade-recovery",
+			Args: map[string]string{
+				"source":     "oci:quay.io/myorg/edge-os:v4.2.0",
+				"recovery":   "true",
+				"extensions": string(raw),
+			},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Expect(rec.calls).To(HaveLen(3))
+		Expect(rec.calls[1]).To(Equal([]string{"kairos-agent", "sysext", "enable", "rescue-tools", "--recovery"}))
+	})
+})
+```
+
+- [ ] **Step 2: Add the missing test exports**
+
+Append to `internal/phonehome/export_test.go`:
+
+```go
+func SetScheduleReboot(fn func()) func() {
+	prev := scheduleRebootFn
+	scheduleRebootFn = fn
+	return func() { scheduleRebootFn = prev }
+}
+
+func HandleUpgradeForTest(cmd CommandData) (string, error) {
+	return handleUpgrade(context.Background(), cmd, "http://test", "")
+}
+```
+
+- [ ] **Step 3: Run the specs to verify they fail**
+
+```
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="handleUpgrade — extensions bundle" -v
+```
+
+Expected: BUILD FAIL — `scheduleRebootFn` and the bundle loop in `handleUpgrade` don't exist; `execCommand` isn't used by `handleUpgrade` yet either.
+
+- [ ] **Step 4: Route `scheduleReboot` through a seam**
+
+In `internal/phonehome/handlers.go`, find the current `scheduleReboot` function (around lines 235-242) and replace its body with the seam:
+
+```go
+// scheduleRebootFn is a seam for tests to assert "no reboot scheduled on
+// failure". Production points at scheduleRebootImpl.
+var scheduleRebootFn = scheduleRebootImpl
+
+func scheduleReboot() {
+	scheduleRebootFn()
+}
+
+func scheduleRebootImpl() {
+	go func() {
+		_ = exec.Command("sync").Run()   //nosec G204 -- fixed command
+		time.Sleep(10 * time.Second)
+		_ = exec.Command("reboot").Run() //nosec G204 -- fixed command
+	}()
+}
+```
+
+- [ ] **Step 5: Route `handleUpgrade`'s upgrade exec through `execCommand`**
+
+In `internal/phonehome/handlers.go`, in `handleUpgrade`, locate the line (around line 150):
+
+```go
+out, err := exec.Command("kairos-agent", args...).CombinedOutput() //nosec G204 -- args is a fixed set built from validated CommandData fields
+```
+
+Change `exec.Command` to `execCommand`:
+
+```go
+out, err := execCommand("kairos-agent", args...).CombinedOutput() //nosec G204 -- args is a fixed set built from validated CommandData fields
+```
+
+- [ ] **Step 6: Insert the bundle loop into `handleUpgrade`**
+
+In `internal/phonehome/handlers.go`, inside `handleUpgrade`, **immediately after** the source-resolution block (where `args := []string{"upgrade", "--source", source}` has been assembled but before the `execCommand("kairos-agent", args...)` call), insert:
+
+```go
+	// Install bundled extensions before the OS upgrade. Each install is
+	// idempotent (kairos-agent install overwrites the .raw in place), so a
+	// retry of the same compound command after a partial failure is safe.
+	bundled, err := parseBundledExtensions(cmd.Args["extensions"])
+	if err != nil {
+		return "", err
+	}
 	scope := "active"
 	if cmd.Command == "upgrade-recovery" {
 		scope = "recovery"
 	}
 	for _, e := range bundled {
 		if err := installBundledExtension(ctx, e, scope); err != nil {
+			// Do NOT proceed to the OS upgrade if any extension fails.
 			return "", err
 		}
 	}
 ```
 
-- [ ] **Step 5: Update the Task 7 tests' caller to pass `"active"` to `installBundledExtension`**
+- [ ] **Step 7: Run the bundle specs to verify they pass**
 
-`TestInstallBundledExtension_*` now needs the scope arg:
-
-```go
-err := installBundledExtension(context.Background(), BundledExtension{...}, "active")
+```
+cd ~/_git/kairos-agent && go test ./internal/phonehome/... -run TestPhoneHome -ginkgo.focus="handleUpgrade — extensions bundle" -v
 ```
 
-(Two locations — update both Task 7 install-bundle tests.)
+Expected: PASS (4 `It` blocks).
 
-- [ ] **Step 6: Run the full package, verify everything passes**
+- [ ] **Step 8: Run the whole phonehome suite to catch any regression**
 
 ```
 cd ~/_git/kairos-agent && go test ./internal/phonehome/... -v
 ```
 
-Expected: all green including the new recovery test.
+Expected: all green.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 9: Commit**
 
 ```bash
-git add internal/phonehome/handlers.go internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go
-git commit -m "phonehome: upgrade-recovery installs bundled extensions at --recovery scope"
+git add internal/phonehome/handlers.go internal/phonehome/handlers_extension.go internal/phonehome/handlers_extension_test.go internal/phonehome/export_test.go
+git commit -m "phonehome: install bundled extensions before OS upgrade"
 ```
 
 ---
 
-## Task 9: Whole-repo verification + lint
+## Task 9: Whole-repo verification
 
 **Files:** none (verification only)
 
@@ -1234,50 +1375,50 @@ git commit -m "phonehome: upgrade-recovery installs bundled extensions at --reco
 cd ~/_git/kairos-agent && go test ./... -count=1
 ```
 
-Expected: all packages green. If any pre-existing tests fail unrelated to this change, investigate before continuing.
+Expected: all packages green. If any pre-existing test fails for an unrelated reason, investigate before continuing.
 
-- [ ] **Step 2: Run gofmt / goimports / go vet**
+- [ ] **Step 2: Run gofmt and vet**
 
 ```
 cd ~/_git/kairos-agent && gofmt -l internal/phonehome/ && go vet ./internal/phonehome/...
 ```
 
-Expected: no output from `gofmt -l` (no unformatted files), `go vet` exits 0.
+Expected: no output from `gofmt -l`, `go vet` exits 0.
 
-- [ ] **Step 3: Build the binary to confirm it links**
+- [ ] **Step 3: Build the binary**
 
 ```
 cd ~/_git/kairos-agent && go build -o /tmp/kairos-agent ./
 ```
 
-Expected: produces `/tmp/kairos-agent` with no errors.
+Expected: produces `/tmp/kairos-agent`.
 
-- [ ] **Step 4: Sanity-check the new help text appears**
+- [ ] **Step 4: Smoke-check the CLI surface is unchanged**
 
 ```
 /tmp/kairos-agent sysext --help
 /tmp/kairos-agent confext --help
 ```
 
-Expected: both show the same `list / enable / disable / install / remove` subcommands as before — we did not change the CLI surface, only the phonehome dispatcher that drives it.
+Expected: both list `list`, `enable`, `disable`, `install`, `remove` subcommands. (This task changes only the phonehome dispatcher, not the user-facing CLI.)
 
-- [ ] **Step 5: Run linter (if available in repo CI config)**
+- [ ] **Step 5: Lint (if configured)**
 
-If the repo has a `golangci.yml` or runs `golangci-lint` in CI:
+If the repo has `.golangci.yml` or runs `golangci-lint` in CI:
 
 ```
 cd ~/_git/kairos-agent && golangci-lint run ./internal/phonehome/...
 ```
 
-Expected: no issues. If lint is not configured locally, skip.
+Expected: no issues. If not configured locally, skip.
 
 ---
 
-## Task 10: Tag a release
+## Task 10: PR + tag
 
-**Files:** none — this is a maintainer step.
+**Files:** none — maintainer step.
 
-- [ ] **Step 1: Verify the working tree is clean**
+- [ ] **Step 1: Verify clean working tree**
 
 ```
 cd ~/_git/kairos-agent && git status
@@ -1287,13 +1428,13 @@ Expected: "nothing to commit, working tree clean".
 
 - [ ] **Step 2: Push the branch and open a PR**
 
-The PR description must include:
+PR description:
 
 ```markdown
 ## Summary
 - Add `extension` phonehome command (install/enable/disable/remove for sysext + confext)
 - Extend `upgrade` / `upgrade-recovery` to install bundled extensions before the OS upgrade reboot
-- New extension command is opt-in (destructive); existing upgrade gate covers the ride-along
+- New `extension` command is opt-in (destructive); existing upgrade gate covers the ride-along
 
 ## Test plan
 - [ ] `go test ./internal/phonehome/...` passes
@@ -1303,20 +1444,20 @@ The PR description must include:
 🤖 Generated with [Claude Code](https://claude.com/claude-code)
 ```
 
-- [ ] **Step 3: After PR merge, tag and release**
+- [ ] **Step 3: After merge, tag and release**
 
-This step is run by the maintainer after CI is green and the PR is merged:
+After CI passes and the PR is merged, the maintainer runs:
 
 ```bash
 cd ~/_git/kairos-agent
 git fetch origin
 git checkout main && git pull
-# pick the next version per the repo's semver convention (e.g., v0.X.Y)
+# Pick the next version per the repo's semver convention.
 git tag -a vX.Y.Z -m "vX.Y.Z: phonehome extension command + bundled upgrade"
 git push origin vX.Y.Z
 ```
 
-GitHub Actions will build artifacts. AuroraBoot's Plan 2 will then bump its `go.mod` to this tag.
+GitHub Actions will build release artifacts. AuroraBoot's Plan 2 will bump its `go.mod` to this tag.
 
 ---
 
@@ -1324,20 +1465,20 @@ GitHub Actions will build artifacts. AuroraBoot's Plan 2 will then bump its `go.
 
 | Spec section | Covered by |
 |---|---|
-| Two delivery flows | Tasks 1-7 (manual) and 7-8 (bundled) |
+| Two delivery flows | Tasks 1-5 (manual) and 6-8 (bundled) |
 | `extension` command (manual) | Tasks 1-5 |
-| Extended `upgrade` with `extensions[]` | Tasks 6-7 |
+| Extended `upgrade` with `extensions[]` | Tasks 6-8 |
 | `upgrade-recovery` parity | Task 8 |
 | JSON-encoded `extensions` arg (string-valued map) | Task 6 |
 | Install action = install + enable (two CLI calls) | Task 3 |
 | Conditional `enable --active` (skip if already enabled) | Task 7 |
-| Abort before OS upgrade on extension failure | Tasks 5, 7 |
+| Abort before OS upgrade on extension failure | Tasks 5, 8 |
 | No `--now` during compound upgrade | Task 7 |
-| Idempotent re-installs | Task 7 (implicit — overwrites .raw) |
-| Policy gating (`extension` not in safe defaults) | Inherited from existing `DefaultCommandHandler` policy gate; verified in Task 2 |
+| Idempotent re-installs | Task 7 (implicit — install overwrites .raw) |
+| Policy gating (`extension` not in safe defaults) | Inherited from existing `DefaultCommandHandler` gate, verified in Task 2 |
 
 ## Out of scope for this plan
 
 - Tagging convention / release machinery — defer to maintainer.
-- Changes to `pkg/action/sysext.go` itself — none required; the existing functions are sufficient.
+- Changes to `pkg/action/sysext.go` itself — none required.
 - Multi-extension parallelism — extensions install sequentially per the spec.
