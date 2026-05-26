@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/kairos-io/AuroraBoot/pkg/store"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
 
 var _ = Describe("Gorm Store", func() {
@@ -524,6 +524,39 @@ var _ = Describe("Gorm Store", func() {
 			records, err := s.ArtifactList(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(records).To(HaveLen(2))
+		})
+	})
+
+	Describe("ArtifactRecord.ExtensionHierarchies", func() {
+		It("persists and reloads the hierarchies map", func() {
+			rec := &store.ArtifactRecord{
+				ID:        "art-hier-1",
+				Phase:     store.ArtifactReady,
+				BaseImage: "img-hier",
+				ExtensionHierarchies: store.ExtensionHierarchies{
+					Sysext: []string{"/opt", "/srv"},
+				},
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			found, err := s.ArtifactGetByID(ctx, rec.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ExtensionHierarchies.Sysext).To(Equal([]string{"/opt", "/srv"}))
+			Expect(found.ExtensionHierarchies.Confext).To(BeNil())
+		})
+
+		It("defaults to a zero value for legacy rows", func() {
+			rec := &store.ArtifactRecord{
+				ID:        "art-hier-2",
+				Phase:     store.ArtifactReady,
+				BaseImage: "img-hier-legacy",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			found, err := s.ArtifactGetByID(ctx, rec.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ExtensionHierarchies.Sysext).To(BeNil())
+			Expect(found.ExtensionHierarchies.Confext).To(BeNil())
 		})
 	})
 })
