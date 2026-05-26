@@ -88,7 +88,7 @@ func New(cfg Config) *echo.Echo {
 	if cfg.ExtensionBuilder != nil {
 		extensionHandler = handlers.NewExtensionHandler(
 			cfg.ExtensionBuilder, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore,
-			cfg.SecureBootKeySetStore, cfg.ArtifactsDir,
+			cfg.SecureBootKeySetStore, cfg.NodeExtensionStore, cfg.ArtifactsDir,
 		)
 	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
@@ -170,6 +170,8 @@ func New(cfg Config) *echo.Echo {
 		adminGroup.DELETE("/extensions/:id", extensionHandler.Delete)
 		adminGroup.GET("/extensions/:id/logs", extensionHandler.GetLogs)
 		adminGroup.POST("/extensions/:id/cancel", extensionHandler.Cancel)
+		adminGroup.GET("/extensions/:id/nodes", extensionHandler.ListNodesForExtension)
+		adminGroup.GET("/nodes/:nodeID/extensions", extensionHandler.ListNodeExtensions)
 	}
 
 	// Artifact downloads — accepts admin password OR node API key.

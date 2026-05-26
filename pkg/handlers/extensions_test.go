@@ -31,7 +31,7 @@ var _ = Describe("ExtensionHandler.Create", func() {
 		fb = &fakeExtensionBuilder{}
 		es = newFakeExtensionStore()
 		bs = newFakeBundleStore()
-		handler = handlers.NewExtensionHandler(fb, es, bs, nil, "")
+		handler = handlers.NewExtensionHandler(fb, es, bs, nil, nil, "")
 	})
 
 	post := func(body string) *httptest.ResponseRecorder {
@@ -68,7 +68,7 @@ var _ = Describe("ExtensionHandler.Create — hierarchies validation", func() {
 	BeforeEach(func() {
 		e = echo.New()
 		fb = &fakeExtensionBuilder{}
-		handler = handlers.NewExtensionHandler(fb, newFakeExtensionStore(), newFakeBundleStore(), nil, "")
+		handler = handlers.NewExtensionHandler(fb, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, "")
 	})
 
 	post := func(body string) *httptest.ResponseRecorder {
@@ -133,7 +133,7 @@ var _ = Describe("ExtensionHandler.Create — source/mode validation", func() {
 
 	BeforeEach(func() {
 		e = echo.New()
-		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, newFakeExtensionStore(), newFakeBundleStore(), nil, "")
+		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, "")
 	})
 
 	post := func(body string) *httptest.ResponseRecorder {
@@ -207,7 +207,7 @@ var _ = Describe("ExtensionHandler — Get / List / PATCH / GetLogs / Cancel", f
 		e = echo.New()
 		fb = &fakeExtensionBuilder{}
 		es = newFakeExtensionStore()
-		handler = handlers.NewExtensionHandler(fb, es, newFakeBundleStore(), nil, "")
+		handler = handlers.NewExtensionHandler(fb, es, newFakeBundleStore(), nil, nil, "")
 		_ = es.Create(ctx, &store.ExtensionRecord{ID: "e-1", Name: "ts", Type: "sysext", Phase: "Ready", Arch: "amd64", Logs: "step 1\nstep 2"})
 	})
 
@@ -287,7 +287,7 @@ var _ = Describe("ExtensionHandler.Delete — bundle-blocks-delete", func() {
 		e = echo.New()
 		es = newFakeExtensionStore()
 		bs = newFakeBundleStore()
-		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, es, bs, nil, "")
+		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, es, bs, nil, nil, "")
 		_ = es.Create(ctx, &store.ExtensionRecord{ID: "e-1", Name: "tailscale-agent", Type: "sysext", Phase: "Ready"})
 	})
 
@@ -339,7 +339,7 @@ var _ = Describe("ExtensionHandler.Download", func() {
 		extDir := filepath.Join(tmp, "extensions", "e-1")
 		Expect(os.MkdirAll(extDir, 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(extDir, "tailscale-agent.sysext.raw"), []byte("RAW-BYTES"), 0o644)).To(Succeed())
-		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, newFakeExtensionStore(), newFakeBundleStore(), nil, tmp)
+		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, tmp)
 	})
 
 	do := func(id, filename string) *httptest.ResponseRecorder {

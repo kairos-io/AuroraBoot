@@ -90,3 +90,24 @@ export function extensionDownloadUrl(id: string, filename: string): string {
   const token = localStorage.getItem("auroraboot_token") ?? "";
   return `/api/v1/extensions/${id}/download/${filename}?token=${token}`;
 }
+
+// NodeExtensionRow mirrors store.NodeExtensionRow on the server. Tracks
+// which extensions are installed on which node, per boot scope.
+export interface NodeExtensionRow {
+  nodeId: string;
+  name: string;
+  type: ExtensionType;
+  bootState: "active" | "passive" | "recovery" | "common";
+  extensionId?: string;
+  version: string;
+  installedAt: string;
+  updatedAt: string;
+}
+
+export function listExtensionsForNode(nodeId: string): Promise<NodeExtensionRow[]> {
+  return apiFetch<NodeExtensionRow[]>(`/api/v1/nodes/${nodeId}/extensions`);
+}
+
+export function listNodesForExtension(extensionId: string): Promise<NodeExtensionRow[]> {
+  return apiFetch<NodeExtensionRow[]>(`/api/v1/extensions/${extensionId}/nodes`);
+}

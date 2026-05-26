@@ -21,6 +21,7 @@ type ExtensionHandler struct {
 	store          store.ExtensionStore
 	bundles        store.ArtifactExtensionBundleStore
 	secureBootKeys store.SecureBootKeySetStore
+	nodeExtensions store.NodeExtensionStore
 	artifactsDir   string
 }
 
@@ -32,6 +33,7 @@ func NewExtensionHandler(
 	s store.ExtensionStore,
 	bs store.ArtifactExtensionBundleStore,
 	sb store.SecureBootKeySetStore,
+	nodeExtensions store.NodeExtensionStore,
 	artifactsDir string,
 ) *ExtensionHandler {
 	return &ExtensionHandler{
@@ -39,6 +41,7 @@ func NewExtensionHandler(
 		store:          s,
 		bundles:        bs,
 		secureBootKeys: sb,
+		nodeExtensions: nodeExtensions,
 		artifactsDir:   artifactsDir,
 	}
 }
@@ -340,6 +343,58 @@ func (h *ExtensionHandler) Download(c echo.Context) error {
 	}
 	defer f.Close()
 	return c.Stream(http.StatusOK, "application/octet-stream", f)
+}
+
+// ListNodeExtensions handles GET /api/v1/nodes/:nodeID/extensions. Returns
+// the per-node tracking rows the agent populates via the status callback.
+//
+//	@Summary	List extensions installed on a node
+//	@Tags		Extensions
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		nodeID	path	string	true	"Node ID"
+//	@Success	200		{array}	store.NodeExtensionRow
+//	@Router		/api/v1/nodes/{nodeID}/extensions [get]
+func (h *ExtensionHandler) ListNodeExtensions(c echo.Context) error {
+	if h.nodeExtensions == nil {
+		return c.JSON(http.StatusOK, []store.NodeExtensionRow{})
+	}
+	rows, err := h.nodeExtensions.ListForNode(c.Request().Context(), c.Param("nodeID"))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "list failed"})
+	}
+	if rows == nil {
+		rows = []store.NodeExtensionRow{}
+	}
+	return c.JSON(http.StatusOK, rows)
+}
+
+// ListNodesForExtension handles GET /api/v1/extensions/:id/nodes. Returns
+// every node tracking row that references the extension by name.
+//
+//	@Summary	List nodes that have a given extension installed
+//	@Tags		Extensions
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id	path	string	true	"Extension ID"
+//	@Success	200	{array}	store.NodeExtensionRow
+//	@Router		/api/v1/extensions/{id}/nodes [get]
+func (h *ExtensionHandler) ListNodesForExtension(c echo.Context) error {
+	if h.nodeExtensions == nil || h.store == nil {
+		return c.JSON(http.StatusOK, []store.NodeExtensionRow{})
+	}
+	rec, err := h.store.GetByID(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+	rows, err := h.nodeExtensions.ListForExtensionByName(c.Request().Context(), rec.Type, rec.Name)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "list failed"})
+	}
+	if rows == nil {
+		rows = []store.NodeExtensionRow{}
+	}
+	return c.JSON(http.StatusOK, rows)
 }
 
 // isSafePathSegment rejects empty, `.`/`..`, or `/`-containing segments.
