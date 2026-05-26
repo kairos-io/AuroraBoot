@@ -248,6 +248,16 @@ type ArtifactStore interface {
 	AppendLog(ctx context.Context, id string, text string) error
 }
 
+// ExtensionStore manages sysext / confext extension records.
+type ExtensionStore interface {
+	Create(ctx context.Context, e *ExtensionRecord) error
+	GetByID(ctx context.Context, id string) (*ExtensionRecord, error)
+	List(ctx context.Context) ([]ExtensionRecord, error)
+	Delete(ctx context.Context, id string) error
+	FindLatestReadyByName(ctx context.Context, extType, name string) (*ExtensionRecord, error)
+	FindByNameAndVersion(ctx context.Context, extType, name, version string) (*ExtensionRecord, error)
+}
+
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.
 type SecureBootKeySet struct {
 	ID               string    `json:"id" gorm:"primaryKey"`

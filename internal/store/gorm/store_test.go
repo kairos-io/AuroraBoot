@@ -631,4 +631,50 @@ var _ = Describe("Gorm Store", func() {
 			Expect(s.UnsafeDB().Create(&row).Error).To(HaveOccurred())
 		})
 	})
+
+	Describe("ExtensionStore", func() {
+		It("Create / GetByID round-trips", func() {
+			ext := &store.ExtensionRecord{ID: "e-1", Name: "tailscale-agent", Type: "sysext", Phase: "Ready", Arch: "amd64", Version: "v1.74.0"}
+			Expect(s.ExtensionCreate(ctx, ext)).To(Succeed())
+			got, err := s.ExtensionGetByID(ctx, "e-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got.Name).To(Equal("tailscale-agent"))
+		})
+
+		It("List orders by created_at descending", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "old", Name: "x", Type: "sysext", Phase: "Ready", CreatedAt: time.Now().Add(-1 * time.Hour)})).To(Succeed())
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "new", Name: "y", Type: "sysext", Phase: "Ready", CreatedAt: time.Now()})).To(Succeed())
+			list, err := s.ExtensionList(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(list).To(HaveLen(2))
+			Expect(list[0].ID).To(Equal("new"))
+			Expect(list[1].ID).To(Equal("old"))
+		})
+
+		It("Delete removes one record", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "e-2", Name: "z", Type: "sysext", Phase: "Ready"})).To(Succeed())
+			Expect(s.ExtensionDelete(ctx, "e-2")).To(Succeed())
+			_, err := s.ExtensionGetByID(ctx, "e-2")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("FindLatestReadyByName returns the newest Ready row by created_at", func() {
+			old := &store.ExtensionRecord{ID: "f-old", Name: "tailscale", Type: "sysext", Version: "v1.72", Phase: "Ready", CreatedAt: time.Now().Add(-1 * time.Hour)}
+			newer := &store.ExtensionRecord{ID: "f-new", Name: "tailscale", Type: "sysext", Version: "v1.74", Phase: "Ready", CreatedAt: time.Now()}
+			errored := &store.ExtensionRecord{ID: "f-err", Name: "tailscale", Type: "sysext", Version: "v2.0", Phase: "Error", CreatedAt: time.Now().Add(1 * time.Hour)}
+			for _, r := range []*store.ExtensionRecord{old, newer, errored} {
+				Expect(s.ExtensionCreate(ctx, r)).To(Succeed())
+			}
+			got, derr := s.ExtensionFindLatestReadyByName(ctx, "sysext", "tailscale")
+			Expect(derr).ToNot(HaveOccurred())
+			Expect(got.ID).To(Equal("f-new"))
+		})
+
+		It("FindByNameAndVersion returns an exact match", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "v74", Name: "ts", Type: "sysext", Version: "v1.74", Phase: "Ready"})).To(Succeed())
+			got, err := s.ExtensionFindByNameAndVersion(ctx, "sysext", "ts", "v1.74")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got.ID).To(Equal("v74"))
+		})
+	})
 })

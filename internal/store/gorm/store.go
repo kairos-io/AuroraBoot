@@ -493,6 +493,54 @@ func (s *Store) DeploymentDelete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).Delete(&store.Deployment{}, "id = ?", id).Error
 }
 
+// --- ExtensionStore ---
+
+func (s *Store) ExtensionCreate(ctx context.Context, e *store.ExtensionRecord) error {
+	return s.db.WithContext(ctx).Save(e).Error
+}
+
+func (s *Store) ExtensionGetByID(ctx context.Context, id string) (*store.ExtensionRecord, error) {
+	var rec store.ExtensionRecord
+	if err := s.db.WithContext(ctx).First(&rec, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+func (s *Store) ExtensionList(ctx context.Context) ([]store.ExtensionRecord, error) {
+	var out []store.ExtensionRecord
+	if err := s.db.WithContext(ctx).Order("created_at DESC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) ExtensionDelete(ctx context.Context, id string) error {
+	return s.db.WithContext(ctx).Delete(&store.ExtensionRecord{}, "id = ?", id).Error
+}
+
+func (s *Store) ExtensionFindLatestReadyByName(ctx context.Context, extType, name string) (*store.ExtensionRecord, error) {
+	var rec store.ExtensionRecord
+	q := s.db.WithContext(ctx).
+		Where("type = ? AND name = ? AND phase = ?", extType, name, "Ready").
+		Order("created_at DESC").Limit(1)
+	if err := q.First(&rec).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+func (s *Store) ExtensionFindByNameAndVersion(ctx context.Context, extType, name, version string) (*store.ExtensionRecord, error) {
+	var rec store.ExtensionRecord
+	q := s.db.WithContext(ctx).
+		Where("type = ? AND name = ? AND version = ? AND phase = ?", extType, name, version, "Ready").
+		Limit(1)
+	if err := q.First(&rec).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	sqlDB, err := s.db.DB()
