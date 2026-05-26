@@ -170,12 +170,18 @@ created_at, updated_at
 A new table `artifact_extension_bundles` (the declarative side of bundling):
 
 ```
-artifact_id     uuid  // FK Artifact
-extension_id    uuid  // FK Extension
-pinned_version  string  // nullable; null = "use latest Ready at upgrade time"
+artifact_id     uuid    // FK Artifact
+extension_name  string  // bundled by name, NOT by extension UUID
+extension_type  string  // "sysext" | "confext" (denormalized for fast filtering)
+pinned_version  string  // nullable; null = "use latest Ready at dispatch time"
 order           int     // install order on the node (lower first)
-(unique key: artifact_id + extension_id)
+(unique key: artifact_id + extension_name)
 ```
+
+**Bundles are keyed by name, not UUID.** This is the deliberate choice: a bundle entry survives a rebuild of the underlying extension (new UUID, same name) and survives deletion of an old extension version, so long as another Ready row with the same name exists. Resolution at dispatch time:
+
+- `pinned_version` set: find the Ready `extensions` row with that `name` and `version`. If none, dispatch fails with a structured error naming the missing version.
+- `pinned_version` null: find the **newest by `created_at`** Ready `extensions` row with that `name`. If none, dispatch fails. The "latest" tiebreaker is `created_at` because `version` is a free-form string we can't safely semver-sort.
 
 A new table `node_extensions` (the per-node tracking used by the pre-action diff and the node detail page):
 
@@ -217,8 +223,8 @@ GET   /api/v1/extensions/:id/download/:filename  → file (admin or node, via Do
 GET   /api/v1/extensions/:id/nodes               → []NodeExtensionRow
 
 # bundles attached to an artifact:
-GET   /api/v1/artifacts/:id/bundle-extensions    → []BundleRow
-PUT   /api/v1/artifacts/:id/bundle-extensions    → []BundleRow   (replace set)
+GET   /api/v1/artifacts/:id/bundle-extensions    → []BundleEntry
+PUT   /api/v1/artifacts/:id/bundle-extensions    → []BundleEntry   (replace set; entries are {name, type, pinnedVersion?, order?})
 
 # node-side tracking:
 GET   /api/v1/nodes/:id/extensions               → []NodeExtensionRow
@@ -245,14 +251,14 @@ GET   /api/v1/nodes/:id/extensions               → []NodeExtensionRow
 }
 ```
 
-`POST /api/v1/artifacts` body grows an optional `bundledExtensions` field:
+`POST /api/v1/artifacts` body grows an optional `bundledExtensions` field. Entries are keyed by `name` + `type`, not UUID — bundles survive a rebuild of the underlying extension:
 
 ```jsonc
 {
   // … existing artifact fields …
   "bundledExtensions": [
-    { "extensionId": "…", "pinnedVersion": null },
-    { "extensionId": "…", "pinnedVersion": "v1.74.0" }
+    { "name": "tailscale-agent",     "type": "sysext",  "pinnedVersion": null },
+    { "name": "fluent-bit-config",   "type": "confext", "pinnedVersion": "2026.05.20" }
   ]
 }
 ```
@@ -353,20 +359,81 @@ No changes to the `confext` command (its allowlist is `/etc`-only by definition)
 
 ## Build pipeline
 
-`pkg/builder` gains an `ExtensionBuilder`:
+### Interface boundary
+
+`ExtensionBuilder` lives in `pkg/builder/extension.go` as an **interface**, mirroring the existing `pkg/builder/builder.go` pattern. Handlers and stores depend on the interface, not on any concrete implementation. The in-process implementation lives in `internal/builder/auroraboot/extension.go`.
+
+```go
+// pkg/builder/extension.go
+
+type ExtensionSource struct {
+    Mode             string // "artifact" | "image" | "dockerfile"
+    SourceArtifactID string // when Mode = "artifact"
+    BaseImage        string // when Mode in {"image", "artifact"} resolved at build time
+    Dockerfile       string // when Mode = "dockerfile"
+    ExtraSteps       string // optional, when Mode = "artifact"
+    BuildContextDir  string // for COPY in Dockerfile (mirrors ArtifactBuilder.BuildContextDir)
+}
+
+type ExtensionSigning struct {
+    PrivateKey  string // file path
+    Certificate string // file path
+}
+
+type ExtensionBuildOptions struct {
+    ID            string
+    Name          string
+    Type          string   // "sysext" | "confext"
+    Arch          string   // "amd64" | "arm64" | "riscv64"
+    Version       string
+    Source        ExtensionSource
+    Signing       ExtensionSigning
+    Hierarchies   []string // sysext-only; /usr implicit
+    ServiceReload bool     // sysext-only
+    OutputDir     string
+}
+
+type ExtensionBuildStatus struct {
+    ID             string `json:"id"`
+    Phase          string `json:"phase"` // reuses Build* constants from builder.go
+    Message        string `json:"message"`
+    RawFile        string `json:"rawFile"`
+    ContainerImage string `json:"containerImage"`
+}
+
+type ExtensionBuilder interface {
+    Build(ctx context.Context, opts ExtensionBuildOptions) (*ExtensionBuildStatus, error)
+    Status(ctx context.Context, id string) (*ExtensionBuildStatus, error)
+    List(ctx context.Context) ([]*ExtensionBuildStatus, error)
+    Cancel(ctx context.Context, id string) error
+}
+```
+
+This interface boundary is the **swap point** for the Kubernetes-operator deployment story. Today's in-process implementation (`internal/builder/auroraboot/extension.go`) drives `docker build` and `auroraboot sysext|confext` on the host. A future Kubernetes implementation can satisfy the same interface by translating each `Build` call into a custom-resource creation (`Extension` CRD), letting a controller pick up the build in a job, and reporting status back via a watch on the CR — without any handler or UI code changing.
+
+### Behavior of the in-process implementation
 
 1. Resolve the source image:
    - `mode=image`: use as-is.
-   - `mode=artifact`: read `Artifact.containerImage` of `source.artifactId`.
-   - `mode=dockerfile`: docker build the user's Dockerfile, tag with a build UUID.
-   - `mode=artifact` + `extraSteps`: synthesize a Dockerfile `FROM <artifact-image>\n<extraSteps>` and docker build.
-2. Invoke `auroraboot sysext|confext` against the resolved image, passing `--arch`, optional signing flags from the keyset's `db.key`/`db.pem`, the `--include-path` entries derived from `hierarchies`, and `--service-reload` when set.
-3. Write the resulting `.raw` to `artifactsDir/extensions/<id>/<name>.<type>.raw`.
-4. Update the DB record with `raw_filename` and `container_image`, set `phase = Ready` or `Error` with `message`.
+   - `mode=artifact`: read `Artifact.containerImage` of `source.SourceArtifactID` from the store.
+   - `mode=dockerfile`: shell out to `docker build --no-cache -t auroraboot-extbuild:<id> -f <dockerfile-path> <BuildContextDir>` — mirrors `internal/builder/auroraboot/builder.go:583`. `BuildContextDir` defaults to the per-build `outputDir` when unset.
+   - `mode=artifact` + `extraSteps`: synthesize a Dockerfile (`FROM <artifact-image>\n<extraSteps>`) and run the same docker build.
+2. Invoke `auroraboot sysext|confext` against the resolved image, passing `--arch`, optional signing flags from the keyset's `db.key`/`db.pem`, the `--include-path` entries derived from `Hierarchies`, and `--service-reload` when `ServiceReload`.
+3. Write the resulting `.raw` to `<OutputDir>/<name>.<type>.raw`. The handler computes `OutputDir = artifactsDir/extensions/<id>/`, namespaced by the extension's UUID so two same-name builds never collide on disk.
+4. Update the DB record with `RawFile` and `ContainerImage`, transition `phase` to `Ready` or `Error` with `Message`.
 
-The docker build step reuses whichever mechanism `ArtifactBuilder` already uses for Dockerfile-mode artifacts — to be confirmed during plan-writing by reading `pkg/builder/auroraboot`. If the existing builder uses a host docker daemon, the extension builder follows suit; if it uses buildkit-in-container, same.
+The async entry mirrors `(*Builder).run` (`internal/builder/auroraboot/builder.go:209`) — the public `Build` registers state, persists the initial `ExtensionRecord` (phase `Pending`), then dispatches `go b.run(ctx, opts)`.
 
-The same log-streaming machinery used by Artifact builds is reused: build logs go through a `dbLogWriter` (`internal/builder/auroraboot/builder.go:78-114`) that buffers and appends to the extension's `Logs` field plus broadcasts chunks through the existing `LogBroadcaster` (UI WS fan-out). Logs are tagged with `kind=extension` and `id=…` so the UI subscribes by record id.
+The log-streaming machinery is reused: build logs go through a `dbLogWriter` (`internal/builder/auroraboot/builder.go:78-114`) that buffers and appends to the extension's `Logs` field plus broadcasts chunks through the existing `LogBroadcaster` (UI WS fan-out). Logs are tagged with `kind=extension` and `id=…` so the UI subscribes by record id.
+
+### Deletion policy
+
+`DELETE /api/v1/extensions/:id` enforces:
+
+- **Block** if any `artifact_extension_bundles` row references the extension's `name` (operator must remove from the bundle first; response is 409 Conflict with the list of referencing artifacts).
+- **Allow** if only `node_extensions` rows reference it. Those rows are kept (left as stale records of past installs); the `.raw` already on the node survives until a `remove` command runs against it. The list page filters out extensions in `Error` phase from "delete-blocks-bundle" — only `Ready` extensions can be bundled, so an Error row deletion never collides.
+
+Cancelling a build (`POST /api/v1/extensions/:id/cancel`) cancels the build context, cleans `<OutputDir>` (mirrors `ArtifactBuilder.Cancel`), and leaves the row in phase `Error` with a "cancelled by user" message rather than deleting it (consistent with how `cancelArtifact` behaves today).
 
 ## Signing keysets
 
@@ -454,7 +521,8 @@ Frontend:
 Backend:
 
 - Handler tests for `POST /api/v1/extensions` validating all rules.
-- Handler tests for `PUT /api/v1/artifacts/:id/bundle-extensions` validating arch-matching.
+- Handler tests for `PUT /api/v1/artifacts/:id/bundle-extensions` validating arch-matching at write time and resolution at dispatch time (pinned-version exact match, unpinned newest-by-`created_at`, structured error when no matching Ready row exists).
+- Handler tests for `DELETE /api/v1/extensions/:id`: blocked when a bundle references the name, allowed when only `node_extensions` references it (rows left stale).
 - Builder tests covering each source mode (artifact, image, dockerfile, artifact+steps).
 - Phonehome handler tests for the `extension` command across all four actions and both types.
 - Phonehome handler tests for the extended `upgrade` / `upgrade-recovery` commands: each `extensions[]` entry triggers an `install` then a conditional `enable --active` (only when not already enabled at any scope), the install order matches `extensions[]` order, an abort on extension install/enable failure does **not** invoke `kairos-agent upgrade`, and the parent upgrade still runs when `extensions[]` is empty/absent (backward-compat).
