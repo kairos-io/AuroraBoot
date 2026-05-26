@@ -71,6 +71,7 @@ const (
 	CmdApplyCloudConfig = "apply-cloud-config"
 	CmdUpgradeRecovery  = "upgrade-recovery"
 	CmdReboot           = "reboot"
+	CmdExtension        = "extension"
 )
 
 // CommandSelector targets nodes for bulk command operations.
