@@ -541,6 +541,42 @@ func (s *Store) ExtensionFindByNameAndVersion(ctx context.Context, extType, name
 	return &rec, nil
 }
 
+// --- ArtifactExtensionBundleStore ---
+
+func (s *Store) BundleListForArtifact(ctx context.Context, artifactID string) ([]store.ArtifactExtensionBundle, error) {
+	var out []store.ArtifactExtensionBundle
+	err := s.db.WithContext(ctx).
+		Where("artifact_id = ?", artifactID).
+		Order(`"order" ASC`).
+		Find(&out).Error
+	return out, err
+}
+
+func (s *Store) BundleReplaceForArtifact(ctx context.Context, artifactID string, entries []store.ArtifactExtensionBundle) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("artifact_id = ?", artifactID).Delete(&store.ArtifactExtensionBundle{}).Error; err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		for i := range entries {
+			entries[i].ArtifactID = artifactID
+		}
+		return tx.Create(&entries).Error
+	})
+}
+
+func (s *Store) BundleArtifactsReferencingExtension(ctx context.Context, extensionName string) ([]string, error) {
+	var ids []string
+	err := s.db.WithContext(ctx).
+		Model(&store.ArtifactExtensionBundle{}).
+		Where("extension_name = ?", extensionName).
+		Distinct("artifact_id").
+		Pluck("artifact_id", &ids).Error
+	return ids, err
+}
+
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	sqlDB, err := s.db.DB()

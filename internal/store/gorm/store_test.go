@@ -677,4 +677,39 @@ var _ = Describe("Gorm Store", func() {
 			Expect(got.ID).To(Equal("v74"))
 		})
 	})
+
+	Describe("ArtifactExtensionBundleStore", func() {
+		It("ReplaceForArtifact replaces the entire set atomically", func() {
+			Expect(s.BundleReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-1", ExtensionName: "tailscale", ExtensionType: "sysext", Order: 0},
+				{ArtifactID: "a-1", ExtensionName: "fluent-bit", ExtensionType: "confext", Order: 1},
+			})).To(Succeed())
+
+			got, err := s.BundleListForArtifact(ctx, "a-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(HaveLen(2))
+
+			// Replace with just one entry; the other should be dropped.
+			Expect(s.BundleReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-1", ExtensionName: "tailscale", ExtensionType: "sysext"},
+			})).To(Succeed())
+			got, _ = s.BundleListForArtifact(ctx, "a-1")
+			Expect(got).To(HaveLen(1))
+			Expect(got[0].ExtensionName).To(Equal("tailscale"))
+		})
+
+		It("ArtifactsReferencingExtension lists artifacts that bundle a given name", func() {
+			Expect(s.BundleReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-1", ExtensionName: "tailscale", ExtensionType: "sysext"},
+			})).To(Succeed())
+			Expect(s.BundleReplaceForArtifact(ctx, "a-2", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-2", ExtensionName: "tailscale", ExtensionType: "sysext"},
+				{ArtifactID: "a-2", ExtensionName: "fluent-bit", ExtensionType: "confext"},
+			})).To(Succeed())
+
+			refs, err := s.BundleArtifactsReferencingExtension(ctx, "tailscale")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(refs).To(ConsistOf("a-1", "a-2"))
+		})
+	})
 })

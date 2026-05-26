@@ -258,6 +258,14 @@ type ExtensionStore interface {
 	FindByNameAndVersion(ctx context.Context, extType, name, version string) (*ExtensionRecord, error)
 }
 
+// ArtifactExtensionBundleStore manages the per-artifact list of bundled
+// extensions that ride along with every upgrade to that artifact.
+type ArtifactExtensionBundleStore interface {
+	ListForArtifact(ctx context.Context, artifactID string) ([]ArtifactExtensionBundle, error)
+	ReplaceForArtifact(ctx context.Context, artifactID string, entries []ArtifactExtensionBundle) error
+	ArtifactsReferencingExtension(ctx context.Context, extensionName string) ([]string, error)
+}
+
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.
 type SecureBootKeySet struct {
 	ID               string    `json:"id" gorm:"primaryKey"`
