@@ -22,20 +22,34 @@ type ArtifactHandler struct {
 	store          store.ArtifactStore
 	groups         store.GroupStore
 	secureBootKeys store.SecureBootKeySetStore
+	extensions     store.ExtensionStore
+	bundles        store.ArtifactExtensionBundleStore
 	regToken       string
-	aurorabootURL    string
+	aurorabootURL  string
 	artifactsDir   string
 }
 
 // NewArtifactHandler creates a new ArtifactHandler.
-func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactStore, groups store.GroupStore, secureBootKeys store.SecureBootKeySetStore, artifactsDir string, regToken string, aurorabootURL string) *ArtifactHandler {
+func NewArtifactHandler(
+	b builder.ArtifactBuilder,
+	artifactStore store.ArtifactStore,
+	groups store.GroupStore,
+	secureBootKeys store.SecureBootKeySetStore,
+	extensions store.ExtensionStore,
+	bundles store.ArtifactExtensionBundleStore,
+	artifactsDir string,
+	regToken string,
+	aurorabootURL string,
+) *ArtifactHandler {
 	return &ArtifactHandler{
 		builder:        b,
 		store:          artifactStore,
 		groups:         groups,
 		secureBootKeys: secureBootKeys,
+		extensions:     extensions,
+		bundles:        bundles,
 		regToken:       regToken,
-		aurorabootURL:    aurorabootURL,
+		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
 	}
 }
@@ -61,6 +75,21 @@ type createArtifactRequest struct {
 
 	CloudConfig string `json:"cloudConfig"`
 	OutputDir   string `json:"outputDir"`
+
+	ExtensionHierarchies *extensionHierarchiesReq `json:"extensionHierarchies,omitempty"`
+	BundledExtensions    []createBundleEntry      `json:"bundledExtensions,omitempty"`
+}
+
+type extensionHierarchiesReq struct {
+	Sysext  []string `json:"sysext"`
+	Confext []string `json:"confext"`
+}
+
+type createBundleEntry struct {
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	PinnedVersion string `json:"pinnedVersion,omitempty"`
+	Order         int    `json:"order,omitempty"`
 }
 
 type artifactOutputs struct {
@@ -128,6 +157,73 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+
+	// Hierarchies validation: sysext list cannot include /usr or /; confext list
+	// cannot include /etc or /. validateHierarchies (in extensions.go) covers /
+	// and /usr generically; the /etc rule is inline below for the confext branch.
+	var sysHierarchies, conHierarchies []string
+	if req.ExtensionHierarchies != nil {
+		var verr error
+		sysHierarchies, verr = validateHierarchies(req.ExtensionHierarchies.Sysext)
+		if verr != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "sysext " + verr.Error()})
+		}
+		for i, p := range req.ExtensionHierarchies.Confext {
+			p = strings.TrimRight(p, "/")
+			if p == "/etc" || p == "/" {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("confext hierarchies[%d]: %q is implicit and cannot be listed", i, p),
+				})
+			}
+		}
+		conHierarchies, verr = validateHierarchies(req.ExtensionHierarchies.Confext)
+		if verr != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "confext " + verr.Error()})
+		}
+	}
+
+	// bundledExtensions: validate each entry resolves to a Ready extension of
+	// the matching arch. ArtifactID is filled in after the artifact record is
+	// persisted (we don't know the ID until then).
+	bundleRows := make([]store.ArtifactExtensionBundle, 0, len(req.BundledExtensions))
+	if len(req.BundledExtensions) > 0 {
+		if h.extensions == nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "extensions store not configured"})
+		}
+		for i, b := range req.BundledExtensions {
+			if b.Name == "" {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("bundledExtensions[%d]: name required", i)})
+			}
+			if b.Type != "sysext" && b.Type != "confext" {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("bundledExtensions[%d]: type must be sysext or confext", i)})
+			}
+			var ext *store.ExtensionRecord
+			var rErr error
+			if b.PinnedVersion != "" {
+				ext, rErr = h.extensions.FindByNameAndVersion(ctx, b.Type, b.Name, b.PinnedVersion)
+			} else {
+				ext, rErr = h.extensions.FindLatestReadyByName(ctx, b.Type, b.Name)
+			}
+			if rErr != nil || ext == nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("bundledExtensions[%d]: no Ready %s extension matches name=%q version=%q",
+						i, b.Type, b.Name, b.PinnedVersion),
+				})
+			}
+			if ext.Arch != req.Arch {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("bundledExtensions[%d]: arch %q != artifact arch %q",
+						i, ext.Arch, req.Arch),
+				})
+			}
+			bundleRows = append(bundleRows, store.ArtifactExtensionBundle{
+				ExtensionName: b.Name,
+				ExtensionType: b.Type,
+				PinnedVersion: b.PinnedVersion,
+				Order:         b.Order,
+			})
+		}
+	}
 
 	// Provisioning defaults: nil means default true.
 	autoInstall := true
@@ -249,6 +345,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		password:           req.Provisioning.Password,
 		sshKeys:            req.Provisioning.SSHKeys,
 		extraYAML:          req.CloudConfig,
+		sysextHierarchies:  sysHierarchies,
+		confextHierarchies: conHierarchies,
 	})
 
 	status, err := h.builder.Build(ctx, opts)
@@ -287,8 +385,23 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			KubernetesVersion: req.KubernetesVersion,
 			TargetGroupID:     req.Provisioning.TargetGroupId,
 			OverlayRootfs:     req.OverlayRootfs,
+			ExtensionHierarchies: store.ExtensionHierarchies{
+				Sysext:  sysHierarchies,
+				Confext: conHierarchies,
+			},
 		}
 		_ = h.store.Create(ctx, rec)
+	}
+
+	// Persist bundle rows once the artifact has an ID. Errors here are
+	// non-fatal: the operator can re-attach via PUT /bundle-extensions.
+	if h.bundles != nil && len(bundleRows) > 0 {
+		for i := range bundleRows {
+			bundleRows[i].ArtifactID = status.ID
+		}
+		if err := h.bundles.ReplaceForArtifact(ctx, status.ID, bundleRows); err != nil {
+			c.Logger().Errorf("persist bundle for %s: %v", status.ID, err)
+		}
 	}
 
 	return c.JSON(http.StatusCreated, status)
@@ -682,6 +795,12 @@ type cloudConfigParams struct {
 	password        string
 	sshKeys         string // newline-separated public keys
 	extraYAML       string // optional: appended verbatim after the canonical block
+
+	// Extension hierarchies declared by the operator. When non-empty, a systemd
+	// drop-in is written under stages.initramfs.files so the OS image boots
+	// with SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES extended beyond their defaults.
+	sysextHierarchies  []string
+	confextHierarchies []string
 }
 
 // buildCloudConfig assembles a Kairos cloud-config YAML document from structured
@@ -775,6 +894,38 @@ func buildCloudConfig(p cloudConfigParams) string {
 		}
 	}
 
+	// Extension hierarchies: write a systemd drop-in under stages.initramfs so
+	// the OS image boots with SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES extended.
+	// /usr and /etc are the implicit defaults systemd already searches, so we
+	// prepend them to the operator-supplied list.
+	hierarchyFiles := []interface{}{}
+	if len(p.sysextHierarchies) > 0 {
+		all := append([]string{"/usr"}, p.sysextHierarchies...)
+		hierarchyFiles = append(hierarchyFiles, map[string]interface{}{
+			"path":        "/etc/systemd/system/systemd-sysext.service.d/99-aurora-hierarchies.conf",
+			"permissions": 0o644,
+			"content":     "[Service]\nEnvironment=SYSTEMD_SYSEXT_HIERARCHIES=" + strings.Join(all, ":") + "\n",
+		})
+	}
+	if len(p.confextHierarchies) > 0 {
+		all := append([]string{"/etc"}, p.confextHierarchies...)
+		hierarchyFiles = append(hierarchyFiles, map[string]interface{}{
+			"path":        "/etc/systemd/system/systemd-confext.service.d/99-aurora-hierarchies.conf",
+			"permissions": 0o644,
+			"content":     "[Service]\nEnvironment=SYSTEMD_CONFEXT_HIERARCHIES=" + strings.Join(all, ":") + "\n",
+		})
+	}
+	if len(hierarchyFiles) > 0 {
+		stagesMap, _ := doc["stages"].(map[string]interface{})
+		if stagesMap == nil {
+			stagesMap = map[string]interface{}{}
+			doc["stages"] = stagesMap
+		}
+		initramfs, _ := stagesMap["initramfs"].([]interface{})
+		initramfs = append(initramfs, map[string]interface{}{"files": hierarchyFiles})
+		stagesMap["initramfs"] = initramfs
+	}
+
 	// Merge extra YAML (the Advanced field) on top of the canonical doc.
 	// If the user provided their own stages.boot or install: section, it gets
 	// merged under the corresponding top-level key instead of producing a
@@ -795,6 +946,174 @@ func buildCloudConfig(p cloudConfigParams) string {
 		return "#cloud-config\n"
 	}
 	return "#cloud-config\n" + string(out)
+}
+
+// ListBundleExtensions handles GET /api/v1/artifacts/:id/bundle-extensions.
+//
+//	@Summary	List bundled extensions for an artifact
+//	@Tags		Artifacts
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id	path	string	true	"Artifact ID"
+//	@Success	200	{array}	store.ArtifactExtensionBundle
+//	@Router		/api/v1/artifacts/{id}/bundle-extensions [get]
+func (h *ArtifactHandler) ListBundleExtensions(c echo.Context) error {
+	if h.bundles == nil {
+		return c.JSON(http.StatusOK, []store.ArtifactExtensionBundle{})
+	}
+	entries, err := h.bundles.ListForArtifact(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "list failed"})
+	}
+	if entries == nil {
+		entries = []store.ArtifactExtensionBundle{}
+	}
+	return c.JSON(http.StatusOK, entries)
+}
+
+// setBundleEntry is the request shape for PUT /bundle-extensions.
+type setBundleEntry struct {
+	ExtensionName string `json:"extensionName"`
+	ExtensionType string `json:"extensionType"`
+	PinnedVersion string `json:"pinnedVersion,omitempty"`
+	Order         int    `json:"order,omitempty"`
+}
+
+// SetBundleExtensions handles PUT /api/v1/artifacts/:id/bundle-extensions.
+//
+//	@Summary	Replace bundled extensions for an artifact
+//	@Tags		Artifacts
+//	@Accept		json
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id		path	string			true	"Artifact ID"
+//	@Param		body	body	[]setBundleEntry	true	"Replacement set"
+//	@Success	200		{array}	store.ArtifactExtensionBundle
+//	@Failure	400		{object}	APIError
+//	@Failure	404		{object}	APIError
+//	@Router		/api/v1/artifacts/{id}/bundle-extensions [put]
+func (h *ArtifactHandler) SetBundleExtensions(c echo.Context) error {
+	if h.bundles == nil || h.extensions == nil || h.store == nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bundles not configured"})
+	}
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	artifact, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+
+	var entries []setBundleEntry
+	if err := c.Bind(&entries); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+	}
+
+	out := make([]store.ArtifactExtensionBundle, 0, len(entries))
+	for i, e := range entries {
+		if e.ExtensionName == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("[%d]: extensionName required", i)})
+		}
+		if e.ExtensionType != "sysext" && e.ExtensionType != "confext" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("[%d]: extensionType must be sysext or confext", i)})
+		}
+
+		var ext *store.ExtensionRecord
+		var rErr error
+		if e.PinnedVersion != "" {
+			ext, rErr = h.extensions.FindByNameAndVersion(ctx, e.ExtensionType, e.ExtensionName, e.PinnedVersion)
+		} else {
+			ext, rErr = h.extensions.FindLatestReadyByName(ctx, e.ExtensionType, e.ExtensionName)
+		}
+		if rErr != nil || ext == nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("[%d]: no Ready %s extension matches name=%q version=%q",
+					i, e.ExtensionType, e.ExtensionName, e.PinnedVersion),
+			})
+		}
+		if ext.Arch != artifact.Arch {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("[%d]: extension arch %q does not match artifact arch %q",
+					i, ext.Arch, artifact.Arch),
+			})
+		}
+		out = append(out, store.ArtifactExtensionBundle{
+			ArtifactID:    id,
+			ExtensionName: e.ExtensionName,
+			ExtensionType: e.ExtensionType,
+			PinnedVersion: e.PinnedVersion,
+			Order:         e.Order,
+		})
+	}
+
+	if err := h.bundles.ReplaceForArtifact(ctx, id, out); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "replace failed"})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// ResolvedBundleEntry is what the UI feeds back into the upgrade command's
+// `extensions` arg. The agent will parse this same shape on the node.
+type ResolvedBundleEntry struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Version string `json:"version"`
+	Source  string `json:"source"`
+}
+
+// ResolveBundle handles POST /api/v1/artifacts/:id/bundle-resolve.
+//
+//	@Summary		Resolve bundled extensions for upgrade dispatch
+//	@Description	Returns the bundle entries with concrete download URLs and resolved versions, ready to be passed as the `extensions` arg of an `upgrade` phonehome command.
+//	@Tags			Artifacts
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			id	path	string	true	"Artifact ID"
+//	@Success		200	{array}	ResolvedBundleEntry
+//	@Failure		400	{object}	APIError
+//	@Failure		404	{object}	APIError
+//	@Router			/api/v1/artifacts/{id}/bundle-resolve [post]
+func (h *ArtifactHandler) ResolveBundle(c echo.Context) error {
+	if h.bundles == nil || h.extensions == nil || h.store == nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bundles not configured"})
+	}
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	if _, err := h.store.GetByID(ctx, id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+
+	entries, err := h.bundles.ListForArtifact(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "list failed"})
+	}
+
+	out := make([]ResolvedBundleEntry, 0, len(entries))
+	for i, e := range entries {
+		var ext *store.ExtensionRecord
+		var rErr error
+		if e.PinnedVersion != "" {
+			ext, rErr = h.extensions.FindByNameAndVersion(ctx, e.ExtensionType, e.ExtensionName, e.PinnedVersion)
+		} else {
+			ext, rErr = h.extensions.FindLatestReadyByName(ctx, e.ExtensionType, e.ExtensionName)
+		}
+		if rErr != nil || ext == nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("bundle[%d]: no Ready %s extension matches name=%q version=%q",
+					i, e.ExtensionType, e.ExtensionName, e.PinnedVersion),
+			})
+		}
+		source := fmt.Sprintf("%s/api/v1/extensions/%s/download/%s",
+			strings.TrimRight(h.aurorabootURL, "/"), ext.ID, ext.RawFilename)
+		out = append(out, ResolvedBundleEntry{
+			Name:    ext.Name,
+			Type:    ext.Type,
+			Version: ext.Version,
+			Source:  source,
+		})
+	}
+	return c.JSON(http.StatusOK, out)
 }
 
 // mergeYAML recursively merges src into dst. Maps are merged key-by-key; slices

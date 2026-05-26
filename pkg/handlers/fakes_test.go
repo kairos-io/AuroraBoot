@@ -281,14 +281,19 @@ func (f *fakeCommandStore) DeleteTerminal(_ context.Context, nodeID string) erro
 
 // fakeArtifactStore implements store.ArtifactStore for testing.
 type fakeArtifactStore struct {
-	mu      sync.Mutex
-	records []*store.ArtifactRecord
+	mu        sync.Mutex
+	records   []*store.ArtifactRecord
+	lastSaved *store.ArtifactRecord // most recent Create/Update target
 }
+
+// newFakeArtifactStore returns an empty fakeArtifactStore.
+func newFakeArtifactStore() *fakeArtifactStore { return &fakeArtifactStore{} }
 
 func (f *fakeArtifactStore) Create(_ context.Context, rec *store.ArtifactRecord) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.records = append(f.records, rec)
+	f.lastSaved = rec
 	return nil
 }
 
@@ -312,6 +317,7 @@ func (f *fakeArtifactStore) List(_ context.Context) ([]*store.ArtifactRecord, er
 func (f *fakeArtifactStore) Update(_ context.Context, rec *store.ArtifactRecord) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.lastSaved = rec
 	for i, r := range f.records {
 		if r.ID == rec.ID {
 			f.records[i] = rec
@@ -532,10 +538,33 @@ func (f *fakeExtensionStore) Delete(_ context.Context, id string) error {
 	delete(f.rows, id)
 	return nil
 }
-func (f *fakeExtensionStore) FindLatestReadyByName(context.Context, string, string) (*store.ExtensionRecord, error) {
-	return nil, fmt.Errorf("not found")
+func (f *fakeExtensionStore) FindLatestReadyByName(_ context.Context, extType, name string) (*store.ExtensionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var newest *store.ExtensionRecord
+	for _, r := range f.rows {
+		if r.Type != extType || r.Name != name || r.Phase != "Ready" {
+			continue
+		}
+		if newest == nil || r.CreatedAt.After(newest.CreatedAt) {
+			cp := *r
+			newest = &cp
+		}
+	}
+	if newest == nil {
+		return nil, fmt.Errorf("not found")
+	}
+	return newest, nil
 }
-func (f *fakeExtensionStore) FindByNameAndVersion(context.Context, string, string, string) (*store.ExtensionRecord, error) {
+func (f *fakeExtensionStore) FindByNameAndVersion(_ context.Context, extType, name, version string) (*store.ExtensionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.rows {
+		if r.Type == extType && r.Name == name && r.Version == version && r.Phase == "Ready" {
+			cp := *r
+			return &cp, nil
+		}
+	}
 	return nil, fmt.Errorf("not found")
 }
 func (f *fakeExtensionStore) AppendLog(_ context.Context, id, chunk string) error {
