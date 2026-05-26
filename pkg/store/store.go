@@ -207,6 +207,21 @@ type ExtensionRecord struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// NodeExtensionRow is the per-node tracking that drives the Install dialog's
+// pre-action diff and the node detail page's "Installed extensions" section.
+// The agent's REST status callback writes/deletes rows on each successful
+// install / disable / remove.
+type NodeExtensionRow struct {
+	NodeID      string    `gorm:"primaryKey" json:"nodeId"`
+	Name        string    `gorm:"primaryKey" json:"name"`
+	Type        string    `gorm:"primaryKey" json:"type"`      // sysext | confext
+	BootState   string    `gorm:"primaryKey" json:"bootState"` // active | passive | recovery | common
+	ExtensionID string    `                  json:"extensionId,omitempty"`
+	Version     string    `                  json:"version"`
+	InstalledAt time.Time `                  json:"installedAt"`
+	UpdatedAt   time.Time `                  json:"updatedAt"`
+}
+
 // ArtifactExtensionBundle links an artifact to an extension that should ride
 // with every upgrade to that artifact. Entries are by (ArtifactID,
 // ExtensionName) — the actual extension UUID is resolved at dispatch time so

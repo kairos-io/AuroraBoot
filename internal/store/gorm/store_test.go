@@ -606,4 +606,29 @@ var _ = Describe("Gorm Store", func() {
 			Expect(s.UnsafeDB().Create(&row).Error).To(HaveOccurred())
 		})
 	})
+
+	Describe("NodeExtensionRow schema", func() {
+		It("round-trips a row", func() {
+			row := store.NodeExtensionRow{
+				NodeID:      "n-1",
+				Name:        "tailscale-agent",
+				Type:        "sysext",
+				Version:     "v1.74.0",
+				BootState:   "common",
+				InstalledAt: time.Now().UTC().Truncate(time.Second),
+				ExtensionID: "e-1",
+			}
+			Expect(s.UnsafeDB().Create(&row).Error).To(Succeed())
+			var got store.NodeExtensionRow
+			Expect(s.UnsafeDB().First(&got, "node_id = ? AND name = ? AND type = ? AND boot_state = ?",
+				"n-1", "tailscale-agent", "sysext", "common").Error).To(Succeed())
+			Expect(got.Version).To(Equal("v1.74.0"))
+		})
+
+		It("rejects duplicate composite keys", func() {
+			row := store.NodeExtensionRow{NodeID: "n-2", Name: "x", Type: "sysext", BootState: "common"}
+			Expect(s.UnsafeDB().Create(&row).Error).To(Succeed())
+			Expect(s.UnsafeDB().Create(&row).Error).To(HaveOccurred())
+		})
+	})
 })
