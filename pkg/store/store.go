@@ -266,6 +266,16 @@ type ArtifactExtensionBundleStore interface {
 	ArtifactsReferencingExtension(ctx context.Context, extensionName string) ([]string, error)
 }
 
+// NodeExtensionStore manages per-node installed extension tracking rows
+// updated by the agent's status callback on install / disable / remove.
+type NodeExtensionStore interface {
+	Upsert(ctx context.Context, row *NodeExtensionRow) error
+	ListForNode(ctx context.Context, nodeID string) ([]NodeExtensionRow, error)
+	ListForExtensionByName(ctx context.Context, extType, name string) ([]NodeExtensionRow, error)
+	DeleteByScope(ctx context.Context, nodeID, extType, name, bootState string) error
+	DeleteByName(ctx context.Context, nodeID, extType, name string) error
+}
+
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.
 type SecureBootKeySet struct {
 	ID               string    `json:"id" gorm:"primaryKey"`

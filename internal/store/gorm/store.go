@@ -577,6 +577,42 @@ func (s *Store) BundleArtifactsReferencingExtension(ctx context.Context, extensi
 	return ids, err
 }
 
+// --- NodeExtensionStore ---
+
+func (s *Store) NodeExtensionUpsert(ctx context.Context, row *store.NodeExtensionRow) error {
+	row.UpdatedAt = time.Now().UTC()
+	if row.InstalledAt.IsZero() {
+		row.InstalledAt = row.UpdatedAt
+	}
+	return s.db.WithContext(ctx).Save(row).Error
+}
+
+func (s *Store) NodeExtensionListForNode(ctx context.Context, nodeID string) ([]store.NodeExtensionRow, error) {
+	var out []store.NodeExtensionRow
+	err := s.db.WithContext(ctx).Where("node_id = ?", nodeID).Find(&out).Error
+	return out, err
+}
+
+func (s *Store) NodeExtensionListForExtensionByName(ctx context.Context, extType, name string) ([]store.NodeExtensionRow, error) {
+	var out []store.NodeExtensionRow
+	err := s.db.WithContext(ctx).Where("type = ? AND name = ?", extType, name).Find(&out).Error
+	return out, err
+}
+
+func (s *Store) NodeExtensionDeleteByScope(ctx context.Context, nodeID, extType, name, bootState string) error {
+	return s.db.WithContext(ctx).Where(
+		"node_id = ? AND type = ? AND name = ? AND boot_state = ?",
+		nodeID, extType, name, bootState,
+	).Delete(&store.NodeExtensionRow{}).Error
+}
+
+func (s *Store) NodeExtensionDeleteByName(ctx context.Context, nodeID, extType, name string) error {
+	return s.db.WithContext(ctx).Where(
+		"node_id = ? AND type = ? AND name = ?",
+		nodeID, extType, name,
+	).Delete(&store.NodeExtensionRow{}).Error
+}
+
 // Close closes the underlying database connection.
 func (s *Store) Close() error {
 	sqlDB, err := s.db.DB()

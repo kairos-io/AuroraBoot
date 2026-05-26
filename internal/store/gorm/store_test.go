@@ -712,4 +712,48 @@ var _ = Describe("Gorm Store", func() {
 			Expect(refs).To(ConsistOf("a-1", "a-2"))
 		})
 	})
+
+	Describe("NodeExtensionStore", func() {
+		It("Upsert inserts a new row and updates an existing one", func() {
+			Expect(s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{
+				NodeID: "n-1", Name: "ts", Type: "sysext", BootState: "common",
+				Version: "v1.72", ExtensionID: "e-old",
+			})).To(Succeed())
+			Expect(s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{
+				NodeID: "n-1", Name: "ts", Type: "sysext", BootState: "common",
+				Version: "v1.74", ExtensionID: "e-new",
+			})).To(Succeed())
+			rows, err := s.NodeExtensionListForNode(ctx, "n-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(1))
+			Expect(rows[0].Version).To(Equal("v1.74"))
+			Expect(rows[0].ExtensionID).To(Equal("e-new"))
+		})
+
+		It("DeleteByName drops all rows for a name on that node", func() {
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-2", Name: "ts", Type: "sysext", BootState: "common"})
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-2", Name: "ts", Type: "sysext", BootState: "active"})
+			Expect(s.NodeExtensionDeleteByName(ctx, "n-2", "sysext", "ts")).To(Succeed())
+			rows, _ := s.NodeExtensionListForNode(ctx, "n-2")
+			Expect(rows).To(BeEmpty())
+		})
+
+		It("DeleteByScope drops the row for a specific scope only", func() {
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-3", Name: "ts", Type: "sysext", BootState: "common"})
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-3", Name: "ts", Type: "sysext", BootState: "active"})
+			Expect(s.NodeExtensionDeleteByScope(ctx, "n-3", "sysext", "ts", "active")).To(Succeed())
+			rows, _ := s.NodeExtensionListForNode(ctx, "n-3")
+			Expect(rows).To(HaveLen(1))
+			Expect(rows[0].BootState).To(Equal("common"))
+		})
+
+		It("ListForExtensionByName aggregates rows across nodes", func() {
+			for _, n := range []string{"n-4", "n-5", "n-6"} {
+				_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: n, Name: "ts2", Type: "sysext", BootState: "common"})
+			}
+			rows, err := s.NodeExtensionListForExtensionByName(ctx, "sysext", "ts2")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(3))
+		})
+	})
 })
