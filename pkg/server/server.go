@@ -7,11 +7,11 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/docs"
+	netbootpkg "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
+	"github.com/kairos-io/AuroraBoot/internal/ui"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
-	netbootpkg "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
-	"github.com/kairos-io/AuroraBoot/internal/ui"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -20,26 +20,26 @@ import (
 
 // Config holds all dependencies needed by the server.
 type Config struct {
-	NodeStore      store.NodeStore
-	CommandStore   store.CommandStore
-	GroupStore     store.GroupStore
-	ArtifactStore          store.ArtifactStore
-	SecureBootKeySetStore  store.SecureBootKeySetStore
+	NodeStore                    store.NodeStore
+	CommandStore                 store.CommandStore
+	GroupStore                   store.GroupStore
+	ArtifactStore                store.ArtifactStore
+	SecureBootKeySetStore        store.SecureBootKeySetStore
 	ExtensionStore               store.ExtensionStore
 	ArtifactExtensionBundleStore store.ArtifactExtensionBundleStore
 	NodeExtensionStore           store.NodeExtensionStore
 	ExtensionBuilder             builder.ExtensionBuilder
-	NetbootManager         *netbootpkg.Manager
-	DeploymentStore        store.DeploymentStore
-	BMCTargetStore         store.BMCTargetStore
-	Builder                builder.ArtifactBuilder
-	AdminPassword          string
-	RegToken       string
-	RegTokenFile   string // path where reg token is persisted (for rotation)
-	AuroraBootURL    string
-	ArtifactsDir   string
-	KeysDir        string  // base directory for SecureBoot key sets
-	Hub            *ws.Hub // optional, created if nil
+	NetbootManager               *netbootpkg.Manager
+	DeploymentStore              store.DeploymentStore
+	BMCTargetStore               store.BMCTargetStore
+	Builder                      builder.ArtifactBuilder
+	AdminPassword                string
+	RegToken                     string
+	RegTokenFile                 string // path where reg token is persisted (for rotation)
+	AuroraBootURL                string
+	ArtifactsDir                 string
+	KeysDir                      string  // base directory for SecureBoot key sets
+	Hub                          *ws.Hub // optional, created if nil
 }
 
 // New creates and configures an Echo server with all routes and middleware.

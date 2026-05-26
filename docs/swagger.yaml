@@ -1,5 +1,18 @@
 basePath: /
 definitions:
+  builder.ExtensionBuildStatus:
+    properties:
+      containerImage:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      phase:
+        type: string
+      rawFile:
+        type: string
+    type: object
   handlers.APIArtifactOutputs:
     properties:
       cloudImage:
@@ -26,11 +39,10 @@ definitions:
   handlers.APIArtifactProvisioning:
     properties:
       allowedCommands:
-        description: |
-          Explicit list baked into phonehome.allowed_commands. Omit (or send null)
-          to use AuroraBoot's safe defaults ("upgrade", "upgrade-recovery", "reboot", "unregister").
-          Include "exec", "reset", or "apply-cloud-config" to enable remote execution
-          of those destructive commands. An empty array means deny-all (observe-only).
+        description: |-
+          AllowedCommands is the explicit list emitted under phonehome.allowed_commands.
+          Nil means "use AuroraBoot's safe default set". An empty slice means deny-all
+          (observe-only node) — the UI warns when the operator picks this.
         items:
           type: string
         type: array
@@ -235,6 +247,89 @@ definitions:
       name:
         type: string
     type: object
+  handlers.ResolvedBundleEntry:
+    properties:
+      name:
+        type: string
+      source:
+        type: string
+      type:
+        type: string
+      version:
+        type: string
+    type: object
+  handlers.createExtensionRequest:
+    properties:
+      arch:
+        type: string
+      hierarchies:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      serviceReload:
+        type: boolean
+      signingKeySetId:
+        type: string
+      source:
+        $ref: '#/definitions/handlers.extensionSourceReq'
+      type:
+        type: string
+      version:
+        type: string
+    type: object
+  handlers.decommissionResponse:
+    properties:
+      commandID:
+        type: string
+      nodeOnline:
+        type: boolean
+    type: object
+  handlers.extensionSourceReq:
+    properties:
+      artifactId:
+        type: string
+      baseImage:
+        type: string
+      buildContextDir:
+        type: string
+      dockerfile:
+        type: string
+      extraSteps:
+        type: string
+      mode:
+        type: string
+    type: object
+  handlers.setBundleEntry:
+    properties:
+      extensionName:
+        type: string
+      extensionType:
+        type: string
+      order:
+        type: integer
+      pinnedVersion:
+        type: string
+    type: object
+  store.ArtifactExtensionBundle:
+    properties:
+      artifactId:
+        type: string
+      createdAt:
+        type: string
+      extensionName:
+        type: string
+      extensionType:
+        description: sysext | confext
+        type: string
+      order:
+        type: integer
+      pinnedVersion:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   store.ArtifactRecord:
     properties:
       arch:
@@ -257,6 +352,8 @@ definitions:
         type: string
       dockerfile:
         type: string
+      extensionHierarchies:
+        $ref: '#/definitions/store.ExtensionHierarchies'
       fips:
         type: boolean
       gce:
@@ -305,6 +402,17 @@ definitions:
         type: string
       vhd:
         type: boolean
+    type: object
+  store.ExtensionHierarchies:
+    properties:
+      confext:
+        items:
+          type: string
+        type: array
+      sysext:
+        items:
+          type: string
+        type: array
     type: object
   store.ManagedNode:
     properties:
@@ -524,6 +632,100 @@ paths:
       summary: Update artifact metadata (name / saved flag)
       tags:
       - Artifacts
+  /api/v1/artifacts/{id}/bundle-extensions:
+    get:
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactExtensionBundle'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List bundled extensions for an artifact
+      tags:
+      - Artifacts
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement set
+        in: body
+        name: body
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/handlers.setBundleEntry'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactExtensionBundle'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Replace bundled extensions for an artifact
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/bundle-resolve:
+    post:
+      description: Returns the bundle entries with concrete download URLs and resolved
+        versions, ready to be passed as the `extensions` arg of an `upgrade` phonehome
+        command.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.ResolvedBundleEntry'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Resolve bundled extensions for upgrade dispatch
+      tags:
+      - Artifacts
   /api/v1/artifacts/{id}/cancel:
     post:
       parameters:
@@ -562,6 +764,35 @@ paths:
       summary: Get build log snapshot
       tags:
       - Artifacts
+  /api/v1/extensions:
+    post:
+      consumes:
+      - application/json
+      description: Kicks off an async sysext/confext build. Subscribe to /api/v1/ws/ui
+        or poll GET /api/v1/extensions/{id}.
+      parameters:
+      - description: Build specification
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.createExtensionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/builder.ExtensionBuildStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Start an extension build
+      tags:
+      - Extensions
   /api/v1/groups:
     get:
       produces:
@@ -777,6 +1008,34 @@ paths:
       summary: Queue a command for a single node
       tags:
       - Commands
+  /api/v1/nodes/{nodeID}/decommission:
+    post:
+      description: Sends an `unregister` command to the node if it is currently online.
+        The UI subscribes to the returned commandID via the UI WebSocket for live
+        progress, then issues DELETE /api/v1/nodes/{nodeID} when the command reaches
+        Completed. When the node is offline, this returns nodeOnline=false with an
+        empty commandID — the operator should then force-delete and run `kairos-agent
+        phone-home uninstall` on the box manually.
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.decommissionResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Dispatch remote teardown before deleting a node
+      tags:
+      - Nodes
   /api/v1/nodes/{nodeID}/group:
     put:
       consumes:

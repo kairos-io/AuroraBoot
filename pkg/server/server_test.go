@@ -83,7 +83,7 @@ func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
 
 type fakeCommandStore struct{}
 
-func (f *fakeCommandStore) Create(_ context.Context, _ *store.NodeCommand) error     { return nil }
+func (f *fakeCommandStore) Create(_ context.Context, _ *store.NodeCommand) error { return nil }
 func (f *fakeCommandStore) GetByID(_ context.Context, _ string) (*store.NodeCommand, error) {
 	return nil, fmt.Errorf("not found")
 }
@@ -97,7 +97,7 @@ func (f *fakeCommandStore) UpdateStatus(_ context.Context, _ string, _ string, _
 func (f *fakeCommandStore) ListByNode(_ context.Context, _ string) ([]*store.NodeCommand, error) {
 	return nil, nil
 }
-func (f *fakeCommandStore) Delete(_ context.Context, _ string) error        { return nil }
+func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }
 
 type fakeGroupStore struct{}
@@ -139,7 +139,7 @@ var _ = Describe("Server", func() {
 			Builder:       &fakeBuilder{},
 			AdminPassword: "admin-pass",
 			RegToken:      "reg-token",
-			AuroraBootURL:   "http://localhost:8080",
+			AuroraBootURL: "http://localhost:8080",
 		})
 		e = httptest.NewServer(echoApp)
 	})

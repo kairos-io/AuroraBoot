@@ -106,11 +106,11 @@ type artifactOutputs struct {
 }
 
 type signingConfig struct {
-	UKIKeySetID        string `json:"ukiKeySetId"`
-	UKISecureBootKey   string `json:"ukiSecureBootKey"`
-	UKISecureBootCert  string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey       string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir   string `json:"ukiPublicKeysDir"`
+	UKIKeySetID         string `json:"ukiKeySetId"`
+	UKISecureBootKey    string `json:"ukiSecureBootKey"`
+	UKISecureBootCert   string `json:"ukiSecureBootCert"`
+	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
+	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
 }
 
@@ -357,34 +357,34 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// Persist the artifact record in the store if available.
 	if h.store != nil {
 		rec := &store.ArtifactRecord{
-			ID:                status.ID,
-			Name:              req.Name,
-			Phase:             status.Phase,
-			Message:           status.Message,
-			BaseImage:         req.BaseImage,
-			KairosVersion:     req.KairosVersion,
-			Model:             req.Model,
-			ISO:               req.Outputs.ISO,
-			CloudImage:        req.Outputs.CloudImage,
-			Netboot:           req.Outputs.Netboot,
-			FIPS:              req.Outputs.FIPS,
-			TrustedBoot:       req.Outputs.TrustedBoot,
-			Arch:              req.Arch,
-			Variant:           req.Variant,
-			RawDisk:           req.Outputs.RawDisk,
-			Tar:               req.Outputs.Tar,
-			GCE:               req.Outputs.GCE,
-			VHD:               req.Outputs.VHD,
-			UKI:               req.Outputs.UKI,
-			KairosInitImage:   req.KairosInitImage,
-			AutoInstall:       autoInstall,
-			RegisterAuroraBoot:  registerAuroraBoot,
-			Dockerfile:        req.Dockerfile,
-			CloudConfig:       opts.CloudConfig,
-			KubernetesDistro:  req.KubernetesDistro,
-			KubernetesVersion: req.KubernetesVersion,
-			TargetGroupID:     req.Provisioning.TargetGroupId,
-			OverlayRootfs:     req.OverlayRootfs,
+			ID:                 status.ID,
+			Name:               req.Name,
+			Phase:              status.Phase,
+			Message:            status.Message,
+			BaseImage:          req.BaseImage,
+			KairosVersion:      req.KairosVersion,
+			Model:              req.Model,
+			ISO:                req.Outputs.ISO,
+			CloudImage:         req.Outputs.CloudImage,
+			Netboot:            req.Outputs.Netboot,
+			FIPS:               req.Outputs.FIPS,
+			TrustedBoot:        req.Outputs.TrustedBoot,
+			Arch:               req.Arch,
+			Variant:            req.Variant,
+			RawDisk:            req.Outputs.RawDisk,
+			Tar:                req.Outputs.Tar,
+			GCE:                req.Outputs.GCE,
+			VHD:                req.Outputs.VHD,
+			UKI:                req.Outputs.UKI,
+			KairosInitImage:    req.KairosInitImage,
+			AutoInstall:        autoInstall,
+			RegisterAuroraBoot: registerAuroraBoot,
+			Dockerfile:         req.Dockerfile,
+			CloudConfig:        opts.CloudConfig,
+			KubernetesDistro:   req.KubernetesDistro,
+			KubernetesVersion:  req.KubernetesVersion,
+			TargetGroupID:      req.Provisioning.TargetGroupId,
+			OverlayRootfs:      req.OverlayRootfs,
 			ExtensionHierarchies: store.ExtensionHierarchies{
 				Sysext:  sysHierarchies,
 				Confext: conHierarchies,

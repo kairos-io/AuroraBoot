@@ -26,8 +26,8 @@ type ExtensionSigning struct {
 type ExtensionBuildOptions struct {
 	ID            string
 	Name          string
-	Type          string   // "sysext" | "confext"
-	Arch          string   // "amd64" | "arm64" | "riscv64"
+	Type          string // "sysext" | "confext"
+	Arch          string // "amd64" | "arm64" | "riscv64"
 	Version       string
 	Source        ExtensionSource
 	Signing       ExtensionSigning

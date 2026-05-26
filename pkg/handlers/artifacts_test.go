@@ -129,7 +129,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 	Describe("DELETE /artifacts/:id", func() {
 		var (
-			as             *fakeArtifactStore
+			as               *fakeArtifactStore
 			handlerWithStore *handlers.ArtifactHandler
 		)
 
@@ -173,7 +173,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 	Describe("DELETE /artifacts/failed (ClearFailed)", func() {
 		var (
-			as             *fakeArtifactStore
+			as               *fakeArtifactStore
 			handlerWithStore *handlers.ArtifactHandler
 		)
 

@@ -199,6 +199,152 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/artifacts/{id}/bundle-extensions": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "List bundled extensions for an artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.ArtifactExtensionBundle"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Replace bundled extensions for an artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement set",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.setBundleEntry"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.ArtifactExtensionBundle"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}/bundle-resolve": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the bundle entries with concrete download URLs and resolved versions, ready to be passed as the ` + "`" + `extensions` + "`" + ` arg of an ` + "`" + `upgrade` + "`" + ` phonehome command.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Resolve bundled extensions for upgrade dispatch",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.ResolvedBundleEntry"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/artifacts/{id}/cancel": {
             "post": {
                 "security": [
@@ -255,6 +401,51 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "string"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/extensions": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Kicks off an async sysext/confext build. Subscribe to /api/v1/ws/ui or poll GET /api/v1/extensions/{id}.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Start an extension build",
+                "parameters": [
+                    {
+                        "description": "Build specification",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.createExtensionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/builder.ExtensionBuildStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }
@@ -658,6 +849,43 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nodes/{nodeID}/decommission": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Sends an ` + "`" + `unregister` + "`" + ` command to the node if it is currently online. The UI subscribes to the returned commandID via the UI WebSocket for live progress, then issues DELETE /api/v1/nodes/{nodeID} when the command reaches Completed. When the node is offline, this returns nodeOnline=false with an empty commandID — the operator should then force-delete and run ` + "`" + `kairos-agent phone-home uninstall` + "`" + ` on the box manually.",
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Dispatch remote teardown before deleting a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.decommissionResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nodes/{nodeID}/group": {
             "put": {
                 "security": [
@@ -1005,6 +1233,26 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "builder.ExtensionBuildStatus": {
+            "type": "object",
+            "properties": {
+                "containerImage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "rawFile": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.APIArtifactOutputs": {
             "type": "object",
             "properties": {
@@ -1043,6 +1291,13 @@ const docTemplate = `{
         "handlers.APIArtifactProvisioning": {
             "type": "object",
             "properties": {
+                "allowedCommands": {
+                    "description": "AllowedCommands is the explicit list emitted under phonehome.allowed_commands.\nNil means \"use AuroraBoot's safe default set\". An empty slice means deny-all\n(observe-only node) — the UI warns when the operator picks this.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "autoInstall": {
                     "type": "boolean"
                 },
@@ -1336,6 +1591,133 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.ResolvedBundleEntry": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.createExtensionRequest": {
+            "type": "object",
+            "properties": {
+                "arch": {
+                    "type": "string"
+                },
+                "hierarchies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "serviceReload": {
+                    "type": "boolean"
+                },
+                "signingKeySetId": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/handlers.extensionSourceReq"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.decommissionResponse": {
+            "type": "object",
+            "properties": {
+                "commandID": {
+                    "type": "string"
+                },
+                "nodeOnline": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.extensionSourceReq": {
+            "type": "object",
+            "properties": {
+                "artifactId": {
+                    "type": "string"
+                },
+                "baseImage": {
+                    "type": "string"
+                },
+                "buildContextDir": {
+                    "type": "string"
+                },
+                "dockerfile": {
+                    "type": "string"
+                },
+                "extraSteps": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.setBundleEntry": {
+            "type": "object",
+            "properties": {
+                "extensionName": {
+                    "type": "string"
+                },
+                "extensionType": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "pinnedVersion": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.ArtifactExtensionBundle": {
+            "type": "object",
+            "properties": {
+                "artifactId": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "extensionName": {
+                    "type": "string"
+                },
+                "extensionType": {
+                    "description": "sysext | confext",
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "pinnedVersion": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "store.ArtifactRecord": {
             "type": "object",
             "properties": {
@@ -1368,6 +1750,9 @@ const docTemplate = `{
                 },
                 "dockerfile": {
                     "type": "string"
+                },
+                "extensionHierarchies": {
+                    "$ref": "#/definitions/store.ExtensionHierarchies"
                 },
                 "fips": {
                     "type": "boolean"
@@ -1440,6 +1825,23 @@ const docTemplate = `{
                 },
                 "vhd": {
                     "type": "boolean"
+                }
+            }
+        },
+        "store.ExtensionHierarchies": {
+            "type": "object",
+            "properties": {
+                "confext": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sysext": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
