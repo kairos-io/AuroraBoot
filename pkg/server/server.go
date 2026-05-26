@@ -84,6 +84,13 @@ func New(cfg Config) *echo.Echo {
 	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, hub, regToken, cfg.AuroraBootURL)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	var extensionHandler *handlers.ExtensionHandler
+	if cfg.ExtensionBuilder != nil {
+		extensionHandler = handlers.NewExtensionHandler(
+			cfg.ExtensionBuilder, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore,
+			cfg.SecureBootKeySetStore, cfg.ArtifactsDir,
+		)
+	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile)
 
@@ -149,11 +156,29 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/artifacts/:id/cancel", artifactHandler.Cancel)
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
+	adminGroup.GET("/artifacts/:id/bundle-extensions", artifactHandler.ListBundleExtensions)
+	adminGroup.PUT("/artifacts/:id/bundle-extensions", artifactHandler.SetBundleExtensions)
+	adminGroup.POST("/artifacts/:id/bundle-resolve", artifactHandler.ResolveBundle)
+
+	// Extension routes are registered only when the extension builder is wired
+	// (the in-process builder is constructed in internal/cmd/web.go).
+	if extensionHandler != nil {
+		adminGroup.POST("/extensions", extensionHandler.Create)
+		adminGroup.GET("/extensions", extensionHandler.List)
+		adminGroup.GET("/extensions/:id", extensionHandler.Get)
+		adminGroup.PATCH("/extensions/:id", extensionHandler.Update)
+		adminGroup.DELETE("/extensions/:id", extensionHandler.Delete)
+		adminGroup.GET("/extensions/:id/logs", extensionHandler.GetLogs)
+		adminGroup.POST("/extensions/:id/cancel", extensionHandler.Cancel)
+	}
 
 	// Artifact downloads — accepts admin password OR node API key.
 	// Registered before the admin group catches them, using inline middleware.
 	dlAuth := auth.DownloadMiddleware(cfg.AdminPassword, cfg.NodeStore)
 	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, dlAuth)
+	if extensionHandler != nil {
+		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download, dlAuth)
+	}
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage, dlAuth)
 
 	// UI WebSocket (admin auth)
