@@ -89,6 +89,18 @@ export interface CreateArtifactInput {
   signing: CreateArtifactSigning;
   provisioning: CreateArtifactProvisioning;
   cloudConfig?: string;
+
+  // Extension integration (Plan 2d):
+  // - extensionHierarchies bakes a SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES drop-in
+  //   so the OS image accepts overlays on the listed paths out of the box.
+  // - bundledExtensions ride along with every upgrade to this artifact.
+  extensionHierarchies?: { sysext: string[]; confext: string[] };
+  bundledExtensions?: Array<{
+    name: string;
+    type: "sysext" | "confext";
+    pinnedVersion?: string;
+    order?: number;
+  }>;
 }
 
 export interface SecureBootKeySet {

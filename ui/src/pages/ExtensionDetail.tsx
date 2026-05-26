@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { InstallExtensionDialog } from "@/components/InstallExtensionDialog";
 
 export function ExtensionDetail() {
   const { id = "" } = useParams();
@@ -21,6 +22,7 @@ export function ExtensionDetail() {
   const [logs, setLogs] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [installOpen, setInstallOpen] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -98,6 +100,12 @@ export function ExtensionDetail() {
             </a>
           )}
           <Button
+            disabled={ext.phase !== "Ready"}
+            onClick={() => setInstallOpen(true)}
+          >
+            Install on group…
+          </Button>
+          <Button
             variant="outline"
             size="sm"
             onClick={() => setConfirmDelete(true)}
@@ -153,6 +161,12 @@ export function ExtensionDetail() {
         title="Delete extension"
         description={`Delete ${ext.name}? Artifacts that bundle this extension by name will block the deletion.`}
         onConfirm={onDelete}
+      />
+
+      <InstallExtensionDialog
+        open={installOpen}
+        onOpenChange={setInstallOpen}
+        extension={ext}
       />
     </div>
   );
