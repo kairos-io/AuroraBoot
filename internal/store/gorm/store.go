@@ -44,7 +44,7 @@ func New(dsn string) (*Store, error) {
 		}
 	}
 
-	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.ExtensionRecord{}); err != nil {
+	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.ExtensionRecord{}, &store.ArtifactExtensionBundle{}); err != nil {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 

@@ -207,6 +207,20 @@ type ExtensionRecord struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// ArtifactExtensionBundle links an artifact to an extension that should ride
+// with every upgrade to that artifact. Entries are by (ArtifactID,
+// ExtensionName) — the actual extension UUID is resolved at dispatch time so
+// the bundle survives rebuilds of the named extension.
+type ArtifactExtensionBundle struct {
+	ArtifactID    string `gorm:"primaryKey" json:"artifactId"`
+	ExtensionName string `gorm:"primaryKey" json:"extensionName"`
+	ExtensionType string `                  json:"extensionType"` // sysext | confext
+	PinnedVersion string `                  json:"pinnedVersion,omitempty"`
+	Order         int    `                  json:"order"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+}
+
 // ArtifactStore manages build artifact records.
 type ArtifactStore interface {
 	Create(ctx context.Context, rec *ArtifactRecord) error

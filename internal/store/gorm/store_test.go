@@ -585,4 +585,25 @@ var _ = Describe("Gorm Store", func() {
 			Expect(got.Hierarchies).To(Equal([]string{"/opt", "/srv"}))
 		})
 	})
+
+	Describe("ArtifactExtensionBundle schema", func() {
+		It("creates the table and round-trips an entry", func() {
+			Expect(s.UnsafeDB().Create(&store.ArtifactExtensionBundle{
+				ArtifactID:    "a-1",
+				ExtensionName: "tailscale-agent",
+				ExtensionType: "sysext",
+				PinnedVersion: "",
+				Order:         0,
+			}).Error).To(Succeed())
+			var got store.ArtifactExtensionBundle
+			Expect(s.UnsafeDB().First(&got, "artifact_id = ? AND extension_name = ?", "a-1", "tailscale-agent").Error).To(Succeed())
+			Expect(got.ExtensionType).To(Equal("sysext"))
+		})
+
+		It("rejects duplicate (artifact, name) pairs", func() {
+			row := store.ArtifactExtensionBundle{ArtifactID: "a-2", ExtensionName: "x", ExtensionType: "sysext"}
+			Expect(s.UnsafeDB().Create(&row).Error).To(Succeed())
+			Expect(s.UnsafeDB().Create(&row).Error).To(HaveOccurred())
+		})
+	})
 })
