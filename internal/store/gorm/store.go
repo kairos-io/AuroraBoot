@@ -541,6 +541,13 @@ func (s *Store) ExtensionFindByNameAndVersion(ctx context.Context, extType, name
 	return &rec, nil
 }
 
+func (s *Store) ExtensionAppendLog(ctx context.Context, id, chunk string) error {
+	return s.db.WithContext(ctx).
+		Model(&store.ExtensionRecord{}).
+		Where("id = ?", id).
+		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", chunk)).Error
+}
+
 // --- ArtifactExtensionBundleStore ---
 
 func (s *Store) BundleListForArtifact(ctx context.Context, artifactID string) ([]store.ArtifactExtensionBundle, error) {

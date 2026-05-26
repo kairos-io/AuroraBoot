@@ -167,6 +167,31 @@ func (a *BMCTargetStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.BMCTargetDelete(ctx, id)
 }
 
+// ExtensionStoreAdapter adapts Store to the store.ExtensionStore interface.
+type ExtensionStoreAdapter struct{ S *Store }
+
+func (a *ExtensionStoreAdapter) Create(ctx context.Context, e *store.ExtensionRecord) error {
+	return a.S.ExtensionCreate(ctx, e)
+}
+func (a *ExtensionStoreAdapter) GetByID(ctx context.Context, id string) (*store.ExtensionRecord, error) {
+	return a.S.ExtensionGetByID(ctx, id)
+}
+func (a *ExtensionStoreAdapter) List(ctx context.Context) ([]store.ExtensionRecord, error) {
+	return a.S.ExtensionList(ctx)
+}
+func (a *ExtensionStoreAdapter) Delete(ctx context.Context, id string) error {
+	return a.S.ExtensionDelete(ctx, id)
+}
+func (a *ExtensionStoreAdapter) FindLatestReadyByName(ctx context.Context, extType, name string) (*store.ExtensionRecord, error) {
+	return a.S.ExtensionFindLatestReadyByName(ctx, extType, name)
+}
+func (a *ExtensionStoreAdapter) FindByNameAndVersion(ctx context.Context, extType, name, version string) (*store.ExtensionRecord, error) {
+	return a.S.ExtensionFindByNameAndVersion(ctx, extType, name, version)
+}
+func (a *ExtensionStoreAdapter) AppendLog(ctx context.Context, id, chunk string) error {
+	return a.S.ExtensionAppendLog(ctx, id, chunk)
+}
+
 // DeploymentStoreAdapter adapts Store to the store.DeploymentStore interface.
 type DeploymentStoreAdapter struct{ S *Store }
 

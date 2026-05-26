@@ -676,6 +676,15 @@ var _ = Describe("Gorm Store", func() {
 			Expect(err).ToNot(HaveOccurred())
 			Expect(got.ID).To(Equal("v74"))
 		})
+
+		It("AppendLog appends chunks across calls", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "log-1", Name: "x", Type: "sysext", Phase: "Building"})).To(Succeed())
+			Expect(s.ExtensionAppendLog(ctx, "log-1", "step 1...\n")).To(Succeed())
+			Expect(s.ExtensionAppendLog(ctx, "log-1", "step 2...\n")).To(Succeed())
+			got, err := s.ExtensionGetByID(ctx, "log-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got.Logs).To(Equal("step 1...\nstep 2...\n"))
+		})
 	})
 
 	Describe("ArtifactExtensionBundleStore", func() {

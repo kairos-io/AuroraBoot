@@ -256,6 +256,7 @@ type ExtensionStore interface {
 	Delete(ctx context.Context, id string) error
 	FindLatestReadyByName(ctx context.Context, extType, name string) (*ExtensionRecord, error)
 	FindByNameAndVersion(ctx context.Context, extType, name, version string) (*ExtensionRecord, error)
+	AppendLog(ctx context.Context, id, chunk string) error
 }
 
 // ArtifactExtensionBundleStore manages the per-artifact list of bundled
