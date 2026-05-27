@@ -48,6 +48,12 @@ type AgentHandler struct {
 	Hub      *Hub
 	Nodes    store.NodeStore
 	Commands store.CommandStore
+	// OnCommandStatus is invoked after the agent's command-status report has
+	// been persisted. The server uses this hook to update node_extensions
+	// tracking for the new `extension` command and for compound `upgrade`s
+	// that carry an extensions[] payload. nil-safe — if unset, only the
+	// command-status row is updated. Wired in pkg/server/server.go.
+	OnCommandStatus func(ctx context.Context, nodeID string, cmd *store.NodeCommand)
 }
 
 // HandleAgentWS handles GET /api/v1/ws?token=<apiKey>.
@@ -145,6 +151,11 @@ func (h *AgentHandler) handleCommandStatus(data json.RawMessage) {
 	ctx := context.Background()
 	if err := h.Commands.UpdateStatus(ctx, status.ID, status.Phase, status.Result); err != nil {
 		log.Printf("ws: failed to update command status for %s: %v", status.ID, err)
+	}
+	if status.Phase == store.CommandCompleted && h.OnCommandStatus != nil {
+		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
+			h.OnCommandStatus(ctx, cmd.ManagedNodeID, cmd)
+		}
 	}
 
 	if h.Hub != nil && h.Hub.UI != nil {

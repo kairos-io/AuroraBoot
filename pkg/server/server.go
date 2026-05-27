@@ -99,6 +99,10 @@ func New(cfg Config) *echo.Echo {
 		Hub:      hub,
 		Nodes:    cfg.NodeStore,
 		Commands: cfg.CommandStore,
+		// Agents report command results over the WS, so the node_extensions
+		// tracking write must hook in here too (not just on the REST
+		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
+		OnCommandStatus: cmdHandler.ApplyExtensionTracking,
 	}
 	uiWSHandler := &ws.UIHandler{Hub: hub}
 

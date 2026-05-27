@@ -246,6 +246,14 @@ type bundledExtension struct {
 	Version string `json:"version,omitempty"`
 }
 
+// ApplyExtensionTracking is the public entry point so callers outside this
+// package (notably the WebSocket command-status handler at
+// pkg/ws/handler.go) can drive node_extensions writes on success. Mirrors
+// the body of applyExtensionTracking.
+func (h *CommandHandler) ApplyExtensionTracking(ctx context.Context, nodeID string, cmd *store.NodeCommand) {
+	h.applyExtensionTracking(ctx, nodeID, cmd)
+}
+
 func (h *CommandHandler) applyExtensionTracking(ctx context.Context, nodeID string, cmd *store.NodeCommand) {
 	switch cmd.Command {
 	case store.CmdExtension:
