@@ -125,10 +125,10 @@ var DefaultDockerBuildFunc DockerBuildFunc = func(ctx context.Context, args Dock
 // DefaultAurorabootCLIFunc shells out to this binary's sysext|confext
 // subcommand. The command lives in internal/cmd/sysext.go.
 var DefaultAurorabootCLIFunc AurorabootCLIFunc = func(ctx context.Context, a AurorabootCLIArgs) error {
-	cliArgs := []string{a.Type, a.Name, a.SourceImage,
-		"--arch", a.Arch,
-		"--output", a.OutputDir,
-	}
+	// urfave/cli v2 only parses flags that appear BEFORE positional args;
+	// flags placed after `<name> <container>` are silently dropped. Keep
+	// every flag in front of the positional pair.
+	cliArgs := []string{a.Type, "--arch", a.Arch, "--output", a.OutputDir}
 	if a.PrivateKey != "" {
 		cliArgs = append(cliArgs, "--private-key", a.PrivateKey)
 	}
@@ -141,6 +141,7 @@ var DefaultAurorabootCLIFunc AurorabootCLIFunc = func(ctx context.Context, a Aur
 	if a.ServiceReload && a.Type == "sysext" {
 		cliArgs = append(cliArgs, "--service-reload")
 	}
+	cliArgs = append(cliArgs, a.Name, a.SourceImage)
 	cmd := exec.CommandContext(ctx, "auroraboot", cliArgs...)
 	if a.Logger != nil {
 		cmd.Stdout = a.Logger
