@@ -390,7 +390,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 				Confext: conHierarchies,
 			},
 		}
-		_ = h.store.Create(ctx, rec)
+		// The builder.Build above synchronously creates a minimal record
+		// (internal/builder/auroraboot/builder.go:203) before kicking off
+		// the goroutine. That Create wins the unique-id race; this handler's
+		// Create silently dups and the user-facing fields here (notably
+		// ExtensionHierarchies) get lost. Update brings the handler's view
+		// in alongside the builder's. The status fields (Phase/Message) are
+		// the builder's responsibility from this point on, so we leave them
+		// to the goroutine to overwrite via Update later.
+		if err := h.store.Update(ctx, rec); err != nil {
+			c.Logger().Errorf("persist artifact handler-side fields for %s: %v", status.ID, err)
+		}
 	}
 
 	// Persist bundle rows once the artifact has an ID. Errors here are
