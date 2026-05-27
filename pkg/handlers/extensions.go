@@ -143,6 +143,21 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
 	}
+	// Builder.Build synchronously created the ExtensionRecord but doesn't know
+	// about the original SigningKeySetID — only the resolved file paths it
+	// received. Mirror what the artifact handler does: write the handler-only
+	// fields after the builder's initial Save so the persisted record carries
+	// the keyset linkage operators expect on GET.
+	if req.SigningKeySetID != "" && h.store != nil {
+		if rec, gerr := h.store.GetByID(ctx, status.ID); gerr == nil && rec != nil {
+			rec.SigningKeySetID = req.SigningKeySetID
+			// ExtensionStore.Create is implemented as a GORM Save (upsert), so
+			// this updates the existing row the builder just created.
+			if err := h.store.Create(ctx, rec); err != nil {
+				c.Logger().Errorf("persist signingKeySetId for %s: %v", status.ID, err)
+			}
+		}
+	}
 	return c.JSON(http.StatusCreated, status)
 }
 
