@@ -39,7 +39,10 @@ func buildRaw(aurora *Auroraboot, args ...string) (string, error) {
 //
 // The container image used as the extraction source is intentionally tiny
 // (alpine) so the specs stay fast: each build is a pull + systemd-repart run.
-var _ = Describe("sysext/confext generation", Label("sysext", "e2e"), func() {
+// Serial: each spec runs `systemd-repart --make-ddi`, which allocates host loop
+// devices. Running these in parallel (ginkgo -p) with each other or with the
+// other loop-heavy suites (see disks_test.go) exhausts the host loop pool.
+var _ = Describe("sysext/confext generation", Label("sysext", "e2e"), Serial, func() {
 	const srcImage = "alpine:3.21"
 
 	var resultDir string

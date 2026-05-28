@@ -172,7 +172,10 @@ func isLoopbackRace(logs string) bool {
 		strings.Contains(logs, "make loopback device")
 }
 
-var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered, func() {
+// Serial: builds run `systemd-repart --make-ddi` (host loop devices); keep this
+// suite off the parallel path so it doesn't contend with the other loop-heavy
+// suites. Ordered: specs share one web-server container started in BeforeAll.
+var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered, Serial, func() {
 	var ws *webServer
 	var cleanup func()
 
@@ -395,7 +398,10 @@ const (
 	agentOemDir        = "/tmp/auroraboot-e2e-node-oem"
 )
 
-var _ = Describe("extensions agent flow", Label("extensions-agent", "e2e"), Ordered, func() {
+// Serial: the BeforeAll build runs `systemd-repart --make-ddi` (host loop
+// devices) and the tier drives a live node container; keep it off the parallel
+// path. Ordered: register -> install -> remove share state across specs.
+var _ = Describe("extensions agent flow", Label("extensions-agent", "e2e"), Ordered, Serial, func() {
 	var ws *webServer
 	var cleanup func()
 	var agentImage string
