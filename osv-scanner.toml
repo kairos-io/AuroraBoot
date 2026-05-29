@@ -12,3 +12,24 @@ reason = "No patched github.com/docker/docker release yet (Fixed in N/A per govu
 id = "GO-2026-4887"
 ignoreUntil = 2026-08-16
 reason = "No patched github.com/docker/docker release yet (Fixed in N/A per govulncheck); client-only Docker Engine API usage."
+
+# docker cp / archive (PUT /containers/{id}/archive) daemon-side bugs: a malicious
+# container can escape to the host that runs dockerd. These do not apply to AuroraBoot:
+# it does not run the Docker daemon, does not import github.com/docker/docker (go mod why:
+# "main module does not need package"), and the only fix is the separate moby/moby/v2
+# module (>=2.0.0-beta.14) — the v1 docker/docker line (<=28.5.2) has no patched release.
+
+[[IgnoredVulns]]
+id = "GHSA-rg2x-37c3-w2rh"
+ignoreUntil = 2026-08-16
+reason = "Daemon-side `docker cp` bind-mount redirection; AuroraBoot does not run dockerd nor import docker/docker, and no patched v1 release exists."
+
+[[IgnoredVulns]]
+id = "GHSA-vp62-88p7-qqf5"
+ignoreUntil = 2026-08-16
+reason = "Daemon-side `docker cp` symlink-swap file creation; AuroraBoot does not run dockerd nor import docker/docker, and no patched v1 release exists."
+
+[[IgnoredVulns]]
+id = "GHSA-x86f-5xw2-fm2r"
+ignoreUntil = 2026-08-16
+reason = "Daemon-side PUT /containers/{id}/archive host code execution; AuroraBoot does not run dockerd nor import docker/docker, and no patched v1 release exists."

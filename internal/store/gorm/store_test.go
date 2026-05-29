@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/kairos-io/AuroraBoot/pkg/store"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
 
 var _ = Describe("Gorm Store", func() {
@@ -524,6 +524,245 @@ var _ = Describe("Gorm Store", func() {
 			records, err := s.ArtifactList(ctx)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(records).To(HaveLen(2))
+		})
+	})
+
+	Describe("ArtifactRecord.ExtensionHierarchies", func() {
+		It("persists and reloads the hierarchies map", func() {
+			rec := &store.ArtifactRecord{
+				ID:        "art-hier-1",
+				Phase:     store.ArtifactReady,
+				BaseImage: "img-hier",
+				ExtensionHierarchies: store.ExtensionHierarchies{
+					Sysext: []string{"/opt", "/srv"},
+				},
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			found, err := s.ArtifactGetByID(ctx, rec.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ExtensionHierarchies.Sysext).To(Equal([]string{"/opt", "/srv"}))
+			Expect(found.ExtensionHierarchies.Confext).To(BeNil())
+		})
+
+		It("defaults to a zero value for legacy rows", func() {
+			rec := &store.ArtifactRecord{
+				ID:        "art-hier-2",
+				Phase:     store.ArtifactReady,
+				BaseImage: "img-hier-legacy",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			found, err := s.ArtifactGetByID(ctx, rec.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.ExtensionHierarchies.Sysext).To(BeNil())
+			Expect(found.ExtensionHierarchies.Confext).To(BeNil())
+		})
+	})
+
+	Describe("ExtensionRecord schema", func() {
+		It("creates the extensions table on AutoMigrate", func() {
+			var count int64
+			Expect(s.UnsafeDB().Model(&store.ExtensionRecord{}).Count(&count).Error).To(Succeed())
+			Expect(count).To(BeZero())
+		})
+
+		It("round-trips Hierarchies", func() {
+			rec := &store.ExtensionRecord{
+				ID:          "e-1",
+				Name:        "tailscale-agent",
+				Type:        "sysext",
+				Phase:       "Ready",
+				Arch:        "amd64",
+				Version:     "v1.74.0",
+				SourceMode:  "image",
+				SourceImage: "quay.io/myorg/tailscale:1.74",
+				Hierarchies: []string{"/opt", "/srv"},
+			}
+			Expect(s.UnsafeDB().Create(rec).Error).To(Succeed())
+			var got store.ExtensionRecord
+			Expect(s.UnsafeDB().First(&got, "id = ?", "e-1").Error).To(Succeed())
+			Expect(got.Hierarchies).To(Equal([]string{"/opt", "/srv"}))
+		})
+	})
+
+	Describe("ArtifactExtensionBundle schema", func() {
+		It("creates the table and round-trips an entry", func() {
+			Expect(s.UnsafeDB().Create(&store.ArtifactExtensionBundle{
+				ArtifactID:    "a-1",
+				ExtensionName: "tailscale-agent",
+				ExtensionType: "sysext",
+				PinnedVersion: "",
+				Order:         0,
+			}).Error).To(Succeed())
+			var got store.ArtifactExtensionBundle
+			Expect(s.UnsafeDB().First(&got, "artifact_id = ? AND extension_name = ?", "a-1", "tailscale-agent").Error).To(Succeed())
+			Expect(got.ExtensionType).To(Equal("sysext"))
+		})
+
+		It("rejects duplicate (artifact, name) pairs", func() {
+			row := store.ArtifactExtensionBundle{ArtifactID: "a-2", ExtensionName: "x", ExtensionType: "sysext"}
+			Expect(s.UnsafeDB().Create(&row).Error).To(Succeed())
+			Expect(s.UnsafeDB().Create(&row).Error).To(HaveOccurred())
+		})
+	})
+
+	Describe("NodeExtensionRow schema", func() {
+		It("round-trips a row", func() {
+			row := store.NodeExtensionRow{
+				NodeID:      "n-1",
+				Name:        "tailscale-agent",
+				Type:        "sysext",
+				Version:     "v1.74.0",
+				BootState:   "common",
+				InstalledAt: time.Now().UTC().Truncate(time.Second),
+				ExtensionID: "e-1",
+			}
+			Expect(s.UnsafeDB().Create(&row).Error).To(Succeed())
+			var got store.NodeExtensionRow
+			Expect(s.UnsafeDB().First(&got, "node_id = ? AND name = ? AND type = ? AND boot_state = ?",
+				"n-1", "tailscale-agent", "sysext", "common").Error).To(Succeed())
+			Expect(got.Version).To(Equal("v1.74.0"))
+		})
+
+		It("rejects duplicate composite keys", func() {
+			row := store.NodeExtensionRow{NodeID: "n-2", Name: "x", Type: "sysext", BootState: "common"}
+			Expect(s.UnsafeDB().Create(&row).Error).To(Succeed())
+			Expect(s.UnsafeDB().Create(&row).Error).To(HaveOccurred())
+		})
+	})
+
+	Describe("ExtensionStore", func() {
+		It("Create / GetByID round-trips", func() {
+			ext := &store.ExtensionRecord{ID: "e-1", Name: "tailscale-agent", Type: "sysext", Phase: "Ready", Arch: "amd64", Version: "v1.74.0"}
+			Expect(s.ExtensionCreate(ctx, ext)).To(Succeed())
+			got, err := s.ExtensionGetByID(ctx, "e-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got.Name).To(Equal("tailscale-agent"))
+		})
+
+		It("List orders by created_at descending", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "old", Name: "x", Type: "sysext", Phase: "Ready", CreatedAt: time.Now().Add(-1 * time.Hour)})).To(Succeed())
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "new", Name: "y", Type: "sysext", Phase: "Ready", CreatedAt: time.Now()})).To(Succeed())
+			list, err := s.ExtensionList(ctx)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(list).To(HaveLen(2))
+			Expect(list[0].ID).To(Equal("new"))
+			Expect(list[1].ID).To(Equal("old"))
+		})
+
+		It("Delete removes one record", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "e-2", Name: "z", Type: "sysext", Phase: "Ready"})).To(Succeed())
+			Expect(s.ExtensionDelete(ctx, "e-2")).To(Succeed())
+			_, err := s.ExtensionGetByID(ctx, "e-2")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("FindLatestReadyByName returns the newest Ready row by created_at", func() {
+			old := &store.ExtensionRecord{ID: "f-old", Name: "tailscale", Type: "sysext", Version: "v1.72", Phase: "Ready", CreatedAt: time.Now().Add(-1 * time.Hour)}
+			newer := &store.ExtensionRecord{ID: "f-new", Name: "tailscale", Type: "sysext", Version: "v1.74", Phase: "Ready", CreatedAt: time.Now()}
+			errored := &store.ExtensionRecord{ID: "f-err", Name: "tailscale", Type: "sysext", Version: "v2.0", Phase: "Error", CreatedAt: time.Now().Add(1 * time.Hour)}
+			for _, r := range []*store.ExtensionRecord{old, newer, errored} {
+				Expect(s.ExtensionCreate(ctx, r)).To(Succeed())
+			}
+			got, derr := s.ExtensionFindLatestReadyByName(ctx, "sysext", "tailscale")
+			Expect(derr).ToNot(HaveOccurred())
+			Expect(got.ID).To(Equal("f-new"))
+		})
+
+		It("FindByNameAndVersion returns an exact match", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "v74", Name: "ts", Type: "sysext", Version: "v1.74", Phase: "Ready"})).To(Succeed())
+			got, err := s.ExtensionFindByNameAndVersion(ctx, "sysext", "ts", "v1.74")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got.ID).To(Equal("v74"))
+		})
+
+		It("AppendLog appends chunks across calls", func() {
+			Expect(s.ExtensionCreate(ctx, &store.ExtensionRecord{ID: "log-1", Name: "x", Type: "sysext", Phase: "Building"})).To(Succeed())
+			Expect(s.ExtensionAppendLog(ctx, "log-1", "step 1...\n")).To(Succeed())
+			Expect(s.ExtensionAppendLog(ctx, "log-1", "step 2...\n")).To(Succeed())
+			got, err := s.ExtensionGetByID(ctx, "log-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got.Logs).To(Equal("step 1...\nstep 2...\n"))
+		})
+	})
+
+	Describe("ArtifactExtensionBundleStore", func() {
+		It("ReplaceForArtifact replaces the entire set atomically", func() {
+			Expect(s.BundleReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-1", ExtensionName: "tailscale", ExtensionType: "sysext", Order: 0},
+				{ArtifactID: "a-1", ExtensionName: "fluent-bit", ExtensionType: "confext", Order: 1},
+			})).To(Succeed())
+
+			got, err := s.BundleListForArtifact(ctx, "a-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(HaveLen(2))
+
+			// Replace with just one entry; the other should be dropped.
+			Expect(s.BundleReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-1", ExtensionName: "tailscale", ExtensionType: "sysext"},
+			})).To(Succeed())
+			got, _ = s.BundleListForArtifact(ctx, "a-1")
+			Expect(got).To(HaveLen(1))
+			Expect(got[0].ExtensionName).To(Equal("tailscale"))
+		})
+
+		It("ArtifactsReferencingExtension lists artifacts that bundle a given name", func() {
+			Expect(s.BundleReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-1", ExtensionName: "tailscale", ExtensionType: "sysext"},
+			})).To(Succeed())
+			Expect(s.BundleReplaceForArtifact(ctx, "a-2", []store.ArtifactExtensionBundle{
+				{ArtifactID: "a-2", ExtensionName: "tailscale", ExtensionType: "sysext"},
+				{ArtifactID: "a-2", ExtensionName: "fluent-bit", ExtensionType: "confext"},
+			})).To(Succeed())
+
+			refs, err := s.BundleArtifactsReferencingExtension(ctx, "tailscale")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(refs).To(ConsistOf("a-1", "a-2"))
+		})
+	})
+
+	Describe("NodeExtensionStore", func() {
+		It("Upsert inserts a new row and updates an existing one", func() {
+			Expect(s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{
+				NodeID: "n-1", Name: "ts", Type: "sysext", BootState: "common",
+				Version: "v1.72", ExtensionID: "e-old",
+			})).To(Succeed())
+			Expect(s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{
+				NodeID: "n-1", Name: "ts", Type: "sysext", BootState: "common",
+				Version: "v1.74", ExtensionID: "e-new",
+			})).To(Succeed())
+			rows, err := s.NodeExtensionListForNode(ctx, "n-1")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(1))
+			Expect(rows[0].Version).To(Equal("v1.74"))
+			Expect(rows[0].ExtensionID).To(Equal("e-new"))
+		})
+
+		It("DeleteByName drops all rows for a name on that node", func() {
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-2", Name: "ts", Type: "sysext", BootState: "common"})
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-2", Name: "ts", Type: "sysext", BootState: "active"})
+			Expect(s.NodeExtensionDeleteByName(ctx, "n-2", "sysext", "ts")).To(Succeed())
+			rows, _ := s.NodeExtensionListForNode(ctx, "n-2")
+			Expect(rows).To(BeEmpty())
+		})
+
+		It("DeleteByScope drops the row for a specific scope only", func() {
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-3", Name: "ts", Type: "sysext", BootState: "common"})
+			_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: "n-3", Name: "ts", Type: "sysext", BootState: "active"})
+			Expect(s.NodeExtensionDeleteByScope(ctx, "n-3", "sysext", "ts", "active")).To(Succeed())
+			rows, _ := s.NodeExtensionListForNode(ctx, "n-3")
+			Expect(rows).To(HaveLen(1))
+			Expect(rows[0].BootState).To(Equal("common"))
+		})
+
+		It("ListForExtensionByName aggregates rows across nodes", func() {
+			for _, n := range []string{"n-4", "n-5", "n-6"} {
+				_ = s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{NodeID: n, Name: "ts2", Type: "sysext", BootState: "common"})
+			}
+			rows, err := s.NodeExtensionListForExtensionByName(ctx, "sysext", "ts2")
+			Expect(err).ToNot(HaveOccurred())
+			Expect(rows).To(HaveLen(3))
 		})
 	})
 })

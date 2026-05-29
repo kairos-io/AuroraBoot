@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -11,17 +13,23 @@ import (
 
 // CommandHandler handles command-related REST endpoints.
 type CommandHandler struct {
-	commands store.CommandStore
-	nodes    store.NodeStore
-	hub      *ws.Hub
+	commands       store.CommandStore
+	nodes          store.NodeStore
+	hub            *ws.Hub
+	nodeExtensions store.NodeExtensionStore
+	extensions     store.ExtensionStore
 }
 
-// NewCommandHandler creates a new CommandHandler.
-func NewCommandHandler(commands store.CommandStore, nodes store.NodeStore, hub *ws.Hub) *CommandHandler {
+// NewCommandHandler creates a new CommandHandler. The nodeExtensions and
+// extensions stores are optional; pass nil to opt out of node_extensions
+// tracking on the status callback (e.g. in tests that don't exercise it).
+func NewCommandHandler(commands store.CommandStore, nodes store.NodeStore, hub *ws.Hub, nodeExtensions store.NodeExtensionStore, extensions store.ExtensionStore) *CommandHandler {
 	return &CommandHandler{
-		commands: commands,
-		nodes:    nodes,
-		hub:      hub,
+		commands:       commands,
+		nodes:          nodes,
+		hub:            hub,
+		nodeExtensions: nodeExtensions,
+		extensions:     extensions,
 	}
 }
 
@@ -203,6 +211,7 @@ type updateStatusRequest struct {
 // UpdateStatus handles PUT /api/v1/nodes/:nodeID/commands/:commandID/status.
 func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 	commandID := c.Param("commandID")
+	nodeID := c.Param("nodeID")
 	var req updateStatusRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
@@ -212,9 +221,92 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "phase is required"})
 	}
 
-	if err := h.commands.UpdateStatus(c.Request().Context(), commandID, req.Phase, req.Result); err != nil {
+	ctx := c.Request().Context()
+	if err := h.commands.UpdateStatus(ctx, commandID, req.Phase, req.Result); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update command status"})
 	}
 
+	// Track node_extensions only on successful completion.
+	if req.Phase == store.CommandCompleted && h.nodeExtensions != nil {
+		if cmd, err := h.commands.GetByID(ctx, commandID); err == nil {
+			h.applyExtensionTracking(ctx, nodeID, cmd)
+		}
+	}
+
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// bundledExtension matches the wire shape AuroraBoot emits in
+// commands.Args["extensions"]. The optional Version field is server-side
+// only — the agent ignores unknown JSON fields.
+type bundledExtension struct {
+	Type    string `json:"type"`
+	Name    string `json:"name"`
+	Source  string `json:"source"`
+	Version string `json:"version,omitempty"`
+}
+
+// ApplyExtensionTracking is the public entry point so callers outside this
+// package (notably the WebSocket command-status handler at
+// pkg/ws/handler.go) can drive node_extensions writes on success. Mirrors
+// the body of applyExtensionTracking.
+func (h *CommandHandler) ApplyExtensionTracking(ctx context.Context, nodeID string, cmd *store.NodeCommand) {
+	h.applyExtensionTracking(ctx, nodeID, cmd)
+}
+
+func (h *CommandHandler) applyExtensionTracking(ctx context.Context, nodeID string, cmd *store.NodeCommand) {
+	switch cmd.Command {
+	case store.CmdExtension:
+		h.applyManualExtension(ctx, nodeID, cmd)
+	case store.CmdUpgrade, store.CmdUpgradeRecovery:
+		h.applyBundledExtensions(ctx, nodeID, cmd)
+	}
+}
+
+func (h *CommandHandler) applyManualExtension(ctx context.Context, nodeID string, cmd *store.NodeCommand) {
+	args := cmd.Args
+	action, extType, name, bootState := args["action"], args["type"], args["name"], args["bootState"]
+	if name == "" || extType == "" {
+		return
+	}
+	switch action {
+	case "install", "enable":
+		version := ""
+		extensionID := ""
+		if h.extensions != nil {
+			if ext, err := h.extensions.FindLatestReadyByName(ctx, extType, name); err == nil && ext != nil {
+				version = ext.Version
+				extensionID = ext.ID
+			}
+		}
+		_ = h.nodeExtensions.Upsert(ctx, &store.NodeExtensionRow{
+			NodeID: nodeID, Name: name, Type: extType, BootState: bootState,
+			Version: version, ExtensionID: extensionID,
+		})
+	case "disable":
+		_ = h.nodeExtensions.DeleteByScope(ctx, nodeID, extType, name, bootState)
+	case "remove":
+		_ = h.nodeExtensions.DeleteByName(ctx, nodeID, extType, name)
+	}
+}
+
+func (h *CommandHandler) applyBundledExtensions(ctx context.Context, nodeID string, cmd *store.NodeCommand) {
+	raw := cmd.Args["extensions"]
+	if raw == "" {
+		return
+	}
+	var list []bundledExtension
+	if err := json.Unmarshal([]byte(raw), &list); err != nil {
+		return
+	}
+	scope := "active"
+	if cmd.Command == store.CmdUpgradeRecovery {
+		scope = "recovery"
+	}
+	for _, e := range list {
+		_ = h.nodeExtensions.Upsert(ctx, &store.NodeExtensionRow{
+			NodeID: nodeID, Name: e.Name, Type: e.Type, BootState: scope,
+			Version: e.Version,
+		})
+	}
 }

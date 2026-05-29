@@ -144,6 +144,7 @@ func runWeb(c *cli.Context) error {
 	}
 
 	artifactStore := &gormstore.ArtifactStoreAdapter{S: store}
+	extensionStore := &gormstore.ExtensionStoreAdapter{S: store}
 
 	// Create the WebSocket hub up front so the builder can broadcast log
 	// chunks to subscribed UI clients as they arrive. The same hub is
@@ -153,6 +154,15 @@ func runWeb(c *cli.Context) error {
 	artifactBuilder := auroraboot.New(artifactsDir, nil, artifactStore).
 		WithLogBroadcaster(wsHub.UI)
 
+	// Extension builds drop their .raw outputs under artifactsDir/extensions/<id>/.
+	extensionsDir := filepath.Join(artifactsDir, "extensions")
+	if err := os.MkdirAll(extensionsDir, 0755); err != nil {
+		return fmt.Errorf("create extensions directory: %w", err)
+	}
+	extensionBuilder := auroraboot.NewExtensionBuilder(extensionsDir, extensionStore).
+		WithArtifactStore(artifactStore).
+		WithLogBroadcaster(wsHub.UI)
+
 	nodeStore := &gormstore.NodeStoreAdapter{S: store}
 	commandStore := &gormstore.CommandStoreAdapter{S: store}
 	groupStore := &gormstore.GroupStoreAdapter{S: store}
@@ -160,25 +170,35 @@ func runWeb(c *cli.Context) error {
 	deploymentStore := &gormstore.DeploymentStoreAdapter{S: store}
 	bmcTargetStore := &gormstore.BMCTargetStoreAdapter{S: store}
 
+	// The bundle and node-extension stores are method sets on *Store; we wrap
+	// them as adapters that satisfy the store.ArtifactExtensionBundleStore and
+	// store.NodeExtensionStore interfaces.
+	bundleStore := &gormstore.ArtifactExtensionBundleStoreAdapter{S: store}
+	nodeExtensionStore := &gormstore.NodeExtensionStoreAdapter{S: store}
+
 	netbootManager := netbootmgr.NewManager()
 
 	e := server.New(server.Config{
-		NodeStore:             nodeStore,
-		CommandStore:          commandStore,
-		GroupStore:            groupStore,
-		ArtifactStore:         artifactStore,
-		SecureBootKeySetStore: secureBootKeySetStore,
-		NetbootManager:        netbootManager,
-		DeploymentStore:       deploymentStore,
-		BMCTargetStore:        bmcTargetStore,
-		Builder:               artifactBuilder,
-		AdminPassword:         adminPassword,
-		RegToken:              regToken,
-		RegTokenFile:          regTokenFile,
-		AuroraBootURL:           externalURL,
-		ArtifactsDir:          artifactsDir,
-		KeysDir:               keysDir,
-		Hub:                   wsHub,
+		NodeStore:                    nodeStore,
+		CommandStore:                 commandStore,
+		GroupStore:                   groupStore,
+		ArtifactStore:                artifactStore,
+		SecureBootKeySetStore:        secureBootKeySetStore,
+		ExtensionStore:               extensionStore,
+		ArtifactExtensionBundleStore: bundleStore,
+		NodeExtensionStore:           nodeExtensionStore,
+		ExtensionBuilder:             extensionBuilder,
+		NetbootManager:               netbootManager,
+		DeploymentStore:              deploymentStore,
+		BMCTargetStore:               bmcTargetStore,
+		Builder:                      artifactBuilder,
+		AdminPassword:                adminPassword,
+		RegToken:                     regToken,
+		RegTokenFile:                 regTokenFile,
+		AuroraBootURL:                externalURL,
+		ArtifactsDir:                 artifactsDir,
+		KeysDir:                      keysDir,
+		Hub:                          wsHub,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)

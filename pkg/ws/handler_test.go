@@ -70,7 +70,13 @@ func readMsg(conn *websocket.Conn) (*wsMessage, error) {
 	return &msg, nil
 }
 
-var _ = Describe("WebSocket Handler", func() {
+// Serial: specs drive WS handler goroutines that write to a shared-cache
+// in-memory SQLite DB (busy_timeout=0). Under ginkgo -p the CPU/IO contention
+// from other parallel suites widens the write-lock window, so a single-shot
+// UpdateStatus loses to a concurrent poll read ("database table is locked")
+// and the phase never advances. Running this suite alone removes that
+// contention. See the per-spec unique-DSN note in BeforeEach.
+var _ = Describe("WebSocket Handler", Serial, func() {
 	var (
 		hub      *ws.Hub
 		gormDB   *gormstore.Store

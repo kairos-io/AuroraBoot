@@ -167,6 +167,64 @@ func (a *BMCTargetStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.BMCTargetDelete(ctx, id)
 }
 
+// ExtensionStoreAdapter adapts Store to the store.ExtensionStore interface.
+type ExtensionStoreAdapter struct{ S *Store }
+
+func (a *ExtensionStoreAdapter) Create(ctx context.Context, e *store.ExtensionRecord) error {
+	return a.S.ExtensionCreate(ctx, e)
+}
+func (a *ExtensionStoreAdapter) GetByID(ctx context.Context, id string) (*store.ExtensionRecord, error) {
+	return a.S.ExtensionGetByID(ctx, id)
+}
+func (a *ExtensionStoreAdapter) List(ctx context.Context) ([]store.ExtensionRecord, error) {
+	return a.S.ExtensionList(ctx)
+}
+func (a *ExtensionStoreAdapter) Delete(ctx context.Context, id string) error {
+	return a.S.ExtensionDelete(ctx, id)
+}
+func (a *ExtensionStoreAdapter) FindLatestReadyByName(ctx context.Context, extType, name string) (*store.ExtensionRecord, error) {
+	return a.S.ExtensionFindLatestReadyByName(ctx, extType, name)
+}
+func (a *ExtensionStoreAdapter) FindByNameAndVersion(ctx context.Context, extType, name, version string) (*store.ExtensionRecord, error) {
+	return a.S.ExtensionFindByNameAndVersion(ctx, extType, name, version)
+}
+func (a *ExtensionStoreAdapter) AppendLog(ctx context.Context, id, chunk string) error {
+	return a.S.ExtensionAppendLog(ctx, id, chunk)
+}
+
+// ArtifactExtensionBundleStoreAdapter adapts Store to the
+// store.ArtifactExtensionBundleStore interface.
+type ArtifactExtensionBundleStoreAdapter struct{ S *Store }
+
+func (a *ArtifactExtensionBundleStoreAdapter) ListForArtifact(ctx context.Context, artifactID string) ([]store.ArtifactExtensionBundle, error) {
+	return a.S.BundleListForArtifact(ctx, artifactID)
+}
+func (a *ArtifactExtensionBundleStoreAdapter) ReplaceForArtifact(ctx context.Context, artifactID string, entries []store.ArtifactExtensionBundle) error {
+	return a.S.BundleReplaceForArtifact(ctx, artifactID, entries)
+}
+func (a *ArtifactExtensionBundleStoreAdapter) ArtifactsReferencingExtension(ctx context.Context, extensionName string) ([]string, error) {
+	return a.S.BundleArtifactsReferencingExtension(ctx, extensionName)
+}
+
+// NodeExtensionStoreAdapter adapts Store to the store.NodeExtensionStore interface.
+type NodeExtensionStoreAdapter struct{ S *Store }
+
+func (a *NodeExtensionStoreAdapter) Upsert(ctx context.Context, row *store.NodeExtensionRow) error {
+	return a.S.NodeExtensionUpsert(ctx, row)
+}
+func (a *NodeExtensionStoreAdapter) ListForNode(ctx context.Context, nodeID string) ([]store.NodeExtensionRow, error) {
+	return a.S.NodeExtensionListForNode(ctx, nodeID)
+}
+func (a *NodeExtensionStoreAdapter) ListForExtensionByName(ctx context.Context, extType, name string) ([]store.NodeExtensionRow, error) {
+	return a.S.NodeExtensionListForExtensionByName(ctx, extType, name)
+}
+func (a *NodeExtensionStoreAdapter) DeleteByScope(ctx context.Context, nodeID, extType, name, bootState string) error {
+	return a.S.NodeExtensionDeleteByScope(ctx, nodeID, extType, name, bootState)
+}
+func (a *NodeExtensionStoreAdapter) DeleteByName(ctx context.Context, nodeID, extType, name string) error {
+	return a.S.NodeExtensionDeleteByName(ctx, nodeID, extType, name)
+}
+
 // DeploymentStoreAdapter adapts Store to the store.DeploymentStore interface.
 type DeploymentStoreAdapter struct{ S *Store }
 
