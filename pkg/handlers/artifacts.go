@@ -268,6 +268,13 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	}
 
 	// Persist the artifact record in the store if available.
+	//
+	// The production builder also persists the record (keyed by status.ID)
+	// from inside Build(); when both run, this Create no-ops on the duplicate
+	// primary key. But builders that don't persist (e.g. the mock builder used
+	// in tests, or any builder constructed without a store) rely on this Create
+	// being the one that writes the row — so keep it. Both sites set the same
+	// fields, including Insecure, so the stored record is identical either way.
 	if h.store != nil {
 		rec := &store.ArtifactRecord{
 			ID:                status.ID,

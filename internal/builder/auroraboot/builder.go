@@ -195,6 +195,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			TrustedBoot:      opts.TrustedBoot,
 			Arch:             opts.Source.Arch,
 			Variant:          opts.Source.Variant,
+			Insecure:         opts.Source.Insecure,
 			RawDisk:          opts.Outputs.RawDisk,
 			Tar:              opts.Outputs.Tar,
 			GCE:              opts.Outputs.GCE,

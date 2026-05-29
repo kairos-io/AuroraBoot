@@ -84,8 +84,8 @@ type BuildOptions struct {
 	CloudImage        bool
 	Netboot           bool
 
-	CloudConfig     string // YAML cloud-config to bake in
-	OutputDir       string // where to write artifacts
+	CloudConfig string // YAML cloud-config to bake in
+	OutputDir   string // where to write artifacts
 
 	// Customization options:
 	OverlayRootfs   string // path to overlay dir (files copied on top of rootfs)
