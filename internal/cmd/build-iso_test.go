@@ -88,4 +88,11 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("extend-live-cmdline"))
 	})
+
+	It("Accepts the insecure flag", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--insecure", "system/cos"})
+		// Fails on image reference, but the flag should be accepted (no "unknown flag" error)
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+	})
 })

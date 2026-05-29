@@ -64,6 +64,7 @@ var BuildISOCmd = cli.Command{
 			Name:  "extend-live-cmdline",
 			Usage: "Append options to the kernel cmdline when booting from the live/installer ISO (e.g. rd.debug rd.shell). Does not affect the installed system.",
 		},
+		InsecureFlag,
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
@@ -126,6 +127,7 @@ var BuildISOCmd = cli.Command{
 			State:       ctx.String("output"),
 			CloudConfig: cloudConfig,
 			Arch:        ctx.String("arch"),
+			Insecure:    ctx.Bool("insecure"),
 		}
 
 		if c.State == "" {
