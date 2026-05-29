@@ -88,7 +88,10 @@ export function getExtensionLogs(id: string): Promise<string> {
 
 export function extensionDownloadUrl(id: string, filename: string): string {
   const token = localStorage.getItem("auroraboot_token") ?? "";
-  return `/api/v1/extensions/${id}/download/${filename}?token=${token}`;
+  // Encode every interpolated component: id/filename can originate from the
+  // URL route param (untrusted), so they must not be able to inject path or
+  // query separators into the request target.
+  return `/api/v1/extensions/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 }
 
 // NodeExtensionRow mirrors store.NodeExtensionRow on the server. Tracks
