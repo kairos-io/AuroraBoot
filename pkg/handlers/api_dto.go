@@ -109,6 +109,7 @@ type APICreateArtifactRequest struct {
 	Variant           string                  `json:"variant" example:"core" enums:"core,standard"`
 	KubernetesDistro  string                  `json:"kubernetesDistro" enums:"k3s,k0s"`
 	KubernetesVersion string                  `json:"kubernetesVersion"`
+	Insecure          bool                    `json:"insecure" example:"false"`
 	Dockerfile        string                  `json:"dockerfile"`
 	OverlayRootfs     string                  `json:"overlayRootfs"`
 	KairosInitImage   string                  `json:"kairosInitImage"`

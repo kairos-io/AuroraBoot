@@ -148,6 +148,7 @@ type ArtifactRecord struct {
 	TrustedBoot        bool      `json:"trustedBoot"`
 	Arch               string    `json:"arch,omitempty"`
 	Variant            string    `json:"variant,omitempty"`
+	Insecure           bool      `json:"insecure"`
 	RawDisk            bool      `json:"rawDisk"`
 	Tar                bool      `json:"tar"`
 	GCE                bool      `json:"gce"`

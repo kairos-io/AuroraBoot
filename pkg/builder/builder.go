@@ -20,6 +20,9 @@ type ImageSource struct {
 	Variant           string // "core" or "standard"
 	KubernetesDistro  string
 	KubernetesVersion string
+	// Insecure allows pulling the base image from a registry served over plain
+	// HTTP or presenting an untrusted/self-signed TLS certificate.
+	Insecure bool
 }
 
 // OutputOptions selects which artifact formats to produce.

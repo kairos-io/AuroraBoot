@@ -565,6 +565,8 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		config.Arch = opts.Source.Arch
 	}
 
+	config.Insecure = opts.Source.Insecure
+
 	if opts.CloudImage || opts.Outputs.RawDisk || opts.Outputs.GCE || opts.Outputs.VHD {
 		config.Disk.EFI = true
 	}

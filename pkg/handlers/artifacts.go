@@ -53,6 +53,7 @@ type createArtifactRequest struct {
 	Variant           string `json:"variant"`
 	KubernetesDistro  string `json:"kubernetesDistro"`
 	KubernetesVersion string `json:"kubernetesVersion"`
+	Insecure          bool   `json:"insecure"`
 	Dockerfile        string `json:"dockerfile"`
 	BuildContextDir   string `json:"buildContextDir"`
 	OverlayRootfs     string `json:"overlayRootfs"`
@@ -191,6 +192,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		Variant:           req.Variant,
 		KubernetesDistro:  req.KubernetesDistro,
 		KubernetesVersion: req.KubernetesVersion,
+		Insecure:          req.Insecure,
 	}
 	opts.Outputs = builder.OutputOptions{
 		ISO:         req.Outputs.ISO,
@@ -282,6 +284,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			TrustedBoot:       req.Outputs.TrustedBoot,
 			Arch:              req.Arch,
 			Variant:           req.Variant,
+			Insecure:          req.Insecure,
 			RawDisk:           req.Outputs.RawDisk,
 			Tar:               req.Outputs.Tar,
 			GCE:               req.Outputs.GCE,
