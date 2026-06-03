@@ -228,6 +228,112 @@ var _ = Describe("Deployer", func() {
 		})
 	})
 
+	Describe("Vendor quirk seam", func() {
+		// Regression guard: the generic profile must drive the exact same protocol
+		// flow as the default. We run the happy path with Vendor explicitly set to
+		// generic and assert the same request shapes the default path produces.
+		It("leaves the generic path byte-for-byte unchanged", func() {
+			gd := redfish.NewDeployer(redfish.Config{
+				Endpoint:  bmc.URL(),
+				Username:  testUser,
+				Password:  testPassword,
+				Vendor:    redfish.VendorGeneric,
+				VerifySSL: false,
+				Timeout:   30 * time.Second,
+			})
+			Expect(gd.Connect(ctx)).To(Succeed())
+			defer func() { _ = gd.Close() }()
+
+			_, err := gd.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// Same InsertMedia URL-pull body as the default path.
+			Expect(bmc.insertBody).To(HaveKeyWithValue("Image", testImageURL))
+			Expect(bmc.insertBody).To(HaveKeyWithValue("Inserted", true))
+			Expect(bmc.insertBody).To(HaveKeyWithValue("WriteProtected", true))
+			Expect(bmc.insertBody).To(HaveKeyWithValue("MediaType", "CD"))
+			// Discovery hit the System media first (default order), not the Manager.
+			Expect(bmc.sawRequest(http.MethodPost,
+				"/redfish/v1/Systems/sys-xyz/VirtualMedia/Cd/Actions/VirtualMedia.InsertMedia")).To(BeTrue())
+		})
+
+		It("(ilo) discovers Manager-hosted media when the System exposes none", func() {
+			bmc.mediaOnManager = true
+
+			ilo := redfish.NewDeployer(redfish.Config{
+				Endpoint:  bmc.URL(),
+				Username:  testUser,
+				Password:  testPassword,
+				Vendor:    redfish.VendorHPE,
+				VerifySSL: false,
+				Timeout:   30 * time.Second,
+			})
+			Expect(ilo.Connect(ctx)).To(Succeed())
+			defer func() { _ = ilo.Close() }()
+
+			result, err := ilo.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(result.MediaID).To(Equal("Cd"))
+			Expect(bmc.sawRequest(http.MethodPost,
+				"/redfish/v1/Managers/mgr-1/VirtualMedia/Cd/Actions/VirtualMedia.InsertMedia")).To(BeTrue())
+		})
+	})
+
+	Describe("Redfish error surfacing", func() {
+		It("includes @Message.ExtendedInfo detail in the returned error", func() {
+			bmc.insertMediaStatus = http.StatusBadRequest
+			bmc.insertMediaExtendedInfo = true
+
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			_, err := d.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+			})
+			Expect(err).To(HaveOccurred())
+			// The actionable ExtendedInfo text and resolution must surface, not just
+			// a bare status code.
+			Expect(err.Error()).To(ContainSubstring("inserting virtual media"))
+			Expect(err.Error()).To(ContainSubstring("The image URL could not be reached by the BMC."))
+			Expect(err.Error()).To(ContainSubstring("Base.1.0.ResourceAtUriUnauthorized"))
+			Expect(err.Error()).To(ContainSubstring("Verify the image URL is reachable"))
+		})
+	})
+
+	Describe("Unknown TaskState handling", func() {
+		It("fails fast on a garbage TaskState instead of looping forever", func() {
+			// The Task GET will return an out-of-enum state; the poll must reject it.
+			bmc.taskStates = []string{"Frobnicating"}
+
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			// Bound the test independently so a regression (infinite loop) fails
+			// loudly rather than hanging the suite.
+			tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+			defer cancel()
+
+			_, err := d.Deploy(tctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+			})
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("unknown Redfish TaskState"))
+			Expect(err.Error()).To(ContainSubstring("Frobnicating"))
+		})
+	})
+
 	Describe("TLS verification default", func() {
 		// gofish reuses http.DefaultTransport's TLSClientConfig pointer; an
 		// insecure connect elsewhere in the suite can flip InsecureSkipVerify on

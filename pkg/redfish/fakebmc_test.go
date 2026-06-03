@@ -27,6 +27,11 @@ type fakeBMC struct {
 	taskStates        []string
 	taskIdx           int
 
+	// insertMediaExtendedInfo, when true, makes a failing InsertMedia return a
+	// Redfish error body carrying @Message.ExtendedInfo (Message/MessageId/
+	// Resolution) so the error-surfacing path can be asserted.
+	insertMediaExtendedInfo bool
+
 	// captured bodies
 	sessionBody     map[string]any
 	insertBody      map[string]any
@@ -155,12 +160,20 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		f.mu.Unlock()
 		if status >= 400 {
 			w.WriteHeader(status)
-			f.writeJSON(w, map[string]any{
-				"error": map[string]any{
-					"code":    "Base.1.0.GeneralError",
-					"message": "InsertMedia failed",
-				},
-			})
+			errBody := map[string]any{
+				"code":    "Base.1.0.GeneralError",
+				"message": "InsertMedia failed",
+			}
+			if f.insertMediaExtendedInfo {
+				errBody["@Message.ExtendedInfo"] = []map[string]any{
+					{
+						"Message":    "The image URL could not be reached by the BMC.",
+						"MessageId":  "Base.1.0.ResourceAtUriUnauthorized",
+						"Resolution": "Verify the image URL is reachable from the BMC network.",
+					},
+				}
+			}
+			f.writeJSON(w, map[string]any{"error": errBody})
 			return
 		}
 		w.Header().Set("Location", "/redfish/v1/TaskService/Tasks/task-insert")

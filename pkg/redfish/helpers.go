@@ -111,6 +111,31 @@ func firstSupported(allowed []schemas.ResetType, preferences ...schemas.ResetTyp
 	return preferences[0]
 }
 
+// isKnownTaskState reports whether s is a member of the Redfish TaskState enum.
+// An unknown value means the BMC returned a garbage/anomalous state that we must
+// not treat as a normal non-terminal state (which would loop until the context
+// deadline); pollTask rejects it with a clear error instead.
+func isKnownTaskState(s schemas.TaskState) bool {
+	switch s {
+	case schemas.NewTaskState,
+		schemas.StartingTaskState,
+		schemas.RunningTaskState,
+		schemas.SuspendedTaskState,
+		schemas.InterruptedTaskState,
+		schemas.PendingTaskState,
+		schemas.StoppingTaskState,
+		schemas.CompletedTaskState,
+		schemas.KilledTaskState,
+		schemas.ExceptionTaskState,
+		schemas.ServiceTaskState,
+		schemas.CancellingTaskState,
+		schemas.CancelledTaskState:
+		return true
+	default:
+		return false
+	}
+}
+
 // isTerminalTaskState reports whether a Redfish TaskState is final.
 func isTerminalTaskState(s schemas.TaskState) bool {
 	switch s {
