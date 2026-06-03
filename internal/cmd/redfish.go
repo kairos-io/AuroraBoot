@@ -9,19 +9,6 @@ import (
 	"github.com/urfave/cli/v2"
 )
 
-type RedFishDeployConfig struct {
-	Endpoint         string        `arg:"--endpoint" help:"RedFish endpoint URL"`
-	Username         string        `arg:"--username" help:"RedFish username"`
-	Password         string        `arg:"--password" help:"RedFish password"`
-	Vendor           string        `arg:"--vendor" help:"Hardware vendor (generic, supermicro, ilo)" default:"generic"`
-	VerifySSL        bool          `arg:"--verify-ssl" help:"Verify SSL certificates" default:"true"`
-	MinMemory        int           `arg:"--min-memory" help:"Minimum required memory in GB" default:"4"`
-	MinCPUs          int           `arg:"--min-cpus" help:"Minimum required CPUs" default:"2"`
-	RequiredFeatures []string      `arg:"--required-features" help:"Required hardware features"`
-	Timeout          time.Duration `arg:"--timeout" help:"Operation timeout" default:"5m"`
-	ISO              string        `arg:"positional" help:"Path to ISO file"`
-}
-
 var RedFishDeployCmd = cli.Command{
 	Name:  "redfish",
 	Usage: "Deploy ISO to server via RedFish (EXPERIMENTAL)",
@@ -46,6 +33,10 @@ var RedFishDeployCmd = cli.Command{
 					Required: true,
 				},
 				&cli.StringFlag{
+					Name:  "image-url",
+					Usage: "URL the BMC pulls the ISO from (InsertMedia is URL-pull; the BMC must be able to reach this URL)",
+				},
+				&cli.StringFlag{
 					Name:  "vendor",
 					Usage: "Hardware vendor (generic, supermicro, ilo, dmtf)",
 					Value: "generic",
@@ -54,6 +45,11 @@ var RedFishDeployCmd = cli.Command{
 					Name:  "verify-ssl",
 					Usage: "Verify SSL certificates",
 					Value: true,
+				},
+				&cli.BoolFlag{
+					Name:  "serve-tls",
+					Usage: "Set the InsertMedia transfer protocol to HTTPS (requires a BMC-trusted serving cert)",
+					Value: false,
 				},
 				&cli.IntFlag{
 					Name:  "min-memory",
@@ -77,33 +73,49 @@ var RedFishDeployCmd = cli.Command{
 				},
 			},
 			Action: func(c *cli.Context) error {
+				ctx := c.Context
+
 				endpoint := c.String("endpoint")
 				username := c.String("username")
 				password := c.String("password")
+				imageURL := c.String("image-url")
 				vendor := c.String("vendor")
 				verifySSL := c.Bool("verify-ssl")
+				serveTLS := c.Bool("serve-tls")
 				minMemory := c.Int("min-memory")
 				minCPUs := c.Int("min-cpus")
 				requiredFeatures := c.StringSlice("required-features")
 				timeout := c.Duration("timeout")
 				isoPath := c.Args().First()
 
-				if isoPath == "" {
-					return fmt.Errorf("ISO path is required")
+				// D4: InsertMedia is URL-pull, so a deployment needs a URL the BMC
+				// can fetch. Serving a local ISO via an ephemeral tokenized URL is
+				// Phase 1b (#4111); until then, require --image-url.
+				if imageURL == "" {
+					if isoPath != "" {
+						return fmt.Errorf("serving a local ISO is not yet implemented (Phase 1b, kairos-io/kairos#4111); pass --image-url with a URL the BMC can reach")
+					}
+					return fmt.Errorf("--image-url is required (the BMC pulls the ISO from this URL)")
 				}
 
-				// Create vendor-specific RedFish client
-				vendorType := redfish.VendorType(vendor)
-				client, err := redfish.NewVendorClient(vendorType, endpoint, username, password, verifySSL, timeout)
-				if err != nil {
-					return fmt.Errorf("creating RedFish client: %w", err)
+				deployer := redfish.NewDeployer(redfish.Config{
+					Endpoint:  endpoint,
+					Username:  username,
+					Password:  password,
+					Vendor:    redfish.VendorType(vendor),
+					VerifySSL: verifySSL,
+					Timeout:   timeout,
+				})
+
+				if err := deployer.Connect(ctx); err != nil {
+					return fmt.Errorf("connecting to RedFish endpoint: %w", err)
 				}
+				// Always tear the session down (DELETE) on both success and error.
+				defer deployer.Close()
 
-				// Create hardware inspector
-				inspector := hardware.NewInspector(client)
-
-				// Inspect system
-				sysInfo, err := inspector.InspectSystem()
+				// Inspect the system and gate on the hardware requirements.
+				inspector := hardware.NewInspector(deployer)
+				sysInfo, err := inspector.InspectSystem(ctx)
 				if err != nil {
 					return fmt.Errorf("inspecting system: %w", err)
 				}
@@ -111,7 +123,6 @@ var RedFishDeployCmd = cli.Command{
 				fmt.Printf("System: %s %s (SN: %s)\n",
 					sysInfo.Manufacturer, sysInfo.Model, sysInfo.SerialNumber)
 
-				// Validate requirements
 				reqs := &hardware.Requirements{
 					MinMemoryGiB:     minMemory,
 					MinCPUs:          minCPUs,
@@ -121,32 +132,24 @@ var RedFishDeployCmd = cli.Command{
 					return fmt.Errorf("validating requirements: %w", err)
 				}
 
-				// Deploy ISO
-				status, err := client.DeployISO(isoPath)
+				// Deploy: InsertMedia (URL-pull) -> one-time boot -> reset -> Task poll.
+				result, err := deployer.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:              imageURL,
+					BootTarget:            redfish.BootTargetCd,
+					BootMode:              redfish.BootModeUEFI,
+					TransferProtocolHTTPS: serveTLS,
+				})
 				if err != nil {
 					return fmt.Errorf("deploying ISO: %w", err)
 				}
 
-				fmt.Printf("Deployment started: %s\n", status.Message)
-
-				// Monitor deployment
-				for {
-					status, err := client.GetDeploymentStatus()
-					if err != nil {
-						return fmt.Errorf("getting deployment status: %w", err)
-					}
-
-					fmt.Printf("Deployment status: %s (%d%%)\n", status.State, status.Progress)
-
-					if status.State == "Completed" {
-						fmt.Println("Deployment completed successfully")
-						break
-					} else if status.State == "Failed" {
-						return fmt.Errorf("deployment failed: %s", status.Message)
-					}
-
-					time.Sleep(5 * time.Second)
+				if result.TaskState != "" {
+					fmt.Printf("Deployment task finished: %s\n", result.TaskState)
 				}
+				for _, m := range result.Messages {
+					fmt.Printf("  BMC: %s\n", m)
+				}
+				fmt.Println("Deployment completed successfully")
 
 				return nil
 			},

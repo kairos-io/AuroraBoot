@@ -1,12 +1,13 @@
 package hardware
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
 
-// Requirements defines the minimum hardware requirements for deployment
+// Requirements defines the minimum hardware requirements for deployment.
 type Requirements struct {
 	MinMemoryGiB     int
 	MinStorageGiB    int
@@ -14,28 +15,37 @@ type Requirements struct {
 	RequiredFeatures []string
 }
 
-// Inspector handles hardware inspection and validation
-type Inspector struct {
-	client redfish.VendorClient
+// systemInspector is the subset of the Redfish Deployer the inspector needs. It
+// keeps gofish types out of pkg/hardware (only our own redfish.SystemInfo crosses
+// the boundary) and lets tests supply a fake.
+type systemInspector interface {
+	Inspect(ctx context.Context) (*redfish.SystemInfo, error)
 }
 
-// NewInspector creates a new hardware inspector
-func NewInspector(client redfish.VendorClient) *Inspector {
+// Inspector handles hardware inspection and validation.
+type Inspector struct {
+	client systemInspector
+}
+
+// NewInspector creates a new hardware inspector backed by a Redfish Deployer (or
+// any value implementing the inspection contract).
+func NewInspector(client systemInspector) *Inspector {
 	return &Inspector{
 		client: client,
 	}
 }
 
-// InspectSystem performs a comprehensive hardware inspection
-func (i *Inspector) InspectSystem() (*SystemInfo, error) {
-	sysInfo, err := i.client.GetSystemInfo()
+// InspectSystem performs a comprehensive hardware inspection.
+func (i *Inspector) InspectSystem(ctx context.Context) (*SystemInfo, error) {
+	sysInfo, err := i.client.Inspect(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting system info: %w", err)
 	}
 
-	// Convert to our internal SystemInfo type
+	// Convert to our internal SystemInfo type. Memory/CPU now arrive populated
+	// from the Deployer's typed ComputerSystem read (no longer 0/0).
 	info := &SystemInfo{
-		MemoryGiB:      sysInfo.MemorySize,
+		MemoryGiB:      sysInfo.MemoryGiB,
 		ProcessorCount: sysInfo.ProcessorCount,
 		Model:          sysInfo.Model,
 		Manufacturer:   sysInfo.Manufacturer,
@@ -45,7 +55,7 @@ func (i *Inspector) InspectSystem() (*SystemInfo, error) {
 	return info, nil
 }
 
-// SystemInfo represents the inspected system information
+// SystemInfo represents the inspected system information.
 type SystemInfo struct {
 	MemoryGiB      int
 	ProcessorCount int
@@ -54,7 +64,7 @@ type SystemInfo struct {
 	SerialNumber   string
 }
 
-// ValidateRequirements checks if the system meets the minimum requirements
+// ValidateRequirements checks if the system meets the minimum requirements.
 func (i *Inspector) ValidateRequirements(info *SystemInfo, reqs *Requirements) error {
 	if info.MemoryGiB < reqs.MinMemoryGiB {
 		return fmt.Errorf("insufficient memory: %d GiB (minimum: %d GiB)",
@@ -75,9 +85,13 @@ func (i *Inspector) ValidateRequirements(info *SystemInfo, reqs *Requirements) e
 	return nil
 }
 
-// hasFeature checks if the system has a specific feature
+// hasFeature checks if the system has a specific feature.
+//
+// NOTE: this is still a stub that always returns true. A real feature gate is
+// Phase 4 (#4114); it is intentionally left untouched here so the package keeps
+// compiling.
 func (i *Inspector) hasFeature(info *SystemInfo, feature string) bool {
-	// Add feature detection logic here
-	// For now, we'll assume all systems have UEFI
+	// Add feature detection logic here.
+	// For now, we'll assume all systems have UEFI.
 	return true
 }

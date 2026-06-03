@@ -9,9 +9,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	netbootmgr "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/hardware"
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
-	netbootmgr "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
@@ -82,6 +82,10 @@ func (h *DeployHandler) NetbootStatus(c echo.Context) error {
 
 type deployRedfishRequest struct {
 	BMCTargetID string `json:"bmcTargetId"`
+	// ImageURL is the HTTP(S) URL the BMC pulls the ISO from (VirtualMedia
+	// InsertMedia is URL-pull). Required: serving a local on-disk ISO over an
+	// ephemeral tokenized URL is Phase 1b (kairos-io/kairos#4111).
+	ImageURL string `json:"imageUrl"`
 	// Inline BMC credentials (used when bmcTargetId is empty).
 	Endpoint  string `json:"endpoint"`
 	Username  string `json:"username"`
@@ -143,96 +147,100 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		}
 	}
 
-	// Find an ISO file in the artifact's files list.
-	isoPath := ""
+	// Confirm the artifact actually has an ISO. The bytes are not uploaded:
+	// InsertMedia is URL-pull, so the BMC fetches the image from req.ImageURL.
+	hasISO := false
 	for _, f := range artifact.ArtifactFiles {
 		if filepath.Ext(f) == ".iso" {
-			isoPath = filepath.Join(h.artifactsDir, artifactID, f)
+			hasISO = true
 			break
 		}
 	}
-	if isoPath == "" {
+	if !hasISO {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "no ISO file found for this artifact"})
 	}
 
+	// VirtualMedia InsertMedia is URL-pull (no byte upload). Serving the
+	// artifact's local ISO over an ephemeral, BMC-reachable URL is Phase 1b
+	// (kairos-io/kairos#4111); until then an explicit imageUrl is required.
+	if req.ImageURL == "" {
+		return c.JSON(http.StatusNotImplemented, map[string]string{
+			"error": "serving a local artifact ISO is not yet implemented (Phase 1b, kairos-io/kairos#4111); provide imageUrl with a URL the BMC can reach",
+		})
+	}
+
 	dep := &store.Deployment{
-		ID:         uuid.New().String(),
-		ArtifactID: artifactID,
-		Method:     "redfish",
-		Status:     store.DeployActive,
-		Message:    "Deployment initiated",
+		ID:          uuid.New().String(),
+		ArtifactID:  artifactID,
+		Method:      "redfish",
+		Status:      store.DeployActive,
+		Message:     "Deployment initiated",
 		BMCTargetID: bmcID,
-		Progress:   0,
-		StartedAt:  time.Now(),
+		Progress:    0,
+		StartedAt:   time.Now(),
 	}
 
 	if err := h.deployments.Create(ctx, dep); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create deployment record"})
 	}
 
-	// Start async deployment goroutine.
-	go h.runRedfishDeploy(dep.ID, isoPath, endpoint, username, password, vendor, verifySSL)
+	// Start async deployment goroutine. The HTTP request context is request-scoped
+	// and would be cancelled on return, so the goroutine builds its own context.
+	go h.runRedfishDeploy(dep.ID, req.ImageURL, endpoint, username, password, vendor, verifySSL)
 
 	return c.JSON(http.StatusAccepted, dep)
 }
 
-func (h *DeployHandler) runRedfishDeploy(deploymentID, isoPath, endpoint, username, password, vendor string, verifySSL bool) {
-	ctx := fmt.Sprintf("deployment %s", deploymentID)
+// runRedfishDeploy drives the gofish-backed virtual-media deployment in the
+// background and records the outcome on the store.Deployment row. It never logs
+// credentials.
+//
+// TODO(#4111): there is no cancellable run-registry yet, so an in-flight deploy
+// cannot be aborted and a process restart leaves the Active row orphaned. A run
+// registry plus a startup reconciler that fails dangling Active deployments is
+// Phase 1b.
+func (h *DeployHandler) runRedfishDeploy(deploymentID, imageURL, endpoint, username, password, vendor string, verifySSL bool) {
+	logPrefix := fmt.Sprintf("deployment %s", deploymentID)
 
-	client, err := redfish.NewVendorClient(redfish.VendorType(vendor), endpoint, username, password, verifySSL, 30*time.Minute)
+	// The whole flow (InsertMedia -> boot override -> reset -> Task poll) is
+	// bounded by a 30-minute deadline.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	deployer := redfish.NewDeployer(redfish.Config{
+		Endpoint:  endpoint,
+		Username:  username,
+		Password:  password,
+		Vendor:    redfish.VendorType(vendor),
+		VerifySSL: verifySSL,
+		Timeout:   30 * time.Minute,
+	})
+
+	if err := deployer.Connect(ctx); err != nil {
+		log.Printf("[%s] connecting to redfish endpoint failed: %v", logPrefix, err)
+		h.failDeployment(deploymentID, fmt.Sprintf("connecting to redfish endpoint: %v", err))
+		return
+	}
+	// Always tear the session down (DELETE) on both success and error.
+	defer func() { _ = deployer.Close() }()
+
+	result, err := deployer.Deploy(ctx, redfish.DeployRequest{
+		ImageURL:              imageURL,
+		BootTarget:            redfish.BootTargetCd,
+		BootMode:              redfish.BootModeUEFI,
+		TransferProtocolHTTPS: false,
+	})
 	if err != nil {
-		log.Printf("[%s] failed to create redfish client: %v", ctx, err)
-		h.failDeployment(deploymentID, fmt.Sprintf("failed to create redfish client: %v", err))
+		log.Printf("[%s] redfish deploy failed: %v", logPrefix, err)
+		h.failDeployment(deploymentID, fmt.Sprintf("redfish deploy failed: %v", err))
 		return
 	}
 
-	_, err = client.DeployISO(isoPath)
-	if err != nil {
-		log.Printf("[%s] DeployISO failed: %v", ctx, err)
-		h.failDeployment(deploymentID, fmt.Sprintf("DeployISO failed: %v", err))
-		return
+	msg := "Deployment completed successfully"
+	if result.TaskState != "" {
+		msg = fmt.Sprintf("Deployment completed (task state: %s)", result.TaskState)
 	}
-
-	// Poll deployment status every 10 seconds.
-	ticker := time.NewTicker(10 * time.Second)
-	defer ticker.Stop()
-
-	timeout := time.After(30 * time.Minute)
-
-	for {
-		select {
-		case <-ticker.C:
-			status, err := client.GetDeploymentStatus()
-			if err != nil {
-				log.Printf("[%s] failed to get deployment status: %v", ctx, err)
-				continue
-			}
-
-			h.updateDeploymentProgress(deploymentID, status.Progress, status.Message)
-
-			if status.State == "Completed" {
-				h.completeDeployment(deploymentID, "Deployment completed successfully")
-				return
-			}
-			if status.State == "Failed" {
-				h.failDeployment(deploymentID, fmt.Sprintf("Deployment failed: %s", status.Message))
-				return
-			}
-		case <-timeout:
-			h.failDeployment(deploymentID, "deployment timed out after 30 minutes")
-			return
-		}
-	}
-}
-
-func (h *DeployHandler) updateDeploymentProgress(id string, progress int, message string) {
-	dep, err := h.deployments.GetByID(context.Background(), id)
-	if err != nil {
-		return
-	}
-	dep.Progress = progress
-	dep.Message = message
-	_ = h.deployments.Update(context.Background(), dep)
+	h.completeDeployment(deploymentID, msg)
 }
 
 func (h *DeployHandler) completeDeployment(id, message string) {
@@ -280,20 +288,22 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "BMC target not found"})
 	}
 
-	client, err := redfish.NewVendorClient(
-		redfish.VendorType(target.Vendor),
-		target.Endpoint,
-		target.Username,
-		target.Password,
-		target.VerifySSL,
-		30*time.Second,
-	)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to create redfish client: %v", err)})
+	deployer := redfish.NewDeployer(redfish.Config{
+		Endpoint:  target.Endpoint,
+		Username:  target.Username,
+		Password:  target.Password,
+		Vendor:    redfish.VendorType(target.Vendor),
+		VerifySSL: target.VerifySSL,
+		Timeout:   30 * time.Second,
+	})
+	if err := deployer.Connect(ctx); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to connect to redfish endpoint: %v", err)})
 	}
+	// Always tear the session down (DELETE) on both success and error.
+	defer func() { _ = deployer.Close() }()
 
-	inspector := hardware.NewInspector(client)
-	info, err := inspector.InspectSystem()
+	inspector := hardware.NewInspector(deployer)
+	info, err := inspector.InspectSystem(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to inspect hardware: %v", err)})
 	}

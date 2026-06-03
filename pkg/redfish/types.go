@@ -1,0 +1,98 @@
+package redfish
+
+import "time"
+
+// VendorType selects a vendor quirks profile. The flow itself is spec-compliant
+// for every vendor; the type is a seam for the per-vendor quirk hooks added in a
+// later phase (#4112). Today every value resolves to the spec-default behaviour.
+type VendorType string
+
+const (
+	// VendorGeneric targets spec-compliant BMCs (DMTF, sushy-tools, PiKVM). Default.
+	VendorGeneric VendorType = "generic"
+	// VendorSuperMicro selects the Supermicro quirks profile.
+	VendorSuperMicro VendorType = "supermicro"
+	// VendorHPE selects the HPE iLO quirks profile.
+	VendorHPE VendorType = "ilo"
+	// VendorDMTF selects the DMTF/PiKVM quirks profile.
+	VendorDMTF VendorType = "dmtf"
+)
+
+// BootMode is the firmware boot mode for the one-time boot override.
+type BootMode string
+
+const (
+	// BootModeUEFI boots the machine in UEFI mode (the AuroraBoot default).
+	BootModeUEFI BootMode = "UEFI"
+	// BootModeLegacy boots the machine in legacy/BIOS mode.
+	BootModeLegacy BootMode = "Legacy"
+)
+
+// BootTarget is the one-time boot device the system is overridden to.
+type BootTarget string
+
+const (
+	// BootTargetCd boots from the inserted virtual CD/DVD media. The default for
+	// a virtual-media ISO deployment.
+	BootTargetCd BootTarget = "Cd"
+	// BootTargetUSB boots from virtual USB media.
+	BootTargetUSB BootTarget = "Usb"
+)
+
+// SystemInfo is the typed hardware summary returned by Inspect. It is populated
+// from gofish's ComputerSystem (memory/cpu are read from the nested
+// MemorySummary/ProcessorSummary, fixing the old flat-field 0/0 bug, #13).
+type SystemInfo struct {
+	ID             string
+	Name           string
+	Model          string
+	Manufacturer   string
+	SerialNumber   string
+	PowerState     string
+	MemoryGiB      int
+	ProcessorCount int
+}
+
+// DeployRequest describes a virtual-media deployment. InsertMedia is URL-pull
+// (decision D4): the BMC fetches the ISO from ImageURL, so the caller must serve
+// the image somewhere the BMC can reach. A local path is intentionally NOT
+// accepted here.
+type DeployRequest struct {
+	// ImageURL is the HTTP(S)/NFS/CIFS URL the BMC pulls the ISO from. Required.
+	ImageURL string
+	// BootTarget is the one-time boot device. Defaults to Cd.
+	BootTarget BootTarget
+	// BootMode is the firmware boot mode. Defaults to UEFI.
+	BootMode BootMode
+	// ResetType overrides the automatically chosen power action. When empty the
+	// Deployer picks On when the system is off and ForceRestart otherwise,
+	// validated against the system's allowable values.
+	ResetType string
+	// TransferProtocolHTTPS sets the InsertMedia TransferProtocolType to HTTPS.
+	// The v1 default is HTTP-on-trusted-L2; integrity is delegated to the Kairos
+	// image signature, so HTTP is the unset default.
+	TransferProtocolHTTPS bool
+	// EjectAfter ejects the media once the deployment task reaches a terminal
+	// state. Most flows want the media to stay mounted across the install reboot,
+	// so this defaults to false.
+	EjectAfter bool
+}
+
+// DeployResult is the outcome of a deployment.
+type DeployResult struct {
+	// SystemID is the discovered ComputerSystem member ID the ISO was deployed to.
+	SystemID string
+	// MediaID is the discovered VirtualMedia member ID used for InsertMedia.
+	MediaID string
+	// TaskCompleted is true when an async Task was polled to a terminal,
+	// successful state. It is false for synchronous (non-202) BMC responses.
+	TaskCompleted bool
+	// TaskState is the terminal Redfish TaskState when a Task was polled
+	// (e.g. "Completed"), otherwise empty.
+	TaskState string
+	// Messages carries any human-readable messages surfaced by the BMC Task.
+	Messages []string
+	// StartedAt / FinishedAt bracket the deploy flow.
+	StartedAt  time.Time
+	FinishedAt time.Time
+}
