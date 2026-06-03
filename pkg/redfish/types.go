@@ -51,6 +51,11 @@ type SystemInfo struct {
 	PowerState     string
 	MemoryGiB      int
 	ProcessorCount int
+	// Features holds the capabilities AuroraBoot positively detected for this
+	// system (keyed by feature name, e.g. "UEFI", "SecureBoot"; value always
+	// true). A feature absent from this map was NOT detected and the hardware gate
+	// treats it as unsupported. See features.go for how each is derived.
+	Features map[string]bool
 }
 
 // DeployRequest describes a virtual-media deployment. InsertMedia is URL-pull

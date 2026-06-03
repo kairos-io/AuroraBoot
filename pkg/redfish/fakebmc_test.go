@@ -32,6 +32,15 @@ type fakeBMC struct {
 	// Resolution) so the error-surfacing path can be asserted.
 	insertMediaExtendedInfo bool
 
+	// bootModeAllowableValues, when non-nil, is served as the Boot
+	// "BootSourceOverrideMode@Redfish.AllowableValues" annotation so UEFI feature
+	// detection can be driven. nil omits the annotation entirely (the common
+	// real-world case where a BMC does not advertise supported boot modes).
+	bootModeAllowableValues []string
+	// withSecureBoot, when true, adds a SecureBoot link to the ComputerSystem so
+	// SecureBoot feature detection can be asserted.
+	withSecureBoot bool
+
 	// captured bodies
 	sessionBody     map[string]any
 	insertBody      map[string]any
@@ -54,6 +63,10 @@ func newFakeBMC() *fakeBMC {
 		// poll loop is genuinely exercised.
 		taskStates:      []string{"Running", "Completed"},
 		sessionLocation: "/redfish/v1/SessionService/Sessions/sess-abc",
+		// Default to a UEFI-capable system: it advertises UEFI in its boot-mode
+		// allowable values, matching the common server BMC and the UEFI default of
+		// the deploy path.
+		bootModeAllowableValues: []string{"Legacy", "UEFI"},
 	}
 	f.server = httptest.NewTLSServer(http.HandlerFunc(f.handle))
 	return f
@@ -255,10 +268,7 @@ func (f *fakeBMC) computerSystem() map[string]any {
 		"ProcessorSummary": map[string]any{
 			"Count": 8,
 		},
-		"Boot": map[string]any{
-			"BootSourceOverrideEnabled": "Disabled",
-			"BootSourceOverrideTarget":  "None",
-		},
+		"Boot": f.boot(),
 		"Actions": map[string]any{
 			"#ComputerSystem.Reset": map[string]any{
 				"target": "/redfish/v1/Systems/sys-xyz/Actions/ComputerSystem.Reset",
@@ -271,7 +281,23 @@ func (f *fakeBMC) computerSystem() map[string]any {
 	if !f.mediaOnManager {
 		cs["VirtualMedia"] = map[string]any{"@odata.id": "/redfish/v1/Systems/sys-xyz/VirtualMedia"}
 	}
+	if f.withSecureBoot {
+		cs["SecureBoot"] = map[string]any{"@odata.id": "/redfish/v1/Systems/sys-xyz/SecureBoot"}
+	}
 	return cs
+}
+
+// boot builds the ComputerSystem Boot object, optionally including the
+// BootSourceOverrideMode allowable-values annotation that drives UEFI detection.
+func (f *fakeBMC) boot() map[string]any {
+	boot := map[string]any{
+		"BootSourceOverrideEnabled": "Disabled",
+		"BootSourceOverrideTarget":  "None",
+	}
+	if f.bootModeAllowableValues != nil {
+		boot["BootSourceOverrideMode@Redfish.AllowableValues"] = f.bootModeAllowableValues
+	}
+	return boot
 }
 
 func (f *fakeBMC) manager() map[string]any {

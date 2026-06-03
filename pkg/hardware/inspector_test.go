@@ -74,5 +74,66 @@ var _ = Describe("Inspector", func() {
 			err := insp.ValidateRequirements(info, reqs)
 			Expect(err).To(MatchError(ContainSubstring("insufficient CPUs")))
 		})
+
+		It("passes when a required feature is detected", func() {
+			info := &hardware.SystemInfo{
+				MemoryGiB:      16,
+				ProcessorCount: 4,
+				Features:       map[string]bool{"UEFI": true},
+			}
+			reqs := &hardware.Requirements{RequiredFeatures: []string{"UEFI"}}
+			Expect(insp.ValidateRequirements(info, reqs)).To(Succeed())
+		})
+
+		It("matches required features case-insensitively", func() {
+			info := &hardware.SystemInfo{
+				MemoryGiB:      16,
+				ProcessorCount: 4,
+				Features:       map[string]bool{"UEFI": true},
+			}
+			reqs := &hardware.Requirements{RequiredFeatures: []string{"uefi"}}
+			Expect(insp.ValidateRequirements(info, reqs)).To(Succeed())
+		})
+
+		It("fails closed when a known feature was not detected", func() {
+			info := &hardware.SystemInfo{
+				MemoryGiB:      16,
+				ProcessorCount: 4,
+				Features:       map[string]bool{}, // UEFI NOT detected
+			}
+			reqs := &hardware.Requirements{RequiredFeatures: []string{"UEFI"}}
+			err := insp.ValidateRequirements(info, reqs)
+			Expect(err).To(MatchError(ContainSubstring("not supported by this system")))
+			Expect(err).To(MatchError(ContainSubstring("UEFI")))
+		})
+
+		It("fails closed with a nil feature map (nothing detected)", func() {
+			info := &hardware.SystemInfo{MemoryGiB: 16, ProcessorCount: 4}
+			reqs := &hardware.Requirements{RequiredFeatures: []string{"UEFI"}}
+			err := insp.ValidateRequirements(info, reqs)
+			Expect(err).To(MatchError(ContainSubstring("not supported by this system")))
+		})
+
+		It("fails closed on an unknown feature instead of silently passing", func() {
+			info := &hardware.SystemInfo{
+				MemoryGiB:      16,
+				ProcessorCount: 4,
+				Features:       map[string]bool{"UEFI": true},
+			}
+			reqs := &hardware.Requirements{RequiredFeatures: []string{"TELEPATHY"}}
+			err := insp.ValidateRequirements(info, reqs)
+			Expect(err).To(MatchError(ContainSubstring("not known to AuroraBoot")))
+			Expect(err).To(MatchError(ContainSubstring("TELEPATHY")))
+		})
+
+		It("detects SecureBoot as a known feature", func() {
+			info := &hardware.SystemInfo{
+				MemoryGiB:      16,
+				ProcessorCount: 4,
+				Features:       map[string]bool{"SecureBoot": true},
+			}
+			reqs := &hardware.Requirements{RequiredFeatures: []string{"SecureBoot"}}
+			Expect(insp.ValidateRequirements(info, reqs)).To(Succeed())
+		})
 	})
 })

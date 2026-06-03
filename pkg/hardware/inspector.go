@@ -3,6 +3,7 @@ package hardware
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
@@ -50,6 +51,7 @@ func (i *Inspector) InspectSystem(ctx context.Context) (*SystemInfo, error) {
 		Model:          sysInfo.Model,
 		Manufacturer:   sysInfo.Manufacturer,
 		SerialNumber:   sysInfo.SerialNumber,
+		Features:       sysInfo.Features,
 	}
 
 	return info, nil
@@ -62,6 +64,19 @@ type SystemInfo struct {
 	Model          string
 	Manufacturer   string
 	SerialNumber   string
+	// Features are the capabilities the Redfish Deployer positively detected for
+	// this system (keyed by feature name; value always true). A feature absent
+	// from this map was NOT detected and ValidateRequirements fails closed on it.
+	Features map[string]bool
+}
+
+// knownFeatures is the set of feature names AuroraBoot understands and can
+// detect. A required feature outside this set is reported as unknown (rather than
+// merely unsupported) so the operator gets an actionable error instead of a
+// silent pass. Compared case-insensitively.
+var knownFeatures = map[string]struct{}{
+	strings.ToUpper(redfish.FeatureUEFI):       {},
+	strings.ToUpper(redfish.FeatureSecureBoot): {},
 }
 
 // ValidateRequirements checks if the system meets the minimum requirements.
@@ -77,21 +92,39 @@ func (i *Inspector) ValidateRequirements(info *SystemInfo, reqs *Requirements) e
 	}
 
 	for _, feature := range reqs.RequiredFeatures {
-		if !i.hasFeature(info, feature) {
-			return fmt.Errorf("missing required feature: %s", feature)
+		name := strings.TrimSpace(feature)
+		if name == "" {
+			continue
+		}
+		// Fail closed on a feature AuroraBoot cannot reason about: requiring it
+		// would otherwise pass silently, which is exactly the bug this gate fixes.
+		if !isKnownFeature(name) {
+			return fmt.Errorf("required feature %q is not known to AuroraBoot (cannot be verified); known features: UEFI, SecureBoot", name)
+		}
+		if !i.hasFeature(info, name) {
+			return fmt.Errorf("required feature %q is not supported by this system", name)
 		}
 	}
 
 	return nil
 }
 
-// hasFeature checks if the system has a specific feature.
-//
-// NOTE: this is still a stub that always returns true. A real feature gate is
-// Phase 4 (#4114); it is intentionally left untouched here so the package keeps
-// compiling.
+// isKnownFeature reports whether name is a feature AuroraBoot can detect.
+func isKnownFeature(name string) bool {
+	_, ok := knownFeatures[strings.ToUpper(name)]
+	return ok
+}
+
+// hasFeature reports whether the inspected system advertises the given feature.
+// It consults the capability set the Redfish Deployer detected (see
+// pkg/redfish/features.go), matching case-insensitively. A feature the Deployer
+// did not detect is reported as absent — the gate fails closed rather than
+// assuming support.
 func (i *Inspector) hasFeature(info *SystemInfo, feature string) bool {
-	// Add feature detection logic here.
-	// For now, we'll assume all systems have UEFI.
-	return true
+	for name, present := range info.Features {
+		if present && strings.EqualFold(name, feature) {
+			return true
+		}
+	}
+	return false
 }

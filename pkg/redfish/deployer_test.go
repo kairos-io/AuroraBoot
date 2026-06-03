@@ -77,6 +77,56 @@ var _ = Describe("Deployer", func() {
 			// Discovery used the opaque member ID, not a hardcoded Systems/1.
 			Expect(info.ID).To(Equal("sys-xyz"))
 		})
+
+		It("detects UEFI from the boot-mode allowable values", func() {
+			bmc.bootModeAllowableValues = []string{"Legacy", "UEFI"}
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			info, err := d.Inspect(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Features).To(HaveKeyWithValue(redfish.FeatureUEFI, true))
+		})
+
+		It("does not report UEFI when the allowable boot modes exclude it", func() {
+			bmc.bootModeAllowableValues = []string{"Legacy"}
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			info, err := d.Inspect(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Features).NotTo(HaveKey(redfish.FeatureUEFI))
+		})
+
+		It("does not report UEFI when no boot-mode signal is present", func() {
+			bmc.bootModeAllowableValues = nil // BMC omits the annotation
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			info, err := d.Inspect(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Features).NotTo(HaveKey(redfish.FeatureUEFI))
+		})
+
+		It("detects SecureBoot only when the system exposes the link", func() {
+			bmc.withSecureBoot = true
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			info, err := d.Inspect(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Features).To(HaveKeyWithValue(redfish.FeatureSecureBoot, true))
+		})
+
+		It("does not report SecureBoot when no link is present", func() {
+			bmc.withSecureBoot = false
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			info, err := d.Inspect(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(info.Features).NotTo(HaveKey(redfish.FeatureSecureBoot))
+		})
 	})
 
 	Describe("Deploy happy path", func() {

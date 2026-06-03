@@ -148,6 +148,10 @@ func (d *Deployer) Inspect(ctx context.Context) (*SystemInfo, error) {
 		Manufacturer: system.Manufacturer,
 		SerialNumber: system.SerialNumber,
 		PowerState:   string(system.PowerState),
+		// Capabilities we could positively determine from the ComputerSystem (e.g.
+		// UEFI boot support). Anything not detected is omitted, and the hardware
+		// gate treats a required-but-undetected feature as unsupported.
+		Features: detectFeatures(system),
 	}
 	if v := system.MemorySummary.TotalSystemMemoryGiB; v != nil {
 		info.MemoryGiB = int(*v)

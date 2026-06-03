@@ -6,6 +6,7 @@ import (
 	"log"
 	"net/http"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -408,6 +409,11 @@ type inspectResponse struct {
 	Model          string `json:"model"`
 	Manufacturer   string `json:"manufacturer"`
 	SerialNumber   string `json:"serialNumber"`
+	// SupportedFeatures lists the capabilities AuroraBoot positively detected for
+	// this system (e.g. "UEFI", "SecureBoot"). It is informational: the API does
+	// not gate on required features (the CLI does). A capability AuroraBoot could
+	// not determine is simply absent from this list.
+	SupportedFeatures []string `json:"supportedFeatures"`
 }
 
 // InspectHardware handles POST /api/v1/bmc-targets/:id/inspect.
@@ -441,12 +447,26 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, inspectResponse{
-		MemoryGiB:      info.MemoryGiB,
-		ProcessorCount: info.ProcessorCount,
-		Model:          info.Model,
-		Manufacturer:   info.Manufacturer,
-		SerialNumber:   info.SerialNumber,
+		MemoryGiB:         info.MemoryGiB,
+		ProcessorCount:    info.ProcessorCount,
+		Model:             info.Model,
+		Manufacturer:      info.Manufacturer,
+		SerialNumber:      info.SerialNumber,
+		SupportedFeatures: sortedFeatures(info.Features),
 	})
+}
+
+// sortedFeatures returns the detected feature names as a stable, sorted slice for
+// a deterministic JSON response.
+func sortedFeatures(features map[string]bool) []string {
+	names := make([]string, 0, len(features))
+	for name, present := range features {
+		if present {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	return names
 }
 
 // --- BMC Target CRUD ---

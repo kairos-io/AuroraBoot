@@ -132,7 +132,7 @@ var RedFishDeployCmd = cli.Command{
 				},
 				&cli.StringSliceFlag{
 					Name:  "required-features",
-					Usage: "Required hardware features",
+					Usage: "Hardware features the system must support; the deploy aborts if any is missing or cannot be verified. Detectable features: UEFI, SecureBoot (default: UEFI)",
 					Value: cli.NewStringSlice("UEFI"),
 				},
 				&cli.DurationFlag{
