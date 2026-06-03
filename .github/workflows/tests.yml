@@ -62,7 +62,7 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
       - name: Build and push Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: false
           load: true
@@ -95,7 +95,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Build local image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           push: false
           load: true

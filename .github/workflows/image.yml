@@ -51,7 +51,7 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           build-args: |
             VERSION=${{ github.ref_name }}
@@ -74,7 +74,7 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           build-args: |
             VERSION=${{ github.ref_name }}
@@ -103,7 +103,7 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_PASSWORD }}
       - name: Build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: ./Dockerfile.riscv64
