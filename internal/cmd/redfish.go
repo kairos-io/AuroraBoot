@@ -55,6 +55,25 @@ func resolveRedfishPassword(flagPassword, passwordFile string, passwordStdin boo
 	}
 }
 
+// deriveServeBindAddr derives the local ISO-serve bind address from the
+// advertised --redfish-serve-url when --redfish-serve-addr is not set explicitly.
+// It requires the URL to carry both a host and an explicit port: a missing port
+// makes net.Listen fail with a cryptic error, so reject it with an actionable
+// message rather than silently picking one.
+func deriveServeBindAddr(serveURL string) (string, error) {
+	parsed, err := url.Parse(serveURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing --redfish-serve-url: %w", err)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("--redfish-serve-url has no host; set --redfish-serve-addr explicitly")
+	}
+	if parsed.Port() == "" {
+		return "", fmt.Errorf("could not derive a bind address from --redfish-serve-url %q (no port); set --redfish-serve-addr explicitly, e.g. %s:8090", serveURL, parsed.Hostname())
+	}
+	return parsed.Host, nil
+}
+
 var RedFishDeployCmd = cli.Command{
 	Name:  "redfish",
 	Usage: "Deploy ISO to server via RedFish (EXPERIMENTAL)",
@@ -203,13 +222,9 @@ var RedFishDeployCmd = cli.Command{
 					if serveAddr == "" {
 						// Derive the bind address from the serve URL host:port rather
 						// than silently binding 0.0.0.0.
-						parsed, err := url.Parse(serveURL)
+						serveAddr, err = deriveServeBindAddr(serveURL)
 						if err != nil {
-							return fmt.Errorf("parsing --redfish-serve-url: %w", err)
-						}
-						serveAddr = parsed.Host
-						if serveAddr == "" {
-							return fmt.Errorf("--redfish-serve-url has no host; set --redfish-serve-addr explicitly")
+							return err
 						}
 					}
 

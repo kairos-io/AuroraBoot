@@ -5,8 +5,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -167,8 +169,9 @@ func (h *DeployHandler) NetbootStatus(c echo.Context) error {
 type deployRedfishRequest struct {
 	BMCTargetID string `json:"bmcTargetId"`
 	// ImageURL is the HTTP(S) URL the BMC pulls the ISO from (VirtualMedia
-	// InsertMedia is URL-pull). Required: serving a local on-disk ISO over an
-	// ephemeral tokenized URL is Phase 1b (kairos-io/kairos#4111).
+	// InsertMedia is URL-pull). Optional: when empty, AuroraBoot serves the
+	// artifact's on-disk ISO over an ephemeral tokenized URL (requires the server
+	// to have a configured ISO-serve).
 	ImageURL string `json:"imageUrl"`
 	// Inline BMC credentials (used when bmcTargetId is empty).
 	Endpoint  string `json:"endpoint"`
@@ -176,6 +179,17 @@ type deployRedfishRequest struct {
 	Password  string `json:"password"`
 	Vendor    string `json:"vendor"`
 	VerifySSL *bool  `json:"verifySSL"`
+}
+
+// imageURLUsesHTTPS reports whether an operator-supplied media URL is fetched
+// over HTTPS, derived from its scheme. The InsertMedia TransferProtocolType must
+// match the URL the BMC actually fetches, so this keeps the two consistent.
+func imageURLUsesHTTPS(imageURL string) (bool, error) {
+	parsed, err := url.Parse(imageURL)
+	if err != nil {
+		return false, err
+	}
+	return strings.EqualFold(parsed.Scheme, "https"), nil
 }
 
 // DeployRedfish handles POST /api/v1/artifacts/:id/deploy/redfish.
@@ -244,14 +258,23 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "no ISO file found for this artifact"})
 	}
 
-	// Resolve the image URL the BMC will fetch:
-	//   1. an explicit imageUrl: SSRF-validate and use it.
+	// Resolve the image URL the BMC will fetch, and whether the BMC must fetch it
+	// over HTTPS. InsertMedia advertises a TransferProtocolType that must match the
+	// served URL's scheme, so derive useHTTPS alongside the URL:
+	//   1. an explicit imageUrl: SSRF-validate and use it; HTTPS iff its scheme is
+	//      "https".
 	//   2. otherwise serve the artifact's local ISO over a tokenized,
-	//      BMC-reachable URL via the ISO-serve helper.
+	//      BMC-reachable URL via the ISO-serve helper; HTTPS iff the serve helper
+	//      is actually serving TLS.
 	imageURL := req.ImageURL
 	serveToken := ""
+	useHTTPS := false
 	if imageURL != "" {
 		if err := isoserve.ValidateMediaURL(imageURL); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
+		}
+		useHTTPS, err = imageURLUsesHTTPS(imageURL)
+		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
 		}
 	} else {
@@ -261,12 +284,13 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 			})
 		}
 		absISO := filepath.Join(h.artifactsDir, artifactID, isoFile)
-		url, token, err := h.isoServe.Register(absISO, redfishDeployTimeout+5*time.Minute)
+		servedURL, token, err := h.isoServe.Register(absISO, redfishDeployTimeout+5*time.Minute)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to serve artifact ISO: %v", err)})
 		}
-		imageURL = url
+		imageURL = servedURL
 		serveToken = token
+		useHTTPS = h.isoServe.UsesTLS()
 	}
 
 	dep := &store.Deployment{
@@ -295,7 +319,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	runCtx, cancel := context.WithTimeout(h.baseCtx, redfishDeployTimeout)
 	h.registerRun(dep.ID, cancel)
 
-	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, verifySSL)
+	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, verifySSL, useHTTPS)
 
 	return c.JSON(http.StatusAccepted, dep)
 }
@@ -304,8 +328,9 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 // background and records the outcome on the store.Deployment row. It never logs
 // credentials. ctx is derived from the server-lifecycle base context plus the
 // deploy timeout; cancel is its cancel func, deregistered and called on return so
-// the run-registry never retains a finished deploy.
-func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor string, verifySSL bool) {
+// the run-registry never retains a finished deploy. useHTTPS sets the InsertMedia
+// TransferProtocolType so it matches the scheme the BMC actually fetches over.
+func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor string, verifySSL, useHTTPS bool) {
 	logPrefix := fmt.Sprintf("deployment %s", deploymentID)
 
 	defer cancel()
@@ -339,7 +364,7 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		ImageURL:              imageURL,
 		BootTarget:            redfish.BootTargetCd,
 		BootMode:              redfish.BootModeUEFI,
-		TransferProtocolHTTPS: false,
+		TransferProtocolHTTPS: useHTTPS,
 		Progress:              h.progressUpdater(deploymentID),
 	})
 	if err != nil {

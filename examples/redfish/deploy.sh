@@ -1,27 +1,86 @@
-#!/bin/bash
+#!/usr/bin/env bash
+# examples/redfish/deploy.sh
+#
+# Two examples of deploying a Kairos ISO to a server via Redfish.
+# AuroraBoot uses URL-pull: the BMC fetches the ISO from a URL.
+#
+# Prerequisites:
+#   - auroraboot is in PATH (or replace with: docker run quay.io/kairos/auroraboot)
+#   - The BMC Redfish endpoint is reachable from this machine
+#   - The ISO is reachable from the BMC (see the two options below)
+#
+# Set these before running:
+BMC_ENDPOINT="https://bmc.example.com"   # Redfish endpoint
+BMC_USER="admin"
+BMC_PASSWORD_FILE="/run/secrets/bmc-password"  # file holding the password (no trailing newline)
 
-# Example script for deploying an ISO to a server using RedFish
+# ─── Option 1: operator-hosted ISO URL ────────────────────────────────────────
+#
+# The ISO is hosted somewhere the BMC can already reach (HTTP server, S3, etc.).
+# Pass the URL directly; AuroraBoot validates it and hands it to InsertMedia.
+#
+# Usage: ./deploy.sh --image-url
 
-# Check if ISO path is provided
-if [ -z "$1" ]; then
-  echo "Usage: $0 <iso_path>"
-  exit 1
+if [[ "${1:-}" == "--image-url" ]]; then
+  IMAGE_URL="${2:?Usage: $0 --image-url <url>}"
+
+  auroraboot redfish deploy \
+    --endpoint        "$BMC_ENDPOINT" \
+    --username        "$BMC_USER" \
+    --password-file   "$BMC_PASSWORD_FILE" \
+    --image-url       "$IMAGE_URL" \
+    --vendor          generic \
+    --verify-ssl      \
+    --min-memory      4 \
+    --min-cpus        2 \
+    --required-features UEFI \
+    --timeout         30m
+
+  exit $?
 fi
 
-ISO_PATH=$1
+# ─── Option 2: local ISO served by AuroraBoot ─────────────────────────────────
+#
+# Pass a local ISO path and tell AuroraBoot which address the BMC can reach it
+# on. AuroraBoot starts a one-shot tokenized HTTP server, registers the ISO
+# under a random token, calls InsertMedia with the resulting URL, then shuts
+# the server down when the deploy returns.
+#
+# SERVE_URL is the base URL the BMC will use (must include the IP/hostname that
+# the BMC management network can reach). SERVE_ADDR is the local bind address
+# (defaults to host:port of SERVE_URL if omitted).
+#
+# Usage: ./deploy.sh <path/to/kairos.iso>
 
-# Deploy ISO to server using RedFish
+ISO_PATH="${1:?Usage: $0 <path/to/kairos.iso>   OR   $0 --image-url <url>}"
+SERVE_URL="http://10.0.0.5:8090"    # adjust to your management-network address
+# SERVE_ADDR="10.0.0.5:8090"        # uncomment if bind address differs from SERVE_URL
+
 auroraboot redfish deploy \
-  --endpoint "https://example.com" \
-  --username "admin" \
-  --password "password" \
-  --vendor "dmtf" \
-  --verify-ssl true \
-  --min-memory 4 \
-  --min-cpus 2 \
-  --required-features "UEFI" \
-  --timeout 30m \
+  --endpoint            "$BMC_ENDPOINT" \
+  --username            "$BMC_USER" \
+  --password-file       "$BMC_PASSWORD_FILE" \
+  --redfish-serve-url   "$SERVE_URL" \
+  --vendor              generic \
+  --verify-ssl          \
+  --min-memory          4 \
+  --min-cpus            2 \
+  --required-features   UEFI \
+  --timeout             30m \
   "$ISO_PATH"
 
-# NOTE: You can run `auroraboot` using docker as well. E.g.
-# docker run --rm -v "$ISO_PATH:/iso" quay.io/kairos/auroraboot redfish deploy <args here
+# NOTE: Run with Docker by mounting the ISO and the password file:
+#
+#   docker run --rm \
+#     -v "$ISO_PATH:/kairos.iso" \
+#     -v "$BMC_PASSWORD_FILE:/run/secrets/bmc-password:ro" \
+#     --network host \
+#     quay.io/kairos/auroraboot redfish deploy \
+#       --endpoint          https://bmc.example.com \
+#       --username          admin \
+#       --password-file     /run/secrets/bmc-password \
+#       --redfish-serve-url http://10.0.0.5:8090 \
+#       /kairos.iso
+#
+# --network host is required so AuroraBoot can bind the serve address on the
+# management-network interface.

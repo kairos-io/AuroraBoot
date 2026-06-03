@@ -232,3 +232,40 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		Expect(rec.Body.String()).To(ContainSubstring("no ISO file found"))
 	})
 })
+
+var _ = Describe("imageURLUsesHTTPS", func() {
+	DescribeTable("derives the transfer protocol from the URL scheme",
+		func(imageURL string, wantHTTPS bool) {
+			got, err := handlers.ImageURLUsesHTTPS(imageURL)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(wantHTTPS))
+		},
+		Entry("https scheme advertises HTTPS", "https://10.0.0.5/x.iso", true),
+		Entry("http scheme advertises HTTP", "http://10.0.0.5/x.iso", false),
+		Entry("scheme match is case-insensitive", "HTTPS://10.0.0.5/x.iso", true),
+	)
+})
+
+var _ = Describe("Server.UsesTLS drives the InsertMedia transfer protocol", func() {
+	It("reports HTTPS when both cert and key are configured", func() {
+		s := isoserve.New(isoserve.Config{
+			BaseURL:  "https://10.0.0.5:8090",
+			CertFile: "/tmp/cert.pem",
+			KeyFile:  "/tmp/key.pem",
+		})
+		Expect(s.UsesTLS()).To(BeTrue())
+	})
+
+	It("reports HTTP when no cert/key is configured", func() {
+		s := isoserve.New(isoserve.Config{BaseURL: "http://10.0.0.5:8090"})
+		Expect(s.UsesTLS()).To(BeFalse())
+	})
+
+	It("reports HTTP when only one of cert/key is set", func() {
+		s := isoserve.New(isoserve.Config{
+			BaseURL:  "http://10.0.0.5:8090",
+			CertFile: "/tmp/cert.pem",
+		})
+		Expect(s.UsesTLS()).To(BeFalse())
+	})
+})

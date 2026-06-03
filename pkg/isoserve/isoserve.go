@@ -197,6 +197,13 @@ func (s *Server) Addr() net.Addr {
 	return s.addr
 }
 
+// UsesTLS reports whether the server serves over HTTPS, i.e. both a cert and a
+// key were configured. Callers use this to keep an InsertMedia transfer protocol
+// (and any advertised URL scheme) consistent with how the ISO is actually served.
+func (s *Server) UsesTLS() bool {
+	return s.certFile != "" && s.keyFile != ""
+}
+
 // Handler returns an http.Handler serving the tokenized route. It is exposed so
 // the route behaviour can be exercised with httptest.NewServer without binding a
 // real listener; the lifecycle (Start/Shutdown) is independent of it.
