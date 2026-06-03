@@ -56,7 +56,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Login to Quay Registry
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: quay.io
           username: ${{ secrets.QUAY_USERNAME }}
