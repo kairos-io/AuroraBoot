@@ -76,6 +76,11 @@ type DeployRequest struct {
 	// state. Most flows want the media to stay mounted across the install reboot,
 	// so this defaults to false.
 	EjectAfter bool
+	// Progress, when non-nil, is invoked at each deploy stage with a short step
+	// label and a monotonically increasing percentage (0..100). It lets callers
+	// surface live progress (e.g. onto a Deployment row). It must be cheap and is
+	// always called synchronously from Deploy's goroutine. nil disables reporting.
+	Progress func(step string, percent int)
 }
 
 // DeployResult is the outcome of a deployment.

@@ -122,6 +122,53 @@ var _ = Describe("Deployer", func() {
 		})
 	})
 
+	Describe("Deploy progress callback", func() {
+		It("invokes the callback in non-decreasing percent order ending at 100", func() {
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			var steps []string
+			var percents []int
+			_, err := d.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+				Progress: func(step string, percent int) {
+					steps = append(steps, step)
+					percents = append(percents, percent)
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			// The flow reports each stage.
+			Expect(steps).To(ContainElements(
+				"discovering", "inserting media", "setting boot", "resetting", "polling task", "completed",
+			))
+
+			// Percentages are monotonically non-decreasing and finish at 100.
+			Expect(percents).NotTo(BeEmpty())
+			for i := 1; i < len(percents); i++ {
+				Expect(percents[i]).To(BeNumerically(">=", percents[i-1]),
+					"percent must never regress")
+			}
+			Expect(percents[0]).To(Equal(10))
+			Expect(percents[len(percents)-1]).To(Equal(100))
+		})
+
+		It("is nil-safe (no callback supplied)", func() {
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			_, err := d.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+				// Progress nil
+			})
+			Expect(err).NotTo(HaveOccurred())
+		})
+	})
+
 	Describe("Deploy error path", func() {
 		It("still tears the session down when InsertMedia fails mid-flow", func() {
 			bmc.insertMediaStatus = http.StatusInternalServerError

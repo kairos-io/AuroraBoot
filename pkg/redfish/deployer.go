@@ -160,8 +160,11 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 		return nil, err
 	}
 
+	report := newProgressReporter(req.Progress)
+
 	result := &DeployResult{StartedAt: time.Now()}
 
+	report("discovering", 10)
 	system, err := d.primarySystem()
 	if err != nil {
 		return nil, err
@@ -178,6 +181,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	report("inserting media", 30)
 	insertTask, err := d.insertMedia(media, req)
 	if err != nil {
 		return nil, fmt.Errorf("inserting virtual media: %w", d.scrub(err))
@@ -187,6 +191,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	report("setting boot", 50)
 	if err := d.setOneTimeBoot(system, req); err != nil {
 		return nil, fmt.Errorf("setting one-time boot override: %w", d.scrub(err))
 	}
@@ -196,6 +201,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	report("resetting", 70)
 	resetTask, err := d.reset(system, req)
 	if err != nil {
 		return nil, fmt.Errorf("resetting system: %w", d.scrub(err))
@@ -206,7 +212,8 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	//    InsertMedia task if that is the only async one.
 	taskURI := pickTaskURI(resetTask, insertTask)
 	if taskURI != "" {
-		state, msgs, err := d.pollTask(ctx, taskURI)
+		report("polling task", 80)
+		state, msgs, err := d.pollTask(ctx, taskURI, report)
 		if err != nil {
 			return nil, fmt.Errorf("polling deployment task: %w", d.scrub(err))
 		}
@@ -226,6 +233,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 		}
 	}
 
+	report("completed", 100)
 	result.FinishedAt = time.Now()
 	return result, nil
 }
@@ -321,8 +329,10 @@ func (d *Deployer) reset(system *schemas.ComputerSystem, req DeployRequest) (*sc
 }
 
 // pollTask GETs the Task at uri repeatedly until it reaches a terminal state or
-// the context is cancelled.
-func (d *Deployer) pollTask(ctx context.Context, uri string) (schemas.TaskState, []string, error) {
+// the context is cancelled. While polling it reports progress between
+// taskPollFloor and taskPollCeil, scaling the Task's PercentComplete when present
+// so callers see live movement during a long install boot.
+func (d *Deployer) pollTask(ctx context.Context, uri string, report progressFunc) (schemas.TaskState, []string, error) {
 	for {
 		if err := ctx.Err(); err != nil {
 			return "", nil, err
@@ -332,6 +342,8 @@ func (d *Deployer) pollTask(ctx context.Context, uri string) (schemas.TaskState,
 		if err != nil {
 			return "", nil, fmt.Errorf("getting task %s: %w", uri, err)
 		}
+
+		report("polling task", taskPollPercent(task))
 
 		if isTerminalTaskState(task.TaskState) {
 			return task.TaskState, taskMessages(task), nil

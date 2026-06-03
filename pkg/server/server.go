@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"log"
@@ -14,6 +15,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
+	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -38,6 +40,14 @@ type Config struct {
 	ArtifactsDir          string
 	KeysDir               string  // base directory for SecureBoot key sets
 	Hub                   *ws.Hub // optional, created if nil
+	// ISOServe serves a local artifact ISO over a tokenized, BMC-reachable URL
+	// for Redfish virtual-media deployments. Optional; when nil the Redfish
+	// deploy path requires an explicit imageUrl.
+	ISOServe *isoserve.Server
+	// BaseContext, when non-nil, is the parent context for background deploy
+	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
+	// to context.Background().
+	BaseContext context.Context
 }
 
 // redactToken returns requestURI with the value of any "token" query parameter
@@ -235,7 +245,8 @@ func New(cfg Config) *echo.Echo {
 
 	// Deploy hub
 	if cfg.DeploymentStore != nil {
-		deployHandler := handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir)
+		deployHandler := handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir, cfg.ISOServe).
+			WithBaseContext(cfg.BaseContext)
 		adminGroup.POST("/netboot/start", deployHandler.StartNetboot)
 		adminGroup.POST("/netboot/stop", deployHandler.StopNetboot)
 		adminGroup.GET("/netboot/status", deployHandler.NetbootStatus)

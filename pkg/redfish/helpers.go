@@ -2,6 +2,45 @@ package redfish
 
 import "github.com/stmcginnis/gofish/schemas"
 
+// progressFunc is the internal, always-safe-to-call progress callback shape used
+// throughout Deploy. nil DeployRequest.Progress callbacks are wrapped into a
+// no-op by newProgressReporter so call sites never nil-check.
+type progressFunc func(step string, percent int)
+
+// taskPollFloor / taskPollCeil bound the percentage reported while polling the
+// async Task: the deploy is 80% done when polling starts and tops out at 95
+// until the terminal "completed" (100) is reported by Deploy itself.
+const (
+	taskPollFloor = 80
+	taskPollCeil  = 95
+)
+
+// newProgressReporter returns a non-nil progress callback. When fn is nil it
+// returns a no-op so the Deploy flow can call report(...) unconditionally.
+func newProgressReporter(fn func(step string, percent int)) progressFunc {
+	if fn == nil {
+		return func(string, int) {}
+	}
+	return fn
+}
+
+// taskPollPercent maps a Task's PercentComplete (0..100) onto the poll window
+// [taskPollFloor, taskPollCeil]. When the BMC does not report PercentComplete it
+// returns the floor so progress at least advances to the polling stage.
+func taskPollPercent(task *schemas.Task) int {
+	if task.PercentComplete == nil {
+		return taskPollFloor
+	}
+	p := int(*task.PercentComplete)
+	if p < 0 {
+		p = 0
+	}
+	if p > 100 {
+		p = 100
+	}
+	return taskPollFloor + (taskPollCeil-taskPollFloor)*p/100
+}
+
 // mediaSupportsCD reports whether a VirtualMedia resource advertises CD or DVD
 // media support.
 func mediaSupportsCD(vm *schemas.VirtualMedia) bool {
