@@ -196,6 +196,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			AutoInstall:      opts.Provisioning.AutoInstall,
 			RegisterAuroraBoot: opts.Provisioning.RegisterAuroraBoot,
 			Dockerfile:       opts.Dockerfile,
+			ExtendCmdline:    opts.ExtendCmdline,
 			CloudConfig:      opts.CloudConfig,
 			CreatedAt:        time.Now(),
 			UpdatedAt:        time.Now(),
@@ -543,17 +544,20 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 	}
 
 	ukiOpts := uki.Options{
-		Source:           "docker:" + containerImage,
-		OutputDir:        outputDir,
-		OutputType:       string(constants.IsoOutput),
-		Name:             "kairos",
-		SBKey:            signing.UKISecureBootKey,
-		SBCert:           signing.UKISecureBootCert,
-		TPMPCRPrivateKey: signing.UKITPMPCRKey,
-		PublicKeysDir:    signing.UKIPublicKeysDir,
-		SecureBootEnroll: signing.UKISecureBootEnroll,
-		OverlayRootfs:    opts.OverlayRootfs,
-		Logger:           &log,
+		Source:                 "docker:" + containerImage,
+		OutputDir:              outputDir,
+		OutputType:             string(constants.IsoOutput),
+		Name:                   "kairos",
+		SBKey:                  signing.UKISecureBootKey,
+		SBCert:                 signing.UKISecureBootCert,
+		TPMPCRPrivateKey:       signing.UKITPMPCRKey,
+		PublicKeysDir:          signing.UKIPublicKeysDir,
+		SecureBootEnroll:       signing.UKISecureBootEnroll,
+		OverlayRootfs:          opts.OverlayRootfs,
+		IncludeVersionInConfig: true,
+		IncludeCmdlineInConfig: true,
+		ExtendCmdline:          opts.ExtendCmdline,
+		Logger:                 &log,
 	}
 
 	errCh := make(chan error, 1)

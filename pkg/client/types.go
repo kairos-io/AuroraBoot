@@ -146,36 +146,36 @@ const (
 // image and used for upgrade tracking), not the Kairos framework
 // version of the base image.
 type Artifact struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name,omitempty"`
-	Saved            bool          `json:"saved,omitempty"`
-	Phase            ArtifactPhase `json:"phase"`
-	Message          string        `json:"message,omitempty"`
-	BaseImage        string        `json:"baseImage"`
-	KairosVersion    string        `json:"kairosVersion"`
-	Model            string        `json:"model"`
-	Arch             string        `json:"arch"`
-	Variant          string        `json:"variant"`
-	KubernetesDistro string        `json:"kubernetesDistro,omitempty"`
-	ISO              bool          `json:"iso"`
-	CloudImage       bool          `json:"cloudImage"`
-	Netboot          bool          `json:"netboot"`
-	RawDisk          bool          `json:"rawDisk"`
-	Tar              bool          `json:"tar"`
-	GCE              bool          `json:"gce"`
-	VHD              bool          `json:"vhd"`
-	UKI              bool          `json:"uki"`
-	FIPS             bool          `json:"fips"`
-	TrustedBoot      bool          `json:"trustedBoot"`
-	AutoInstall      bool          `json:"autoInstall"`
+	ID                 string        `json:"id"`
+	Name               string        `json:"name,omitempty"`
+	Saved              bool          `json:"saved,omitempty"`
+	Phase              ArtifactPhase `json:"phase"`
+	Message            string        `json:"message,omitempty"`
+	BaseImage          string        `json:"baseImage"`
+	KairosVersion      string        `json:"kairosVersion"`
+	Model              string        `json:"model"`
+	Arch               string        `json:"arch"`
+	Variant            string        `json:"variant"`
+	KubernetesDistro   string        `json:"kubernetesDistro,omitempty"`
+	ISO                bool          `json:"iso"`
+	CloudImage         bool          `json:"cloudImage"`
+	Netboot            bool          `json:"netboot"`
+	RawDisk            bool          `json:"rawDisk"`
+	Tar                bool          `json:"tar"`
+	GCE                bool          `json:"gce"`
+	VHD                bool          `json:"vhd"`
+	UKI                bool          `json:"uki"`
+	FIPS               bool          `json:"fips"`
+	TrustedBoot        bool          `json:"trustedBoot"`
+	AutoInstall        bool          `json:"autoInstall"`
 	RegisterAuroraBoot bool          `json:"registerAuroraBoot"`
-	Dockerfile       string        `json:"dockerfile,omitempty"`
-	CloudConfig      string        `json:"cloudConfig,omitempty"`
-	TargetGroupID    string        `json:"targetGroupId,omitempty"`
-	ContainerImage   string        `json:"containerImage,omitempty"`
-	Artifacts        []string      `json:"artifacts,omitempty"`
-	CreatedAt        time.Time     `json:"createdAt"`
-	UpdatedAt        time.Time     `json:"updatedAt"`
+	Dockerfile         string        `json:"dockerfile,omitempty"`
+	CloudConfig        string        `json:"cloudConfig,omitempty"`
+	TargetGroupID      string        `json:"targetGroupId,omitempty"`
+	ContainerImage     string        `json:"containerImage,omitempty"`
+	Artifacts          []string      `json:"artifacts,omitempty"`
+	CreatedAt          time.Time     `json:"createdAt"`
+	UpdatedAt          time.Time     `json:"updatedAt"`
 }
 
 // CreateArtifactRequest is the body of POST /api/v1/artifacts.
@@ -192,6 +192,7 @@ type CreateArtifactRequest struct {
 	KubernetesVersion string                 `json:"kubernetesVersion,omitempty"`
 	Dockerfile        string                 `json:"dockerfile,omitempty"`
 	OverlayRootfs     string                 `json:"overlayRootfs,omitempty"`
+	ExtendCmdline     string                 `json:"extendCmdline,omitempty"`
 	KairosInitImage   string                 `json:"kairosInitImage,omitempty"`
 	Outputs           ArtifactOutputs        `json:"outputs"`
 	Signing           ArtifactSigning        `json:"signing"`
@@ -226,13 +227,13 @@ type ArtifactSigning struct {
 
 // ArtifactProvisioning describes cloud-config injection options.
 type ArtifactProvisioning struct {
-	AutoInstall      bool   `json:"autoInstall"`
+	AutoInstall        bool   `json:"autoInstall"`
 	RegisterAuroraBoot bool   `json:"registerAuroraBoot"`
-	TargetGroupID    string `json:"targetGroupId,omitempty"`
-	UserMode         string `json:"userMode,omitempty"`
-	Username         string `json:"username,omitempty"`
-	Password         string `json:"password,omitempty"`
-	SSHKeys          string `json:"sshKeys,omitempty"`
+	TargetGroupID      string `json:"targetGroupId,omitempty"`
+	UserMode           string `json:"userMode,omitempty"`
+	Username           string `json:"username,omitempty"`
+	Password           string `json:"password,omitempty"`
+	SSHKeys            string `json:"sshKeys,omitempty"`
 }
 
 // UpdateArtifactRequest is the body of PATCH /api/v1/artifacts/:id.

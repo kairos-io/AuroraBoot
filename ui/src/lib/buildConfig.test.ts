@@ -24,6 +24,7 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
     kubernetesVersion: "",
     dockerfile: "",
     overlayRootfs: "",
+    extendCmdline: "",
     kairosInitImage: "",
     outputs: {
       iso: true,
