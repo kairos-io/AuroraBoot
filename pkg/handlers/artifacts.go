@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"archive/tar"
+	"compress/gzip"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -583,13 +586,11 @@ func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
 
 		name := filepath.Base(fh.Filename)
 
-		// If .tar.gz or .tgz, extract it
+		// If .tar.gz or .tgz, extract it with full path containment.
 		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
-			cmd := exec.Command("tar", "xzf", "-", "-C", overlayDir)
-			cmd.Stdin = src
-			if err := cmd.Run(); err != nil {
+			if err := extractOverlayTarGz(src, overlayDir); err != nil {
 				src.Close()
-				return c.JSON(500, map[string]string{"error": fmt.Sprintf("failed to extract %s: %v", name, err)})
+				return c.JSON(400, map[string]string{"error": fmt.Sprintf("failed to extract %s: %v", name, err)})
 			}
 			src.Close()
 			continue
@@ -607,6 +608,103 @@ func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
 	}
 
 	return c.JSON(200, map[string]string{"path": overlayDir})
+}
+
+// maxOverlaySize caps the total uncompressed bytes extracted from a single
+// uploaded overlay archive, closing a zip-bomb avenue. Overlays carry config
+// fragments and small assets, so 512 MiB is generous headroom.
+const maxOverlaySize = 512 * 1024 * 1024
+
+// maxOverlayFileSize caps a single member's uncompressed size within an
+// overlay archive.
+const maxOverlayFileSize = 256 * 1024 * 1024
+
+// extractOverlayTarGz extracts a gzipped tar stream into destDir with strict
+// hygiene, mirroring the SecureBoot ImportKeys hardening: it rejects absolute
+// paths and parent-dir escapes, refuses symlinks and hardlinks, and enforces a
+// total and per-file size cap. Only regular files and directories are written.
+func extractOverlayTarGz(r io.Reader, destDir string) error {
+	gz, err := gzip.NewReader(r)
+	if err != nil {
+		return fmt.Errorf("opening gzip stream: %w", err)
+	}
+	defer func() { _ = gz.Close() }()
+
+	// Resolve the destination once so we can confirm every member stays under it.
+	cleanDest, err := filepath.Abs(destDir)
+	if err != nil {
+		return fmt.Errorf("resolving overlay directory: %w", err)
+	}
+
+	tr := tar.NewReader(gz)
+	var total int64
+	for {
+		hdr, err := tr.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return fmt.Errorf("reading tar entry: %w", err)
+		}
+
+		// Reject symlinks and hardlinks outright — they are an escape vector.
+		switch hdr.Typeflag {
+		case tar.TypeReg, tar.TypeDir:
+			// allowed
+		case tar.TypeSymlink, tar.TypeLink:
+			return fmt.Errorf("archive contains a link entry %q which is not allowed", hdr.Name)
+		default:
+			// Skip device/fifo/etc. entries silently.
+			continue
+		}
+
+		// Path hygiene: no absolute paths, no parent-dir escapes, and the
+		// resolved target must stay strictly under destDir.
+		cleaned := filepath.Clean(hdr.Name)
+		if filepath.IsAbs(cleaned) || cleaned == ".." || strings.HasPrefix(cleaned, ".."+string(os.PathSeparator)) {
+			return fmt.Errorf("unsafe path in archive: %q", hdr.Name)
+		}
+		target := filepath.Join(cleanDest, cleaned)
+		if target != cleanDest && !strings.HasPrefix(target, cleanDest+string(os.PathSeparator)) {
+			return fmt.Errorf("unsafe path in archive: %q escapes overlay directory", hdr.Name)
+		}
+
+		if hdr.Typeflag == tar.TypeDir {
+			if err := os.MkdirAll(target, 0o755); err != nil {
+				return fmt.Errorf("creating directory %q: %w", hdr.Name, err)
+			}
+			continue
+		}
+
+		if hdr.Size > maxOverlayFileSize {
+			return fmt.Errorf("file %q exceeds per-file size limit", hdr.Name)
+		}
+		total += hdr.Size
+		if total > maxOverlaySize {
+			return fmt.Errorf("archive exceeds total size limit")
+		}
+
+		if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
+			return fmt.Errorf("creating parent directory for %q: %w", hdr.Name, err)
+		}
+		mode := os.FileMode(hdr.Mode).Perm()
+		if mode == 0 {
+			mode = 0o644
+		}
+		dst, err := os.OpenFile(target, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, mode)
+		if err != nil {
+			return fmt.Errorf("creating file %q: %w", hdr.Name, err)
+		}
+		// Bound the copy with a hard limit so a lying header can't overrun the cap.
+		if _, err := io.CopyN(dst, tr, hdr.Size+1); err != nil && !errors.Is(err, io.EOF) {
+			_ = dst.Close()
+			return fmt.Errorf("writing file %q: %w", hdr.Name, err)
+		}
+		if err := dst.Close(); err != nil {
+			return fmt.Errorf("closing file %q: %w", hdr.Name, err)
+		}
+	}
+	return nil
 }
 
 // ExportImage handles GET /api/v1/artifacts/:id/image.
