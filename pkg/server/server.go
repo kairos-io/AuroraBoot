@@ -3,7 +3,9 @@ package server
 import (
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/docs"
@@ -38,12 +40,61 @@ type Config struct {
 	Hub                   *ws.Hub // optional, created if nil
 }
 
+// redactToken returns requestURI with the value of any "token" query parameter
+// replaced by "REDACTED", so credentials passed as ?token= (WebSocket auth and
+// artifact download links) never reach the access log. Other query parameters
+// and the path are preserved to keep the log useful. If the URI cannot be
+// parsed but still references a token, it is fully redacted to err on the side
+// of never emitting the secret.
+func redactToken(requestURI string) string {
+	if !strings.Contains(requestURI, "token=") {
+		return requestURI
+	}
+
+	path := requestURI
+	rawQuery := ""
+	if i := strings.IndexByte(requestURI, '?'); i >= 0 {
+		path = requestURI[:i]
+		rawQuery = requestURI[i+1:]
+	}
+
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		// Could not parse the query string; refuse to risk leaking the token.
+		return path + "?REDACTED"
+	}
+	if !values.Has("token") {
+		return requestURI
+	}
+	values.Set("token", "REDACTED")
+	return path + "?" + values.Encode()
+}
+
 // New creates and configures an Echo server with all routes and middleware.
 func New(cfg Config) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 
-	e.Use(middleware.Logger())
+	// Use a request logger whose URI is run through redactToken before it is
+	// written. All three auth schemes accept the credential as a ?token= query
+	// param (agent and UI WebSockets, artifact download links), so the raw
+	// request URI would otherwise leak admin passwords, node API keys, and the
+	// registration token straight into the access log (and any downstream proxy
+	// logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
+	// redacted URI explicitly instead of the verbatim ${uri} the default
+	// middleware.Logger() prints.
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogRemoteIP: true,
+		LogMethod:   true,
+		LogURI:      true,
+		LogStatus:   true,
+		LogLatency:  true,
+		LogValuesFunc: func(_ echo.Context, v middleware.RequestLoggerValues) error {
+			log.Printf("%s %s %s %d %s",
+				v.RemoteIP, v.Method, redactToken(v.URI), v.Status, v.Latency)
+			return nil
+		},
+	}))
 	e.Use(middleware.Recover())
 
 	regToken := cfg.RegToken
