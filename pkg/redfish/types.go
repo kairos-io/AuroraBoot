@@ -84,7 +84,11 @@ type DeployRequest struct {
 	ImageURL string
 	// BootTarget is the one-time boot device. Defaults to Cd.
 	BootTarget BootTarget
-	// BootMode is the firmware boot mode. Defaults to UEFI.
+	// BootMode is the firmware boot mode for the one-time boot override. When
+	// empty (the default) the BootSourceOverrideMode is NOT sent in the boot
+	// PATCH, leaving the system in its current firmware mode — this avoids forcing
+	// a firmware-mode change that some BMCs/emulators reject. Set it only to force
+	// a specific mode (BootModeUEFI/BootModeLegacy).
 	BootMode BootMode
 	// ResetType overrides the automatically chosen power action. When empty the
 	// Deployer picks On when the system is off and ForceRestart otherwise,

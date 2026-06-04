@@ -544,15 +544,20 @@ func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (
 	return media.InsertMedia(params)
 }
 
-// setOneTimeBoot patches the system to boot once from the requested target/mode.
+// setOneTimeBoot patches the system to boot once from the requested target. The
+// firmware boot mode is only set when the operator explicitly asks for one
+// (req.BootMode != ""): forcing BootSourceOverrideMode makes some BMCs/emulators
+// (e.g. sushy-tools on libvirt) reconfigure the domain firmware, which can fail
+// (an OVMF enrolled-keys/secure-boot conflict). With BootMode empty,
+// BootSourceOverrideMode is left unset so gofish omits it from the PATCH (the
+// field is `json:",omitempty"`), leaving the system in its current firmware mode.
 func (d *Deployer) setOneTimeBoot(system *schemas.ComputerSystem, req DeployRequest) error {
-	target := bootSource(req.BootTarget)
-	mode := bootMode(req.BootMode)
-
 	boot := &schemas.Boot{
 		BootSourceOverrideEnabled: schemas.OnceBootSourceOverrideEnabled,
-		BootSourceOverrideTarget:  target,
-		BootSourceOverrideMode:    mode,
+		BootSourceOverrideTarget:  bootSource(req.BootTarget),
+	}
+	if req.BootMode != "" {
+		boot.BootSourceOverrideMode = bootMode(req.BootMode)
 	}
 	return system.SetBoot(boot)
 }

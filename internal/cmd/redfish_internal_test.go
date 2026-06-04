@@ -5,7 +5,48 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
+
+func TestResolveBootMode(t *testing.T) {
+	tests := []struct {
+		name      string
+		flag      string
+		want      redfish.BootMode
+		wantErr   bool
+		errSubstr string
+	}{
+		{name: "empty leaves the current mode (no override)", flag: "", want: ""},
+		{name: "whitespace-only is treated as empty", flag: "  ", want: ""},
+		{name: "uefi lowercase", flag: "uefi", want: redfish.BootModeUEFI},
+		{name: "uefi mixed case", flag: "UeFi", want: redfish.BootModeUEFI},
+		{name: "legacy lowercase", flag: "legacy", want: redfish.BootModeLegacy},
+		{name: "legacy mixed case", flag: "Legacy", want: redfish.BootModeLegacy},
+		{name: "invalid value errors", flag: "bios", wantErr: true, errSubstr: "invalid --boot-mode"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := resolveBootMode(tc.flag)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected an error, got mode %q", got)
+				}
+				if tc.errSubstr != "" && !strings.Contains(err.Error(), tc.errSubstr) {
+					t.Fatalf("error %q does not contain %q", err.Error(), tc.errSubstr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got != tc.want {
+				t.Fatalf("got %q want %q", got, tc.want)
+			}
+		})
+	}
+}
 
 func TestDeriveServeBindAddr(t *testing.T) {
 	tests := []struct {

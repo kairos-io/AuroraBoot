@@ -64,7 +64,11 @@ func bootSource(t BootTarget) schemas.BootSource {
 	}
 }
 
-// bootMode maps our BootMode to the gofish BootSourceOverrideMode, defaulting to UEFI.
+// bootMode maps our BootMode to the gofish BootSourceOverrideMode. It is only
+// called for an explicit (non-empty) BootMode: an empty BootMode means "do not
+// force a firmware boot mode" and is handled by setOneTimeBoot, which leaves the
+// field unset so it is omitted from the PATCH. An unrecognised non-empty value
+// returns empty so the caller can reject it rather than silently forcing a mode.
 func bootMode(m BootMode) schemas.BootSourceOverrideMode {
 	switch m {
 	case BootModeLegacy:
@@ -72,7 +76,7 @@ func bootMode(m BootMode) schemas.BootSourceOverrideMode {
 	case BootModeUEFI:
 		return schemas.UEFIBootSourceOverrideMode
 	default:
-		return schemas.UEFIBootSourceOverrideMode
+		return ""
 	}
 }
 

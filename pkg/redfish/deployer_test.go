@@ -136,7 +136,7 @@ var _ = Describe("Deployer", func() {
 			result, err := d.Deploy(ctx, redfish.DeployRequest{
 				ImageURL:   testImageURL,
 				BootTarget: redfish.BootTargetCd,
-				BootMode:   redfish.BootModeUEFI,
+				// BootMode left empty: the default must NOT force a firmware mode.
 			})
 			Expect(err).NotTo(HaveOccurred())
 
@@ -150,13 +150,15 @@ var _ = Describe("Deployer", func() {
 			Expect(bmc.insertBody).To(HaveKeyWithValue("Inserted", true))
 			Expect(bmc.insertBody).To(HaveKeyWithValue("WriteProtected", true))
 
-			// One-time boot override PATCH: Once / Cd / UEFI.
+			// One-time boot override PATCH: Once / Cd, and — with no BootMode set —
+			// the PATCH must NOT carry BootSourceOverrideMode (forcing the firmware
+			// mode is what breaks some BMCs/emulators).
 			Expect(bmc.bootPatchBody).To(HaveKey("Boot"))
 			boot, ok := bmc.bootPatchBody["Boot"].(map[string]any)
 			Expect(ok).To(BeTrue())
 			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideEnabled", "Once"))
 			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideTarget", "Cd"))
-			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideMode", "UEFI"))
+			Expect(boot).NotTo(HaveKey("BootSourceOverrideMode"))
 
 			// Reset carried an explicit ResetType.
 			Expect(bmc.resetBody).To(HaveKey("ResetType"))
@@ -169,6 +171,40 @@ var _ = Describe("Deployer", func() {
 			// Session is deleted on Close even on the success path.
 			Expect(d.Close()).To(Succeed())
 			Expect(bmc.sawRequest(http.MethodDelete, bmc.sessionLocation)).To(BeTrue())
+		})
+
+		It("sends BootSourceOverrideMode=UEFI when BootModeUEFI is explicitly requested", func() {
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			_, err := d.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeUEFI,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			boot, ok := bmc.bootPatchBody["Boot"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideEnabled", "Once"))
+			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideTarget", "Cd"))
+			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideMode", "UEFI"))
+		})
+
+		It("sends BootSourceOverrideMode=Legacy when BootModeLegacy is explicitly requested", func() {
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			_, err := d.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				BootMode:   redfish.BootModeLegacy,
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			boot, ok := bmc.bootPatchBody["Boot"].(map[string]any)
+			Expect(ok).To(BeTrue())
+			Expect(boot).To(HaveKeyWithValue("BootSourceOverrideMode", "Legacy"))
 		})
 	})
 

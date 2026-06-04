@@ -55,6 +55,25 @@ func resolveRedfishPassword(flagPassword, passwordFile string, passwordStdin boo
 	}
 }
 
+// resolveBootMode validates the operator-supplied --boot-mode flag and maps it to
+// a redfish.BootMode. The empty string is valid and intentional: it means "leave
+// the system in its current firmware mode" — the Deployer then omits
+// BootSourceOverrideMode from the boot PATCH, which avoids forcing a firmware-mode
+// change that some BMCs/emulators reject. The accepted explicit values are
+// "uefi" and "legacy" (case-insensitive).
+func resolveBootMode(flag string) (redfish.BootMode, error) {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case "":
+		return "", nil
+	case "uefi":
+		return redfish.BootModeUEFI, nil
+	case "legacy":
+		return redfish.BootModeLegacy, nil
+	default:
+		return "", fmt.Errorf("invalid --boot-mode %q (valid: uefi, legacy, or empty to leave the current firmware mode)", flag)
+	}
+}
+
 // deriveServeBindAddr derives the local ISO-serve bind address from the
 // advertised --redfish-serve-url when --redfish-serve-addr is not set explicitly.
 // It requires the URL to carry both a host and an explicit port: a missing port
@@ -116,6 +135,10 @@ var RedFishDeployCmd = cli.Command{
 					Name:  "vendor",
 					Usage: "Hardware vendor (generic, supermicro, ilo, dmtf)",
 					Value: "generic",
+				},
+				&cli.StringFlag{
+					Name:  "boot-mode",
+					Usage: "Force the one-time boot firmware mode: uefi or legacy. Omit (the default) to leave the system in its current mode and NOT send a boot-mode change — recommended for most BMCs, since forcing a mode makes some BMCs/emulators reconfigure the firmware and fail",
 				},
 				&cli.StringFlag{
 					Name:  "auth-mode",
@@ -186,6 +209,10 @@ var RedFishDeployCmd = cli.Command{
 				imageURL := c.String("image-url")
 				systemID := c.String("system-id")
 				vendor := c.String("vendor")
+				bootMode, err := resolveBootMode(c.String("boot-mode"))
+				if err != nil {
+					return err
+				}
 				authMode := c.String("auth-mode")
 				verifySSL := c.Bool("verify-ssl")
 				serveTLS := c.Bool("serve-tls")
@@ -305,7 +332,7 @@ var RedFishDeployCmd = cli.Command{
 				result, err := deployer.Deploy(ctx, redfish.DeployRequest{
 					ImageURL:              imageURL,
 					BootTarget:            redfish.BootTargetCd,
-					BootMode:              redfish.BootModeUEFI,
+					BootMode:              bootMode,
 					TransferProtocolHTTPS: serveTLS,
 				})
 				if err != nil {
