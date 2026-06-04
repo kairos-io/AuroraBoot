@@ -42,6 +42,14 @@ func New(dsn string) (*Store, error) {
 		if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL"); err != nil {
 			return nil, fmt.Errorf("enabling WAL mode: %w", err)
 		}
+		// Make concurrent writers wait-and-retry for up to 5s when the database
+		// is locked, instead of failing immediately with "database is locked".
+		// WAL allows concurrent readers but still serializes writers, so without
+		// this any overlapping write (common under the WebSocket node manager)
+		// would error out.
+		if _, err := sqlDB.Exec("PRAGMA busy_timeout=5000"); err != nil {
+			return nil, fmt.Errorf("setting busy_timeout: %w", err)
+		}
 	}
 
 	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}); err != nil {
