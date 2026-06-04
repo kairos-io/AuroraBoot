@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -85,12 +86,17 @@ var _ = Describe("WebSocket Handler", func() {
 
 	BeforeEach(func() {
 		var err error
-		// Increment first so every spec gets a fresh, unique DSN — two
-		// specs sharing a name would collide under cache=shared and
-		// cause flaky "database is closed" / "table is locked" races
-		// when the previous spec's handler goroutines haven't drained.
+		// Every spec gets its own private, on-disk SQLite database in a
+		// per-spec temp dir. We deliberately do NOT use a shared-cache
+		// in-memory DSN (`mode=memory&cache=shared`): SQLite's shared cache
+		// is process-wide, so every spec's in-memory DB would contend on a
+		// single global write lock. A prior spec's still-draining read-loop
+		// goroutine could then hold that lock long enough (up to the 5s
+		// busy_timeout, retried) to starve the current spec's command_status
+		// write past its Eventually deadline — the source of the flake.
+		// A file-per-spec DB has no cross-spec lock contention.
 		machineNum := testCounter.Add(1)
-		dbName := fmt.Sprintf("file:ws_test_%d?mode=memory&cache=shared", machineNum)
+		dbName := filepath.Join(GinkgoT().TempDir(), fmt.Sprintf("ws_test_%d.db", machineNum))
 		gormDB, err = gormstore.New(dbName)
 		Expect(err).NotTo(HaveOccurred())
 
@@ -110,11 +116,6 @@ var _ = Describe("WebSocket Handler", func() {
 		Expect(nodeID).NotTo(BeEmpty())
 		Expect(apiKey).NotTo(BeEmpty())
 
-		DeferCleanup(func() {
-			server.Close()
-			_ = gormDB.Close()
-		})
-
 		agentHandler := &ws.AgentHandler{
 			Hub:      hub,
 			Nodes:    nodes,
@@ -126,10 +127,16 @@ var _ = Describe("WebSocket Handler", func() {
 		e.GET("/api/v1/ws", agentHandler.HandleAgentWS)
 		e.GET("/api/v1/ws/ui", uiHandler.HandleUIWS)
 		server = httptest.NewServer(e)
-	})
 
-	AfterEach(func() {
-		server.Close()
+		// Tear down in reverse: close the server first so it blocks until
+		// every in-flight WS handler goroutine (and its read-loop) has
+		// returned, THEN close the DB. Closing the DB while a read-loop is
+		// still writing would race. DeferCleanup runs LIFO, so this is the
+		// only teardown hook — no separate AfterEach.
+		DeferCleanup(func() {
+			server.Close()
+			_ = gormDB.Close()
+		})
 	})
 
 	Describe("Agent connection", func() {
