@@ -2,6 +2,23 @@ package redfish
 
 import "time"
 
+// AuthMode selects how the Deployer authenticates to the Redfish service.
+type AuthMode string
+
+const (
+	// AuthModeAuto (the default, and the value chosen for an empty AuthMode)
+	// pre-checks the ServiceRoot: it uses session auth when the endpoint
+	// advertises a SessionService, and falls back to HTTP Basic auth when it does
+	// not (e.g. sushy-tools emulators and some BMCs expose no SessionService).
+	AuthModeAuto AuthMode = "auto"
+	// AuthModeSession forces Redfish session auth (a deletable session with an
+	// X-Auth-Token). It requires the endpoint to expose a SessionService.
+	AuthModeSession AuthMode = "session"
+	// AuthModeBasic forces HTTP Basic auth: credentials are sent on every request
+	// and no session is created (so there is nothing to tear down).
+	AuthModeBasic AuthMode = "basic"
+)
+
 // VendorType selects a vendor quirks profile. The flow itself is spec-compliant
 // for every vendor; the type is a seam for the per-vendor quirk hooks added in a
 // later phase (#4112). Today every value resolves to the spec-default behaviour.

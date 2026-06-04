@@ -27,6 +27,13 @@ type fakeBMC struct {
 	taskStates        []string
 	taskIdx           int
 
+	// noSessionService, when true, serves a ServiceRoot WITHOUT a SessionService
+	// (no top-level SessionService and no Links.Sessions) and returns 404 for the
+	// session-create path, mimicking sushy-tools emulators and BMCs that expose no
+	// session auth. All other resources (Systems/VirtualMedia/Task) are still
+	// served so the Basic-auth deploy path can be exercised.
+	noSessionService bool
+
 	// systemIDs is the set of ComputerSystem Ids the Systems collection exposes.
 	// Defaults to a single "sys-xyz" member (matching the original single-system
 	// fake). Set more than one to exercise the fail-safe system selector. Each Id
@@ -60,8 +67,9 @@ type fakeBMC struct {
 }
 
 type recordedRequest struct {
-	Method string
-	Path   string
+	Method   string
+	Path     string
+	AuthType string // "Basic", "Bearer", "Token" (X-Auth-Token), or "" (none)
 }
 
 const fakeAuthToken = "fake-x-auth-token-123"
@@ -88,11 +96,34 @@ func (f *fakeBMC) Close() { f.server.Close() }
 
 func (f *fakeBMC) URL() string { return f.server.URL }
 
-// record stores the method+path of an incoming request.
+// record stores the method+path and the kind of auth credential an incoming
+// request carried, so tests can assert session vs Basic auth.
 func (f *fakeBMC) record(r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.requests = append(f.requests, recordedRequest{Method: r.Method, Path: r.URL.Path})
+	authType := ""
+	switch {
+	case strings.HasPrefix(r.Header.Get("Authorization"), "Basic "):
+		authType = "Basic"
+	case strings.HasPrefix(r.Header.Get("Authorization"), "Bearer "):
+		authType = "Bearer"
+	case r.Header.Get("X-Auth-Token") != "":
+		authType = "Token"
+	}
+	f.requests = append(f.requests, recordedRequest{Method: r.Method, Path: r.URL.Path, AuthType: authType})
+}
+
+// sawAuthType reports whether any recorded request to a path with the given
+// prefix carried the given auth type ("Basic"/"Bearer"/"Token").
+func (f *fakeBMC) sawAuthType(authType, pathPrefix string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, req := range f.requests {
+		if req.AuthType == authType && strings.HasPrefix(req.Path, pathPrefix) {
+			return true
+		}
+	}
+	return false
 }
 
 // sawRequest reports whether a request with the given method and path prefix was
@@ -125,6 +156,10 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case r.URL.Path == "/redfish/v1/" || r.URL.Path == "/redfish/v1":
 		f.writeJSON(w, f.serviceRoot())
+
+	// A session-less BMC (sushy-style) has no SessionService: the create path 404s.
+	case r.URL.Path == "/redfish/v1/SessionService/Sessions" && r.Method == http.MethodPost && f.noSessionService:
+		http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
 
 	// --- session lifecycle ---
 	case r.URL.Path == "/redfish/v1/SessionService/Sessions" && r.Method == http.MethodPost:
@@ -236,7 +271,7 @@ func (f *fakeBMC) nextTaskState() string {
 }
 
 func (f *fakeBMC) serviceRoot() map[string]any {
-	return map[string]any{
+	root := map[string]any{
 		"@odata.id":      "/redfish/v1/",
 		"@odata.type":    "#ServiceRoot.v1_5_0.ServiceRoot",
 		"Id":             "RootService",
@@ -245,11 +280,16 @@ func (f *fakeBMC) serviceRoot() map[string]any {
 		"Systems":        map[string]any{"@odata.id": "/redfish/v1/Systems"},
 		"Managers":       map[string]any{"@odata.id": "/redfish/v1/Managers"},
 		"Tasks":          map[string]any{"@odata.id": "/redfish/v1/TaskService"},
-		"SessionService": map[string]any{"@odata.id": "/redfish/v1/SessionService"},
-		"Links": map[string]any{
-			"Sessions": map[string]any{"@odata.id": "/redfish/v1/SessionService/Sessions"},
-		},
 	}
+	// A session-less BMC advertises neither a SessionService nor Links.Sessions;
+	// auto-detect must fall back to Basic auth for it.
+	if !f.noSessionService {
+		root["SessionService"] = map[string]any{"@odata.id": "/redfish/v1/SessionService"}
+		root["Links"] = map[string]any{
+			"Sessions": map[string]any{"@odata.id": "/redfish/v1/SessionService/Sessions"},
+		}
+	}
+	return root
 }
 
 func (f *fakeBMC) collection(name string, members ...string) map[string]any {

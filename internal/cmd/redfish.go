@@ -117,6 +117,11 @@ var RedFishDeployCmd = cli.Command{
 					Usage: "Hardware vendor (generic, supermicro, ilo, dmtf)",
 					Value: "generic",
 				},
+				&cli.StringFlag{
+					Name:  "auth-mode",
+					Usage: "Redfish authentication mode: session (deletable session, requires a SessionService), basic (HTTP Basic; credentials sent on every request, no session), or auto (detect from the ServiceRoot and fall back to basic when no SessionService is advertised)",
+					Value: "auto",
+				},
 				&cli.BoolFlag{
 					Name:  "verify-ssl",
 					Usage: "Verify SSL certificates",
@@ -181,6 +186,7 @@ var RedFishDeployCmd = cli.Command{
 				imageURL := c.String("image-url")
 				systemID := c.String("system-id")
 				vendor := c.String("vendor")
+				authMode := c.String("auth-mode")
 				verifySSL := c.Bool("verify-ssl")
 				serveTLS := c.Bool("serve-tls")
 				serveTLSCert := c.String("serve-tls-cert")
@@ -267,6 +273,7 @@ var RedFishDeployCmd = cli.Command{
 					VerifySSL: verifySSL,
 					Timeout:   timeout,
 					SystemID:  systemID,
+					AuthMode:  redfish.AuthMode(authMode),
 				})
 
 				if err := deployer.Connect(ctx); err != nil {

@@ -8,8 +8,12 @@ package redfish
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"strings"
 	"time"
 
@@ -42,6 +46,16 @@ type Deployer struct {
 	// is the zero-value (all-nil-hook) profile, so the default path is unchanged.
 	quirks quirks
 
+	// authMode selects the authentication scheme (auto/session/basic). Empty is
+	// normalised to AuthModeAuto in NewDeployer.
+	authMode AuthMode
+
+	// usedBasicAuth records the scheme actually used by the last successful
+	// Connect: true when the connection authenticates with HTTP Basic per request
+	// (no session), false when a deletable Redfish session was established. Close
+	// reads it to decide whether a session DELETE (Logout) is required.
+	usedBasicAuth bool
+
 	// client is the live gofish connection. It is private by design: gofish types
 	// must not leak into pkg/hardware or the CLI (decision D1 guardrail).
 	client *gofish.APIClient
@@ -60,6 +74,11 @@ type Config struct {
 	// one system. It is REQUIRED when the BMC exposes more than one: selectSystem
 	// refuses to guess and lists the available Ids instead.
 	SystemID string
+	// AuthMode selects the authentication scheme: AuthModeAuto (default/empty),
+	// AuthModeSession, or AuthModeBasic. Auto pre-checks the ServiceRoot and uses
+	// session auth when a SessionService is advertised, falling back to Basic auth
+	// otherwise. An unknown value is rejected at Connect.
+	AuthMode AuthMode
 }
 
 // NewDeployer builds a Deployer from a Config. It does not open a connection;
@@ -75,6 +94,10 @@ func NewDeployer(cfg Config) *Deployer {
 	if timeout == 0 {
 		timeout = 30 * time.Minute
 	}
+	authMode := cfg.AuthMode
+	if authMode == "" {
+		authMode = AuthModeAuto
+	}
 	return &Deployer{
 		endpoint:  cfg.Endpoint,
 		username:  cfg.Username,
@@ -83,16 +106,31 @@ func NewDeployer(cfg Config) *Deployer {
 		verifySSL: cfg.VerifySSL,
 		timeout:   timeout,
 		systemID:  cfg.SystemID,
+		authMode:  authMode,
 		quirks:    quirksFor(vendor),
 	}
 }
 
-// Connect opens an authenticated Redfish session. It creates the session with a
-// JSON credential body (gofish does this by default) and obtains an X-Auth-Token;
-// Close tears the session down. The supplied context bounds the connection setup.
+// Connect opens an authenticated Redfish connection. The scheme is chosen by the
+// Deployer's AuthMode:
+//
+//   - AuthModeSession: a deletable Redfish session is created with a JSON
+//     credential body and an X-Auth-Token is obtained; Close tears it down.
+//   - AuthModeBasic: HTTP Basic auth is used, sending credentials on every
+//     request; no session is created, so Close is a no-op.
+//   - AuthModeAuto (default): the ServiceRoot is pre-checked; session auth is used
+//     when a SessionService is advertised, otherwise it falls back to Basic auth.
+//
+// The supplied context bounds the connection setup. An unknown AuthMode is
+// rejected here.
 func (d *Deployer) Connect(ctx context.Context) error {
 	if d.client != nil {
 		return errors.New("already connected")
+	}
+
+	basicAuth, err := d.resolveBasicAuth(ctx)
+	if err != nil {
+		return err
 	}
 
 	cfg := gofish.ClientConfig{
@@ -102,8 +140,9 @@ func (d *Deployer) Connect(ctx context.Context) error {
 		// Insecure is the inverse of VerifySSL; verification stays on unless the
 		// caller explicitly opted out.
 		Insecure: !d.verifySSL,
-		// Token/session auth (BasicAuth:false) so we get a deletable session.
-		BasicAuth: false,
+		// BasicAuth false means token/session auth (a deletable session); true means
+		// HTTP Basic per request (no session). Chosen by resolveBasicAuth above.
+		BasicAuth: basicAuth,
 		// Inject a defensive HTTP client that rejects cross-origin redirects and
 		// caps response-body size, so a compromised BMC cannot bounce our
 		// credentialed client to another host or OOM us. We set NoModifyTransport
@@ -121,19 +160,100 @@ func (d *Deployer) Connect(ctx context.Context) error {
 		return fmt.Errorf("connecting to Redfish service: %w", d.scrub(err))
 	}
 	d.client = client
+	d.usedBasicAuth = basicAuth
 	return nil
 }
 
-// Close logs the Redfish session out (DELETE on the session resource) and drops
-// the connection. It is safe to call on a never-connected or already-closed
-// Deployer, and callers MUST defer it so the session is not leaked on either the
-// success or the error path.
+// resolveBasicAuth maps the Deployer's AuthMode to the gofish BasicAuth flag:
+// false selects session auth, true selects HTTP Basic auth. For AuthModeAuto it
+// pre-checks the ServiceRoot and falls back to Basic auth when the endpoint
+// exposes no SessionService. An unknown AuthMode is rejected.
+func (d *Deployer) resolveBasicAuth(ctx context.Context) (bool, error) {
+	switch d.authMode {
+	case AuthModeSession:
+		return false, nil
+	case AuthModeBasic:
+		return true, nil
+	case AuthModeAuto:
+		hasSession, err := d.serviceRootHasSessionService(ctx)
+		if err != nil {
+			return false, fmt.Errorf("auto-detecting Redfish auth mode: %w", d.scrub(err))
+		}
+		if hasSession {
+			return false, nil
+		}
+		// No SessionService: fall back to Basic auth. Credentials are sent on every
+		// request and there is no session to tear down. The note is credential-free.
+		log.Printf("redfish: endpoint %s advertises no SessionService; falling back to HTTP Basic auth (credentials are sent on every request, no session to tear down)", d.endpoint)
+		return true, nil
+	default:
+		return false, fmt.Errorf("unknown Redfish auth mode %q (valid: auto, session, basic)", d.authMode)
+	}
+}
+
+// serviceRootHasSessionService performs a lightweight unauthenticated GET of the
+// Redfish ServiceRoot and reports whether it advertises a SessionService — either
+// a top-level SessionService.@odata.id or a Links.Sessions.@odata.id. It reuses
+// the defensive HTTP client (cross-origin redirect reject + body cap + TLS-verify
+// honouring Insecure). The endpoint URL it fetches carries no credentials.
+func (d *Deployer) serviceRootHasSessionService(ctx context.Context) (bool, error) {
+	rootURL := strings.TrimRight(d.endpoint, "/") + "/redfish/v1/"
+
+	client := newDefensiveHTTPClient(!d.verifySSL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rootURL, nil)
+	if err != nil {
+		return false, fmt.Errorf("building ServiceRoot request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return false, fmt.Errorf("fetching ServiceRoot: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("fetching ServiceRoot: unexpected status %d", resp.StatusCode)
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return false, fmt.Errorf("reading ServiceRoot: %w", err)
+	}
+
+	var root struct {
+		SessionService struct {
+			ODataID string `json:"@odata.id"`
+		} `json:"SessionService"`
+		Links struct {
+			Sessions struct {
+				ODataID string `json:"@odata.id"`
+			} `json:"Sessions"`
+		} `json:"Links"`
+	}
+	if err := json.Unmarshal(body, &root); err != nil {
+		return false, fmt.Errorf("parsing ServiceRoot: %w", err)
+	}
+
+	return root.SessionService.ODataID != "" || root.Links.Sessions.ODataID != "", nil
+}
+
+// Close drops the connection. For session auth it logs the Redfish session out
+// (DELETE on the session resource); for Basic auth there is no session, so Close
+// is a safe no-op beyond clearing the client. It is safe to call on a
+// never-connected or already-closed Deployer, and callers MUST defer it so a
+// session is not leaked on either the success or the error path.
 func (d *Deployer) Close() error {
 	if d.client == nil {
 		return nil
 	}
-	d.client.Logout()
+	// Only tear down a session when one was actually established. Under Basic auth
+	// gofish created no session, so Logout would have nothing to DELETE.
+	if !d.usedBasicAuth {
+		d.client.Logout()
+	}
 	d.client = nil
+	d.usedBasicAuth = false
 	return nil
 }
 

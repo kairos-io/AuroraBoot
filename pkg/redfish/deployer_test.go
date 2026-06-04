@@ -509,6 +509,125 @@ var _ = Describe("Deployer", func() {
 		})
 	})
 
+	Describe("Authentication mode", func() {
+		Context("auto (default) against an endpoint WITH a SessionService", func() {
+			It("uses session auth and DELETEs the session on Close", func() {
+				// d defaults to AuthMode "" -> auto; bmc advertises a SessionService.
+				Expect(d.Connect(ctx)).To(Succeed())
+
+				// A session was created (JSON credential body captured).
+				Expect(bmc.sessionBody).To(HaveKeyWithValue("UserName", testUser))
+
+				_, err := d.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:   testImageURL,
+					BootTarget: redfish.BootTargetCd,
+					BootMode:   redfish.BootModeUEFI,
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				Expect(d.Close()).To(Succeed())
+				Expect(bmc.sawRequest(http.MethodDelete, bmc.sessionLocation)).To(BeTrue(),
+					"auto with a SessionService must DELETE the session")
+			})
+		})
+
+		Context("auto against an endpoint WITHOUT a SessionService", func() {
+			BeforeEach(func() {
+				bmc.noSessionService = true
+			})
+
+			It("falls back to Basic auth, deploys, and does NOT DELETE a session on Close", func() {
+				Expect(d.Connect(ctx)).To(Succeed())
+
+				// No session was ever created (no JSON credential body, no token).
+				Expect(bmc.sessionBody).To(BeNil())
+
+				// The full deploy still works over Basic auth.
+				result, err := d.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:   testImageURL,
+					BootTarget: redfish.BootTargetCd,
+					BootMode:   redfish.BootModeUEFI,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.TaskState).To(Equal("Completed"))
+
+				// Requests carried HTTP Basic auth, not a session token.
+				Expect(bmc.sawAuthType("Basic", "/redfish/v1/Systems")).To(BeTrue(),
+					"basic-auth fallback must send Authorization: Basic on requests")
+				Expect(bmc.sawAuthType("Token", "/redfish/v1/Systems")).To(BeFalse())
+
+				// Close is a no-op for Basic auth: no session DELETE, no error.
+				Expect(d.Close()).To(Succeed())
+				Expect(bmc.sawRequest(http.MethodDelete, bmc.sessionLocation)).To(BeFalse(),
+					"basic auth has no session to DELETE")
+			})
+		})
+
+		Context("explicit basic even when a SessionService exists", func() {
+			It("uses Basic auth and never creates a session", func() {
+				bd := redfish.NewDeployer(redfish.Config{
+					Endpoint:  bmc.URL(),
+					Username:  testUser,
+					Password:  testPassword,
+					VerifySSL: false,
+					Timeout:   30 * time.Second,
+					AuthMode:  redfish.AuthModeBasic,
+				})
+				Expect(bd.Connect(ctx)).To(Succeed())
+
+				_, err := bd.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:   testImageURL,
+					BootTarget: redfish.BootTargetCd,
+					BootMode:   redfish.BootModeUEFI,
+				})
+				Expect(err).NotTo(HaveOccurred())
+
+				// Despite a SessionService being available, no session was created.
+				Expect(bmc.sessionBody).To(BeNil())
+				Expect(bmc.sawAuthType("Basic", "/redfish/v1/Systems")).To(BeTrue())
+
+				Expect(bd.Close()).To(Succeed())
+				Expect(bmc.sawRequest(http.MethodDelete, bmc.sessionLocation)).To(BeFalse())
+			})
+		})
+
+		Context("explicit session", func() {
+			It("uses session auth and DELETEs it on Close (current behaviour)", func() {
+				sd := redfish.NewDeployer(redfish.Config{
+					Endpoint:  bmc.URL(),
+					Username:  testUser,
+					Password:  testPassword,
+					VerifySSL: false,
+					Timeout:   30 * time.Second,
+					AuthMode:  redfish.AuthModeSession,
+				})
+				Expect(sd.Connect(ctx)).To(Succeed())
+				Expect(bmc.sessionBody).To(HaveKeyWithValue("UserName", testUser))
+
+				Expect(sd.Close()).To(Succeed())
+				Expect(bmc.sawRequest(http.MethodDelete, bmc.sessionLocation)).To(BeTrue())
+			})
+		})
+
+		Context("unknown auth mode", func() {
+			It("rejects Connect with a clear error", func() {
+				ud := redfish.NewDeployer(redfish.Config{
+					Endpoint:  bmc.URL(),
+					Username:  testUser,
+					Password:  testPassword,
+					VerifySSL: false,
+					Timeout:   30 * time.Second,
+					AuthMode:  redfish.AuthMode("nonsense"),
+				})
+				err := ud.Connect(ctx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("unknown Redfish auth mode"))
+				Expect(err.Error()).To(ContainSubstring("nonsense"))
+				_ = ud.Close()
+			})
+		})
+	})
+
 	Describe("TLS verification default", func() {
 		// gofish reuses http.DefaultTransport's TLSClientConfig pointer; an
 		// insecure connect elsewhere in the suite can flip InsecureSkipVerify on
