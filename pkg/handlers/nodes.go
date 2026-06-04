@@ -348,15 +348,27 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 }
 
 // GetCommands handles GET /api/v1/nodes/:nodeID/commands.
-// For agent requests, returns only pending commands and marks them as delivered.
+//
+// Served under AgentOrAdminMiddleware, so it handles two callers:
+//   - agent (node API key): returns only pending commands and marks them
+//     delivered, scoped to the authenticated node. A node may only read its
+//     own queue — requesting another node's :nodeID is rejected with 403
+//     (node-impersonation / BOLA).
+//   - admin (bearer): returns all commands for the requested node.
 func (h *NodeHandler) GetCommands(c echo.Context) error {
 	nodeID := c.Param("nodeID")
 
 	// Check if this is an agent request (node API key auth sets nodeID in context)
-	ctxNodeID, _ := c.Get(auth.ContextKeyNodeID).(string)
+	ctxNodeID := auth.AuthNodeID(c)
 	isAgent := ctxNodeID != ""
 
 	if isAgent {
+		// Bind the agent to its own identity: the path :nodeID must be the
+		// node the API key belongs to.
+		if ctxNodeID != nodeID {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+		}
+
 		cmds, err := h.commands.GetPending(c.Request().Context(), nodeID)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get commands"})

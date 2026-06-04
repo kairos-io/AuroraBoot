@@ -2,8 +2,15 @@ package store
 
 import (
 	"context"
+	"errors"
 	"time"
 )
+
+// ErrCommandNotFound is returned by node-scoped command lookups/updates when no
+// command matches both the command id and the owning node. Callers use it to
+// fail closed (404/403) rather than silently succeeding on a foreign or
+// non-existent command.
+var ErrCommandNotFound = errors.New("command not found")
 
 // NodeGroup represents a logical group/environment for nodes (e.g., "production", "staging").
 type NodeGroup struct {
@@ -114,6 +121,11 @@ type CommandStore interface {
 	GetPending(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	MarkDelivered(ctx context.Context, ids []string) error
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
+	// UpdateStatusForNode updates a command's status only if it belongs to
+	// nodeID. It returns ErrCommandNotFound when no command matches both the
+	// command id and the owning node, so callers can fail closed (403/404)
+	// instead of silently succeeding on a foreign or missing command.
+	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error
 	ListByNode(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	Delete(ctx context.Context, id string) error
 	DeleteTerminal(ctx context.Context, nodeID string) error
@@ -121,40 +133,40 @@ type CommandStore interface {
 
 // ArtifactRecord stores a build artifact and its metadata.
 type ArtifactRecord struct {
-	ID            string    `json:"id" gorm:"primaryKey"`
-	Name          string    `json:"name,omitempty"`
-	Saved         bool      `json:"saved,omitempty"`
-	Phase         string    `json:"phase"`
-	Message       string    `json:"message"`
-	BaseImage     string    `json:"baseImage"`
-	KairosVersion string    `json:"kairosVersion"`
-	Model         string    `json:"model"`
-	ISO           bool      `json:"iso"`
-	CloudImage    bool      `json:"cloudImage"`
-	Netboot       bool      `json:"netboot"`
-	FIPS          bool      `json:"fips"`
-	TrustedBoot   bool      `json:"trustedBoot"`
-	Arch              string `json:"arch,omitempty"`
-	Variant           string `json:"variant,omitempty"`
-	RawDisk           bool   `json:"rawDisk"`
-	Tar               bool   `json:"tar"`
-	GCE               bool   `json:"gce"`
-	VHD               bool   `json:"vhd"`
-	UKI               bool   `json:"uki"`
-	KairosInitImage   string `json:"kairosInitImage,omitempty"`
-	AutoInstall       bool   `json:"autoInstall"`
-	RegisterAuroraBoot  bool   `json:"registerAuroraBoot"`
-	Dockerfile        string `json:"dockerfile,omitempty"`
-	CloudConfig       string `json:"cloudConfig,omitempty" gorm:"type:text"`
-	KubernetesDistro  string `json:"kubernetesDistro,omitempty"`
-	KubernetesVersion string `json:"kubernetesVersion,omitempty"`
-	TargetGroupID     string `json:"targetGroupId,omitempty"`
-	ContainerImage    string `json:"containerImage,omitempty"`
-	OverlayRootfs string    `json:"overlayRootfs,omitempty"`
-	ArtifactFiles []string  `json:"artifacts" gorm:"serializer:json"`
-	Logs          string    `json:"-" gorm:"type:text"`
-	CreatedAt     time.Time `json:"createdAt"`
-	UpdatedAt     time.Time `json:"updatedAt"`
+	ID                 string    `json:"id" gorm:"primaryKey"`
+	Name               string    `json:"name,omitempty"`
+	Saved              bool      `json:"saved,omitempty"`
+	Phase              string    `json:"phase"`
+	Message            string    `json:"message"`
+	BaseImage          string    `json:"baseImage"`
+	KairosVersion      string    `json:"kairosVersion"`
+	Model              string    `json:"model"`
+	ISO                bool      `json:"iso"`
+	CloudImage         bool      `json:"cloudImage"`
+	Netboot            bool      `json:"netboot"`
+	FIPS               bool      `json:"fips"`
+	TrustedBoot        bool      `json:"trustedBoot"`
+	Arch               string    `json:"arch,omitempty"`
+	Variant            string    `json:"variant,omitempty"`
+	RawDisk            bool      `json:"rawDisk"`
+	Tar                bool      `json:"tar"`
+	GCE                bool      `json:"gce"`
+	VHD                bool      `json:"vhd"`
+	UKI                bool      `json:"uki"`
+	KairosInitImage    string    `json:"kairosInitImage,omitempty"`
+	AutoInstall        bool      `json:"autoInstall"`
+	RegisterAuroraBoot bool      `json:"registerAuroraBoot"`
+	Dockerfile         string    `json:"dockerfile,omitempty"`
+	CloudConfig        string    `json:"cloudConfig,omitempty" gorm:"type:text"`
+	KubernetesDistro   string    `json:"kubernetesDistro,omitempty"`
+	KubernetesVersion  string    `json:"kubernetesVersion,omitempty"`
+	TargetGroupID      string    `json:"targetGroupId,omitempty"`
+	ContainerImage     string    `json:"containerImage,omitempty"`
+	OverlayRootfs      string    `json:"overlayRootfs,omitempty"`
+	ArtifactFiles      []string  `json:"artifacts" gorm:"serializer:json"`
+	Logs               string    `json:"-" gorm:"type:text"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 // Artifact phases.

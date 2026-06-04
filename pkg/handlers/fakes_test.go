@@ -241,6 +241,19 @@ func (f *fakeCommandStore) UpdateStatus(_ context.Context, id string, phase stri
 	return fmt.Errorf("not found")
 }
 
+func (f *fakeCommandStore) UpdateStatusForNode(_ context.Context, id string, nodeID string, phase string, result string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cmd := range f.cmds {
+		if cmd.ID == id && cmd.ManagedNodeID == nodeID {
+			cmd.Phase = phase
+			cmd.Result = result
+			return nil
+		}
+	}
+	return store.ErrCommandNotFound
+}
+
 func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

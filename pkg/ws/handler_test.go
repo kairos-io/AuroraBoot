@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/kairos-io/AuroraBoot/pkg/store"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
 	. "github.com/onsi/ginkgo/v2"
@@ -240,6 +240,50 @@ var _ = Describe("WebSocket Handler", func() {
 				}
 				return c.Phase
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.CommandCompleted))
+		})
+
+		It("should reject a command_status for a command owned by another node", func() {
+			// Register a second node and queue a command for IT.
+			otherNum := testCounter.Add(1000)
+			other := &store.ManagedNode{
+				MachineID: fmt.Sprintf("machine-other-%d", otherNum),
+				Hostname:  "other-host",
+				Labels:    map[string]string{},
+			}
+			Expect(nodes.Register(bg, other)).To(Succeed())
+
+			foreign := &store.NodeCommand{
+				ManagedNodeID: other.ID,
+				Command:       "upgrade",
+			}
+			Expect(commands.Create(bg, foreign)).To(Succeed())
+			Expect(commands.UpdateStatus(bg, foreign.ID, store.CommandDelivered, "")).To(Succeed())
+
+			// Connect as the FIRST node and try to move the other node's command.
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			status := commandStatusData{
+				ID:     foreign.ID,
+				Phase:  store.CommandCompleted,
+				Result: "pwned",
+			}
+			Expect(sendMsg(conn, "command_status", status)).To(Succeed())
+
+			// The foreign command must stay Delivered — the impersonating
+			// node's update is dropped. Consistently holds over the window.
+			Consistently(func() string {
+				c, _ := commands.GetByID(bg, foreign.ID)
+				if c == nil {
+					return ""
+				}
+				return c.Phase
+			}, 1*time.Second, 100*time.Millisecond).Should(Equal(store.CommandDelivered))
 		})
 
 		It("should send pending commands on connect", func() {

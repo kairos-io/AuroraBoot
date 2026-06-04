@@ -186,6 +186,48 @@ var _ = Describe("NodeAPIKeyMiddleware", func() {
 	})
 })
 
+var _ = Describe("RequireNodeMatch", func() {
+	var e *echo.Echo
+
+	BeforeEach(func() {
+		e = echo.New()
+	})
+
+	// newCtx builds a context with the given path :nodeID and (optionally) an
+	// authenticated node identity, mirroring what NodeAPIKeyMiddleware sets.
+	newCtx := func(pathNodeID, authNodeID string) (echo.Context, *httptest.ResponseRecorder) {
+		req := httptest.NewRequest(http.MethodGet, "/", nil)
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetParamNames("nodeID")
+		c.SetParamValues(pathNodeID)
+		if authNodeID != "" {
+			c.Set(auth.ContextKeyNodeID, authNodeID)
+		}
+		return c, rec
+	}
+
+	ok := func(c echo.Context) error { return c.String(http.StatusOK, "ok") }
+
+	It("allows when the path nodeID matches the authenticated node", func() {
+		c, rec := newCtx("node-1", "node-1")
+		Expect(auth.RequireNodeMatch(ok)(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+
+	It("forbids when the path nodeID differs from the authenticated node", func() {
+		c, rec := newCtx("node-2", "node-1")
+		Expect(auth.RequireNodeMatch(ok)(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusForbidden))
+	})
+
+	It("rejects with 401 when no node identity is present", func() {
+		c, rec := newCtx("node-1", "")
+		Expect(auth.RequireNodeMatch(ok)(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusUnauthorized))
+	})
+})
+
 var _ = Describe("RegistrationTokenAuth", func() {
 	var (
 		e          *echo.Echo

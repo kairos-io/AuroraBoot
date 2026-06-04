@@ -315,6 +315,32 @@ func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, resul
 	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).Where("id = ?", id).Updates(updates).Error
 }
 
+// UpdateStatusForNode updates a command's status scoped to its owning node.
+// The WHERE clause matches both the command id and managed_node_id, so a node
+// can only update commands addressed to it. GORM's Updates returns a nil error
+// even when the WHERE matches zero rows, so we inspect RowsAffected and surface
+// a miss as store.ErrCommandNotFound — never a silent success.
+func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error {
+	updates := map[string]any{
+		"phase":  phase,
+		"result": result,
+	}
+	if phase == store.CommandCompleted || phase == store.CommandFailed {
+		now := time.Now()
+		updates["completed_at"] = &now
+	}
+	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("id = ? AND managed_node_id = ?", id, nodeID).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return store.ErrCommandNotFound
+	}
+	return nil
+}
+
 func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	var cmds []*store.NodeCommand
 	if err := s.db.WithContext(ctx).Where("managed_node_id = ?", nodeID).Find(&cmds).Error; err != nil {

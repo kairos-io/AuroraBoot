@@ -3,6 +3,7 @@ package ws
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log"
 	"net/http"
 	"time"
@@ -108,7 +109,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		case "heartbeat":
 			h.handleHeartbeat(node.ID, msg.Data)
 		case "command_status":
-			h.handleCommandStatus(msg.Data)
+			h.handleCommandStatus(node.ID, msg.Data)
 		default:
 			log.Printf("ws unknown message type from node %s: %s", node.ID, msg.Type)
 		}
@@ -133,7 +134,11 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	}
 }
 
-func (h *AgentHandler) handleCommandStatus(data json.RawMessage) {
+// handleCommandStatus applies a command_status report from the agent. The
+// update is scoped to nodeID — the node this WS connection authenticated as —
+// so a node cannot move another node's command by sending its id. A miss
+// (foreign or unknown command) is rejected without broadcasting.
+func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) {
 	var status commandStatusData
 	if err := json.Unmarshal(data, &status); err != nil {
 		log.Printf("ws invalid command_status: %v", err)
@@ -143,8 +148,13 @@ func (h *AgentHandler) handleCommandStatus(data json.RawMessage) {
 	// context.Background() is correct here: handleCommandStatus is called from
 	// the WS read loop which outlives the original HTTP request context.
 	ctx := context.Background()
-	if err := h.Commands.UpdateStatus(ctx, status.ID, status.Phase, status.Result); err != nil {
-		log.Printf("ws: failed to update command status for %s: %v", status.ID, err)
+	if err := h.Commands.UpdateStatusForNode(ctx, status.ID, nodeID, status.Phase, status.Result); err != nil {
+		if errors.Is(err, store.ErrCommandNotFound) {
+			log.Printf("ws: node %s attempted to update command %s it does not own; rejected", nodeID, status.ID)
+		} else {
+			log.Printf("ws: failed to update command status for %s: %v", status.ID, err)
+		}
+		return
 	}
 
 	if h.Hub != nil && h.Hub.UI != nil {
