@@ -253,7 +253,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
 	// Add some extra space to the image in case the calculation is a bit off
-	recoveryImage.Size = uint(size + 100)
+	recoveryImage.Size = uint(size + 200)
 
 	_, err = r.elemental.DeployImage(recoveryImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
