@@ -259,6 +259,131 @@ var _ = Describe("Deployer", func() {
 		})
 	})
 
+	Describe("System selection (fail-safe)", func() {
+		Context("with more than one ComputerSystem and no SystemID", func() {
+			BeforeEach(func() {
+				bmc.systemIDs = []string{"node-a", "node-b"}
+			})
+
+			It("refuses to Inspect and lists the available system Ids", func() {
+				Expect(d.Connect(ctx)).To(Succeed())
+				defer func() { _ = d.Close() }()
+
+				_, err := d.Inspect(ctx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("selection is required"))
+				Expect(err.Error()).To(ContainSubstring("node-a"))
+				Expect(err.Error()).To(ContainSubstring("node-b"))
+			})
+
+			It("refuses to Deploy (does not reset any machine) and lists the available Ids", func() {
+				Expect(d.Connect(ctx)).To(Succeed())
+				defer func() { _ = d.Close() }()
+
+				_, err := d.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:   testImageURL,
+					BootTarget: redfish.BootTargetCd,
+					BootMode:   redfish.BootModeUEFI,
+				})
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring("selection is required"))
+				Expect(err.Error()).To(ContainSubstring("node-a"))
+				Expect(err.Error()).To(ContainSubstring("node-b"))
+
+				// Critically: no system was reset, no media inserted.
+				Expect(bmc.sawRequest(http.MethodPost,
+					"/redfish/v1/Systems/node-a/Actions/ComputerSystem.Reset")).To(BeFalse())
+				Expect(bmc.sawRequest(http.MethodPost,
+					"/redfish/v1/Systems/node-b/Actions/ComputerSystem.Reset")).To(BeFalse())
+				Expect(bmc.resetSystemID).To(BeEmpty())
+			})
+		})
+
+		Context("with more than one ComputerSystem and a valid SystemID", func() {
+			It("targets exactly the selected system on Inspect and Deploy", func() {
+				bmc.systemIDs = []string{"node-a", "node-b"}
+
+				sel := redfish.NewDeployer(redfish.Config{
+					Endpoint:  bmc.URL(),
+					Username:  testUser,
+					Password:  testPassword,
+					VerifySSL: false,
+					Timeout:   30 * time.Second,
+					SystemID:  "node-b",
+				})
+				Expect(sel.Connect(ctx)).To(Succeed())
+				defer func() { _ = sel.Close() }()
+
+				info, err := sel.Inspect(ctx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(info.ID).To(Equal("node-b"))
+
+				result, err := sel.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:   testImageURL,
+					BootTarget: redfish.BootTargetCd,
+					BootMode:   redfish.BootModeUEFI,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.SystemID).To(Equal("node-b"))
+
+				// The InsertMedia and Reset hit node-b's resources, not node-a's.
+				Expect(bmc.sawRequest(http.MethodPost,
+					"/redfish/v1/Systems/node-b/VirtualMedia/Cd/Actions/VirtualMedia.InsertMedia")).To(BeTrue())
+				Expect(bmc.sawRequest(http.MethodPost,
+					"/redfish/v1/Systems/node-b/Actions/ComputerSystem.Reset")).To(BeTrue())
+				Expect(bmc.resetSystemID).To(Equal("node-b"))
+
+				// node-a was never touched.
+				Expect(bmc.sawRequest(http.MethodPost,
+					"/redfish/v1/Systems/node-a/Actions/ComputerSystem.Reset")).To(BeFalse())
+			})
+		})
+
+		Context("with a SystemID that matches nothing", func() {
+			It("errors listing the available system Ids", func() {
+				bmc.systemIDs = []string{"node-a", "node-b"}
+
+				sel := redfish.NewDeployer(redfish.Config{
+					Endpoint:  bmc.URL(),
+					Username:  testUser,
+					Password:  testPassword,
+					VerifySSL: false,
+					Timeout:   30 * time.Second,
+					SystemID:  "does-not-exist",
+				})
+				Expect(sel.Connect(ctx)).To(Succeed())
+				defer func() { _ = sel.Close() }()
+
+				_, err := sel.Inspect(ctx)
+				Expect(err).To(HaveOccurred())
+				Expect(err.Error()).To(ContainSubstring(`no ComputerSystem with Id "does-not-exist"`))
+				Expect(err.Error()).To(ContainSubstring("node-a"))
+				Expect(err.Error()).To(ContainSubstring("node-b"))
+			})
+		})
+
+		Context("with a single ComputerSystem and no SystemID (back-compat)", func() {
+			It("Inspects and Deploys against the sole member", func() {
+				// bmc defaults to a single "sys-xyz" system.
+				Expect(d.Connect(ctx)).To(Succeed())
+				defer func() { _ = d.Close() }()
+
+				info, err := d.Inspect(ctx)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(info.ID).To(Equal("sys-xyz"))
+
+				result, err := d.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:   testImageURL,
+					BootTarget: redfish.BootTargetCd,
+					BootMode:   redfish.BootModeUEFI,
+				})
+				Expect(err).NotTo(HaveOccurred())
+				Expect(result.SystemID).To(Equal("sys-xyz"))
+				Expect(bmc.resetSystemID).To(Equal("sys-xyz"))
+			})
+		})
+	})
+
 	Describe("VirtualMedia discovery on the Manager", func() {
 		It("finds CD media on the Manager when the System has none", func() {
 			bmc.mediaOnManager = true

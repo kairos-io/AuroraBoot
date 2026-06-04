@@ -109,6 +109,10 @@ var RedFishDeployCmd = cli.Command{
 					Usage: "URL the BMC pulls the ISO from (InsertMedia is URL-pull; the BMC must be able to reach this URL)",
 				},
 				&cli.StringFlag{
+					Name:  "system-id",
+					Usage: "Redfish ComputerSystem Id to target; required when the BMC exposes more than one system",
+				},
+				&cli.StringFlag{
 					Name:  "vendor",
 					Usage: "Hardware vendor (generic, supermicro, ilo, dmtf)",
 					Value: "generic",
@@ -175,6 +179,7 @@ var RedFishDeployCmd = cli.Command{
 					return err
 				}
 				imageURL := c.String("image-url")
+				systemID := c.String("system-id")
 				vendor := c.String("vendor")
 				verifySSL := c.Bool("verify-ssl")
 				serveTLS := c.Bool("serve-tls")
@@ -261,6 +266,7 @@ var RedFishDeployCmd = cli.Command{
 					Vendor:    redfish.VendorType(vendor),
 					VerifySSL: verifySSL,
 					Timeout:   timeout,
+					SystemID:  systemID,
 				})
 
 				if err := deployer.Connect(ctx); err != nil {

@@ -32,6 +32,12 @@ type Deployer struct {
 	verifySSL bool
 	timeout   time.Duration
 
+	// systemID, when non-empty, pins the ComputerSystem the Deployer targets by
+	// its Redfish Id (the last path segment of the member, e.g. the libvirt
+	// domain UUID under sushy-tools). It is the fail-safe selector: with more than
+	// one system exposed, selection is required rather than silently picking [0].
+	systemID string
+
 	// quirks is the per-vendor profile selected from vendor. For VendorGeneric it
 	// is the zero-value (all-nil-hook) profile, so the default path is unchanged.
 	quirks quirks
@@ -49,6 +55,11 @@ type Config struct {
 	Vendor    VendorType
 	VerifySSL bool
 	Timeout   time.Duration
+	// SystemID optionally pins the target ComputerSystem by its Redfish Id (the
+	// last path segment of the member). Leave empty when the BMC exposes exactly
+	// one system. It is REQUIRED when the BMC exposes more than one: selectSystem
+	// refuses to guess and lists the available Ids instead.
+	SystemID string
 }
 
 // NewDeployer builds a Deployer from a Config. It does not open a connection;
@@ -71,6 +82,7 @@ func NewDeployer(cfg Config) *Deployer {
 		vendor:    vendor,
 		verifySSL: cfg.VerifySSL,
 		timeout:   timeout,
+		systemID:  cfg.SystemID,
 		quirks:    quirksFor(vendor),
 	}
 }
@@ -125,9 +137,9 @@ func (d *Deployer) Close() error {
 	return nil
 }
 
-// Inspect discovers the primary ComputerSystem and returns its typed hardware
-// summary. Memory and CPU come from the nested MemorySummary/ProcessorSummary
-// (fixing the historical 0/0 bug).
+// Inspect selects the target ComputerSystem (see selectSystem) and returns its
+// typed hardware summary. Memory and CPU come from the nested
+// MemorySummary/ProcessorSummary (fixing the historical 0/0 bug).
 func (d *Deployer) Inspect(ctx context.Context) (*SystemInfo, error) {
 	if d.client == nil {
 		return nil, errors.New("not connected: call Connect first")
@@ -136,7 +148,7 @@ func (d *Deployer) Inspect(ctx context.Context) (*SystemInfo, error) {
 		return nil, err
 	}
 
-	system, err := d.primarySystem()
+	system, err := d.selectSystem()
 	if err != nil {
 		return nil, err
 	}
@@ -182,7 +194,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	result := &DeployResult{StartedAt: time.Now()}
 
 	report("discovering", 10)
-	system, err := d.primarySystem()
+	system, err := d.selectSystem()
 	if err != nil {
 		return nil, err
 	}
@@ -255,9 +267,22 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	return result, nil
 }
 
-// primarySystem discovers the Systems collection and returns the sole/first
-// member. No IDs are hardcoded.
-func (d *Deployer) primarySystem() (*schemas.ComputerSystem, error) {
+// selectSystem discovers the Systems collection and resolves the single
+// ComputerSystem to operate on. It is fail-safe: it never silently picks the
+// first member when more than one exists.
+//
+//   - With d.systemID set, it returns the member whose Redfish Id matches
+//     exactly (the gofish ComputerSystem.ID, i.e. the last path segment of the
+//     member @odata.id — sushy-tools uses the libvirt domain UUID here). If
+//     nothing matches it errors and lists the available Ids so the operator can
+//     pick.
+//   - With d.systemID empty it uses the sole member when there is exactly one;
+//     errors when there are none; and, crucially, errors when there is more than
+//     one — listing the available Ids and requiring an explicit selection rather
+//     than resetting an arbitrary machine.
+//
+// No IDs are hardcoded; matching is exact on the Redfish Id.
+func (d *Deployer) selectSystem() (*schemas.ComputerSystem, error) {
 	systems, err := d.client.GetService().Systems()
 	if err != nil {
 		return nil, fmt.Errorf("discovering systems: %w", d.scrub(err))
@@ -265,7 +290,33 @@ func (d *Deployer) primarySystem() (*schemas.ComputerSystem, error) {
 	if len(systems) == 0 {
 		return nil, errors.New("no ComputerSystem members found on the Redfish service")
 	}
+
+	if d.systemID != "" {
+		for _, sys := range systems {
+			if sys.ID == d.systemID {
+				return sys, nil
+			}
+		}
+		return nil, fmt.Errorf("no ComputerSystem with Id %q found on the Redfish service; available system Ids: %s",
+			d.systemID, strings.Join(systemIDs(systems), ", "))
+	}
+
+	if len(systems) > 1 {
+		return nil, fmt.Errorf("the Redfish service exposes %d ComputerSystems; a system selection is required (set SystemID): available system Ids: %s",
+			len(systems), strings.Join(systemIDs(systems), ", "))
+	}
+
 	return systems[0], nil
+}
+
+// systemIDs returns the Redfish Ids of the given systems, preserving the
+// collection order, for inclusion in selection-error messages.
+func systemIDs(systems []*schemas.ComputerSystem) []string {
+	ids := make([]string, 0, len(systems))
+	for _, sys := range systems {
+		ids = append(ids, sys.ID)
+	}
+	return ids
 }
 
 // findCDMedia locates a CD/DVD-capable VirtualMedia resource. Per the spec it may

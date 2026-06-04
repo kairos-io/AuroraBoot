@@ -27,6 +27,13 @@ type fakeBMC struct {
 	taskStates        []string
 	taskIdx           int
 
+	// systemIDs is the set of ComputerSystem Ids the Systems collection exposes.
+	// Defaults to a single "sys-xyz" member (matching the original single-system
+	// fake). Set more than one to exercise the fail-safe system selector. Each Id
+	// gets its own ComputerSystem, VirtualMedia and Reset action under
+	// /redfish/v1/Systems/{id}.
+	systemIDs []string
+
 	// insertMediaExtendedInfo, when true, makes a failing InsertMedia return a
 	// Redfish error body carrying @Message.ExtendedInfo (Message/MessageId/
 	// Resolution) so the error-surfacing path can be asserted.
@@ -47,6 +54,9 @@ type fakeBMC struct {
 	bootPatchBody   map[string]any
 	resetBody       map[string]any
 	sessionLocation string
+	// resetSystemID records the Id of the ComputerSystem whose Reset action was
+	// last invoked, so a multi-system spec can assert the correct machine was hit.
+	resetSystemID string
 }
 
 type recordedRequest struct {
@@ -67,6 +77,8 @@ func newFakeBMC() *fakeBMC {
 		// allowable values, matching the common server BMC and the UEFI default of
 		// the deploy path.
 		bootModeAllowableValues: []string{"Legacy", "UEFI"},
+		// A single system by default, preserving the original fake's behaviour.
+		systemIDs: []string{"sys-xyz"},
 	}
 	f.server = httptest.NewTLSServer(http.HandlerFunc(f.handle))
 	return f
@@ -134,18 +146,19 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 
 	// --- systems ---
 	case r.URL.Path == "/redfish/v1/Systems":
-		f.writeJSON(w, f.collection("Systems Collection", "/redfish/v1/Systems/sys-xyz"))
-	case r.URL.Path == "/redfish/v1/Systems/sys-xyz" && r.Method == http.MethodGet:
-		f.writeJSON(w, f.computerSystem())
-	case r.URL.Path == "/redfish/v1/Systems/sys-xyz" && r.Method == http.MethodPatch:
+		f.writeJSON(w, f.systemsCollection())
+	case f.isSystemPath(r.URL.Path) && r.Method == http.MethodGet:
+		f.writeJSON(w, f.computerSystem(f.systemIDFromPath(r.URL.Path)))
+	case f.isSystemPath(r.URL.Path) && r.Method == http.MethodPatch:
 		f.mu.Lock()
 		f.bootPatchBody = decodeBody(r)
 		f.mu.Unlock()
 		w.WriteHeader(http.StatusOK)
-		f.writeJSON(w, f.computerSystem())
-	case r.URL.Path == "/redfish/v1/Systems/sys-xyz/Actions/ComputerSystem.Reset" && r.Method == http.MethodPost:
+		f.writeJSON(w, f.computerSystem(f.systemIDFromPath(r.URL.Path)))
+	case f.isSystemResetPath(r.URL.Path) && r.Method == http.MethodPost:
 		f.mu.Lock()
 		f.resetBody = decodeBody(r)
+		f.resetSystemID = f.systemIDFromResetPath(r.URL.Path)
 		f.mu.Unlock()
 		w.Header().Set("Location", "/redfish/v1/TaskService/Tasks/task-1")
 		w.WriteHeader(http.StatusAccepted)
@@ -158,10 +171,11 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		f.writeJSON(w, f.manager())
 
 	// --- virtual media ---
-	case r.URL.Path == "/redfish/v1/Systems/sys-xyz/VirtualMedia":
-		f.writeJSON(w, f.collection("VirtualMedia Collection", "/redfish/v1/Systems/sys-xyz/VirtualMedia/Cd"))
-	case r.URL.Path == "/redfish/v1/Systems/sys-xyz/VirtualMedia/Cd" && r.Method == http.MethodGet:
-		f.writeJSON(w, f.virtualMedia("/redfish/v1/Systems/sys-xyz/VirtualMedia/Cd"))
+	case f.isSystemVirtualMediaCollectionPath(r.URL.Path):
+		id := f.systemIDFromVirtualMediaCollectionPath(r.URL.Path)
+		f.writeJSON(w, f.collection("VirtualMedia Collection", "/redfish/v1/Systems/"+id+"/VirtualMedia/Cd"))
+	case f.isSystemVirtualMediaCdPath(r.URL.Path) && r.Method == http.MethodGet:
+		f.writeJSON(w, f.virtualMedia(r.URL.Path))
 	case r.URL.Path == "/redfish/v1/Managers/mgr-1/VirtualMedia":
 		f.writeJSON(w, f.collection("VirtualMedia Collection", "/redfish/v1/Managers/mgr-1/VirtualMedia/Cd"))
 	case r.URL.Path == "/redfish/v1/Managers/mgr-1/VirtualMedia/Cd" && r.Method == http.MethodGet:
@@ -238,23 +252,105 @@ func (f *fakeBMC) serviceRoot() map[string]any {
 	}
 }
 
-func (f *fakeBMC) collection(name, member string) map[string]any {
+func (f *fakeBMC) collection(name string, members ...string) map[string]any {
+	memberObjs := make([]map[string]any, 0, len(members))
+	for _, m := range members {
+		memberObjs = append(memberObjs, map[string]any{"@odata.id": m})
+	}
 	return map[string]any{
 		"@odata.id":           "/redfish/v1/collection",
 		"@odata.type":         "#Collection.Collection",
 		"Name":                name,
-		"Members@odata.count": 1,
-		"Members": []map[string]any{
-			{"@odata.id": member},
-		},
+		"Members@odata.count": len(members),
+		"Members":             memberObjs,
 	}
 }
 
-func (f *fakeBMC) computerSystem() map[string]any {
+// systemsCollection serves the Systems collection with one member per
+// configured systemID, in order.
+func (f *fakeBMC) systemsCollection() map[string]any {
+	members := make([]string, 0, len(f.systemIDs))
+	for _, id := range f.systemIDs {
+		members = append(members, "/redfish/v1/Systems/"+id)
+	}
+	return f.collection("Systems Collection", members...)
+}
+
+// knownSystemID reports whether id is one of the configured systems.
+func (f *fakeBMC) knownSystemID(id string) bool {
+	for _, s := range f.systemIDs {
+		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+// isSystemPath matches GET/PATCH on a ComputerSystem member, e.g.
+// /redfish/v1/Systems/{id}.
+func (f *fakeBMC) isSystemPath(path string) bool {
+	id := f.systemIDFromPath(path)
+	return id != "" && f.knownSystemID(id)
+}
+
+func (f *fakeBMC) systemIDFromPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok || strings.Contains(rest, "/") {
+		return ""
+	}
+	return rest
+}
+
+func (f *fakeBMC) isSystemResetPath(path string) bool {
+	return f.systemIDFromResetPath(path) != ""
+}
+
+func (f *fakeBMC) systemIDFromResetPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok {
+		return ""
+	}
+	id, ok := strings.CutSuffix(rest, "/Actions/ComputerSystem.Reset")
+	if !ok || strings.Contains(id, "/") || !f.knownSystemID(id) {
+		return ""
+	}
+	return id
+}
+
+func (f *fakeBMC) isSystemVirtualMediaCollectionPath(path string) bool {
+	return f.systemIDFromVirtualMediaCollectionPath(path) != ""
+}
+
+func (f *fakeBMC) systemIDFromVirtualMediaCollectionPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok {
+		return ""
+	}
+	id, ok := strings.CutSuffix(rest, "/VirtualMedia")
+	if !ok || strings.Contains(id, "/") || !f.knownSystemID(id) {
+		return ""
+	}
+	return id
+}
+
+func (f *fakeBMC) isSystemVirtualMediaCdPath(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok {
+		return false
+	}
+	id, ok := strings.CutSuffix(rest, "/VirtualMedia/Cd")
+	if !ok || strings.Contains(id, "/") {
+		return false
+	}
+	return f.knownSystemID(id)
+}
+
+func (f *fakeBMC) computerSystem(id string) map[string]any {
+	base := "/redfish/v1/Systems/" + id
 	cs := map[string]any{
-		"@odata.id":    "/redfish/v1/Systems/sys-xyz",
+		"@odata.id":    base,
 		"@odata.type":  "#ComputerSystem.v1_5_0.ComputerSystem",
-		"Id":           "sys-xyz",
+		"Id":           id,
 		"Name":         "Test System",
 		"Manufacturer": "ACME",
 		"Model":        "ProLiant-Test",
@@ -271,7 +367,7 @@ func (f *fakeBMC) computerSystem() map[string]any {
 		"Boot": f.boot(),
 		"Actions": map[string]any{
 			"#ComputerSystem.Reset": map[string]any{
-				"target": "/redfish/v1/Systems/sys-xyz/Actions/ComputerSystem.Reset",
+				"target": base + "/Actions/ComputerSystem.Reset",
 				"ResetType@Redfish.AllowableValues": []string{
 					"On", "ForceOff", "ForceRestart", "GracefulRestart", "GracefulShutdown",
 				},
@@ -279,10 +375,10 @@ func (f *fakeBMC) computerSystem() map[string]any {
 		},
 	}
 	if !f.mediaOnManager {
-		cs["VirtualMedia"] = map[string]any{"@odata.id": "/redfish/v1/Systems/sys-xyz/VirtualMedia"}
+		cs["VirtualMedia"] = map[string]any{"@odata.id": base + "/VirtualMedia"}
 	}
 	if f.withSecureBoot {
-		cs["SecureBoot"] = map[string]any{"@odata.id": "/redfish/v1/Systems/sys-xyz/SecureBoot"}
+		cs["SecureBoot"] = map[string]any{"@odata.id": base + "/SecureBoot"}
 	}
 	return cs
 }
