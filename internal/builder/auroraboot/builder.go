@@ -150,7 +150,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	// are interpolated into the kairos-init Dockerfile RUN line, so they must
 	// not carry shell metacharacters.
 	if err := validateKairosInitOptions(opts); err != nil {
-		return nil, fmt.Errorf("validating build options: %w", err)
+		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
 	}
 
 	id := opts.ID

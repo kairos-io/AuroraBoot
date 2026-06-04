@@ -256,6 +256,12 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 
 	status, err := h.builder.Build(ctx, opts)
 	if err != nil {
+		// Invalid admin-supplied build inputs are a client error (400), not a
+		// server fault (500). The validation detail (field + "invalid") is safe
+		// to surface; it carries no secrets.
+		if errors.Is(err, builder.ErrInvalidBuildOptions) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
 	}
 
