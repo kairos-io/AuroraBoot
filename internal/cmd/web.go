@@ -52,6 +52,7 @@
 package cmd
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
@@ -59,11 +60,15 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	_ "github.com/kairos-io/AuroraBoot/docs" // swag-generated; populates docs.SwaggerInfo
 	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
 	netbootmgr "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
+	"github.com/kairos-io/AuroraBoot/internal/secrets"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/handlers"
+	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/kairos-io/AuroraBoot/pkg/server"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 
@@ -89,6 +94,10 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "url", Usage: "External URL of this AuroraBoot instance (for cloud-config injection)", EnvVars: []string{"AURORABOOT_URL"}},
 		&cli.StringFlag{Name: "tls-cert", Usage: "Path to the TLS certificate for the API server. Both --tls-cert and --tls-key must be set to enable HTTPS", EnvVars: []string{"AURORABOOT_TLS_CERT"}},
 		&cli.StringFlag{Name: "tls-key", Usage: "Path to the TLS private key for the API server. Both --tls-cert and --tls-key must be set to enable HTTPS", EnvVars: []string{"AURORABOOT_TLS_KEY"}},
+		&cli.StringFlag{Name: "redfish-serve-url", Usage: "Advertised base URL a BMC fetches an artifact ISO from for Redfish deploys (default: --url). The BMC management network may differ from the UI network", EnvVars: []string{"AURORABOOT_REDFISH_SERVE_URL"}},
+		&cli.StringFlag{Name: "redfish-serve-addr", Usage: "Bind address for the Redfish ISO-serve (e.g. 10.0.0.5:8090). Required to enable serving local artifact ISOs to a BMC", EnvVars: []string{"AURORABOOT_REDFISH_SERVE_ADDR"}},
+		&cli.StringFlag{Name: "redfish-serve-tls-cert", Usage: "TLS certificate for the Redfish ISO-serve (opt-in HTTPS; requires a BMC-trusted cert)"},
+		&cli.StringFlag{Name: "redfish-serve-tls-key", Usage: "TLS key for the Redfish ISO-serve"},
 	},
 	Action: runWeb,
 }
@@ -103,6 +112,10 @@ func runWeb(c *cli.Context) error {
 	externalURL := c.String("url")
 	tlsCert := c.String("tls-cert")
 	tlsKey := c.String("tls-key")
+	redfishServeURL := c.String("redfish-serve-url")
+	redfishServeAddr := c.String("redfish-serve-addr")
+	redfishServeTLSCert := c.String("redfish-serve-tls-cert")
+	redfishServeTLSKey := c.String("redfish-serve-tls-key")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -144,9 +157,24 @@ func runWeb(c *cli.Context) error {
 		return fmt.Errorf("create artifacts directory: %w", err)
 	}
 
+	// Data encryption key for BMC credentials at rest (AES-256-GCM). Lives
+	// alongside the other secrets as a 0600 file; generated on first run.
+	bmcKeyFile := filepath.Join(secretsDir, "bmc-key")
+	bmcCipher, err := secrets.LoadOrGenerateCipher(bmcKeyFile)
+	if err != nil {
+		return fmt.Errorf("load BMC encryption key: %w", err)
+	}
+
 	store, err := gormstore.New(dbDSN)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
+	}
+	store.WithCipher(bmcCipher)
+
+	// Reconcile deployments left Active by a previous process: a restart orphans
+	// their in-flight goroutine, so they can never complete. Mark them Failed.
+	if err := handlers.ReconcileOrphanedDeployments(context.Background(), &gormstore.DeploymentStoreAdapter{S: store}); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: reconciling orphaned deployments: %v\n", err)
 	}
 
 	artifactStore := &gormstore.ArtifactStoreAdapter{S: store}
@@ -168,7 +196,41 @@ func runWeb(c *cli.Context) error {
 
 	netbootManager := netbootmgr.NewManager()
 
+	// Optional Redfish ISO-serve: serves a local artifact ISO over a tokenized,
+	// BMC-reachable URL so virtual-media (URL-pull) deploys work without an
+	// operator-supplied imageUrl. It only starts when a bind address is given; the
+	// advertised base defaults to --url but can differ (the BMC management network
+	// is often not the UI network).
+	var isoServe *isoserve.Server
+	if redfishServeAddr != "" {
+		serveURL := redfishServeURL
+		if serveURL == "" {
+			serveURL = externalURL
+		}
+		isoServe = isoserve.New(isoserve.Config{
+			BaseURL:  serveURL,
+			BindAddr: redfishServeAddr,
+			CertFile: redfishServeTLSCert,
+			KeyFile:  redfishServeTLSKey,
+		})
+		if err := isoServe.Start(context.Background()); err != nil {
+			return fmt.Errorf("start redfish iso-serve: %w", err)
+		}
+		defer func() {
+			shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			_ = isoServe.Shutdown(shutdownCtx)
+		}()
+		fmt.Fprintf(os.Stderr, "  ISO-serve: %s (bind %s)\n", serveURL, redfishServeAddr)
+	}
+
+	// Root context for background deploy goroutines, cancelled when runWeb
+	// returns so in-flight Redfish deploys are aborted on shutdown.
+	baseCtx, baseCancel := context.WithCancel(context.Background())
+	defer baseCancel()
+
 	e := server.New(server.Config{
+		BaseContext:           baseCtx,
 		NodeStore:             nodeStore,
 		CommandStore:          commandStore,
 		GroupStore:            groupStore,
@@ -185,6 +247,7 @@ func runWeb(c *cli.Context) error {
 		ArtifactsDir:          artifactsDir,
 		KeysDir:               keysDir,
 		Hub:                   wsHub,
+		ISOServe:              isoServe,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)

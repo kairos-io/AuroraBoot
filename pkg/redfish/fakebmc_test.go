@@ -1,0 +1,485 @@
+package redfish_test
+
+import (
+	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
+)
+
+// fakeBMC is a spec-accurate, in-memory Redfish service used to drive the
+// gofish-backed Deployer in tests. gofish talks to it over real HTTP, so every
+// document it serves (ServiceRoot, collections, ComputerSystem, VirtualMedia,
+// Task) must be valid Redfish/odata. The fake records the requests it received
+// so assertions can verify the protocol flow (session body, no hardcoded IDs,
+// InsertMedia URL-pull body, boot override PATCH, ResetType, session DELETE).
+type fakeBMC struct {
+	server *httptest.Server
+
+	mu       sync.Mutex
+	requests []recordedRequest
+
+	// behaviour toggles
+	insertMediaStatus int  // HTTP status the InsertMedia action returns (default 202)
+	mediaOnManager    bool // serve VirtualMedia on the Manager, not the System
+	taskStates        []string
+	taskIdx           int
+
+	// noSessionService, when true, serves a ServiceRoot WITHOUT a SessionService
+	// (no top-level SessionService and no Links.Sessions) and returns 404 for the
+	// session-create path, mimicking sushy-tools emulators and BMCs that expose no
+	// session auth. All other resources (Systems/VirtualMedia/Task) are still
+	// served so the Basic-auth deploy path can be exercised.
+	noSessionService bool
+
+	// systemIDs is the set of ComputerSystem Ids the Systems collection exposes.
+	// Defaults to a single "sys-xyz" member (matching the original single-system
+	// fake). Set more than one to exercise the fail-safe system selector. Each Id
+	// gets its own ComputerSystem, VirtualMedia and Reset action under
+	// /redfish/v1/Systems/{id}.
+	systemIDs []string
+
+	// insertMediaExtendedInfo, when true, makes a failing InsertMedia return a
+	// Redfish error body carrying @Message.ExtendedInfo (Message/MessageId/
+	// Resolution) so the error-surfacing path can be asserted.
+	insertMediaExtendedInfo bool
+
+	// bootModeAllowableValues, when non-nil, is served as the Boot
+	// "BootSourceOverrideMode@Redfish.AllowableValues" annotation so UEFI feature
+	// detection can be driven. nil omits the annotation entirely (the common
+	// real-world case where a BMC does not advertise supported boot modes).
+	bootModeAllowableValues []string
+	// withSecureBoot, when true, adds a SecureBoot link to the ComputerSystem so
+	// SecureBoot feature detection can be asserted.
+	withSecureBoot bool
+
+	// captured bodies
+	sessionBody     map[string]any
+	insertBody      map[string]any
+	bootPatchBody   map[string]any
+	resetBody       map[string]any
+	sessionLocation string
+	// resetSystemID records the Id of the ComputerSystem whose Reset action was
+	// last invoked, so a multi-system spec can assert the correct machine was hit.
+	resetSystemID string
+}
+
+type recordedRequest struct {
+	Method   string
+	Path     string
+	AuthType string // "Basic", "Bearer", "Token" (X-Auth-Token), or "" (none)
+}
+
+const fakeAuthToken = "fake-x-auth-token-123"
+
+func newFakeBMC() *fakeBMC {
+	f := &fakeBMC{
+		insertMediaStatus: http.StatusAccepted,
+		// Drive the Task to a terminal Completed state on the second poll so the
+		// poll loop is genuinely exercised.
+		taskStates:      []string{"Running", "Completed"},
+		sessionLocation: "/redfish/v1/SessionService/Sessions/sess-abc",
+		// Default to a UEFI-capable system: it advertises UEFI in its boot-mode
+		// allowable values, matching the common server BMC and the UEFI default of
+		// the deploy path.
+		bootModeAllowableValues: []string{"Legacy", "UEFI"},
+		// A single system by default, preserving the original fake's behaviour.
+		systemIDs: []string{"sys-xyz"},
+	}
+	f.server = httptest.NewTLSServer(http.HandlerFunc(f.handle))
+	return f
+}
+
+func (f *fakeBMC) Close() { f.server.Close() }
+
+func (f *fakeBMC) URL() string { return f.server.URL }
+
+// record stores the method+path and the kind of auth credential an incoming
+// request carried, so tests can assert session vs Basic auth.
+func (f *fakeBMC) record(r *http.Request) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	authType := ""
+	switch {
+	case strings.HasPrefix(r.Header.Get("Authorization"), "Basic "):
+		authType = "Basic"
+	case strings.HasPrefix(r.Header.Get("Authorization"), "Bearer "):
+		authType = "Bearer"
+	case r.Header.Get("X-Auth-Token") != "":
+		authType = "Token"
+	}
+	f.requests = append(f.requests, recordedRequest{Method: r.Method, Path: r.URL.Path, AuthType: authType})
+}
+
+// sawAuthType reports whether any recorded request to a path with the given
+// prefix carried the given auth type ("Basic"/"Bearer"/"Token").
+func (f *fakeBMC) sawAuthType(authType, pathPrefix string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, req := range f.requests {
+		if req.AuthType == authType && strings.HasPrefix(req.Path, pathPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+// sawRequest reports whether a request with the given method and path prefix was
+// received.
+func (f *fakeBMC) sawRequest(method, pathPrefix string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, req := range f.requests {
+		if req.Method == method && strings.HasPrefix(req.Path, pathPrefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func decodeBody(r *http.Request) map[string]any {
+	b, err := io.ReadAll(r.Body)
+	if err != nil || len(b) == 0 {
+		return nil
+	}
+	m := map[string]any{}
+	_ = json.Unmarshal(b, &m)
+	return m
+}
+
+func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
+	f.record(r)
+	w.Header().Set("Content-Type", "application/json")
+
+	switch {
+	case r.URL.Path == "/redfish/v1/" || r.URL.Path == "/redfish/v1":
+		f.writeJSON(w, f.serviceRoot())
+
+	// A session-less BMC (sushy-style) has no SessionService: the create path 404s.
+	case r.URL.Path == "/redfish/v1/SessionService/Sessions" && r.Method == http.MethodPost && f.noSessionService:
+		http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+
+	// --- session lifecycle ---
+	case r.URL.Path == "/redfish/v1/SessionService/Sessions" && r.Method == http.MethodPost:
+		f.mu.Lock()
+		f.sessionBody = decodeBody(r)
+		f.mu.Unlock()
+		w.Header().Set("X-Auth-Token", fakeAuthToken)
+		w.Header().Set("Location", f.sessionLocation)
+		w.WriteHeader(http.StatusCreated)
+		f.writeJSON(w, map[string]any{
+			"@odata.id":   f.sessionLocation,
+			"@odata.type": "#Session.v1_3_0.Session",
+			"Id":          "sess-abc",
+			"Name":        "User Session",
+			"UserName":    "admin",
+		})
+	case r.URL.Path == f.sessionLocation && r.Method == http.MethodDelete:
+		w.WriteHeader(http.StatusNoContent)
+
+	// --- systems ---
+	case r.URL.Path == "/redfish/v1/Systems":
+		f.writeJSON(w, f.systemsCollection())
+	case f.isSystemPath(r.URL.Path) && r.Method == http.MethodGet:
+		f.writeJSON(w, f.computerSystem(f.systemIDFromPath(r.URL.Path)))
+	case f.isSystemPath(r.URL.Path) && r.Method == http.MethodPatch:
+		f.mu.Lock()
+		f.bootPatchBody = decodeBody(r)
+		f.mu.Unlock()
+		w.WriteHeader(http.StatusOK)
+		f.writeJSON(w, f.computerSystem(f.systemIDFromPath(r.URL.Path)))
+	case f.isSystemResetPath(r.URL.Path) && r.Method == http.MethodPost:
+		f.mu.Lock()
+		f.resetBody = decodeBody(r)
+		f.resetSystemID = f.systemIDFromResetPath(r.URL.Path)
+		f.mu.Unlock()
+		w.Header().Set("Location", "/redfish/v1/TaskService/Tasks/task-1")
+		w.WriteHeader(http.StatusAccepted)
+		f.writeJSON(w, f.task("Running"))
+
+	// --- managers ---
+	case r.URL.Path == "/redfish/v1/Managers":
+		f.writeJSON(w, f.collection("Managers Collection", "/redfish/v1/Managers/mgr-1"))
+	case r.URL.Path == "/redfish/v1/Managers/mgr-1" && r.Method == http.MethodGet:
+		f.writeJSON(w, f.manager())
+
+	// --- virtual media ---
+	case f.isSystemVirtualMediaCollectionPath(r.URL.Path):
+		id := f.systemIDFromVirtualMediaCollectionPath(r.URL.Path)
+		f.writeJSON(w, f.collection("VirtualMedia Collection", "/redfish/v1/Systems/"+id+"/VirtualMedia/Cd"))
+	case f.isSystemVirtualMediaCdPath(r.URL.Path) && r.Method == http.MethodGet:
+		f.writeJSON(w, f.virtualMedia(r.URL.Path))
+	case r.URL.Path == "/redfish/v1/Managers/mgr-1/VirtualMedia":
+		f.writeJSON(w, f.collection("VirtualMedia Collection", "/redfish/v1/Managers/mgr-1/VirtualMedia/Cd"))
+	case r.URL.Path == "/redfish/v1/Managers/mgr-1/VirtualMedia/Cd" && r.Method == http.MethodGet:
+		f.writeJSON(w, f.virtualMedia("/redfish/v1/Managers/mgr-1/VirtualMedia/Cd"))
+	case strings.HasSuffix(r.URL.Path, "/VirtualMedia/Cd/Actions/VirtualMedia.InsertMedia") && r.Method == http.MethodPost:
+		f.mu.Lock()
+		f.insertBody = decodeBody(r)
+		status := f.insertMediaStatus
+		f.mu.Unlock()
+		if status >= 400 {
+			w.WriteHeader(status)
+			errBody := map[string]any{
+				"code":    "Base.1.0.GeneralError",
+				"message": "InsertMedia failed",
+			}
+			if f.insertMediaExtendedInfo {
+				errBody["@Message.ExtendedInfo"] = []map[string]any{
+					{
+						"Message":    "The image URL could not be reached by the BMC.",
+						"MessageId":  "Base.1.0.ResourceAtUriUnauthorized",
+						"Resolution": "Verify the image URL is reachable from the BMC network.",
+					},
+				}
+			}
+			f.writeJSON(w, map[string]any{"error": errBody})
+			return
+		}
+		w.Header().Set("Location", "/redfish/v1/TaskService/Tasks/task-insert")
+		w.WriteHeader(http.StatusAccepted)
+		f.writeJSON(w, f.task("Running"))
+	case strings.HasSuffix(r.URL.Path, "/VirtualMedia/Cd/Actions/VirtualMedia.EjectMedia") && r.Method == http.MethodPost:
+		w.WriteHeader(http.StatusNoContent)
+
+	// --- tasks ---
+	case strings.HasPrefix(r.URL.Path, "/redfish/v1/TaskService/Tasks/") && r.Method == http.MethodGet:
+		f.writeJSON(w, f.task(f.nextTaskState()))
+
+	default:
+		http.Error(w, "not found: "+r.URL.Path, http.StatusNotFound)
+	}
+}
+
+func (f *fakeBMC) writeJSON(w http.ResponseWriter, v any) {
+	_ = json.NewEncoder(w).Encode(v)
+}
+
+// nextTaskState advances the canned Task state machine so the Deployer's poll
+// loop observes progress towards a terminal state.
+func (f *fakeBMC) nextTaskState() string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.taskIdx >= len(f.taskStates) {
+		return f.taskStates[len(f.taskStates)-1]
+	}
+	s := f.taskStates[f.taskIdx]
+	f.taskIdx++
+	return s
+}
+
+func (f *fakeBMC) serviceRoot() map[string]any {
+	root := map[string]any{
+		"@odata.id":      "/redfish/v1/",
+		"@odata.type":    "#ServiceRoot.v1_5_0.ServiceRoot",
+		"Id":             "RootService",
+		"Name":           "Root Service",
+		"RedfishVersion": "1.6.0",
+		"Systems":        map[string]any{"@odata.id": "/redfish/v1/Systems"},
+		"Managers":       map[string]any{"@odata.id": "/redfish/v1/Managers"},
+		"Tasks":          map[string]any{"@odata.id": "/redfish/v1/TaskService"},
+	}
+	// A session-less BMC advertises neither a SessionService nor Links.Sessions;
+	// auto-detect must fall back to Basic auth for it.
+	if !f.noSessionService {
+		root["SessionService"] = map[string]any{"@odata.id": "/redfish/v1/SessionService"}
+		root["Links"] = map[string]any{
+			"Sessions": map[string]any{"@odata.id": "/redfish/v1/SessionService/Sessions"},
+		}
+	}
+	return root
+}
+
+func (f *fakeBMC) collection(name string, members ...string) map[string]any {
+	memberObjs := make([]map[string]any, 0, len(members))
+	for _, m := range members {
+		memberObjs = append(memberObjs, map[string]any{"@odata.id": m})
+	}
+	return map[string]any{
+		"@odata.id":           "/redfish/v1/collection",
+		"@odata.type":         "#Collection.Collection",
+		"Name":                name,
+		"Members@odata.count": len(members),
+		"Members":             memberObjs,
+	}
+}
+
+// systemsCollection serves the Systems collection with one member per
+// configured systemID, in order.
+func (f *fakeBMC) systemsCollection() map[string]any {
+	members := make([]string, 0, len(f.systemIDs))
+	for _, id := range f.systemIDs {
+		members = append(members, "/redfish/v1/Systems/"+id)
+	}
+	return f.collection("Systems Collection", members...)
+}
+
+// knownSystemID reports whether id is one of the configured systems.
+func (f *fakeBMC) knownSystemID(id string) bool {
+	for _, s := range f.systemIDs {
+		if s == id {
+			return true
+		}
+	}
+	return false
+}
+
+// isSystemPath matches GET/PATCH on a ComputerSystem member, e.g.
+// /redfish/v1/Systems/{id}.
+func (f *fakeBMC) isSystemPath(path string) bool {
+	id := f.systemIDFromPath(path)
+	return id != "" && f.knownSystemID(id)
+}
+
+func (f *fakeBMC) systemIDFromPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok || strings.Contains(rest, "/") {
+		return ""
+	}
+	return rest
+}
+
+func (f *fakeBMC) isSystemResetPath(path string) bool {
+	return f.systemIDFromResetPath(path) != ""
+}
+
+func (f *fakeBMC) systemIDFromResetPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok {
+		return ""
+	}
+	id, ok := strings.CutSuffix(rest, "/Actions/ComputerSystem.Reset")
+	if !ok || strings.Contains(id, "/") || !f.knownSystemID(id) {
+		return ""
+	}
+	return id
+}
+
+func (f *fakeBMC) isSystemVirtualMediaCollectionPath(path string) bool {
+	return f.systemIDFromVirtualMediaCollectionPath(path) != ""
+}
+
+func (f *fakeBMC) systemIDFromVirtualMediaCollectionPath(path string) string {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok {
+		return ""
+	}
+	id, ok := strings.CutSuffix(rest, "/VirtualMedia")
+	if !ok || strings.Contains(id, "/") || !f.knownSystemID(id) {
+		return ""
+	}
+	return id
+}
+
+func (f *fakeBMC) isSystemVirtualMediaCdPath(path string) bool {
+	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
+	if !ok {
+		return false
+	}
+	id, ok := strings.CutSuffix(rest, "/VirtualMedia/Cd")
+	if !ok || strings.Contains(id, "/") {
+		return false
+	}
+	return f.knownSystemID(id)
+}
+
+func (f *fakeBMC) computerSystem(id string) map[string]any {
+	base := "/redfish/v1/Systems/" + id
+	cs := map[string]any{
+		"@odata.id":    base,
+		"@odata.type":  "#ComputerSystem.v1_5_0.ComputerSystem",
+		"Id":           id,
+		"Name":         "Test System",
+		"Manufacturer": "ACME",
+		"Model":        "ProLiant-Test",
+		"SerialNumber": "SN-0001",
+		"PowerState":   "On",
+		// Nested summaries: the historical bug read these as flat fields and got
+		// 0/0. They must be populated from the nested objects.
+		"MemorySummary": map[string]any{
+			"TotalSystemMemoryGiB": 64,
+		},
+		"ProcessorSummary": map[string]any{
+			"Count": 8,
+		},
+		"Boot": f.boot(),
+		"Actions": map[string]any{
+			"#ComputerSystem.Reset": map[string]any{
+				"target": base + "/Actions/ComputerSystem.Reset",
+				"ResetType@Redfish.AllowableValues": []string{
+					"On", "ForceOff", "ForceRestart", "GracefulRestart", "GracefulShutdown",
+				},
+			},
+		},
+	}
+	if !f.mediaOnManager {
+		cs["VirtualMedia"] = map[string]any{"@odata.id": base + "/VirtualMedia"}
+	}
+	if f.withSecureBoot {
+		cs["SecureBoot"] = map[string]any{"@odata.id": base + "/SecureBoot"}
+	}
+	return cs
+}
+
+// boot builds the ComputerSystem Boot object, optionally including the
+// BootSourceOverrideMode allowable-values annotation that drives UEFI detection.
+func (f *fakeBMC) boot() map[string]any {
+	boot := map[string]any{
+		"BootSourceOverrideEnabled": "Disabled",
+		"BootSourceOverrideTarget":  "None",
+	}
+	if f.bootModeAllowableValues != nil {
+		boot["BootSourceOverrideMode@Redfish.AllowableValues"] = f.bootModeAllowableValues
+	}
+	return boot
+}
+
+func (f *fakeBMC) manager() map[string]any {
+	m := map[string]any{
+		"@odata.id":   "/redfish/v1/Managers/mgr-1",
+		"@odata.type": "#Manager.v1_3_0.Manager",
+		"Id":          "mgr-1",
+		"Name":        "Test BMC",
+	}
+	if f.mediaOnManager {
+		m["VirtualMedia"] = map[string]any{"@odata.id": "/redfish/v1/Managers/mgr-1/VirtualMedia"}
+	}
+	return m
+}
+
+func (f *fakeBMC) virtualMedia(id string) map[string]any {
+	return map[string]any{
+		"@odata.id":      id,
+		"@odata.type":    "#VirtualMedia.v1_3_0.VirtualMedia",
+		"Id":             "Cd",
+		"Name":           "Virtual CD",
+		"MediaTypes":     []string{"CD", "DVD"},
+		"Image":          nil,
+		"Inserted":       false,
+		"WriteProtected": true,
+		"Actions": map[string]any{
+			"#VirtualMedia.InsertMedia": map[string]any{
+				"target": id + "/Actions/VirtualMedia.InsertMedia",
+			},
+			"#VirtualMedia.EjectMedia": map[string]any{
+				"target": id + "/Actions/VirtualMedia.EjectMedia",
+			},
+		},
+	}
+}
+
+func (f *fakeBMC) task(state string) map[string]any {
+	return map[string]any{
+		"@odata.id":   "/redfish/v1/TaskService/Tasks/task-1",
+		"@odata.type": "#Task.v1_4_0.Task",
+		"Id":          "task-1",
+		"Name":        "Deploy Task",
+		"TaskState":   state,
+		"TaskStatus":  "OK",
+		"Messages": []map[string]any{
+			{"Message": "Operation " + state},
+		},
+	}
+}

@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/kairos-io/AuroraBoot/internal/secrets"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
@@ -20,6 +21,18 @@ import (
 // Supports SQLite (default) and PostgreSQL.
 type Store struct {
 	db *gorm.DB
+	// cipher encrypts/decrypts BMCTarget.Password at rest. Optional: when nil the
+	// password is stored as-is (used by tests and pre-encryption setups). The web
+	// server always wires one via WithCipher.
+	cipher *secrets.Cipher
+}
+
+// WithCipher attaches a DEK-backed cipher used to encrypt the BMCTarget password
+// column at rest. It returns the same Store for chaining. Passing nil is a no-op
+// that leaves passwords stored as-is.
+func (s *Store) WithCipher(c *secrets.Cipher) *Store {
+	s.cipher = c
+	return s
 }
 
 // New creates a new Store with the given DSN and auto-migrates all models.
@@ -461,12 +474,21 @@ func (s *Store) SecureBootKeySetDelete(ctx context.Context, id string) error {
 
 func (s *Store) BMCTargetCreate(ctx context.Context, target *store.BMCTarget) error {
 	target.ID = uuid.New().String()
-	return s.db.WithContext(ctx).Create(target).Error
+	// Encrypt the password before it touches the DB. Operate on a copy so the
+	// caller's in-memory plaintext (echoed back in the API response) is untouched.
+	row := *target
+	if err := s.encryptPassword(&row); err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Create(&row).Error
 }
 
 func (s *Store) BMCTargetGetByID(ctx context.Context, id string) (*store.BMCTarget, error) {
 	var t store.BMCTarget
 	if err := s.db.WithContext(ctx).First(&t, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	if err := s.decryptPassword(&t); err != nil {
 		return nil, err
 	}
 	return &t, nil
@@ -477,11 +499,50 @@ func (s *Store) BMCTargetList(ctx context.Context) ([]*store.BMCTarget, error) {
 	if err := s.db.WithContext(ctx).Find(&targets).Error; err != nil {
 		return nil, err
 	}
+	for _, t := range targets {
+		if err := s.decryptPassword(t); err != nil {
+			return nil, err
+		}
+	}
 	return targets, nil
 }
 
 func (s *Store) BMCTargetUpdate(ctx context.Context, target *store.BMCTarget) error {
-	return s.db.WithContext(ctx).Save(target).Error
+	row := *target
+	if err := s.encryptPassword(&row); err != nil {
+		return err
+	}
+	return s.db.WithContext(ctx).Save(&row).Error
+}
+
+// encryptPassword replaces target.Password with its AES-256-GCM ciphertext when a
+// cipher is configured. Empty passwords stay empty (no encrypted-empty garbage).
+func (s *Store) encryptPassword(target *store.BMCTarget) error {
+	if s.cipher == nil || target.Password == "" {
+		return nil
+	}
+	enc, err := s.cipher.Encrypt(target.Password)
+	if err != nil {
+		return fmt.Errorf("encrypting BMC password: %w", err)
+	}
+	target.Password = enc
+	return nil
+}
+
+// decryptPassword replaces the stored ciphertext with the plaintext password. If
+// decryption fails it assumes a legacy plaintext value written before encryption
+// was enabled and leaves it untouched (fresh-DB deployments never hit this path).
+func (s *Store) decryptPassword(target *store.BMCTarget) error {
+	if s.cipher == nil || target.Password == "" {
+		return nil
+	}
+	plain, err := s.cipher.Decrypt(target.Password)
+	if err != nil {
+		// Tolerate a pre-encryption plaintext row rather than failing reads.
+		return nil
+	}
+	target.Password = plain
+	return nil
 }
 
 func (s *Store) BMCTargetDelete(ctx context.Context, id string) error {
