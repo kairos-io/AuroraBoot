@@ -34,7 +34,7 @@ var _ = Describe("redfish deploy", Label("redfish", "cmd"), func() {
 
 	AfterEach(func() {
 		if tempDir != "" {
-			os.RemoveAll(tempDir)
+			_ = os.RemoveAll(tempDir)
 		}
 	})
 
@@ -47,6 +47,10 @@ var _ = Describe("redfish deploy", Label("redfish", "cmd"), func() {
 				"--endpoint", "https://example.com",
 				"--username", "admin",
 				"--password", "password",
+				// URL-pull mode (Phase 1b): the BMC fetches the ISO from a URL, so
+				// supply one the SSRF guard accepts instead of relying on the local
+				// ISO-serve (which would require --redfish-serve-url).
+				"--image-url", "http://10.0.0.5:8090/kairos.iso",
 				"--vendor", vendor,
 				"--verify-ssl", "true",
 				"--min-memory", "4",
@@ -58,12 +62,14 @@ var _ = Describe("redfish deploy", Label("redfish", "cmd"), func() {
 
 			err := app.Run(args)
 
-			// When using a fake endpoint (example.com), we expect connection/auth errors
-			// Accept any HTTP error status (403, 405, etc.) as expected failure
+			// Unknown vendor still validates fine here (the flow reaches connect),
+			// so for every known vendor we expect a connection/auth error against
+			// the fake endpoint. Accept any HTTP error status or connect failure.
 			if err != nil && (strings.Contains(err.Error(), "failed with status: 403") ||
 				strings.Contains(err.Error(), "failed with status: 405") ||
-				strings.Contains(err.Error(), "authentication failed")) {
-				// This is expected when connecting to a fake endpoint
+				strings.Contains(err.Error(), "authentication failed") ||
+				strings.Contains(err.Error(), "connecting to RedFish endpoint")) {
+				// Expected when connecting to a fake/unreachable endpoint.
 				Expect(err).To(HaveOccurred())
 				return
 			}
@@ -141,6 +147,44 @@ var _ = Describe("redfish deploy", Label("redfish", "cmd"), func() {
 
 			err := app.Run(args)
 			Expect(err).To(HaveOccurred())
+		})
+
+		It("errors with a clear message when no password source is provided", func() {
+			args := []string{
+				"auroraboot",
+				"redfish",
+				"deploy",
+				"--endpoint", "https://example.com",
+				"--username", "admin",
+				"--image-url", "http://10.0.0.5:8090/kairos.iso",
+				isoPath,
+			}
+
+			err := app.Run(args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("no RedFish password provided"))
+		})
+
+		It("accepts --password-file and proceeds past credential resolution", func() {
+			pwFile := filepath.Join(tempDir, "pw")
+			Expect(os.WriteFile(pwFile, []byte("filepass\n"), 0600)).To(Succeed())
+
+			args := []string{
+				"auroraboot",
+				"redfish",
+				"deploy",
+				"--endpoint", "https://example.com",
+				"--username", "admin",
+				"--password-file", pwFile,
+				"--image-url", "http://10.0.0.5:8090/kairos.iso",
+				isoPath,
+			}
+
+			// Resolution succeeds; the deploy then fails at connect against the
+			// fake endpoint. The point is that it gets past credential resolution.
+			err := app.Run(args)
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).NotTo(ContainSubstring("no RedFish password provided"))
 		})
 	})
 })

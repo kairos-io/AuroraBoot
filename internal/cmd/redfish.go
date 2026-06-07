@@ -1,25 +1,96 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
+	"io"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/hardware"
+	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 	"github.com/urfave/cli/v2"
 )
 
-type RedFishDeployConfig struct {
-	Endpoint         string        `arg:"--endpoint" help:"RedFish endpoint URL"`
-	Username         string        `arg:"--username" help:"RedFish username"`
-	Password         string        `arg:"--password" help:"RedFish password"`
-	Vendor           string        `arg:"--vendor" help:"Hardware vendor (generic, supermicro, ilo)" default:"generic"`
-	VerifySSL        bool          `arg:"--verify-ssl" help:"Verify SSL certificates" default:"true"`
-	MinMemory        int           `arg:"--min-memory" help:"Minimum required memory in GB" default:"4"`
-	MinCPUs          int           `arg:"--min-cpus" help:"Minimum required CPUs" default:"2"`
-	RequiredFeatures []string      `arg:"--required-features" help:"Required hardware features"`
-	Timeout          time.Duration `arg:"--timeout" help:"Operation timeout" default:"5m"`
-	ISO              string        `arg:"positional" help:"Path to ISO file"`
+// redfishPasswordEnv is the environment variable consulted for the RedFish
+// password when neither --password nor --password-file is set.
+const redfishPasswordEnv = "AURORABOOT_REDFISH_PASSWORD"
+
+// resolveRedfishPassword resolves the RedFish password from, in precedence order:
+// the explicit --password flag, --password-file, the AURORABOOT_REDFISH_PASSWORD
+// environment variable, then --password-stdin. It errors if none is provided.
+// stdin is injected for testability.
+func resolveRedfishPassword(flagPassword, passwordFile string, passwordStdin bool, stdin io.Reader) (string, error) {
+	switch {
+	case flagPassword != "":
+		return flagPassword, nil
+	case passwordFile != "":
+		data, err := os.ReadFile(passwordFile)
+		if err != nil {
+			return "", fmt.Errorf("reading --password-file: %w", err)
+		}
+		pw := strings.TrimRight(string(data), "\r\n")
+		if pw == "" {
+			return "", fmt.Errorf("--password-file %q is empty", passwordFile)
+		}
+		return pw, nil
+	case os.Getenv(redfishPasswordEnv) != "":
+		return os.Getenv(redfishPasswordEnv), nil
+	case passwordStdin:
+		data, err := io.ReadAll(stdin)
+		if err != nil {
+			return "", fmt.Errorf("reading password from stdin: %w", err)
+		}
+		pw := strings.TrimRight(string(data), "\r\n")
+		if pw == "" {
+			return "", fmt.Errorf("no password read from stdin")
+		}
+		return pw, nil
+	default:
+		return "", fmt.Errorf("no RedFish password provided: set --password (insecure), --password-file, %s, or --password-stdin", redfishPasswordEnv)
+	}
+}
+
+// resolveBootMode validates the operator-supplied --boot-mode flag and maps it to
+// a redfish.BootMode. The empty string is valid and intentional: it means "leave
+// the system in its current firmware mode" — the Deployer then omits
+// BootSourceOverrideMode from the boot PATCH, which avoids forcing a firmware-mode
+// change that some BMCs/emulators reject. The accepted explicit values are
+// "uefi" and "legacy" (case-insensitive).
+func resolveBootMode(flag string) (redfish.BootMode, error) {
+	switch strings.ToLower(strings.TrimSpace(flag)) {
+	case "":
+		return "", nil
+	case "uefi":
+		return redfish.BootModeUEFI, nil
+	case "legacy":
+		return redfish.BootModeLegacy, nil
+	default:
+		return "", fmt.Errorf("invalid --boot-mode %q (valid: uefi, legacy, or empty to leave the current firmware mode)", flag)
+	}
+}
+
+// deriveServeBindAddr derives the local ISO-serve bind address from the
+// advertised --redfish-serve-url when --redfish-serve-addr is not set explicitly.
+// It requires the URL to carry both a host and an explicit port: a missing port
+// makes net.Listen fail with a cryptic error, so reject it with an actionable
+// message rather than silently picking one.
+func deriveServeBindAddr(serveURL string) (string, error) {
+	parsed, err := url.Parse(serveURL)
+	if err != nil {
+		return "", fmt.Errorf("parsing --redfish-serve-url: %w", err)
+	}
+	if parsed.Host == "" {
+		return "", fmt.Errorf("--redfish-serve-url has no host; set --redfish-serve-addr explicitly")
+	}
+	if parsed.Port() == "" {
+		return "", fmt.Errorf("could not derive a bind address from --redfish-serve-url %q (no port); set --redfish-serve-addr explicitly, e.g. %s:8090", serveURL, parsed.Hostname())
+	}
+	return parsed.Host, nil
 }
 
 var RedFishDeployCmd = cli.Command{
@@ -41,19 +112,64 @@ var RedFishDeployCmd = cli.Command{
 					Required: true,
 				},
 				&cli.StringFlag{
-					Name:     "password",
-					Usage:    "RedFish password",
-					Required: true,
+					Name:  "password",
+					Usage: "RedFish password (INSECURE: visible in the process list/argv; prefer --password-file, AURORABOOT_REDFISH_PASSWORD, or --password-stdin)",
+				},
+				&cli.StringFlag{
+					Name:  "password-file",
+					Usage: "Read the RedFish password from this file (trailing newline trimmed)",
+				},
+				&cli.BoolFlag{
+					Name:  "password-stdin",
+					Usage: "Read the RedFish password from standard input (trailing newline trimmed)",
+				},
+				&cli.StringFlag{
+					Name:  "image-url",
+					Usage: "URL the BMC pulls the ISO from (InsertMedia is URL-pull; the BMC must be able to reach this URL)",
+				},
+				&cli.StringFlag{
+					Name:  "system-id",
+					Usage: "Redfish ComputerSystem Id to target; required when the BMC exposes more than one system",
 				},
 				&cli.StringFlag{
 					Name:  "vendor",
 					Usage: "Hardware vendor (generic, supermicro, ilo, dmtf)",
 					Value: "generic",
 				},
+				&cli.StringFlag{
+					Name:  "boot-mode",
+					Usage: "Force the one-time boot firmware mode: uefi or legacy. Omit (the default) to leave the system in its current mode and NOT send a boot-mode change — recommended for most BMCs, since forcing a mode makes some BMCs/emulators reconfigure the firmware and fail",
+				},
+				&cli.StringFlag{
+					Name:  "auth-mode",
+					Usage: "Redfish authentication mode: session (deletable session, requires a SessionService), basic (HTTP Basic; credentials sent on every request, no session), or auto (detect from the ServiceRoot and fall back to basic when no SessionService is advertised)",
+					Value: "auto",
+				},
 				&cli.BoolFlag{
 					Name:  "verify-ssl",
 					Usage: "Verify SSL certificates",
 					Value: true,
+				},
+				&cli.BoolFlag{
+					Name:  "serve-tls",
+					Usage: "Set the InsertMedia transfer protocol to HTTPS (requires a BMC-trusted serving cert)",
+					Value: false,
+				},
+				&cli.StringFlag{
+					Name:  "serve-tls-cert",
+					Usage: "TLS certificate file for the local ISO-serve (used with --serve-tls)",
+				},
+				&cli.StringFlag{
+					Name:  "serve-tls-key",
+					Usage: "TLS key file for the local ISO-serve (used with --serve-tls)",
+				},
+				&cli.StringFlag{
+					Name:  "redfish-serve-url",
+					Usage: "Advertised base URL the BMC fetches a local ISO from (e.g. http://10.0.0.5:8090). Required when deploying a local ISO path without --image-url",
+				},
+				&cli.StringFlag{
+					Name:  "redfish-serve-addr",
+					Usage: "Bind address for the local ISO-serve (e.g. 10.0.0.5:8090). Defaults to the host:port of --redfish-serve-url",
 				},
 				&cli.IntFlag{
 					Name:  "min-memory",
@@ -67,7 +183,7 @@ var RedFishDeployCmd = cli.Command{
 				},
 				&cli.StringSliceFlag{
 					Name:  "required-features",
-					Usage: "Required hardware features",
+					Usage: "Hardware features the system must support; the deploy aborts if any is missing or cannot be verified. Detectable features: UEFI, SecureBoot (default: UEFI)",
 					Value: cli.NewStringSlice("UEFI"),
 				},
 				&cli.DurationFlag{
@@ -77,33 +193,125 @@ var RedFishDeployCmd = cli.Command{
 				},
 			},
 			Action: func(c *cli.Context) error {
+				ctx := c.Context
+
 				endpoint := c.String("endpoint")
 				username := c.String("username")
-				password := c.String("password")
+				password, err := resolveRedfishPassword(
+					c.String("password"),
+					c.String("password-file"),
+					c.Bool("password-stdin"),
+					os.Stdin,
+				)
+				if err != nil {
+					return err
+				}
+				imageURL := c.String("image-url")
+				systemID := c.String("system-id")
 				vendor := c.String("vendor")
+				bootMode, err := resolveBootMode(c.String("boot-mode"))
+				if err != nil {
+					return err
+				}
+				authMode := c.String("auth-mode")
 				verifySSL := c.Bool("verify-ssl")
+				serveTLS := c.Bool("serve-tls")
+				serveTLSCert := c.String("serve-tls-cert")
+				serveTLSKey := c.String("serve-tls-key")
+				serveURL := c.String("redfish-serve-url")
+				serveAddr := c.String("redfish-serve-addr")
 				minMemory := c.Int("min-memory")
 				minCPUs := c.Int("min-cpus")
 				requiredFeatures := c.StringSlice("required-features")
 				timeout := c.Duration("timeout")
 				isoPath := c.Args().First()
 
-				if isoPath == "" {
-					return fmt.Errorf("ISO path is required")
+				// SSRF-guard the operator-supplied BMC endpoint regardless of mode.
+				if err := isoserve.ValidateMediaURL(endpoint); err != nil {
+					return fmt.Errorf("validating endpoint: %w", err)
 				}
 
-				// Create vendor-specific RedFish client
-				vendorType := redfish.VendorType(vendor)
-				client, err := redfish.NewVendorClient(vendorType, endpoint, username, password, verifySSL, timeout)
-				if err != nil {
-					return fmt.Errorf("creating RedFish client: %w", err)
+				// Resolve the image URL. InsertMedia is URL-pull, so the BMC needs a
+				// URL it can fetch. Two modes:
+				//   1. --image-url given: SSRF-validate and use it directly.
+				//   2. a local ISO path given: start a one-shot tokenized ISO-serve,
+				//      Register the file, deploy with the returned URL, then
+				//      Revoke/Shutdown after the deploy returns.
+				var (
+					serve      *isoserve.Server
+					serveToken string
+				)
+				switch {
+				case imageURL != "":
+					if err := isoserve.ValidateMediaURL(imageURL); err != nil {
+						return fmt.Errorf("validating --image-url: %w", err)
+					}
+				case isoPath != "":
+					absISO, err := filepath.Abs(isoPath)
+					if err != nil {
+						return fmt.Errorf("resolving ISO path: %w", err)
+					}
+					if serveURL == "" {
+						return fmt.Errorf("serving a local ISO requires --redfish-serve-url (the base URL the BMC fetches the ISO from)")
+					}
+					if serveTLS && (serveTLSCert == "" || serveTLSKey == "") {
+						return fmt.Errorf("--serve-tls with a local ISO requires --serve-tls-cert and --serve-tls-key (the BMC fetches over HTTPS)")
+					}
+					if serveAddr == "" {
+						// Derive the bind address from the serve URL host:port rather
+						// than silently binding 0.0.0.0.
+						serveAddr, err = deriveServeBindAddr(serveURL)
+						if err != nil {
+							return err
+						}
+					}
+
+					serve = isoserve.New(isoserve.Config{
+						BaseURL:  serveURL,
+						BindAddr: serveAddr,
+						CertFile: serveTLSCert,
+						KeyFile:  serveTLSKey,
+					})
+					if err := serve.Start(ctx); err != nil {
+						return fmt.Errorf("starting ISO-serve: %w", err)
+					}
+					defer func() {
+						shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+						defer cancel()
+						_ = serve.Shutdown(shutdownCtx)
+					}()
+
+					url, token, err := serve.Register(absISO, timeout+5*time.Minute)
+					if err != nil {
+						return fmt.Errorf("registering ISO for serving: %w", err)
+					}
+					imageURL = url
+					serveToken = token
+					defer serve.Revoke(serveToken)
+				default:
+					return fmt.Errorf("provide --image-url with a URL the BMC can reach, or a local ISO path with --redfish-serve-url")
 				}
 
-				// Create hardware inspector
-				inspector := hardware.NewInspector(client)
+				deployer := redfish.NewDeployer(redfish.Config{
+					Endpoint:  endpoint,
+					Username:  username,
+					Password:  password,
+					Vendor:    redfish.VendorType(vendor),
+					VerifySSL: verifySSL,
+					Timeout:   timeout,
+					SystemID:  systemID,
+					AuthMode:  redfish.AuthMode(authMode),
+				})
 
-				// Inspect system
-				sysInfo, err := inspector.InspectSystem()
+				if err := deployer.Connect(ctx); err != nil {
+					return fmt.Errorf("connecting to RedFish endpoint: %w", err)
+				}
+				// Always tear the session down (DELETE) on both success and error.
+				defer func() { _ = deployer.Close() }()
+
+				// Inspect the system and gate on the hardware requirements.
+				inspector := hardware.NewInspector(deployer)
+				sysInfo, err := inspector.InspectSystem(ctx)
 				if err != nil {
 					return fmt.Errorf("inspecting system: %w", err)
 				}
@@ -111,7 +319,6 @@ var RedFishDeployCmd = cli.Command{
 				fmt.Printf("System: %s %s (SN: %s)\n",
 					sysInfo.Manufacturer, sysInfo.Model, sysInfo.SerialNumber)
 
-				// Validate requirements
 				reqs := &hardware.Requirements{
 					MinMemoryGiB:     minMemory,
 					MinCPUs:          minCPUs,
@@ -121,32 +328,24 @@ var RedFishDeployCmd = cli.Command{
 					return fmt.Errorf("validating requirements: %w", err)
 				}
 
-				// Deploy ISO
-				status, err := client.DeployISO(isoPath)
+				// Deploy: InsertMedia (URL-pull) -> one-time boot -> reset -> Task poll.
+				result, err := deployer.Deploy(ctx, redfish.DeployRequest{
+					ImageURL:              imageURL,
+					BootTarget:            redfish.BootTargetCd,
+					BootMode:              bootMode,
+					TransferProtocolHTTPS: serveTLS,
+				})
 				if err != nil {
 					return fmt.Errorf("deploying ISO: %w", err)
 				}
 
-				fmt.Printf("Deployment started: %s\n", status.Message)
-
-				// Monitor deployment
-				for {
-					status, err := client.GetDeploymentStatus()
-					if err != nil {
-						return fmt.Errorf("getting deployment status: %w", err)
-					}
-
-					fmt.Printf("Deployment status: %s (%d%%)\n", status.State, status.Progress)
-
-					if status.State == "Completed" {
-						fmt.Println("Deployment completed successfully")
-						break
-					} else if status.State == "Failed" {
-						return fmt.Errorf("deployment failed: %s", status.Message)
-					}
-
-					time.Sleep(5 * time.Second)
+				if result.TaskState != "" {
+					fmt.Printf("Deployment task finished: %s\n", result.TaskState)
 				}
+				for _, m := range result.Messages {
+					fmt.Printf("  BMC: %s\n", m)
+				}
+				fmt.Println("Deployment completed successfully")
 
 				return nil
 			},
