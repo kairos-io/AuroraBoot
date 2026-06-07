@@ -241,6 +241,19 @@ func (f *fakeCommandStore) UpdateStatus(_ context.Context, id string, phase stri
 	return fmt.Errorf("not found")
 }
 
+func (f *fakeCommandStore) UpdateStatusForNode(_ context.Context, id string, nodeID string, phase string, result string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cmd := range f.cmds {
+		if cmd.ID == id && cmd.ManagedNodeID == nodeID {
+			cmd.Phase = phase
+			cmd.Result = result
+			return nil
+		}
+	}
+	return store.ErrCommandNotFound
+}
+
 func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -424,12 +437,21 @@ type fakeBuilder struct {
 	mu       sync.Mutex
 	builds   []*builder.BuildStatus
 	lastOpts builder.BuildOptions // lets tests assert on the generated cloud-config
+	// buildErr, when set, is returned from Build instead of starting a build.
+	// Tests use it to exercise the handler's error-to-status mapping without a
+	// real builder.
+	buildErr error
 }
 
 func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.lastOpts = opts
+	if f.buildErr != nil {
+		// Mirror the real builder: validation failures are rejected before any
+		// build state is recorded.
+		return nil, f.buildErr
+	}
 	status := &builder.BuildStatus{
 		ID:    opts.ID,
 		Phase: builder.BuildPending,

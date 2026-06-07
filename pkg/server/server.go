@@ -3,15 +3,17 @@ package server
 import (
 	"io"
 	"io/fs"
+	"log"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/docs"
+	netbootpkg "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
+	"github.com/kairos-io/AuroraBoot/internal/ui"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
-	netbootpkg "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
-	"github.com/kairos-io/AuroraBoot/internal/ui"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -20,22 +22,52 @@ import (
 
 // Config holds all dependencies needed by the server.
 type Config struct {
-	NodeStore      store.NodeStore
-	CommandStore   store.CommandStore
-	GroupStore     store.GroupStore
-	ArtifactStore          store.ArtifactStore
-	SecureBootKeySetStore  store.SecureBootKeySetStore
-	NetbootManager         *netbootpkg.Manager
-	DeploymentStore        store.DeploymentStore
-	BMCTargetStore         store.BMCTargetStore
-	Builder                builder.ArtifactBuilder
-	AdminPassword          string
-	RegToken       string
-	RegTokenFile   string // path where reg token is persisted (for rotation)
-	AuroraBootURL    string
-	ArtifactsDir   string
-	KeysDir        string  // base directory for SecureBoot key sets
-	Hub            *ws.Hub // optional, created if nil
+	NodeStore             store.NodeStore
+	CommandStore          store.CommandStore
+	GroupStore            store.GroupStore
+	ArtifactStore         store.ArtifactStore
+	SecureBootKeySetStore store.SecureBootKeySetStore
+	NetbootManager        *netbootpkg.Manager
+	DeploymentStore       store.DeploymentStore
+	BMCTargetStore        store.BMCTargetStore
+	Builder               builder.ArtifactBuilder
+	AdminPassword         string
+	RegToken              string
+	RegTokenFile          string // path where reg token is persisted (for rotation)
+	AuroraBootURL         string
+	ArtifactsDir          string
+	KeysDir               string  // base directory for SecureBoot key sets
+	Hub                   *ws.Hub // optional, created if nil
+}
+
+// redactToken returns requestURI with the value of any "token" query parameter
+// replaced by "REDACTED", so credentials passed as ?token= (WebSocket auth and
+// artifact download links) never reach the access log. Other query parameters
+// and the path are preserved to keep the log useful. If the URI cannot be
+// parsed but still references a token, it is fully redacted to err on the side
+// of never emitting the secret.
+func redactToken(requestURI string) string {
+	if !strings.Contains(requestURI, "token=") {
+		return requestURI
+	}
+
+	path := requestURI
+	rawQuery := ""
+	if i := strings.IndexByte(requestURI, '?'); i >= 0 {
+		path = requestURI[:i]
+		rawQuery = requestURI[i+1:]
+	}
+
+	values, err := url.ParseQuery(rawQuery)
+	if err != nil {
+		// Could not parse the query string; refuse to risk leaking the token.
+		return path + "?REDACTED"
+	}
+	if !values.Has("token") {
+		return requestURI
+	}
+	values.Set("token", "REDACTED")
+	return path + "?" + values.Encode()
 }
 
 // New creates and configures an Echo server with all routes and middleware.
@@ -43,7 +75,26 @@ func New(cfg Config) *echo.Echo {
 	e := echo.New()
 	e.HideBanner = true
 
-	e.Use(middleware.Logger())
+	// Use a request logger whose URI is run through redactToken before it is
+	// written. All three auth schemes accept the credential as a ?token= query
+	// param (agent and UI WebSockets, artifact download links), so the raw
+	// request URI would otherwise leak admin passwords, node API keys, and the
+	// registration token straight into the access log (and any downstream proxy
+	// logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
+	// redacted URI explicitly instead of the verbatim ${uri} the default
+	// middleware.Logger() prints.
+	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
+		LogRemoteIP: true,
+		LogMethod:   true,
+		LogURI:      true,
+		LogStatus:   true,
+		LogLatency:  true,
+		LogValuesFunc: func(_ echo.Context, v middleware.RequestLoggerValues) error {
+			log.Printf("%s %s %s %d %s",
+				v.RemoteIP, v.Method, redactToken(v.URI), v.Status, v.Latency)
+			return nil
+		},
+	}))
 	e.Use(middleware.Recover())
 
 	regToken := cfg.RegToken
@@ -102,12 +153,26 @@ func New(cfg Config) *echo.Echo {
 	regGroup.Use(auth.RegistrationTokenAuth(&regToken))
 	regGroup.POST("/register", nodeHandler.Register)
 
-	// Agent node endpoints (node API key auth)
+	// Agent-only node endpoints (node API key auth). RequireNodeMatch binds
+	// every route to the authenticated node's identity: the :nodeID in the path
+	// must equal the node that the API key belongs to, so a registered node can
+	// only act on its own resources (prevents node-impersonation / BOLA).
 	agentGroup := e.Group("/api/v1/nodes/:nodeID")
 	agentGroup.Use(auth.NodeAPIKeyMiddleware(cfg.NodeStore))
+	agentGroup.Use(auth.RequireNodeMatch)
 	agentGroup.POST("/heartbeat", nodeHandler.Heartbeat)
-	agentGroup.GET("/commands", nodeHandler.GetCommands)
-	agentGroup.PUT("/commands/:commandID/status", cmdHandler.UpdateStatus)
+
+	// Shared command routes used by BOTH the agent (poll/report) and the
+	// admin/UI (inspect/override). Registered ONCE under AgentOrAdminMiddleware:
+	// registering them on two separate auth groups makes Echo silently shadow
+	// the first, which previously routed every agent poll into the admin-only
+	// handler (401). The handlers branch on the authenticated identity
+	// (auth.AuthNodeID): agents are node-scoped (own commands only), admins act
+	// across nodes.
+	sharedCmd := e.Group("/api/v1/nodes/:nodeID")
+	sharedCmd.Use(auth.AgentOrAdminMiddleware(cfg.AdminPassword, cfg.NodeStore))
+	sharedCmd.GET("/commands", nodeHandler.GetCommands)
+	sharedCmd.PUT("/commands/:commandID/status", cmdHandler.UpdateStatus)
 
 	// Admin/UI endpoints (admin password auth)
 	adminGroup := e.Group("/api/v1")
@@ -120,9 +185,10 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/nodes/:nodeID/decommission", nodeHandler.Decommission)
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
-	adminGroup.GET("/nodes/:nodeID/commands", nodeHandler.GetCommands)
+	// GET /nodes/:nodeID/commands and PUT .../commands/:commandID/status are
+	// served by the shared agent-or-admin group above (single registration to
+	// avoid Echo route shadowing); they branch on the caller's identity.
 	adminGroup.POST("/nodes/:nodeID/commands", cmdHandler.Create)
-	adminGroup.PUT("/nodes/:nodeID/commands/:commandID/status", cmdHandler.UpdateStatus)
 	adminGroup.DELETE("/nodes/:nodeID/commands/:commandID", cmdHandler.Delete)
 	adminGroup.DELETE("/nodes/:nodeID/commands", cmdHandler.ClearHistory)
 	adminGroup.POST("/nodes/commands", cmdHandler.CreateBulk)

@@ -14,6 +14,34 @@ import (
 // ContextKeyNodeID is the key used to store the authenticated node ID in the echo context.
 const ContextKeyNodeID = "nodeID"
 
+// AuthNodeID returns the authenticated node ID set by NodeAPIKeyMiddleware, or
+// "" when the request was not authenticated as a node (e.g. an admin-bearer
+// request). Handlers shared between the agent and admin groups use the empty
+// return to distinguish the two callers.
+func AuthNodeID(c echo.Context) string {
+	id, _ := c.Get(ContextKeyNodeID).(string)
+	return id
+}
+
+// RequireNodeMatch enforces that the authenticated node (set by
+// NodeAPIKeyMiddleware) matches the nodeID path parameter. It is meant to wrap
+// agent-group routes carrying a :nodeID segment so a node can only act on its
+// own resources — preventing one registered node from impersonating another
+// (BOLA). Returns 403 on mismatch and 401 if no node identity is present (the
+// middleware should always run first, so the latter is defence in depth).
+func RequireNodeMatch(next echo.HandlerFunc) echo.HandlerFunc {
+	return func(c echo.Context) error {
+		authID := AuthNodeID(c)
+		if authID == "" {
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		}
+		if c.Param("nodeID") != authID {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+		}
+		return next(c)
+	}
+}
+
 // AdminMiddleware returns an Echo middleware that checks the Authorization header
 // for a Bearer token matching the given admin password.
 func AdminMiddleware(password string) echo.MiddlewareFunc {
@@ -40,6 +68,44 @@ func NodeAPIKeyMiddleware(nodeStore store.NodeStore) echo.MiddlewareFunc {
 			token := extractBearer(c.Request().Header.Get("Authorization"))
 			if token == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			node, err := nodeStore.GetByAPIKey(c.Request().Context(), token)
+			if err != nil || node == nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			c.Set(ContextKeyNodeID, node.ID)
+			return next(c)
+		}
+	}
+}
+
+// AgentOrAdminMiddleware authenticates a request as EITHER an admin (bearer
+// token == admin password) OR a node (bearer token == a node API key). It is
+// used for the two routes that are legitimately shared between the agent and
+// the admin/UI: GET /nodes/:nodeID/commands and PUT
+// /nodes/:nodeID/commands/:commandID/status.
+//
+// On a node match it sets ContextKeyNodeID so downstream handlers can tell the
+// caller is a node and enforce node-scoping (RequireNodeMatch / node-scoped
+// store updates). On an admin match it sets nothing, leaving AuthNodeID empty,
+// so admins act across nodes. Admin is checked first: the admin password is not
+// a valid node API key, so the order is unambiguous.
+//
+// This middleware exists to avoid registering the same path twice (once per
+// auth group), which Echo resolves by silently shadowing the first
+// registration — previously routing agent command polls into the admin-only
+// handler and 401-ing every agent.
+func AgentOrAdminMiddleware(password string, nodeStore store.NodeStore) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			token := extractBearer(c.Request().Header.Get("Authorization"))
+			if token == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			// Admin first — a constant-time-ish equality is fine here; the
+			// admin password is never a valid node API key.
+			if token == password {
+				return next(c)
 			}
 			node, err := nodeStore.GetByAPIKey(c.Request().Context(), token)
 			if err != nil || node == nil {

@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -44,6 +45,44 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(json.Unmarshal(rec.Body.Bytes(), &status)).To(Succeed())
 			Expect(status.Phase).To(Equal(builder.BuildPending))
 			Expect(status.ID).NotTo(BeEmpty())
+		})
+
+		It("returns 400 (not 500) when build inputs fail validation", func() {
+			// The real builder rejects shell-metacharacter values like this
+			// before any build starts and returns an ErrInvalidBuildOptions-wrapped
+			// error; the handler must surface that as a client error.
+			fb.buildErr = fmt.Errorf("%w: invalid kairos version %q", builder.ErrInvalidBuildOptions, "latest && id")
+
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","kairosVersion":"latest && id","outputs":{"iso":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			err := handler.Create(c)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("invalid build options"))
+
+			// The rejected request must not have been queued.
+			Expect(fb.builds).To(BeEmpty())
+		})
+
+		It("returns 500 for a genuine server failure", func() {
+			fb.buildErr = fmt.Errorf("disk full")
+
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			err := handler.Create(c)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		})
 	})
 

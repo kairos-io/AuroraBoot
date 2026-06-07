@@ -1,6 +1,15 @@
 package builder
 
-import "context"
+import (
+	"context"
+	"errors"
+)
+
+// ErrInvalidBuildOptions marks a build failure caused by invalid admin-supplied
+// build inputs (e.g. a Model/KairosVersion/KubernetesVersion that fails
+// validation) rather than a server-side fault. Handlers can use errors.Is to
+// map such failures to a 400 Bad Request instead of a 500.
+var ErrInvalidBuildOptions = errors.New("invalid build options")
 
 // ImageSource describes the base image and its properties.
 type ImageSource struct {
