@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/google/uuid"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -201,6 +203,12 @@ type updateStatusRequest struct {
 }
 
 // UpdateStatus handles PUT /api/v1/nodes/:nodeID/commands/:commandID/status.
+//
+// This handler is mounted on both the agent group (node API key) and the admin
+// group (admin bearer). For agent callers we scope the update to the
+// authenticated node: a node may only update the status of commands addressed
+// to it, never another node's (BOLA). Admins legitimately act across nodes, so
+// their updates are unscoped.
 func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 	commandID := c.Param("commandID")
 	var req updateStatusRequest
@@ -212,7 +220,24 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "phase is required"})
 	}
 
-	if err := h.commands.UpdateStatus(c.Request().Context(), commandID, req.Phase, req.Result); err != nil {
+	ctx := c.Request().Context()
+
+	// Agent request: node API key auth set the node identity. Scope the update
+	// to that node so a foreign or non-existent command surfaces as 403 rather
+	// than a silent success (gorm Updates returns nil on zero matched rows).
+	if authNodeID := auth.AuthNodeID(c); authNodeID != "" {
+		err := h.commands.UpdateStatusForNode(ctx, commandID, authNodeID, req.Phase, req.Result)
+		if errors.Is(err, store.ErrCommandNotFound) {
+			return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+		}
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update command status"})
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+	}
+
+	// Admin request: act across nodes.
+	if err := h.commands.UpdateStatus(ctx, commandID, req.Phase, req.Result); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update command status"})
 	}
 

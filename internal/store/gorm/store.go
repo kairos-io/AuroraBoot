@@ -42,6 +42,14 @@ func New(dsn string) (*Store, error) {
 		if _, err := sqlDB.Exec("PRAGMA journal_mode=WAL"); err != nil {
 			return nil, fmt.Errorf("enabling WAL mode: %w", err)
 		}
+		// Make concurrent writers wait-and-retry for up to 5s when the database
+		// is locked, instead of failing immediately with "database is locked".
+		// WAL allows concurrent readers but still serializes writers, so without
+		// this any overlapping write (common under the WebSocket node manager)
+		// would error out.
+		if _, err := sqlDB.Exec("PRAGMA busy_timeout=5000"); err != nil {
+			return nil, fmt.Errorf("setting busy_timeout: %w", err)
+		}
 	}
 
 	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}); err != nil {
@@ -313,6 +321,32 @@ func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, resul
 		updates["completed_at"] = &now
 	}
 	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).Where("id = ?", id).Updates(updates).Error
+}
+
+// UpdateStatusForNode updates a command's status scoped to its owning node.
+// The WHERE clause matches both the command id and managed_node_id, so a node
+// can only update commands addressed to it. GORM's Updates returns a nil error
+// even when the WHERE matches zero rows, so we inspect RowsAffected and surface
+// a miss as store.ErrCommandNotFound — never a silent success.
+func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error {
+	updates := map[string]any{
+		"phase":  phase,
+		"result": result,
+	}
+	if phase == store.CommandCompleted || phase == store.CommandFailed {
+		now := time.Now()
+		updates["completed_at"] = &now
+	}
+	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("id = ? AND managed_node_id = ?", id, nodeID).
+		Updates(updates)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return store.ErrCommandNotFound
+	}
+	return nil
 }
 
 func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {

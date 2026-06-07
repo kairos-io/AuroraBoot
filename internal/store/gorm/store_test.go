@@ -7,8 +7,8 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/kairos-io/AuroraBoot/pkg/store"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
 
 var _ = Describe("Gorm Store", func() {
@@ -384,6 +384,38 @@ var _ = Describe("Gorm Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Phase).To(Equal(store.CommandRunning))
 			Expect(found.CompletedAt).To(BeNil())
+		})
+
+		It("updates status scoped to the owning node", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+
+			Expect(s.UpdateStatusForNode(ctx, cmd.ID, node.ID, store.CommandCompleted, "ok")).To(Succeed())
+
+			found, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Phase).To(Equal(store.CommandCompleted))
+			Expect(found.Result).To(Equal("ok"))
+		})
+
+		It("refuses a node-scoped update for another node and reports ErrCommandNotFound", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+
+			// Zero rows match (wrong node) — must surface as ErrCommandNotFound,
+			// not a silent success, despite gorm Updates returning a nil error.
+			err := s.UpdateStatusForNode(ctx, cmd.ID, "other-node", store.CommandCompleted, "pwned")
+			Expect(err).To(MatchError(store.ErrCommandNotFound))
+
+			found, gerr := s.CommandGetByID(ctx, cmd.ID)
+			Expect(gerr).NotTo(HaveOccurred())
+			Expect(found.Phase).To(Equal(store.CommandPending))
+			Expect(found.Result).To(BeEmpty())
+		})
+
+		It("refuses a node-scoped update for a non-existent command", func() {
+			err := s.UpdateStatusForNode(ctx, "no-such-id", node.ID, store.CommandCompleted, "x")
+			Expect(err).To(MatchError(store.ErrCommandNotFound))
 		})
 
 		It("lists all commands by node", func() {

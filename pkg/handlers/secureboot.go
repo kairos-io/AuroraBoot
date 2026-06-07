@@ -10,12 +10,31 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/secureboot"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
+
+// keySetNameRe is the strict allowlist for key-set names. A name is used
+// verbatim as the directory component under keysDir (and is passed to openssl
+// as part of -keyout paths), so it must never contain path separators, parent
+// references, or anything that could escape the keys directory. Letters,
+// digits, dash and underscore only, 1-64 chars.
+var keySetNameRe = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// validateKeySetName rejects any key-set name that could be used to traverse
+// outside keysDir. It intentionally refuses "." and ".." (which the regexp
+// already excludes via the missing dot) as well as empty, absolute and
+// separator-bearing names.
+func validateKeySetName(name string) error {
+	if !keySetNameRe.MatchString(name) {
+		return fmt.Errorf("invalid key set name %q: must match %s", name, keySetNameRe.String())
+	}
+	return nil
+}
 
 // maxImportSize caps the number of uncompressed bytes we'll extract from an
 // imported key set tarball. Real SecureBoot key sets are tiny (a few tens of
@@ -68,6 +87,9 @@ func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 	}
 	if req.Name == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
+	}
+	if err := validateKeySetName(req.Name); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	outputDir := filepath.Join(h.keysDir, req.Name)
@@ -344,6 +366,9 @@ func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	}
 	if name == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "manifest has no name and no ?name= override was provided"})
+	}
+	if err := validateKeySetName(name); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 	if existing, _ := h.store.GetByName(ctx, name); existing != nil {
 		return c.JSON(http.StatusConflict, map[string]string{"error": fmt.Sprintf("a key set named %q already exists", name)})

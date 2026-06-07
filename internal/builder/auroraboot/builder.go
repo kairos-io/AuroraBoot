@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -145,6 +146,13 @@ func (b *Builder) WithLogBroadcaster(lb LogBroadcaster) *Builder {
 
 // Build starts an asynchronous artifact build and returns immediately with a Pending status.
 func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
+	// Reject unsafe admin-supplied values before any work starts. These fields
+	// are interpolated into the kairos-init Dockerfile RUN line, so they must
+	// not carry shell metacharacters.
+	if err := validateKairosInitOptions(opts); err != nil {
+		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
+	}
+
 	id := opts.ID
 	if id == "" {
 		id = uuid.New().String()
@@ -423,12 +431,61 @@ func (b *Builder) isKairosified(ctx context.Context, image string) bool {
 	return cmd.Run() == nil
 }
 
+// kairosInitValueRe is the allowlist for admin-supplied values that end up
+// inside the generated Dockerfile's RUN line (model, kairos version, k8s
+// version). Those values are concatenated into a shell command that runs in a
+// privileged build container, so they must not contain any shell
+// metacharacters. The set below covers every real Kairos/k8s/model value:
+//   - versions like "v3.2.1", "v1.30.0+k3s1", "latest", "24.04"
+//   - models like "generic", "rpi4", "nvidia-jetson-agx-orin"
+//   - the ":" and "/" that can appear in image-ish or k3s version strings
+//
+// It deliberately rejects space, ;, &, |, $, backtick, quotes, newline,
+// >, <, (, ) and every other shell metacharacter.
+var kairosInitValueRe = regexp.MustCompile(`^[A-Za-z0-9._+:/-]+$`)
+
+// validateKairosInitValue rejects a value that would be unsafe to interpolate
+// into the kairos-init Dockerfile RUN line. Empty values are the caller's
+// responsibility (they are optional and simply omitted from the flags).
+func validateKairosInitValue(field, value string) error {
+	if !kairosInitValueRe.MatchString(value) {
+		return fmt.Errorf("invalid %s %q: must match %s (no shell metacharacters)", field, value, kairosInitValueRe.String())
+	}
+	return nil
+}
+
+// validateKairosInitOptions checks every admin-supplied field that reaches the
+// generated Dockerfile RUN body. Optional fields are only validated when set.
+// It returns early (before any build starts) so a malicious value never
+// reaches the build container.
+func validateKairosInitOptions(opts builder.BuildOptions) error {
+	if opts.Model != "" {
+		if err := validateKairosInitValue("model", opts.Model); err != nil {
+			return err
+		}
+	}
+	if opts.KairosVersion != "" {
+		if err := validateKairosInitValue("kairos version", opts.KairosVersion); err != nil {
+			return err
+		}
+	}
+	if opts.KubernetesVersion != "" {
+		if err := validateKairosInitValue("kubernetes version", opts.KubernetesVersion); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ensureKairosified checks if the image is a Kairos image, and if not, builds one using kairos-init.
 // Skipped when store is nil (test mode without Docker).
 func (b *Builder) ensureKairosified(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if b.store == nil {
 		// Test mode — skip kairosification (no Docker available)
 		return image, nil
+	}
+	if err := validateKairosInitOptions(opts); err != nil {
+		return "", fmt.Errorf("validating kairos-init options: %w", err)
 	}
 	if b.isKairosified(ctx, image) {
 		return image, nil

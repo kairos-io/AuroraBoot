@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -207,6 +208,61 @@ var _ = Describe("CommandHandler", func() {
 			err := handler.UpdateStatus(c)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		})
+
+		// Agent callers (node API key auth sets the node identity in context)
+		// may only update commands addressed to them. The path :nodeID has
+		// already been bound to the identity by RequireNodeMatch, so the risk
+		// here is a foreign commandID under the node's own path.
+		It("lets an agent update its own command", func() {
+			cs.cmds = []*store.NodeCommand{
+				{ID: "cmd-own", ManagedNodeID: "node-1", Phase: store.CommandDelivered},
+			}
+			body := `{"phase":"Completed","result":"ok"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/node-1/commands/cmd-own/status", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID", "commandID")
+			c.SetParamValues("node-1", "cmd-own")
+			c.Set(auth.ContextKeyNodeID, "node-1")
+
+			Expect(handler.UpdateStatus(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(cs.cmds[0].Phase).To(Equal(store.CommandCompleted))
+		})
+
+		It("forbids an agent updating a command it does not own (403, unchanged)", func() {
+			cs.cmds = []*store.NodeCommand{
+				{ID: "cmd-foreign", ManagedNodeID: "node-2", Phase: store.CommandDelivered},
+			}
+			body := `{"phase":"Completed","result":"pwned"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/node-1/commands/cmd-foreign/status", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID", "commandID")
+			c.SetParamValues("node-1", "cmd-foreign")
+			c.Set(auth.ContextKeyNodeID, "node-1")
+
+			Expect(handler.UpdateStatus(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
+			// Foreign command must be untouched.
+			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
+		})
+
+		It("forbids an agent updating a non-existent command (403, not silent 200)", func() {
+			body := `{"phase":"Completed","result":"x"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/node-1/commands/missing/status", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID", "commandID")
+			c.SetParamValues("node-1", "missing")
+			c.Set(auth.ContextKeyNodeID, "node-1")
+
+			Expect(handler.UpdateStatus(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusForbidden))
 		})
 	})
 })

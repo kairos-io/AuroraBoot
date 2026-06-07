@@ -55,6 +55,7 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -66,6 +67,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/server"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 
+	"github.com/labstack/echo/v4"
 	"github.com/urfave/cli/v2"
 )
 
@@ -85,6 +87,8 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "admin-password", Usage: "Admin password for UI access", EnvVars: []string{"AURORABOOT_ADMIN_PASSWORD"}},
 		&cli.StringFlag{Name: "registration-token", Usage: "Registration token for node enrollment", EnvVars: []string{"AURORABOOT_REG_TOKEN"}},
 		&cli.StringFlag{Name: "url", Usage: "External URL of this AuroraBoot instance (for cloud-config injection)", EnvVars: []string{"AURORABOOT_URL"}},
+		&cli.StringFlag{Name: "tls-cert", Usage: "Path to the TLS certificate for the API server. Both --tls-cert and --tls-key must be set to enable HTTPS", EnvVars: []string{"AURORABOOT_TLS_CERT"}},
+		&cli.StringFlag{Name: "tls-key", Usage: "Path to the TLS private key for the API server. Both --tls-cert and --tls-key must be set to enable HTTPS", EnvVars: []string{"AURORABOOT_TLS_KEY"}},
 	},
 	Action: runWeb,
 }
@@ -97,6 +101,8 @@ func runWeb(c *cli.Context) error {
 	adminPassword := c.String("admin-password")
 	regToken := c.String("registration-token")
 	externalURL := c.String("url")
+	tlsCert := c.String("tls-cert")
+	tlsKey := c.String("tls-key")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -175,7 +181,7 @@ func runWeb(c *cli.Context) error {
 		AdminPassword:         adminPassword,
 		RegToken:              regToken,
 		RegTokenFile:          regTokenFile,
-		AuroraBootURL:           externalURL,
+		AuroraBootURL:         externalURL,
 		ArtifactsDir:          artifactsDir,
 		KeysDir:               keysDir,
 		Hub:                   wsHub,
@@ -186,7 +192,45 @@ func runWeb(c *cli.Context) error {
 	fmt.Fprintf(os.Stderr, "  DB:        %s\n", dbDSN)
 	fmt.Fprintf(os.Stderr, "  Artifacts: %s\n", artifactsDir)
 
-	return e.Start(listenAddr)
+	return serve(e, listenAddr, tlsCert, tlsKey)
+}
+
+// serve starts the Echo server, choosing HTTPS when both a TLS certificate and
+// key are provided and falling back to plaintext HTTP otherwise. When serving
+// plaintext it logs a prominent warning, because all three bearer credentials
+// (admin password, node API keys, registration token) and cloud-configs cross
+// the wire in clear; a TLS cert/key or a TLS-terminating reverse proxy is
+// strongly recommended for production. Plaintext is intentionally not a hard
+// failure so dev and proxied deployments keep working.
+//
+// Both code paths use Echo's Start/StartTLS, which install the same signal
+// handling and graceful-shutdown behaviour.
+func serve(e *echo.Echo, listenAddr, tlsCert, tlsKey string) error {
+	return serveWith(os.Stderr, listenAddr, tlsCert, tlsKey,
+		func() error { return e.StartTLS(listenAddr, tlsCert, tlsKey) },
+		func() error { return e.Start(listenAddr) })
+}
+
+// serveWith holds the TLS-vs-plaintext decision and the plaintext warning,
+// independent of the concrete Echo server, so the decision can be unit-tested.
+// It calls startTLS when both a cert and key are provided, otherwise it emits
+// the plaintext warning to w and calls startPlain. The chosen starter's error
+// is returned unchanged.
+func serveWith(w io.Writer, listenAddr, tlsCert, tlsKey string, startTLS, startPlain func() error) error {
+	if tlsCert != "" && tlsKey != "" {
+		_, _ = fmt.Fprintf(w, "TLS enabled: serving HTTPS on %s using cert %s\n", listenAddr, tlsCert)
+		return startTLS()
+	}
+
+	const warning = "\n" +
+		"*****************************************************************************\n" +
+		"WARNING: serving plaintext HTTP — TLS is NOT enabled.\n" +
+		"  Admin password, node API keys, the registration token, and cloud-configs\n" +
+		"  all traverse the network UNENCRYPTED. For production, set --tls-cert and\n" +
+		"  --tls-key, or place AuroraBoot behind a TLS-terminating reverse proxy.\n" +
+		"*****************************************************************************\n\n"
+	_, _ = io.WriteString(w, warning)
+	return startPlain()
 }
 
 // loadOrGenerateSecret reads the secret from path if it exists, otherwise

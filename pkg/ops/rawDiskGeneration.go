@@ -786,12 +786,12 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// then do it in reverse to cleanup
 	// I tried but the devices didnt appear properly dur to it being in a container
 	// so I went with the easy way
-	out, err := exec.Command("losetup", "-D").CombinedOutput()
-	internal.Log.Logger.Debug().Str("output", string(out)).Msg("Detaching loop devices")
-	if err != nil {
-		return fmt.Errorf("failed to detach loop devices: %w", err)
-	}
-
+	// Attach the image to the next free loop device. We deliberately do NOT run
+	// `losetup -D` here: that detaches EVERY loop device on the host, which on a
+	// shared CI runner or the fleet `web` server would rip loop devices out from
+	// under concurrent builds, active mounts, and the host OS itself. `-f --show`
+	// allocates a single free device, and the deferred cleanup below detaches
+	// exactly that one.
 	loopDevice, err := exec.Command("losetup", "-f", "--show", image).CombinedOutput()
 	internal.Log.Logger.Debug().Str("output", string(loopDevice)).Msg("Attaching image to loop device")
 	if err != nil {
@@ -802,7 +802,7 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	loopDevice = bytes.TrimSpace(loopDevice)
 
 	// Run kpartx
-	out, err = exec.Command("kpartx", "-av", string(loopDevice)).CombinedOutput()
+	out, err := exec.Command("kpartx", "-av", string(loopDevice)).CombinedOutput()
 	internal.Log.Logger.Debug().Str("output", string(out)).Msg("Running kpartx")
 	if err != nil {
 		internal.Log.Logger.Error().Str("output", string(out)).Msg("kpartx output")

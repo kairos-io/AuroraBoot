@@ -67,6 +67,9 @@ func (a *CommandStoreAdapter) MarkDelivered(ctx context.Context, ids []string) e
 func (a *CommandStoreAdapter) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
 	return a.S.UpdateStatus(ctx, id, phase, result)
 }
+func (a *CommandStoreAdapter) UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error {
+	return a.S.UpdateStatusForNode(ctx, id, nodeID, phase, result)
+}
 func (a *CommandStoreAdapter) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	return a.S.ListByNode(ctx, nodeID)
 }
