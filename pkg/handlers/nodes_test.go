@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -312,6 +313,71 @@ var _ = Describe("NodeHandler", func() {
 			Expect(json.Unmarshal(rec.Body.Bytes(), &cmds)).To(Succeed())
 			Expect(cmds).To(HaveLen(1))
 			Expect(cmds[0].ID).To(Equal("cmd-1"))
+		})
+
+		It("does not re-deliver a command already claimed (e.g. pushed over WS)", func() {
+			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+			// Simulate a command that was already delivered via the WS push path:
+			// pushCommand claims it Pending->Delivered before sending.
+			cs.cmds = []*store.NodeCommand{
+				{ID: "cmd-1", ManagedNodeID: "node-1", Command: "upgrade", Phase: store.CommandDelivered},
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/node-1/commands", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("node-1")
+			c.Set(auth.ContextKeyNodeID, "node-1")
+
+			Expect(handler.GetCommands(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var cmds []*store.NodeCommand
+			Expect(json.Unmarshal(rec.Body.Bytes(), &cmds)).To(Succeed())
+			Expect(cmds).To(BeEmpty())
+		})
+
+		It("delivers a command to exactly one of two concurrent agent polls", func() {
+			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+			cs.cmds = []*store.NodeCommand{
+				{ID: "cmd-1", ManagedNodeID: "node-1", Command: "upgrade", Phase: store.CommandPending},
+			}
+
+			// poll runs on a worker goroutine, so it returns its result instead of
+			// asserting (Ginkgo assertions must run on the spec goroutine).
+			poll := func() (int, error) {
+				req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/node-1/commands", nil)
+				rec := httptest.NewRecorder()
+				c := e.NewContext(req, rec)
+				c.SetParamNames("nodeID")
+				c.SetParamValues("node-1")
+				c.Set(auth.ContextKeyNodeID, "node-1")
+				if err := handler.GetCommands(c); err != nil {
+					return 0, err
+				}
+				var cmds []*store.NodeCommand
+				if err := json.Unmarshal(rec.Body.Bytes(), &cmds); err != nil {
+					return 0, err
+				}
+				return len(cmds), nil
+			}
+
+			var wg sync.WaitGroup
+			counts := make([]int, 2)
+			errs := make([]error, 2)
+			for i := 0; i < 2; i++ {
+				wg.Add(1)
+				go func(i int) {
+					defer wg.Done()
+					counts[i], errs[i] = poll()
+				}(i)
+			}
+			wg.Wait()
+
+			Expect(errs[0]).NotTo(HaveOccurred())
+			Expect(errs[1]).NotTo(HaveOccurred())
+			Expect(counts[0] + counts[1]).To(Equal(1))
 		})
 
 		It("should return all commands for admin", func() {

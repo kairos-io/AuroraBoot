@@ -228,6 +228,18 @@ func (f *fakeCommandStore) MarkDelivered(_ context.Context, ids []string) error 
 	return nil
 }
 
+func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cmd := range f.cmds {
+		if cmd.ID == id && cmd.Phase == store.CommandPending {
+			cmd.Phase = store.CommandDelivered
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
 func (f *fakeCommandStore) UpdateStatus(_ context.Context, id string, phase string, result string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
