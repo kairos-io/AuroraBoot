@@ -319,6 +319,80 @@ completion. The `progress` field is an integer 0–100 that only advances, never
 If the server restarts while a deployment is `Active`, the orphaned row is flipped to
 `Failed` with the message `"interrupted by server restart"` on the next startup.
 
+### Web UI (dashboard)
+
+The AuroraBoot web dashboard (`auroraboot web`) provides a point-and-click Redfish deploy
+workflow with two features that are not available through the REST API alone: a pre-flight
+hardware gate in the deploy dialog, and live per-step progress in the Deployments view.
+
+#### Opening the deploy dialog
+
+Navigate to an artifact's detail page and click **Deploy**. If the artifact includes an
+ISO file the dialog opens with a **RedFish** tab alongside the PXE tab. Select a saved BMC
+target from the dropdown (targets must be created first — see
+[BMC target management](#bmc-target-management) or use **+ Add new target** inline).
+
+#### Pre-flight hardware gate
+
+After selecting a saved BMC target, click **Pre-flight inspect**. The dialog calls
+`POST /api/v1/bmc-targets/:id/inspect` and displays the hardware facts the server reads
+from the BMC:
+
+- Model, manufacturer, and serial number
+- Memory (GiB) and processor count
+- Supported features (e.g. `UEFI`, `SecureBoot`)
+
+The UI enforces minimum thresholds: **2 GiB memory** and **1 processor**. A node that
+reports less than either value is highlighted in red and a warning banner blocks the
+**Deploy via RedFish** button. The operator must tick **Deploy anyway (override)** to
+unblock the button; the warning is intentional friction, not a hard server-side rejection.
+
+Limitation: pre-flight inspection requires a saved BMC target. There is no
+by-credentials inspect endpoint, so the gate is skipped when a deploy uses inline
+credentials supplied directly in the form. Deploy is still allowed in that case — the
+button is not blocked.
+
+#### Starting a deploy
+
+Click **Deploy via RedFish** to call
+`POST /api/v1/artifacts/:id/deploy/redfish` with the selected target's ID. The server
+responds immediately with `202 Accepted`; the actual Redfish flow (InsertMedia → boot
+override → reset → optional task poll) runs asynchronously. The dialog shows a success
+banner when the request is accepted. Switch to the **Deployments** view to follow
+progress.
+
+#### Live deploy-step progress (Deployments view)
+
+The Deployments page subscribes to the UI WebSocket channel. The server broadcasts a
+`deploy-progress` event after each step of the deploy flow, in the envelope:
+
+```json
+{
+  "type": "deploy-progress",
+  "data": {
+    "deploymentId": "<uuid>",
+    "status":       "Active",
+    "progress":     40,
+    "step":         "inserting media",
+    "message":      "inserting media"
+  }
+}
+```
+
+The page patches the matching row in-place (status badge, progress bar, step text) on
+every event without a full refetch. The `progress` field is an integer 0–100 that only
+advances; the `message` field shows the current step label (`discovering`,
+`inserting media`, `setting boot`, `resetting`, `polling task`, `completed`, or
+`failed`).
+
+`GET /api/v1/deployments` remains authoritative. The page also runs a REST poll every
+**15 seconds** while any deployment is `Active` or `Running` as a fallback for events
+missed during a WebSocket reconnect. If the hub is not wired (e.g. in test builds) all
+updates arrive via this poll path.
+
+Not yet in the UI: a dedicated BMC-management page, deployment-to-node linkage, and
+per-deployment error drill-down are planned follow-on work.
+
 ### REST API summary
 
 All Redfish-related endpoints require admin bearer authentication.
@@ -354,3 +428,10 @@ All Redfish-related endpoints require admin bearer authentication.
 - Session cleanup (Redfish session DELETE) runs on both success and error paths. If the
   process is killed hard (e.g. `kill -9`), the session is leaked and must be cleaned up
   on the BMC manually.
+- The dashboard pre-flight gate (2 GiB / 1 CPU thresholds) is UI-side only and applies
+  only to saved BMC targets. It is not enforced by the server on the deploy endpoint.
+  Inline-credential deploys from the UI skip the gate entirely. The CLI enforces
+  `--min-memory` and `--min-cpus` server-side regardless.
+- The Deployments view receives live progress via the UI WebSocket (`deploy-progress`
+  events) and falls back to a 15-second REST poll when the WebSocket is unavailable or
+  reconnecting. Either path converges on the same deployment store state.

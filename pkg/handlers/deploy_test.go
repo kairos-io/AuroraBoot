@@ -143,7 +143,7 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		} else {
 			serve = nil
 		}
-		return handlers.NewDeployHandler(artifacts, deployments, bmcTargets, nil, artifactsDir, serve)
+		return handlers.NewDeployHandler(artifacts, deployments, bmcTargets, nil, artifactsDir, serve, nil)
 	}
 
 	// doDeploy posts a deploy request for artifact "art-1" with the given body.

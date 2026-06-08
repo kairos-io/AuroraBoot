@@ -245,7 +245,7 @@ func New(cfg Config) *echo.Echo {
 
 	// Deploy hub
 	if cfg.DeploymentStore != nil {
-		deployHandler := handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir, cfg.ISOServe).
+		deployHandler := handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir, cfg.ISOServe, hub).
 			WithBaseContext(cfg.BaseContext)
 		adminGroup.POST("/netboot/start", deployHandler.StartNetboot)
 		adminGroup.POST("/netboot/stop", deployHandler.StopNetboot)
