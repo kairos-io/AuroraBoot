@@ -174,8 +174,20 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 		return
 	}
 
-	var delivered []string
 	for _, cmd := range cmds {
+		// Atomically claim Pending→Delivered before sending so a concurrent REST
+		// poll or WS push can't also deliver the same command. If another path
+		// already claimed it, our claim returns false and we skip it — exactly-once
+		// delivery, consistent with the poll path in NodeHandler.GetCommands.
+		claimed, err := h.Commands.ClaimForDelivery(ctx, cmd.ID)
+		if err != nil {
+			log.Printf("ws: failed to claim pending command %s for node %s: %v", cmd.ID, nodeID, err)
+			continue
+		}
+		if !claimed {
+			continue
+		}
+
 		cmdMsg := commandData{
 			ID:      cmd.ID,
 			Command: cmd.Command,
@@ -196,13 +208,6 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 		if err := conn.writeMessage(websocket.TextMessage, msgBytes); err != nil {
 			log.Printf("ws: failed to send pending command %s to node %s: %v", cmd.ID, nodeID, err)
 			break
-		}
-		delivered = append(delivered, cmd.ID)
-	}
-
-	if len(delivered) > 0 {
-		if err := h.Commands.MarkDelivered(ctx, delivered); err != nil {
-			log.Printf("ws: failed to mark commands as delivered: %v", err)
 		}
 	}
 }
