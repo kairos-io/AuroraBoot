@@ -12,7 +12,12 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Wifi, Server, Rocket } from "lucide-react";
-import { listDeployments, type Deployment } from "@/api/deployments";
+import {
+  listDeployments,
+  type Deployment,
+  type DeployProgress,
+} from "@/api/deployments";
+import { useUIWebSocket } from "@/hooks/useUIWebSocket";
 
 export function Deployments() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
@@ -30,13 +35,29 @@ export function Deployments() {
     fetchDeployments();
   }, []);
 
-  // Auto-poll every 5s when any deployment is active
+  // Live updates: apply deploy-progress events streamed over the UI WebSocket so
+  // the table reflects each step in real time. This is the primary path; the
+  // poll below is a fallback for clients that miss an event (e.g. mid-reconnect).
+  useUIWebSocket((msg) => {
+    if (msg.type !== "deploy-progress") return;
+    const p = msg.data as DeployProgress;
+    setDeployments((prev) =>
+      prev.map((d) =>
+        d.id === p.deploymentId
+          ? { ...d, status: p.status, progress: p.progress, message: p.message }
+          : d
+      )
+    );
+  });
+
+  // Auto-poll every 15s as a fallback while a deployment is active. Live
+  // WebSocket events drive most updates; this catches anything the socket missed.
   useEffect(() => {
     const hasActive = deployments.some(
       (d) => d.status.toLowerCase() === "active" || d.status.toLowerCase() === "running"
     );
     if (!hasActive) return;
-    const interval = setInterval(fetchDeployments, 5000);
+    const interval = setInterval(fetchDeployments, 15000);
     return () => clearInterval(interval);
   }, [deployments]);
 
@@ -115,16 +136,23 @@ export function Deployments() {
                     </TableCell>
                     <TableCell>
                       {d.progress > 0 ? (
-                        <div className="flex items-center gap-2">
-                          <div className="h-2 w-24 rounded-full bg-secondary overflow-hidden">
-                            <div
-                              className="h-full rounded-full bg-[#EE5007] transition-all"
-                              style={{ width: `${Math.min(d.progress, 100)}%` }}
-                            />
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-24 rounded-full bg-secondary overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-[#EE5007] transition-all"
+                                style={{ width: `${Math.min(d.progress, 100)}%` }}
+                              />
+                            </div>
+                            <span className="text-xs text-muted-foreground">
+                              {d.progress}%
+                            </span>
                           </div>
-                          <span className="text-xs text-muted-foreground">
-                            {d.progress}%
-                          </span>
+                          {d.message && (
+                            <span className="text-xs text-muted-foreground block truncate max-w-[16rem]">
+                              {d.message}
+                            </span>
+                          )}
                         </div>
                       ) : (
                         <span className="text-xs text-muted-foreground">-</span>

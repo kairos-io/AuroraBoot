@@ -18,6 +18,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
+	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
 )
 
@@ -35,6 +36,11 @@ type DeployHandler struct {
 	// isoServe serves a local artifact ISO over a tokenized, BMC-reachable URL.
 	// May be nil, in which case a Redfish deploy must supply an explicit imageUrl.
 	isoServe *isoserve.Server
+
+	// hub is the WebSocket hub used to broadcast live deploy-step progress to UI
+	// clients. May be nil (e.g. in tests or when no hub is wired), in which case
+	// progress is only persisted to the Deployment row and surfaced via polling.
+	hub *ws.Hub
 
 	// baseCtx is the parent context for every background deploy goroutine. It is
 	// tied to the server lifecycle so a shutdown cancels in-flight deploys. When
@@ -55,6 +61,7 @@ func NewDeployHandler(
 	nb *netbootmgr.Manager,
 	artifactsDir string,
 	isoServe *isoserve.Server,
+	hub *ws.Hub,
 ) *DeployHandler {
 	return &DeployHandler{
 		artifacts:    artifacts,
@@ -63,6 +70,7 @@ func NewDeployHandler(
 		netboot:      nb,
 		artifactsDir: artifactsDir,
 		isoServe:     isoServe,
+		hub:          hub,
 		baseCtx:      context.Background(),
 		runs:         make(map[string]context.CancelFunc),
 	}
@@ -380,10 +388,34 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 	h.completeDeployment(deploymentID, msg)
 }
 
+// broadcastProgress fans a live deploy-progress event to all connected UI
+// clients over the existing UI WebSocket. It is best-effort and nil-safe: when
+// no hub is wired the event is simply dropped, and clients fall back to polling
+// the deployment store. Broadcast does its own marshalling and write fan-out, so
+// this never blocks the deploy on a slow client. The payload is nested under
+// "data" to match the existing UI message envelope ({"type":…,"data":…}).
+func (h *DeployHandler) broadcastProgress(id, status, step, message string, progress int) {
+	if h.hub == nil || h.hub.UI == nil {
+		return
+	}
+	h.hub.UI.Broadcast(map[string]any{
+		"type": "deploy-progress",
+		"data": map[string]any{
+			"deploymentId": id,
+			"status":       status,
+			"progress":     progress,
+			"step":         step,
+			"message":      message,
+		},
+	})
+}
+
 // progressUpdater returns a redfish progress callback that writes live step and
 // percentage onto the Deployment row. It only advances Progress (never regresses)
 // and leaves the terminal Completed/Failed write to the caller. A read/update
 // failure is best-effort and silently ignored — progress is non-authoritative.
+// Alongside the store write it broadcasts the step to UI clients so the
+// Deployments page reflects progress in real time rather than only on poll.
 func (h *DeployHandler) progressUpdater(id string) func(step string, percent int) {
 	return func(step string, percent int) {
 		dep, err := h.deployments.GetByID(context.Background(), id)
@@ -398,6 +430,7 @@ func (h *DeployHandler) progressUpdater(id string) func(step string, percent int
 		}
 		dep.Message = step
 		_ = h.deployments.Update(context.Background(), dep)
+		h.broadcastProgress(id, dep.Status, step, dep.Message, dep.Progress)
 	}
 }
 
@@ -412,6 +445,7 @@ func (h *DeployHandler) completeDeployment(id, message string) {
 	dep.Progress = 100
 	dep.CompletedAt = &now
 	_ = h.deployments.Update(context.Background(), dep)
+	h.broadcastProgress(id, dep.Status, "completed", message, dep.Progress)
 }
 
 func (h *DeployHandler) failDeployment(id, message string) {
@@ -424,6 +458,7 @@ func (h *DeployHandler) failDeployment(id, message string) {
 	dep.Message = message
 	dep.CompletedAt = &now
 	_ = h.deployments.Update(context.Background(), dep)
+	h.broadcastProgress(id, dep.Status, "failed", message, dep.Progress)
 }
 
 // --- Hardware inspection ---
