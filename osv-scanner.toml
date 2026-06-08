@@ -12,3 +12,30 @@ reason = "No patched github.com/docker/docker release yet (Fixed in N/A per govu
 id = "GO-2026-4887"
 ignoreUntil = 2026-08-16
 reason = "No patched github.com/docker/docker release yet (Fixed in N/A per govulncheck); client-only Docker Engine API usage."
+
+# No fixed github.com/docker/docker (Moby) release is available for v28.5.2 yet.
+# AuroraBoot only uses the Docker Engine API client against operator-controlled
+# hosts. Revisit when a patched release ships.
+[[IgnoredVulns]]
+id = "GHSA-rg2x-37c3-w2rh"
+ignoreUntil = 2026-07-08
+reason = "No patched github.com/docker/docker release available; client-only Docker Engine API usage. Re-evaluate before expiry."
+
+[[IgnoredVulns]]
+id = "GHSA-vp62-88p7-qqf5"
+ignoreUntil = 2026-07-08
+reason = "No patched github.com/docker/docker release available; client-only Docker Engine API usage. Re-evaluate before expiry."
+
+[[IgnoredVulns]]
+id = "GHSA-x86f-5xw2-fm2r"
+ignoreUntil = 2026-07-08
+reason = "No patched github.com/docker/docker release available; client-only Docker Engine API usage. Re-evaluate before expiry."
+
+# uuid is a transitive, dev-only dependency pinned by @cypress/request to ^8.3.2
+# (e2e/web Cypress suite). The fix (11.1.1) crosses three majors and breaks
+# Cypress' CommonJS require('uuid') usage, so it cannot be safely bumped here.
+# Dev/test tooling only; not shipped in any AuroraBoot artifact.
+[[IgnoredVulns]]
+id = "GHSA-w5hq-g745-h8pq"
+ignoreUntil = 2026-07-08
+reason = "uuid is a dev-only transitive dep pinned by @cypress/request (^8.3.2); fix requires a breaking major bump. Test tooling only, not shipped. Re-evaluate before expiry."
