@@ -37,6 +37,10 @@ type Config struct {
 	// Architecture to use for container image pulling (e.g., "amd64", "arm64")
 	Arch string `yaml:"arch"`
 
+	// Insecure allows pulling container images from registries over plain HTTP
+	// or presenting untrusted/self-signed TLS certificates
+	Insecure bool `yaml:"insecure"`
+
 	// ISO block configuration
 	ISO ISO `yaml:"iso"`
 

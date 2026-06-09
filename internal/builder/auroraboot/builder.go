@@ -195,6 +195,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			TrustedBoot:      opts.TrustedBoot,
 			Arch:             opts.Source.Arch,
 			Variant:          opts.Source.Variant,
+			Insecure:         opts.Source.Insecure,
 			RawDisk:          opts.Outputs.RawDisk,
 			Tar:              opts.Outputs.Tar,
 			GCE:              opts.Outputs.GCE,
@@ -564,6 +565,8 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 	if opts.Source.Arch != "" {
 		config.Arch = opts.Source.Arch
 	}
+
+	config.Insecure = opts.Source.Insecure
 
 	if opts.CloudImage || opts.Outputs.RawDisk || opts.Outputs.GCE || opts.Outputs.VHD {
 		config.Disk.EFI = true

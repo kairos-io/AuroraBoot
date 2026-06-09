@@ -156,6 +156,7 @@ type Artifact struct {
 	Model            string        `json:"model"`
 	Arch             string        `json:"arch"`
 	Variant          string        `json:"variant"`
+	Insecure         bool          `json:"insecure"`
 	KubernetesDistro string        `json:"kubernetesDistro,omitempty"`
 	ISO              bool          `json:"iso"`
 	CloudImage       bool          `json:"cloudImage"`
@@ -190,6 +191,7 @@ type CreateArtifactRequest struct {
 	Variant           string                 `json:"variant,omitempty"`
 	KubernetesDistro  string                 `json:"kubernetesDistro,omitempty"`
 	KubernetesVersion string                 `json:"kubernetesVersion,omitempty"`
+	Insecure          bool                   `json:"insecure,omitempty"`
 	Dockerfile        string                 `json:"dockerfile,omitempty"`
 	OverlayRootfs     string                 `json:"overlayRootfs,omitempty"`
 	KairosInitImage   string                 `json:"kairosInitImage,omitempty"`

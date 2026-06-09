@@ -658,6 +658,43 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nodes/{nodeID}/decommission": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Sends an ` + "`" + `unregister` + "`" + ` command to the node if it is currently online. The UI subscribes to the returned commandID via the UI WebSocket for live progress, then issues DELETE /api/v1/nodes/{nodeID} when the command reaches Completed. When the node is offline, this returns nodeOnline=false with an empty commandID — the operator should then force-delete and run ` + "`" + `kairos-agent phone-home uninstall` + "`" + ` on the box manually.",
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Dispatch remote teardown before deleting a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.decommissionResponse"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nodes/{nodeID}/group": {
             "put": {
                 "security": [
@@ -1043,6 +1080,13 @@ const docTemplate = `{
         "handlers.APIArtifactProvisioning": {
             "type": "object",
             "properties": {
+                "allowedCommands": {
+                    "description": "AllowedCommands is the explicit list emitted under phonehome.allowed_commands.\nNil means \"use AuroraBoot's safe default set\". An empty slice means deny-all\n(observe-only node) — the UI warns when the operator picks this.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "autoInstall": {
                     "type": "boolean"
                 },
@@ -1119,6 +1163,10 @@ const docTemplate = `{
                 },
                 "dockerfile": {
                     "type": "string"
+                },
+                "insecure": {
+                    "type": "boolean",
+                    "example": false
                 },
                 "kairosInitImage": {
                     "type": "string"
@@ -1336,6 +1384,17 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.decommissionResponse": {
+            "type": "object",
+            "properties": {
+                "commandID": {
+                    "type": "string"
+                },
+                "nodeOnline": {
+                    "type": "boolean"
+                }
+            }
+        },
         "store.ArtifactRecord": {
             "type": "object",
             "properties": {
@@ -1377,6 +1436,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "insecure": {
+                    "type": "boolean"
                 },
                 "iso": {
                     "type": "boolean"

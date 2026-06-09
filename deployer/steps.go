@@ -98,7 +98,7 @@ func (d *Deployer) StepDumpSource() error {
 	internal.Log.Logger.Debug().Str("arch", d.Config.Arch).Str("image", d.Artifact.ContainerImage).Msg("StepDumpSource: config arch and image")
 	return d.Add(constants.OpDumpSource,
 		herd.EnableIf(d.fromImage),
-		herd.WithDeps(constants.OpPrepareDirs), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs, d.Config.Arch)))
+		herd.WithDeps(constants.OpPrepareDirs), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs, d.Config.Arch, d.Config.Insecure)))
 }
 
 func (d *Deployer) StepGenISO() error {

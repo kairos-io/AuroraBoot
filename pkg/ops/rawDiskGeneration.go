@@ -605,6 +605,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 		}
 		size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
 		parts = append(parts, &gpt.Partition{
+			Index:      1,
 			Start:      2048,
 			End:        getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
 			Type:       gpt.EFISystemPartition,
@@ -616,6 +617,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	} else {
 		size = roundToNearestSector(int64(sdkConstants.BiosSize*1024*1024), finalDisk.LogicalBlocksize)
 		parts = append(parts, &gpt.Partition{
+			Index:      1,
 			Start:      2048,
 			End:        getSectorEndFromSize(2048, size, finalDisk.LogicalBlocksize),
 			Type:       gpt.BIOSBoot,
@@ -634,6 +636,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	}
 	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
 	parts = append(parts, &gpt.Partition{
+		Index: 2,
 		Start: parts[len(parts)-1].End + 1,
 		End:   getSectorEndFromSize(parts[len(parts)-1].End+1, size, finalDisk.LogicalBlocksize),
 		Type:  gpt.LinuxFilesystem,
@@ -649,6 +652,7 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 	}
 	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
 	parts = append(parts, &gpt.Partition{
+		Index: 3,
 		Start: parts[len(parts)-1].End + 1,
 		End:   getSectorEndFromSize(parts[len(parts)-1].End+1, size, finalDisk.LogicalBlocksize),
 		Type:  gpt.LinuxFilesystem,
