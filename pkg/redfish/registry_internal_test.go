@@ -149,9 +149,15 @@ func TestLoadProfileDirOverridesBuiltin(t *testing.T) {
 func TestQuirksForNameFallback(t *testing.T) {
 	r := newRegistry()
 
+	// ilo now ships a recorded mockup (P4), so the built-in resolves at tier B.
 	q, tier, ok := r.quirksForName("ilo")
-	if !ok || q.name != "ilo" || tier != TierC {
+	if !ok || q.name != "ilo" || tier != TierB {
 		t.Fatalf("ilo: name=%q tier=%q ok=%v", q.name, tier, ok)
+	}
+
+	// supermicro has no mockup, so it stays tier C.
+	if _, tier, ok := r.quirksForName("supermicro"); !ok || tier != TierC {
+		t.Fatalf("supermicro must stay tier C: tier=%q ok=%v", tier, ok)
 	}
 
 	// Unknown name MUST resolve to generic, reported as not a name match.

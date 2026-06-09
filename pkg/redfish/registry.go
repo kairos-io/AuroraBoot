@@ -62,13 +62,13 @@ const (
 )
 
 // deriveTier is the single place the project assigns a support tier. Keeping it in
-// one small function is deliberate: P4 flips the in-tree+mockup case to TierB by
-// changing only the `hasMockup` branch here.
+// one small function is deliberate: the in-tree+mockup case (the C->B promotion) is
+// driven entirely by the `hasMockup` argument, which builtinHasMockup supplies.
 //
 // Rules (design §4b):
 //   - operator-supplied profile        => always C (we have no evidence for it).
-//   - in-tree profile WITH a mockup     => B  (TODO(P4): no mockups exist yet, so
-//     hasMockup is always false today; P4 records them and flips these to B).
+//   - in-tree profile WITH a mockup     => B  (P4: a recorded, sanitized mockup is
+//     replayed by the §4a golden test in every-PR CI — builtinHasMockup reports it).
 //   - in-tree profile WITHOUT a mockup  => C, EXCEPT the spec-default "generic"
 //     profile, which is the core-tested path and is therefore A.
 func deriveTier(name string, src origin, hasMockup bool) Tier {
@@ -77,8 +77,8 @@ func deriveTier(name string, src origin, hasMockup bool) Tier {
 	}
 	// In-tree from here on.
 	if hasMockup {
-		// TODO(P4): unreachable until recorded mockups land; this is the C->B
-		// promotion seam (add a sanitized mockup => the profile reaches tier B).
+		// A recorded, sanitized mockup exists for this built-in and is replayed by
+		// the golden test, so it is community-validated against that firmware.
 		return TierB
 	}
 	if name == "generic" {
@@ -86,12 +86,6 @@ func deriveTier(name string, src origin, hasMockup bool) Tier {
 	}
 	return TierC
 }
-
-// builtinHasMockup reports whether an in-tree profile carries a recorded mockup.
-// P4 adds the testdata/mockups/<vendor>/ trees and turns this into a real lookup;
-// until then no in-tree profile has evidence, so every built-in except generic is
-// tier C. Routed through deriveTier so the promotion is a one-line change.
-func builtinHasMockup(string) bool { return false }
 
 // registryEntry is one resolvable profile: its compiled quirks, declared name,
 // derived tier, and origin.
