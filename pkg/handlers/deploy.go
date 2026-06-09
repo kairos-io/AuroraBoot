@@ -57,6 +57,11 @@ type DeployHandler struct {
 	// can abort it. Guarded by runsMu.
 	runsMu sync.Mutex
 	runs   map[string]context.CancelFunc
+
+	// refreshAll enforces a single in-flight "refresh all" BMC-status sweep: a
+	// concurrent RefreshAllBMCTargets call returns 409 rather than launching a
+	// second parallel sweep that would double the BMC-ping load.
+	refreshAll refreshGuard
 }
 
 // NewDeployHandler creates a new DeployHandler.
@@ -588,6 +593,7 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 		Timeout:   30 * time.Second,
 	})
 	if err := deployer.Connect(ctx); err != nil {
+		h.persistInspectFailure(ctx, target, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to connect to redfish endpoint: %v", err)})
 	}
 	// Always tear the session down (DELETE) on both success and error.
@@ -596,8 +602,12 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 	inspector := hardware.NewInspector(deployer)
 	info, err := inspector.InspectSystem(ctx)
 	if err != nil {
+		h.persistInspectFailure(ctx, target, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to inspect hardware: %v", err)})
 	}
+
+	features := sortedFeatures(info.Features)
+	h.persistInspectSuccess(ctx, target, info, features)
 
 	return c.JSON(http.StatusOK, inspectResponse{
 		MemoryGiB:         info.MemoryGiB,
@@ -605,8 +615,40 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 		Model:             info.Model,
 		Manufacturer:      info.Manufacturer,
 		SerialNumber:      info.SerialNumber,
-		SupportedFeatures: sortedFeatures(info.Features),
+		SupportedFeatures: features,
 	})
+}
+
+// persistInspectSuccess writes a successful inspect result into the BMC target's
+// server-owned status cache so the BMC page can render details without contacting
+// the BMC again. It sets LastStatus="reachable", the hardware facts, LastInspectAt,
+// and clears LastError. A store failure is best-effort and swallowed: the inspect
+// response itself is authoritative and must not fail because the cache write did.
+func (h *DeployHandler) persistInspectSuccess(ctx context.Context, target *store.BMCTarget, info *hardware.SystemInfo, features []string) {
+	now := time.Now()
+	target.LastStatus = bmcStatusReachable
+	target.LastError = ""
+	target.LastInspectAt = &now
+	target.LastModel = info.Model
+	target.LastManufacturer = info.Manufacturer
+	target.LastSerial = info.SerialNumber
+	target.LastMemoryGiB = info.MemoryGiB
+	target.LastCPUCount = info.ProcessorCount
+	target.LastFeatures = features
+	_ = h.bmcTargets.Update(ctx, target)
+}
+
+// persistInspectFailure records an unreachable/inspect-error outcome into the
+// status cache: LastStatus="unreachable", a scrubbed LastError, LastInspectAt=now.
+// The error text is scrubbed of credentials at its source (the redfish package),
+// but is re-scrubbed defensively here in case a future error path is not. A store
+// failure is best-effort and swallowed.
+func (h *DeployHandler) persistInspectFailure(ctx context.Context, target *store.BMCTarget, cause error) {
+	now := time.Now()
+	target.LastStatus = bmcStatusUnreachable
+	target.LastError = scrubBMCError(cause)
+	target.LastInspectAt = &now
+	_ = h.bmcTargets.Update(ctx, target)
 }
 
 // sortedFeatures returns the detected feature names as a stable, sorted slice for
@@ -639,6 +681,10 @@ func (h *DeployHandler) CreateBMCTarget(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
 		}
 	}
+	// Status-cache fields are server-owned (populated only by inspect/ping/refresh).
+	// Drop anything a client may have smuggled in via the bound body so it cannot
+	// fabricate a "reachable" status without an actual check.
+	clearBMCStatusCache(&target)
 
 	if err := h.bmcTargets.Create(c.Request().Context(), &target); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create BMC target"})

@@ -234,8 +234,27 @@ type BMCTarget struct {
 	// HTTP(S) URL this BMC pulls the ISO from (model a, operator-hosted). When set
 	// it takes precedence over the global default but is still overridden by a
 	// per-deploy imageUrl. SSRF-validated on write and again at deploy time.
-	ImageURL  string    `json:"imageUrl,omitempty"`
-	NodeID    string    `json:"nodeId,omitempty" gorm:"index"`
+	ImageURL string `json:"imageUrl,omitempty"`
+	NodeID   string `json:"nodeId,omitempty" gorm:"index"`
+
+	// --- Status cache (P4) ---
+	//
+	// These fields are server-owned denormalized snapshots of the last inspect /
+	// reachability ping so the BMC page can render status without contacting the
+	// BMC on load. Clients MUST NOT write them: CreateBMCTarget/UpdateBMCTarget
+	// never copy them from the request body. They are populated only by the
+	// inspect, status-ping and refresh-all handlers.
+	LastStatus       string     `json:"lastStatus,omitempty"` // "", "reachable", "unreachable"
+	LastError        string     `json:"lastError,omitempty"`
+	LastInspectAt    *time.Time `json:"lastInspectAt,omitempty"`
+	LastPingAt       *time.Time `json:"lastPingAt,omitempty"`
+	LastModel        string     `json:"lastModel,omitempty"`
+	LastManufacturer string     `json:"lastManufacturer,omitempty"`
+	LastSerial       string     `json:"lastSerial,omitempty"`
+	LastMemoryGiB    int        `json:"lastMemoryGiB,omitempty"`
+	LastCPUCount     int        `json:"lastCpuCount,omitempty"`
+	LastFeatures     []string   `json:"lastFeatures,omitempty" gorm:"serializer:json"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }

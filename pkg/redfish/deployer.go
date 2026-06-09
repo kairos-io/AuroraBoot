@@ -197,45 +197,62 @@ func (d *Deployer) resolveBasicAuth(ctx context.Context) (bool, error) {
 // the defensive HTTP client (cross-origin redirect reject + body cap + TLS-verify
 // honouring Insecure). The endpoint URL it fetches carries no credentials.
 func (d *Deployer) serviceRootHasSessionService(ctx context.Context) (bool, error) {
-	rootURL := strings.TrimRight(d.endpoint, "/") + "/redfish/v1/"
+	root, err := fetchServiceRoot(ctx, d.endpoint, !d.verifySSL)
+	if err != nil {
+		return false, err
+	}
+	return root.SessionService.ODataID != "" || root.Links.Sessions.ODataID != "", nil
+}
 
-	client := newDefensiveHTTPClient(!d.verifySSL)
+// serviceRoot is the minimal subset of the Redfish ServiceRoot we parse for the
+// session-free reachability checks (auth-mode detection and Ping).
+type serviceRoot struct {
+	SessionService struct {
+		ODataID string `json:"@odata.id"`
+	} `json:"SessionService"`
+	Links struct {
+		Sessions struct {
+			ODataID string `json:"@odata.id"`
+		} `json:"Sessions"`
+	} `json:"Links"`
+}
+
+// fetchServiceRoot performs an unauthenticated GET of {endpoint}/redfish/v1/ using
+// the defensive HTTP client (cross-origin redirect reject + body cap + TLS-verify
+// honouring insecure) and parses the minimal ServiceRoot shape. It sends NO
+// credentials and creates NO session, so it never adds to a BMC's session count.
+// A non-2xx status (including 401 on hardened BMCs) or an unparseable body is an
+// error. The endpoint URL it fetches carries no credentials.
+func fetchServiceRoot(ctx context.Context, endpoint string, insecure bool) (*serviceRoot, error) {
+	rootURL := strings.TrimRight(endpoint, "/") + "/redfish/v1/"
+
+	client := newDefensiveHTTPClient(insecure)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rootURL, nil)
 	if err != nil {
-		return false, fmt.Errorf("building ServiceRoot request: %w", err)
+		return nil, fmt.Errorf("building ServiceRoot request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("fetching ServiceRoot: %w", err)
+		return nil, fmt.Errorf("fetching ServiceRoot: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("fetching ServiceRoot: unexpected status %d", resp.StatusCode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetching ServiceRoot: unexpected status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("reading ServiceRoot: %w", err)
+		return nil, fmt.Errorf("reading ServiceRoot: %w", err)
 	}
 
-	var root struct {
-		SessionService struct {
-			ODataID string `json:"@odata.id"`
-		} `json:"SessionService"`
-		Links struct {
-			Sessions struct {
-				ODataID string `json:"@odata.id"`
-			} `json:"Sessions"`
-		} `json:"Links"`
-	}
+	var root serviceRoot
 	if err := json.Unmarshal(body, &root); err != nil {
-		return false, fmt.Errorf("parsing ServiceRoot: %w", err)
+		return nil, fmt.Errorf("parsing ServiceRoot: %w", err)
 	}
-
-	return root.SessionService.ODataID != "" || root.Links.Sessions.ODataID != "", nil
+	return &root, nil
 }
 
 // Close drops the connection. For session auth it logs the Redfish session out
@@ -619,15 +636,5 @@ func (d *Deployer) pollTask(ctx context.Context, uri string, report progressFunc
 // gofish does not place credentials in error strings, but a creds-bearing URL
 // could theoretically appear; redact basic-auth userinfo defensively.
 func (d *Deployer) scrub(err error) error {
-	if err == nil {
-		return nil
-	}
-	msg := err.Error()
-	if d.password != "" {
-		msg = strings.ReplaceAll(msg, d.password, "[REDACTED]")
-	}
-	if msg == err.Error() {
-		return err
-	}
-	return errors.New(msg)
+	return scrubError(err, d.password)
 }

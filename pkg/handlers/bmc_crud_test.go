@@ -75,4 +75,25 @@ var _ = Describe("BMC target CRUD ImageURL validation", func() {
 		Expect(rec.Code).To(Equal(http.StatusOK))
 		Expect(bmcTargets.targets[0].ImageURL).To(Equal("https://10.0.0.5/os.iso"))
 	})
+
+	It("ignores client-supplied status-cache fields on create (server-owned)", func() {
+		rec := create(`{"name":"h","endpoint":"https://10.0.0.9","lastStatus":"reachable","lastModel":"FAKE","lastFeatures":["UEFI"]}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(bmcTargets.targets).To(HaveLen(1))
+		// A client cannot fabricate a cached status without an actual check.
+		Expect(bmcTargets.targets[0].LastStatus).To(BeEmpty())
+		Expect(bmcTargets.targets[0].LastModel).To(BeEmpty())
+		Expect(bmcTargets.targets[0].LastFeatures).To(BeEmpty())
+	})
+
+	It("does not let an update overwrite the server-owned status cache", func() {
+		bmcTargets.targets = []*store.BMCTarget{{
+			ID: "bmc-1", Endpoint: "https://10.0.0.9", LastStatus: "reachable", LastModel: "REAL",
+		}}
+		rec := update("bmc-1", `{"name":"h","endpoint":"https://10.0.0.9","lastStatus":"unreachable","lastModel":"FAKE"}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		// The fixed-field copy never touches the status cache: it is preserved.
+		Expect(bmcTargets.targets[0].LastStatus).To(Equal("reachable"))
+		Expect(bmcTargets.targets[0].LastModel).To(Equal("REAL"))
+	})
 })

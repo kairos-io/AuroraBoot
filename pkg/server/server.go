@@ -266,6 +266,8 @@ func New(cfg Config) *echo.Echo {
 		adminGroup.PUT("/bmc-targets/:id", deployHandler.UpdateBMCTarget)
 		adminGroup.DELETE("/bmc-targets/:id", deployHandler.DeleteBMCTarget)
 		adminGroup.POST("/bmc-targets/:id/inspect", deployHandler.InspectHardware)
+		adminGroup.GET("/bmc-targets/:id/status", deployHandler.PingBMCTarget)
+		adminGroup.POST("/bmc-targets/refresh-all", deployHandler.RefreshAllBMCTargets)
 		adminGroup.GET("/deployments", deployHandler.ListDeployments)
 		adminGroup.GET("/deployments/:id", deployHandler.GetDeployment)
 	}
