@@ -187,6 +187,10 @@ type deployRedfishRequest struct {
 	Password  string `json:"password"`
 	Vendor    string `json:"vendor"`
 	VerifySSL *bool  `json:"verifySSL"`
+	// SystemID optionally pins the target ComputerSystem by its Redfish Id. When
+	// set it takes precedence over a saved target's SystemID; required when the BMC
+	// exposes more than one system. Mirrors the CLI's --system-id.
+	SystemID string `json:"systemId"`
 }
 
 // imageURLUsesHTTPS reports whether an operator-supplied media URL is fetched
@@ -221,6 +225,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		password  string
 		vendor    string
 		verifySSL bool
+		systemID  string
 		bmcID     string
 	)
 
@@ -234,6 +239,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		password = target.Password
 		vendor = target.Vendor
 		verifySSL = target.VerifySSL
+		systemID = target.SystemID
 		bmcID = target.ID
 	} else {
 		if req.Endpoint == "" || req.Username == "" || req.Password == "" {
@@ -251,6 +257,13 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		} else {
 			verifySSL = true
 		}
+	}
+
+	// An explicit request SystemID overrides the saved target's (and is the only
+	// way to select a system for an inline-credentials deploy). When empty, fall
+	// back to whatever the saved target carries.
+	if req.SystemID != "" {
+		systemID = req.SystemID
 	}
 
 	// Locate the artifact's on-disk ISO. InsertMedia is URL-pull (no byte
@@ -335,7 +348,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	runCtx, cancel := context.WithTimeout(h.baseCtx, redfishDeployTimeout)
 	h.registerRun(dep.ID, cancel)
 
-	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, verifySSL, useHTTPS)
+	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, systemID, verifySSL, useHTTPS)
 
 	return c.JSON(http.StatusAccepted, dep)
 }
@@ -346,7 +359,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 // deploy timeout; cancel is its cancel func, deregistered and called on return so
 // the run-registry never retains a finished deploy. useHTTPS sets the InsertMedia
 // TransferProtocolType so it matches the scheme the BMC actually fetches over.
-func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor string, verifySSL, useHTTPS bool) {
+func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor, systemID string, verifySSL, useHTTPS bool) {
 	logPrefix := fmt.Sprintf("deployment %s", deploymentID)
 
 	defer cancel()
@@ -365,6 +378,7 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		Password:  password,
 		Vendor:    redfish.VendorType(vendor),
 		VerifySSL: verifySSL,
+		SystemID:  systemID,
 		Timeout:   redfishDeployTimeout,
 	})
 
@@ -500,6 +514,7 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 		Password:  target.Password,
 		Vendor:    redfish.VendorType(target.Vendor),
 		VerifySSL: target.VerifySSL,
+		SystemID:  target.SystemID,
 		Timeout:   30 * time.Second,
 	})
 	if err := deployer.Connect(ctx); err != nil {
@@ -587,6 +602,7 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 		existing.Password = updated.Password
 	}
 	existing.VerifySSL = updated.VerifySSL
+	existing.SystemID = updated.SystemID
 	existing.NodeID = updated.NodeID
 
 	if err := h.bmcTargets.Update(ctx, existing); err != nil {

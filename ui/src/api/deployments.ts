@@ -19,6 +19,10 @@ export interface BMCTarget {
   vendor: string;
   username: string;
   verifySSL: boolean;
+  // systemId optionally pins the target ComputerSystem by its Redfish Id. Leave
+  // blank for single-system BMCs; required when the BMC exposes more than one,
+  // mirroring the CLI's --system-id.
+  systemId?: string;
   nodeId?: string;
   createdAt: string;
 }
@@ -69,6 +73,7 @@ export const createBMCTarget = (t: {
   username: string;
   password: string;
   verifySSL: boolean;
+  systemId?: string;
 }) => apiFetch<BMCTarget>("/api/v1/bmc-targets", { method: "POST", body: JSON.stringify(t) });
 
 // updateBMCTarget mirrors createBMCTarget but PUTs to an existing target. Leave
@@ -83,6 +88,7 @@ export const updateBMCTarget = (
     username: string;
     password?: string;
     verifySSL: boolean;
+    systemId?: string;
   }
 ) =>
   apiFetch<BMCTarget>(`/api/v1/bmc-targets/${id}`, {
@@ -105,6 +111,7 @@ export const deployRedfish = (
     password?: string;
     vendor?: string;
     verifySSL?: boolean;
+    systemId?: string;
   }
 ) =>
   apiFetch<Deployment>(`/api/v1/artifacts/${artifactId}/deploy/redfish`, {

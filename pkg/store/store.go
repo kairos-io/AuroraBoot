@@ -218,13 +218,18 @@ type SecureBootKeySetStore interface {
 
 // BMCTarget stores saved RedFish/IPMI credentials for a baseboard management controller.
 type BMCTarget struct {
-	ID        string    `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name"`
-	Endpoint  string    `json:"endpoint"`
-	Vendor    string    `json:"vendor"`
-	Username  string    `json:"username"`
-	Password  string    `json:"-"`
-	VerifySSL bool      `json:"verifySSL"`
+	ID        string `json:"id" gorm:"primaryKey"`
+	Name      string `json:"name"`
+	Endpoint  string `json:"endpoint"`
+	Vendor    string `json:"vendor"`
+	Username  string `json:"username"`
+	Password  string `json:"-"`
+	VerifySSL bool   `json:"verifySSL"`
+	// SystemID optionally pins the target ComputerSystem by its Redfish Id. Leave
+	// empty when the BMC exposes exactly one system; it is required when the BMC
+	// exposes more than one, or the deploy/inspect flow refuses to guess and fails
+	// with the list of available system Ids. Mirrors the CLI's --system-id.
+	SystemID  string    `json:"systemId,omitempty"`
 	NodeID    string    `json:"nodeId,omitempty" gorm:"index"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`

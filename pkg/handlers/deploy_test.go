@@ -119,7 +119,15 @@ func (f *fakeBMCTargetStore) List(_ context.Context) ([]*store.BMCTarget, error)
 }
 
 func (f *fakeBMCTargetStore) Update(_ context.Context, t *store.BMCTarget) error {
-	return nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, existing := range f.targets {
+		if existing.ID == t.ID {
+			f.targets[i] = t
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
 }
 
 func (f *fakeBMCTargetStore) Delete(_ context.Context, id string) error {

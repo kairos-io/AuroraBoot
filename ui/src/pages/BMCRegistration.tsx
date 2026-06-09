@@ -65,6 +65,7 @@ type FormState = {
   username: string;
   password: string;
   verifySSL: boolean;
+  systemId: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -74,6 +75,7 @@ const EMPTY_FORM: FormState = {
   username: "",
   password: "",
   verifySSL: false,
+  systemId: "",
 };
 
 function vendorLabel(vendor: string): string {
@@ -129,6 +131,7 @@ export function BMCRegistration() {
       username: t.username,
       password: "",
       verifySSL: t.verifySSL,
+      systemId: t.systemId ?? "",
     });
     setFormOpen(true);
   }
@@ -150,6 +153,7 @@ export function BMCRegistration() {
                 vendor: payload.vendor,
                 username: payload.username,
                 verifySSL: payload.verifySSL,
+                systemId: payload.systemId,
               }
         );
         setTargets((prev) =>
@@ -256,6 +260,7 @@ export function BMCRegistration() {
                   <TableHead>Name</TableHead>
                   <TableHead>Endpoint</TableHead>
                   <TableHead>Vendor</TableHead>
+                  <TableHead>System ID</TableHead>
                   <TableHead>TLS verify</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -273,6 +278,15 @@ export function BMCRegistration() {
                           {t.endpoint}
                         </TableCell>
                         <TableCell>{vendorLabel(t.vendor)}</TableCell>
+                        <TableCell>
+                          {t.systemId ? (
+                            <span className="font-mono text-xs">{t.systemId}</span>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              auto
+                            </span>
+                          )}
+                        </TableCell>
                         <TableCell>
                           <Badge variant={t.verifySSL ? "default" : "secondary"}>
                             {t.verifySSL ? "Enabled" : "Disabled"}
@@ -319,7 +333,7 @@ export function BMCRegistration() {
                       {/* Inspect error row */}
                       {error && (
                         <TableRow>
-                          <TableCell colSpan={5} className="pt-0">
+                          <TableCell colSpan={6} className="pt-0">
                             <div className="bg-red-500/10 border border-red-500/25 text-red-700 rounded-md p-3 text-sm whitespace-pre-wrap">
                               {error}
                             </div>
@@ -330,7 +344,7 @@ export function BMCRegistration() {
                       {/* Inspect result row — same rendering style as DeployDialog */}
                       {result && (
                         <TableRow>
-                          <TableCell colSpan={5} className="pt-0">
+                          <TableCell colSpan={6} className="pt-0">
                             <div className="rounded-md border p-4 space-y-3">
                               <div className="text-sm font-medium">
                                 Hardware inspection
@@ -474,6 +488,20 @@ export function BMCRegistration() {
                     Leave blank to keep the existing password.
                   </p>
                 )}
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">System ID</Label>
+                <Input
+                  value={form.systemId}
+                  onChange={(e) =>
+                    setForm({ ...form, systemId: e.target.value })
+                  }
+                  placeholder="optional"
+                />
+                <p className="text-xs text-muted-foreground">
+                  Leave blank for single-system BMCs; required when the BMC
+                  exposes multiple ComputerSystems.
+                </p>
               </div>
             </div>
             <label className="flex items-center gap-2 cursor-pointer text-sm">

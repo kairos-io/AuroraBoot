@@ -82,6 +82,7 @@ export function DeployDialog({
     username: "",
     password: "",
     verifySSL: false,
+    systemId: "",
   });
   const [creatingTarget, setCreatingTarget] = useState(false);
 
@@ -175,7 +176,7 @@ export function DeployDialog({
       setBmcTargets((prev) => [...prev, created]);
       setSelectedTarget(created.id);
       setShowNewTarget(false);
-      setNewTarget({ name: "", endpoint: "", vendor: "dell", username: "", password: "", verifySSL: false });
+      setNewTarget({ name: "", endpoint: "", vendor: "dell", username: "", password: "", verifySSL: false, systemId: "" });
     } catch {
       // ignore
     } finally {
@@ -421,6 +422,18 @@ export function DeployDialog({
                           <SelectItem value="lenovo">Lenovo</SelectItem>
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="space-y-1 col-span-2">
+                      <Label className="text-xs">System ID</Label>
+                      <Input
+                        value={newTarget.systemId}
+                        onChange={(e) => setNewTarget({ ...newTarget, systemId: e.target.value })}
+                        placeholder="optional"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Leave blank for single-system BMCs; required when the BMC
+                        exposes multiple ComputerSystems.
+                      </p>
                     </div>
                   </div>
                   <Button type="submit" size="sm" disabled={creatingTarget} className="w-full">
