@@ -107,7 +107,11 @@ func NewDeployer(cfg Config) *Deployer {
 		timeout:   timeout,
 		systemID:  cfg.SystemID,
 		authMode:  authMode,
-		quirks:    quirksFor(vendor),
+		// Resolve through the process-wide registry: name-first (operator/built-in),
+		// then the VendorType mapping, then generic. This honours operator-supplied
+		// profiles installed via SetDefaultRegistry while preserving the invariant
+		// that an unknown vendor/name resolves to the spec-default generic profile.
+		quirks: resolveQuirks(string(vendor)),
 	}
 }
 

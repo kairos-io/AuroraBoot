@@ -67,6 +67,11 @@ func redfishProbeCmd() *cli.Command {
 				Usage: "Output format: text (human report only), yaml (starter profile only, pipeable to a file), or both",
 				Value: "both",
 			},
+			&cli.StringFlag{
+				Name:    "quirks-dir",
+				Usage:   "Directory of operator-supplied *.yaml/*.yml quirk profiles to load and validate at start. The probe is read-only and does not apply a profile; loading here surfaces malformed-profile errors and the support tier of each",
+				EnvVars: []string{redfishQuirksDirEnv},
+			},
 		},
 		Action: func(c *cli.Context) error {
 			return runRedfishProbe(c, os.Stdin, c.App.Writer)
@@ -81,6 +86,13 @@ func runRedfishProbe(c *cli.Context, stdin io.Reader, out io.Writer) error {
 
 	output, err := resolveProbeOutput(c.String("output"))
 	if err != nil {
+		return err
+	}
+
+	// Load (and so validate) any operator quirk profiles at start. The probe is
+	// read-only and applies no profile; loading surfaces malformed-profile errors
+	// and each profile's support tier via the registry's load-time log lines.
+	if err := loadRedfishQuirksDir(c.String("quirks-dir")); err != nil {
 		return err
 	}
 

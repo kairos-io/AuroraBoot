@@ -20,6 +20,33 @@ import (
 // password when neither --password nor --password-file is set.
 const redfishPasswordEnv = "AURORABOOT_REDFISH_PASSWORD"
 
+// redfishQuirksDirEnv is the environment variable consulted for the operator
+// quirk-profile directory when --quirks-dir is not set.
+const redfishQuirksDirEnv = "AURORABOOT_REDFISH_QUIRKS_DIR"
+
+// loadRedfishQuirksDir loads operator-supplied quirk profiles from dir (if any)
+// and installs the resulting registry as the process-wide default so subsequent
+// redfish.NewDeployer calls resolve --vendor against the loaded profiles. It is
+// load-at-start: profiles are read once here, never hot-reloaded mid-deploy. Each
+// loaded profile and each malformed-and-skipped file is logged by the registry; a
+// single bad profile disables only itself and never fails the command. An empty
+// dir is a no-op (built-in profiles only). Only a directory-read failure is fatal.
+func loadRedfishQuirksDir(dir string) error {
+	dir = strings.TrimSpace(dir)
+	if dir == "" {
+		dir = os.Getenv(redfishQuirksDirEnv)
+	}
+	if strings.TrimSpace(dir) == "" {
+		return nil
+	}
+	registry, _, err := redfish.LoadProfileDir(dir)
+	if err != nil {
+		return fmt.Errorf("loading quirk profiles: %w", err)
+	}
+	redfish.SetDefaultRegistry(registry)
+	return nil
+}
+
 // resolveRedfishPassword resolves the RedFish password from, in precedence order:
 // the explicit --password flag, --password-file, the AURORABOOT_REDFISH_PASSWORD
 // environment variable, then --password-stdin. It errors if none is provided.
@@ -134,8 +161,13 @@ var RedFishDeployCmd = cli.Command{
 				},
 				&cli.StringFlag{
 					Name:  "vendor",
-					Usage: "Hardware vendor (generic, supermicro, ilo, dmtf)",
+					Usage: "Quirk profile to select: a built-in vendor (generic, supermicro, ilo, dmtf) OR the name of an operator profile loaded from --quirks-dir. An unknown name falls back to generic",
 					Value: "generic",
+				},
+				&cli.StringFlag{
+					Name:    "quirks-dir",
+					Usage:   "Directory of operator-supplied *.yaml/*.yml quirk profiles loaded at start. Selected by name via --vendor; a profile named the same as a built-in overrides it (logged). A malformed profile is skipped, not fatal",
+					EnvVars: []string{redfishQuirksDirEnv},
 				},
 				&cli.StringFlag{
 					Name:  "boot-mode",
@@ -195,6 +227,12 @@ var RedFishDeployCmd = cli.Command{
 			},
 			Action: func(c *cli.Context) error {
 				ctx := c.Context
+
+				// Load operator quirk profiles (if any) BEFORE NewDeployer so --vendor
+				// can select one by name. Load-at-start, not hot-reload.
+				if err := loadRedfishQuirksDir(c.String("quirks-dir")); err != nil {
+					return err
+				}
 
 				endpoint := c.String("endpoint")
 				username := c.String("username")
