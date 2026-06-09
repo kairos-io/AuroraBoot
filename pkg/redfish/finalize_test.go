@@ -74,4 +74,47 @@ var _ = Describe("Deployer.Finalize", func() {
 		Expect(d.Finalize(cancelled, redfish.FinalizeRequest{})).To(MatchError(context.Canceled))
 		Expect(bmc.ejectCalled).To(BeFalse())
 	})
+
+	It("does NOT power-cycle by default (in-place eject, no power Reset)", func() {
+		Expect(d.Connect(ctx)).To(Succeed())
+		defer func() { _ = d.Close() }()
+
+		Expect(d.Finalize(ctx, redfish.FinalizeRequest{})).To(Succeed())
+
+		Expect(bmc.ejectCalled).To(BeTrue())
+		// No power Reset at all: the in-place path only ejects and boots to disk.
+		Expect(bmc.finalizeEventOrder()).To(Equal([]string{"eject"}))
+	})
+
+	It("with PowerCycle powers off, then ejects, then boots to disk, then powers on", func() {
+		Expect(d.Connect(ctx)).To(Succeed())
+		defer func() { _ = d.Close() }()
+
+		Expect(d.Finalize(ctx, redfish.FinalizeRequest{PowerCycle: true})).To(Succeed())
+
+		// The load-bearing eject fired while the machine was off, and the ordering is
+		// power-off -> eject -> power-on.
+		Expect(bmc.ejectCalled).To(BeTrue())
+		Expect(bmc.finalizeEventOrder()).To(Equal([]string{"power-off", "eject", "power-on"}))
+
+		// The graceful shutdown is preferred for the power-off, On for the power-on.
+		Expect(bmc.resetTypes).To(Equal([]string{"GracefulShutdown", "On"}))
+
+		// The opportunistic boot-to-disk PATCH still fired (after eject, before power-on).
+		Expect(bmc.bootPatchBody).To(HaveKey("Boot"))
+	})
+
+	It("with PowerCycle still ejects when the system is already off", func() {
+		bmc.powerState = "Off"
+
+		Expect(d.Connect(ctx)).To(Succeed())
+		defer func() { _ = d.Close() }()
+
+		Expect(d.Finalize(ctx, redfish.FinalizeRequest{PowerCycle: true})).To(Succeed())
+
+		Expect(bmc.ejectCalled).To(BeTrue())
+		// Already off: no shutdown Reset is issued; only the final power-on Reset runs.
+		Expect(bmc.finalizeEventOrder()).To(Equal([]string{"eject", "power-on"}))
+		Expect(bmc.resetTypes).To(Equal([]string{"On"}))
+	})
 })

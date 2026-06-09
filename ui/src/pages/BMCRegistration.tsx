@@ -77,6 +77,7 @@ type FormState = {
   systemId: string;
   imageUrl: string;
   ejectAfterInstall: boolean;
+  ejectPowerCycle: boolean;
 };
 
 const EMPTY_FORM: FormState = {
@@ -89,6 +90,7 @@ const EMPTY_FORM: FormState = {
   systemId: "",
   imageUrl: "",
   ejectAfterInstall: false,
+  ejectPowerCycle: false,
 };
 
 function vendorLabel(vendor: string): string {
@@ -277,6 +279,7 @@ export function BMCRegistration() {
       systemId: t.systemId ?? "",
       imageUrl: t.imageUrl ?? "",
       ejectAfterInstall: t.ejectAfterInstall ?? false,
+      ejectPowerCycle: t.ejectPowerCycle ?? false,
     });
     setFormOpen(true);
   }
@@ -301,6 +304,7 @@ export function BMCRegistration() {
                 systemId: payload.systemId,
                 imageUrl: payload.imageUrl,
                 ejectAfterInstall: payload.ejectAfterInstall,
+                ejectPowerCycle: payload.ejectPowerCycle,
               }
         );
         setTargets((prev) =>
@@ -883,6 +887,23 @@ export function BMCRegistration() {
                 When the freshly-installed node phones home, AuroraBoot ejects the
                 virtual media and boots from disk — breaking the install loop on
                 BMCs that ignore the one-time boot override. Opt-in.
+              </p>
+            </div>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.ejectPowerCycle}
+                  onChange={(e) =>
+                    setForm({ ...form, ejectPowerCycle: e.target.checked })
+                  }
+                />
+                Power-cycle on eject
+              </label>
+              <p className="text-xs text-muted-foreground">
+                Power the machine off before ejecting and back on after — needed for
+                BMCs/emulators that don't apply media eject to a running machine.
+                Leave off for hardware that ejects live.
               </p>
             </div>
             <div className="flex justify-end gap-2 pt-2">

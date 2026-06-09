@@ -120,6 +120,14 @@ type FinalizeRequest struct {
 	// Progress, when non-nil, is invoked at each finalize stage with a short step
 	// label and a monotonically increasing percentage (0..100). nil disables it.
 	Progress func(step string, percent int)
+	// PowerCycle, when true, switches Finalize to the power-cycle path: power the
+	// system OFF, eject the media while it is off, steer the next boot to disk, then
+	// power it back ON. This is the robust mode for BMCs/emulators (observed with
+	// sushy-tools on libvirt) that report a media eject on a *running* machine but do
+	// not actually apply it — the live machine keeps booting the ISO until a power
+	// transition. On real hardware live eject usually works, so the default is false
+	// (the in-place eject, unchanged). The eject is still load-bearing in either mode.
+	PowerCycle bool
 }
 
 // DeployResult is the outcome of a deployment.

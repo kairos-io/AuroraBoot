@@ -76,6 +76,13 @@ var _ = Describe("BMC target CRUD ImageURL validation", func() {
 		Expect(bmcTargets.targets[0].ImageURL).To(Equal("https://10.0.0.5/os.iso"))
 	})
 
+	It("persists the EjectPowerCycle flag on update", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9"}}
+		rec := update("bmc-1", `{"name":"h","endpoint":"https://10.0.0.9","ejectPowerCycle":true}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(bmcTargets.targets[0].EjectPowerCycle).To(BeTrue())
+	})
+
 	It("accepts a normal RFC1918 endpoint on create", func() {
 		rec := create(`{"name":"h","endpoint":"https://192.168.1.50"}`)
 		Expect(rec.Code).To(Equal(http.StatusCreated))

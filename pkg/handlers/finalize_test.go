@@ -26,6 +26,9 @@ type fakeFinalizer struct {
 	finalizeErr   error
 	connected     bool
 	finalizeCalls int
+	// lastReq records the most recent FinalizeRequest so specs can assert the
+	// PowerCycle flag was threaded through from the BMC target.
+	lastReq redfish.FinalizeRequest
 }
 
 func (f *fakeFinalizer) Connect(_ context.Context) error {
@@ -38,11 +41,18 @@ func (f *fakeFinalizer) Connect(_ context.Context) error {
 	return nil
 }
 
-func (f *fakeFinalizer) Finalize(_ context.Context, _ redfish.FinalizeRequest) error {
+func (f *fakeFinalizer) Finalize(_ context.Context, req redfish.FinalizeRequest) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.finalizeCalls++
+	f.lastReq = req
 	return f.finalizeErr
+}
+
+func (f *fakeFinalizer) lastPowerCycle() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lastReq.PowerCycle
 }
 
 func (f *fakeFinalizer) Close() error { return nil }
@@ -215,6 +225,34 @@ var _ = Describe("Eject / finalize", func() {
 			d2, _ := deployments.GetByID(context.Background(), "dep-2")
 			Expect(d1.EjectState).To(Equal(store.EjectStateEjected))
 			Expect(d2.EjectState).To(Equal(store.EjectStatePending)) // untouched
+		})
+
+		It("threads BMCTarget.EjectPowerCycle into the FinalizeRequest", func() {
+			Expect(bmcTargets.Create(context.Background(), &store.BMCTarget{
+				ID: "bmc-1", Endpoint: "https://10.0.0.9", NodeID: "node-1", EjectPowerCycle: true,
+			})).To(Succeed())
+			Expect(deployments.Create(context.Background(), &store.Deployment{
+				ID: "dep-1", Method: "redfish", BMCTargetID: "bmc-1", EjectState: store.EjectStatePending,
+			})).To(Succeed())
+
+			h.MaybeFinalizeForNode(context.Background(), "node-1")
+
+			Expect(fin.calls()).To(Equal(1))
+			Expect(fin.lastPowerCycle()).To(BeTrue())
+		})
+
+		It("leaves FinalizeRequest.PowerCycle false when the BMC target does not request it", func() {
+			Expect(bmcTargets.Create(context.Background(), &store.BMCTarget{
+				ID: "bmc-1", Endpoint: "https://10.0.0.9", NodeID: "node-1",
+			})).To(Succeed())
+			Expect(deployments.Create(context.Background(), &store.Deployment{
+				ID: "dep-1", Method: "redfish", BMCTargetID: "bmc-1", EjectState: store.EjectStatePending,
+			})).To(Succeed())
+
+			h.MaybeFinalizeForNode(context.Background(), "node-1")
+
+			Expect(fin.calls()).To(Equal(1))
+			Expect(fin.lastPowerCycle()).To(BeFalse())
 		})
 
 		It("records eject-failed with a scrubbed error when finalize fails", func() {

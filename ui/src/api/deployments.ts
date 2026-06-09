@@ -47,6 +47,10 @@ export interface BMCTarget {
   // AuroraBoot ejects the virtual media (and boots to disk) once the freshly
   // installed node phones home, breaking the install loop. Default false (opt-in).
   ejectAfterInstall?: boolean;
+  // ejectPowerCycle, when true, makes the eject for this BMC power the machine off
+  // before ejecting and back on after, for BMCs/emulators that do not apply a live
+  // eject. Default false (in-place eject), correct for hardware that ejects live.
+  ejectPowerCycle?: boolean;
   // --- Status cache (server-owned, read-only). Populated by inspect / ping /
   // refresh-all; never sent on create/update. "" means "unknown" (never checked).
   lastStatus?: "" | "reachable" | "unreachable";
@@ -121,6 +125,7 @@ export const createBMCTarget = (t: {
   systemId?: string;
   imageUrl?: string;
   ejectAfterInstall?: boolean;
+  ejectPowerCycle?: boolean;
 }) => apiFetch<BMCTarget>("/api/v1/bmc-targets", { method: "POST", body: JSON.stringify(t) });
 
 // updateBMCTarget mirrors createBMCTarget but PUTs to an existing target. Leave
@@ -138,6 +143,7 @@ export const updateBMCTarget = (
     systemId?: string;
     imageUrl?: string;
     ejectAfterInstall?: boolean;
+    ejectPowerCycle?: boolean;
   }
 ) =>
   apiFetch<BMCTarget>(`/api/v1/bmc-targets/${id}`, {

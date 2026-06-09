@@ -79,7 +79,14 @@ func (h *DeployHandler) runFinalize(ctx context.Context, target *store.BMCTarget
 	}
 	defer func() { _ = deployer.Close() }()
 
-	if err := deployer.Finalize(ctx, redfish.FinalizeRequest{}); err != nil {
+	if err := deployer.Finalize(ctx, redfish.FinalizeRequest{
+		// Opt-in power-cycle: when the BMC target requests it, power the machine off
+		// before ejecting and back on after, for BMCs/emulators that do not apply a
+		// live eject. Default (false) preserves the in-place eject. This single
+		// chokepoint covers every Finalize call site (manual finalize, eject, and the
+		// auto eject-on-phone-home).
+		PowerCycle: target.EjectPowerCycle,
+	}); err != nil {
 		return fmt.Errorf("finalizing (eject): %w", err)
 	}
 	return nil

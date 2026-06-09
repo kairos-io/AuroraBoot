@@ -242,6 +242,13 @@ type BMCTarget struct {
 	// the post-install install loop on BMCs that ignore the one-time boot override.
 	// Default false (opt-in). A per-deploy request may override it.
 	EjectAfterInstall bool `json:"ejectAfterInstall,omitempty"`
+	// EjectPowerCycle, when true, makes the finalize/eject for this BMC power the
+	// machine OFF before ejecting and back ON afterwards, instead of ejecting in
+	// place on the running machine. It is the robust mode for BMCs/emulators (e.g.
+	// sushy-tools on libvirt) that report a live eject but keep the running machine
+	// booting the ISO. Default false (in-place eject), correct for hardware that
+	// ejects live. It applies to every Finalize path for this BMC (auto and manual).
+	EjectPowerCycle bool `json:"ejectPowerCycle,omitempty"`
 
 	// --- Status cache (P4) ---
 	//

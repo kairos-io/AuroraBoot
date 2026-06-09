@@ -804,6 +804,7 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	existing.ImageURL = updated.ImageURL
 	existing.NodeID = updated.NodeID
 	existing.EjectAfterInstall = updated.EjectAfterInstall
+	existing.EjectPowerCycle = updated.EjectPowerCycle
 
 	if err := h.bmcTargets.Update(ctx, existing); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update BMC target"})

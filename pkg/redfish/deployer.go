@@ -25,6 +25,17 @@ import (
 // context aborts promptly.
 const taskPollInterval = 3 * time.Second
 
+// powerOffTimeout bounds how long Finalize's power-cycle path waits for the system
+// to reach the Off PowerState after the shutdown request. It is deliberately short:
+// a graceful shutdown that has not landed within this window is escalated to a
+// ForceOff, and if even the off-poll never reports Off we proceed with the eject
+// anyway (the eject is what breaks the install loop). Honour ctx alongside it.
+const powerOffTimeout = 60 * time.Second
+
+// powerPollInterval is the delay between PowerState polls during the power-cycle
+// finalize. Kept modest so a cancelled context aborts promptly.
+const powerPollInterval = 3 * time.Second
+
 // Deployer drives a Redfish virtual-media deployment against one BMC. Create it
 // with NewDeployer, call Connect, defer Close (which logs the session out), then
 // Inspect and/or Deploy. It is not safe for concurrent use.
@@ -414,8 +425,16 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 // eject alone is sufficient, so a boot-PATCH error is logged and swallowed rather
 // than failing the finalize.
 //
-// Flow: selectSystem (honours SystemID) -> findCDMedia -> EjectMedia -> opportunistic
-// boot-to-disk. The caller owns Connect/Close (session teardown), mirroring Deploy.
+// Flow (default, in-place): selectSystem (honours SystemID) -> findCDMedia ->
+// EjectMedia -> opportunistic boot-to-disk. The caller owns Connect/Close (session
+// teardown), mirroring Deploy.
+//
+// Flow (req.PowerCycle): selectSystem -> findCDMedia -> power OFF (GracefulShutdown,
+// escalating to ForceOff, polled to the Off PowerState within powerOffTimeout) ->
+// EjectMedia (now applied while the machine is off) -> opportunistic boot-to-disk ->
+// power ON. This is the robust mode for BMCs/emulators that do not apply a live eject.
+// The power-off poll degrades gracefully: a poll timeout is logged and the eject is
+// attempted anyway rather than aborting the whole finalize.
 func (d *Deployer) Finalize(ctx context.Context, req FinalizeRequest) error {
 	if d.client == nil {
 		return errors.New("not connected: call Connect first")
@@ -437,6 +456,10 @@ func (d *Deployer) Finalize(ctx context.Context, req FinalizeRequest) error {
 		return err
 	}
 
+	if req.PowerCycle {
+		return d.finalizePowerCycle(ctx, system, media, report)
+	}
+
 	// Eject is load-bearing: this is the step that breaks the install loop.
 	if err := ctx.Err(); err != nil {
 		return err
@@ -453,6 +476,129 @@ func (d *Deployer) Finalize(ctx context.Context, req FinalizeRequest) error {
 
 	report("completed", 100)
 	return nil
+}
+
+// finalizePowerCycle runs the opt-in power-cycle finalize: power off -> eject ->
+// boot-to-disk -> power on. It is the robust path for BMCs/emulators that report a
+// live eject but keep the running machine booting the ISO; performing the eject while
+// the system is powered off forces the BMC to apply it.
+//
+// The power-off is graceful-first (GracefulShutdown, falling back to ForceOff if the
+// system has not reached Off within powerOffTimeout) and the PowerState is polled to
+// Off. A power-off poll timeout is NON-fatal: it is logged and the eject proceeds, so
+// a stubborn power-state report never blocks the load-bearing eject. Context
+// cancellation is honoured throughout. The final power-on is a best-effort On Reset.
+func (d *Deployer) finalizePowerCycle(ctx context.Context, system *schemas.ComputerSystem, media *schemas.VirtualMedia, report progressFunc) error {
+	// 1. Power off (graceful first, escalate to ForceOff, poll to Off). A timeout
+	//    here is logged and swallowed: we still eject below.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("powering off", 40)
+	if err := d.powerOff(ctx, system); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// Degrade gracefully: a power-off poll timeout (or a transient reset error)
+		// must not abort the finalize — proceed to the load-bearing eject regardless.
+		log.Printf("redfish: power-off before eject did not confirm Off (proceeding to eject anyway): %v", d.scrub(err))
+	}
+
+	// 2. Eject is load-bearing and now applied while the system is off.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("ejecting media", 60)
+	if _, err := media.EjectMedia(); err != nil {
+		return fmt.Errorf("ejecting virtual media: %w", d.scrub(enrichRedfishError(err)))
+	}
+
+	// 3. Best-effort boot-to-disk, same as the in-place path.
+	report("boot to disk", 80)
+	d.bootToDisk(system)
+
+	// 4. Power back on. Best-effort: the eject already broke the loop; a power-on
+	//    failure is logged, not fatal, so operators can still power the node on.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("powering on", 90)
+	if _, err := system.Reset(schemas.OnResetType); err != nil {
+		log.Printf("redfish: powering system back on after eject failed (media is ejected; power it on manually): %v", d.scrub(enrichRedfishError(err)))
+	}
+
+	report("completed", 100)
+	return nil
+}
+
+// powerOff drives the system to the Off PowerState. It issues a GracefulShutdown
+// (preferred, validated against the system's allowable values) and polls the
+// PowerState until Off or powerOffTimeout. If the graceful shutdown has not landed
+// within the window it escalates to a ForceOff and polls once more. A system already
+// Off returns immediately. The supplied ctx bounds the whole operation and is honoured
+// during polling; a poll that exhausts powerOffTimeout (but not ctx) returns a
+// non-cancellation error the caller may log-and-proceed on.
+func (d *Deployer) powerOff(ctx context.Context, system *schemas.ComputerSystem) error {
+	if system.PowerState == schemas.OffPowerState {
+		return nil
+	}
+
+	graceful := firstSupportedPowerOff(system, schemas.GracefulShutdownResetType, schemas.ForceOffResetType)
+	if _, err := system.Reset(graceful); err != nil {
+		return fmt.Errorf("requesting power off (%s): %w", graceful, enrichRedfishError(err))
+	}
+
+	if err := d.pollPowerOff(ctx, system); err == nil {
+		return nil
+	} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	// Graceful shutdown did not reach Off in time: escalate to a hard ForceOff and
+	// poll once more. If ForceOff is not advertised we still try it (the BMC will
+	// reject it with a useful error, surfaced by the poll's final state).
+	if force := firstSupportedPowerOff(system, schemas.ForceOffResetType); force != graceful {
+		if _, err := system.Reset(force); err != nil {
+			return fmt.Errorf("requesting forced power off (%s): %w", force, enrichRedfishError(err))
+		}
+	}
+	return d.pollPowerOff(ctx, system)
+}
+
+// pollPowerOff polls the system's PowerState until it reports Off, ctx is cancelled,
+// or powerOffTimeout elapses. It re-fetches the ComputerSystem each tick (the gofish
+// struct is a snapshot; PowerState does not update in place). A timeout returns a
+// non-cancellation error so the caller can degrade gracefully and still eject.
+func (d *Deployer) pollPowerOff(ctx context.Context, system *schemas.ComputerSystem) error {
+	deadline := time.Now().Add(powerOffTimeout)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		fresh, err := schemas.GetComputerSystem(d.client, system.ODataID)
+		if err == nil && fresh.PowerState == schemas.OffPowerState {
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("system did not reach Off PowerState within %s", powerOffTimeout)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(powerPollInterval):
+		}
+	}
+}
+
+// firstSupportedPowerOff returns the first preference advertised in the system's
+// allowable ResetTypes; when the system advertises nothing it returns the first
+// preference unchanged (the BMC then rejects an unsupported type with a useful error).
+func firstSupportedPowerOff(system *schemas.ComputerSystem, preferences ...schemas.ResetType) schemas.ResetType {
+	allowed, _ := system.GetSupportedResetTypes()
+	return firstSupported(allowed, preferences...)
 }
 
 // bootToDisk best-effort steers the next boot to disk. It first tries to clear the

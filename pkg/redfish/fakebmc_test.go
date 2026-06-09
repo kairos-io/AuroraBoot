@@ -72,6 +72,15 @@ type fakeBMC struct {
 	// resetSystemID records the Id of the ComputerSystem whose Reset action was
 	// last invoked, so a multi-system spec can assert the correct machine was hit.
 	resetSystemID string
+	// resetTypes records every ResetType received, in order, so the power-cycle
+	// finalize specs can assert the off->on sequence around the eject.
+	resetTypes []string
+
+	// powerState is the PowerState the ComputerSystem reports. The power-cycle
+	// finalize re-fetches the system and polls this to Off; a GracefulShutdown/
+	// ForceOff Reset flips it to Off so pollPowerOff terminates, an On Reset flips it
+	// back to On. Defaults to "On".
+	powerState string
 }
 
 type recordedRequest struct {
@@ -95,6 +104,8 @@ func newFakeBMC() *fakeBMC {
 		bootModeAllowableValues: []string{"Legacy", "UEFI"},
 		// A single system by default, preserving the original fake's behaviour.
 		systemIDs: []string{"sys-xyz"},
+		// Systems power on by default (matches the computerSystem PowerState below).
+		powerState: "On",
 	}
 	f.server = httptest.NewTLSServer(http.HandlerFunc(f.handle))
 	return f
@@ -132,6 +143,36 @@ func (f *fakeBMC) sawAuthType(authType, pathPrefix string) bool {
 		}
 	}
 	return false
+}
+
+// finalizeEventOrder returns the ordered sequence of the load-bearing finalize
+// actions as they were received: "power-off" (a GracefulShutdown/ForceOff Reset),
+// "eject" (VirtualMedia.EjectMedia), and "power-on" (an On/ForceOn Reset). It lets a
+// power-cycle spec assert the off -> eject -> on ordering. Boot PATCHes and other
+// requests are ignored.
+func (f *fakeBMC) finalizeEventOrder() []string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	resetIdx := 0
+	var events []string
+	for _, req := range f.requests {
+		switch {
+		case strings.HasSuffix(req.Path, "/Actions/VirtualMedia.EjectMedia") && req.Method == http.MethodPost:
+			events = append(events, "eject")
+		case strings.HasSuffix(req.Path, "/Actions/ComputerSystem.Reset") && req.Method == http.MethodPost:
+			// Map this reset to the ResetType captured at the same ordinal.
+			if resetIdx < len(f.resetTypes) {
+				switch f.resetTypes[resetIdx] {
+				case "GracefulShutdown", "ForceOff":
+					events = append(events, "power-off")
+				case "On", "ForceOn":
+					events = append(events, "power-on")
+				}
+			}
+			resetIdx++
+		}
+	}
+	return events
 }
 
 // sawRequest reports whether a request with the given method and path prefix was
@@ -207,6 +248,17 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.resetBody = decodeBody(r)
 		f.resetSystemID = f.systemIDFromResetPath(r.URL.Path)
+		if rt, ok := f.resetBody["ResetType"].(string); ok {
+			f.resetTypes = append(f.resetTypes, rt)
+			// Reflect the requested power transition so a power-cycle finalize can
+			// poll PowerState to Off and confirm the On reset afterwards.
+			switch rt {
+			case "GracefulShutdown", "ForceOff":
+				f.powerState = "Off"
+			case "On", "ForceOn":
+				f.powerState = "On"
+			}
+		}
 		f.mu.Unlock()
 		w.Header().Set("Location", "/redfish/v1/TaskService/Tasks/task-1")
 		w.WriteHeader(http.StatusAccepted)
@@ -403,6 +455,12 @@ func (f *fakeBMC) isSystemVirtualMediaCdPath(path string) bool {
 
 func (f *fakeBMC) computerSystem(id string) map[string]any {
 	base := "/redfish/v1/Systems/" + id
+	f.mu.Lock()
+	power := f.powerState
+	f.mu.Unlock()
+	if power == "" {
+		power = "On"
+	}
 	cs := map[string]any{
 		"@odata.id":    base,
 		"@odata.type":  "#ComputerSystem.v1_5_0.ComputerSystem",
@@ -411,7 +469,7 @@ func (f *fakeBMC) computerSystem(id string) map[string]any {
 		"Manufacturer": "ACME",
 		"Model":        "ProLiant-Test",
 		"SerialNumber": "SN-0001",
-		"PowerState":   "On",
+		"PowerState":   power,
 		// Nested summaries: the historical bug read these as flat fields and got
 		// 0/0. They must be populated from the nested objects.
 		"MemorySummary": map[string]any{
