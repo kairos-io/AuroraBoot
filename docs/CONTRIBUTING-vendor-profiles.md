@@ -153,14 +153,18 @@ own. The tier is surfaced in a load-time log line, e.g.
 | Tier | What it means | Where it comes from |
 |---|---|---|
 | **A — core-tested** | The spec-default path the project exercises in CI. | The built-in `generic` profile. |
-| **B — community-validated** | A profile **with a recorded, sanitized hardware mockup** that CI replays, so regressions are caught. | An in-tree profile + its mockup *(the mockup replay harness lands in **P4**; until then no profile reaches B).* |
+| **B — community-validated** | A profile **with a recorded, sanitized hardware mockup** that CI replays on every PR, so regressions are caught. | An in-tree profile + its mockup under `pkg/redfish/testdata/mockups/<vendor>/` (the built-in `ilo` is tier B today). |
 | **C — unverified** | A bare profile with no recorded mockup, in-tree or operator-supplied. Loaded fine, logged as UNVERIFIED. | Operator-dir profiles (always C) and in-tree profiles without a mockup. |
 
 **Operator-supplied profiles are always tier C.** To reach **tier B**, contribute
 the profile in-tree together with a recorded, sanitized DMTF mockup of your BMC's
-resource tree, which CI will replay against the deploy flow. *(The mockup format,
-location, sanitization guidance, and golden-test harness arrive in **P4** — this is
-the entire promotion incentive: add evidence, get a guarantee.)*
+resource tree, which CI replays against the deploy flow on every PR. The mockup
+format, location, prune list, sanitization expectation, and the golden-test harness
+are documented in
+[`pkg/redfish/testdata/mockups/README.md`](../pkg/redfish/testdata/mockups/README.md).
+Promotion is one step: add the sanitized mockup tree, list the built-in in
+`pkg/redfish/mockups.manifest`, and add a golden-test row — add evidence, get a
+guarantee.
 
 ---
 
@@ -178,9 +182,11 @@ what your profile was proven against.
 
 Open a PR using the **vendor-profile PR template**
 (`.github/PULL_REQUEST_TEMPLATE/vendor-profile.md`). The checklist covers:
-schema-valid profile, `validatedFirmware` labeled, and — once **P4** lands — a
-sanitized mockup and a golden test so your profile reaches tier B.
+schema-valid profile, `validatedFirmware` labeled, and — for tier B — a sanitized
+mockup tree under `pkg/redfish/testdata/mockups/<vendor>/` plus a golden-test row
+that replays it (see
+[`pkg/redfish/testdata/mockups/README.md`](../pkg/redfish/testdata/mockups/README.md)).
 
 Put the profile under `examples/redfish/quirks/` if it is an example/template, or
 in-tree alongside the built-ins if you are submitting it as a supported vendor
-profile (it ships as tier C until a mockup promotes it to B in P4).
+profile (it ships as tier C until a recorded mockup + golden test promote it to B).
