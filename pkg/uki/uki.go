@@ -136,6 +136,24 @@ type Options struct {
 	Logger *logger.KairosLogger
 }
 
+// absolutizeKeyPaths rewrites the key/cert/splash path options to absolute
+// paths. The build Chdir's into the rootfs partway through, so any relative
+// path must be resolved against the original working directory first.
+// pkcs11 URIs (valid for SBKey) and empty values are left untouched.
+func absolutizeKeyPaths(opts *Options) error {
+	for _, p := range []*string{&opts.TPMPCRPrivateKey, &opts.SBKey, &opts.SBCert, &opts.PublicKeysDir, &opts.Splash} {
+		if *p == "" || strings.Contains(*p, "pkcs11") {
+			continue
+		}
+		abs, err := filepath.Abs(*p)
+		if err != nil {
+			return fmt.Errorf("resolving path %q: %w", *p, err)
+		}
+		*p = abs
+	}
+	return nil
+}
+
 // Build runs the full UKI build pipeline as described by opts.
 //
 // It validates required fields, checks that the host binaries and bundled
@@ -146,6 +164,14 @@ type Options struct {
 // it before returning.
 func Build(opts Options) (err error) {
 	if err := opts.validate(); err != nil {
+		return err
+	}
+
+	// Resolve key/cert/splash paths to absolute before the build Chdir's into
+	// the rootfs. Relative paths (e.g. the web server passes paths relative to
+	// its working dir like "data/keys/...") would otherwise resolve against the
+	// wrong directory once os.Chdir runs and fail with "no such file".
+	if err := absolutizeKeyPaths(&opts); err != nil {
 		return err
 	}
 
