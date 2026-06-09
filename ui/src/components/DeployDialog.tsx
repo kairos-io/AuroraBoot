@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -236,7 +237,16 @@ export function DeployDialog({
             <TabsContent value="redfish" className="space-y-4">
               {/* Target selector */}
               <div className="space-y-2">
-                <Label>BMC Target</Label>
+                <div className="flex items-center justify-between">
+                  <Label>BMC Target</Label>
+                  <Link
+                    to="/bmc"
+                    className="text-xs text-[#EE5007] hover:underline"
+                    onClick={onClose}
+                  >
+                    Manage BMCs →
+                  </Link>
+                </div>
                 <Select value={selectedTarget} onValueChange={setSelectedTarget}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a BMC target..." />

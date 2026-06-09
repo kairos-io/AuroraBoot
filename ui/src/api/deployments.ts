@@ -71,6 +71,25 @@ export const createBMCTarget = (t: {
   verifySSL: boolean;
 }) => apiFetch<BMCTarget>("/api/v1/bmc-targets", { method: "POST", body: JSON.stringify(t) });
 
+// updateBMCTarget mirrors createBMCTarget but PUTs to an existing target. Leave
+// `password` unset (or empty) to keep the stored credential — the backend treats
+// a blank password as "no change".
+export const updateBMCTarget = (
+  id: string,
+  t: {
+    name: string;
+    endpoint: string;
+    vendor: string;
+    username: string;
+    password?: string;
+    verifySSL: boolean;
+  }
+) =>
+  apiFetch<BMCTarget>(`/api/v1/bmc-targets/${id}`, {
+    method: "PUT",
+    body: JSON.stringify(t),
+  });
+
 export const deleteBMCTarget = (id: string) =>
   apiFetch(`/api/v1/bmc-targets/${id}`, { method: "DELETE" });
 
