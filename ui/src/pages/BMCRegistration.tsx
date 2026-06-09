@@ -47,6 +47,11 @@ import {
   deleteBMCTarget,
   inspectHardware,
 } from "@/api/deployments";
+import {
+  type ImageSourceSettings,
+  getImageSourceSettings,
+  updateImageSourceSettings,
+} from "@/api/settings";
 import { toast } from "@/hooks/useToast";
 
 // Vendor options match the inline "new target" form in DeployDialog so a target
@@ -66,6 +71,7 @@ type FormState = {
   password: string;
   verifySSL: boolean;
   systemId: string;
+  imageUrl: string;
 };
 
 const EMPTY_FORM: FormState = {
@@ -76,15 +82,41 @@ const EMPTY_FORM: FormState = {
   password: "",
   verifySSL: false,
   systemId: "",
+  imageUrl: "",
 };
 
 function vendorLabel(vendor: string): string {
   return VENDORS.find((v) => v.value === vendor)?.label ?? vendor;
 }
 
+// imageSourceBadge describes how a BMC row resolves its image source, given the
+// per-BMC override and the global image-source settings.
+function imageSourceBadge(
+  target: BMCTarget,
+  settings: ImageSourceSettings | null
+): { label: string; variant: "default" | "secondary" | "outline" } {
+  if (target.imageUrl) {
+    return { label: "Per-BMC URL", variant: "default" };
+  }
+  if (settings?.defaultImageURL) {
+    return { label: "Global default", variant: "secondary" };
+  }
+  if (settings?.localServe.configured && settings.localServe.enabled) {
+    return { label: "AuroraBoot-served", variant: "outline" };
+  }
+  return { label: "Unset", variant: "outline" };
+}
+
 export function BMCRegistration() {
   const [targets, setTargets] = useState<BMCTarget[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Global image-source settings (model b): the top-of-page panel. `imgSource`
+  // is null until the first fetch resolves.
+  const [imgSource, setImgSource] = useState<ImageSourceSettings | null>(null);
+  const [imgDefaultURL, setImgDefaultURL] = useState("");
+  const [imgAdvertisedURL, setImgAdvertisedURL] = useState("");
+  const [savingImgSource, setSavingImgSource] = useState(false);
 
   // Add/edit modal. `editing` holds the target being edited, or null for "add".
   const [formOpen, setFormOpen] = useState(false);
@@ -111,9 +143,64 @@ export function BMCRegistration() {
       .finally(() => setLoading(false));
   }
 
+  function applyImgSource(s: ImageSourceSettings) {
+    setImgSource(s);
+    setImgDefaultURL(s.defaultImageURL);
+    setImgAdvertisedURL(s.localServe.advertisedURL);
+  }
+
+  function fetchImageSource() {
+    getImageSourceSettings()
+      .then(applyImgSource)
+      .catch((err) =>
+        toast(
+          `Failed to load image-source settings: ${(err as Error).message}`,
+          "error"
+        )
+      );
+  }
+
   useEffect(() => {
     fetchTargets();
+    fetchImageSource();
   }, []);
+
+  async function handleSaveImageSource(e: React.FormEvent) {
+    e.preventDefault();
+    setSavingImgSource(true);
+    try {
+      const updated = await updateImageSourceSettings({
+        defaultImageURL: imgDefaultURL,
+        // advertisedURL is only meaningful when a listener is configured.
+        ...(imgSource?.localServe.configured
+          ? { localServeAdvertisedURL: imgAdvertisedURL }
+          : {}),
+      });
+      applyImgSource(updated);
+      toast("Saved image source settings", "success");
+    } catch (err) {
+      toast(
+        `Failed to save image-source settings: ${(err as Error).message}`,
+        "error"
+      );
+    } finally {
+      setSavingImgSource(false);
+    }
+  }
+
+  async function handleToggleLocalServe(enabled: boolean) {
+    try {
+      const updated = await updateImageSourceSettings({
+        localServeEnabled: enabled,
+      });
+      applyImgSource(updated);
+    } catch (err) {
+      toast(
+        `Failed to update local serving: ${(err as Error).message}`,
+        "error"
+      );
+    }
+  }
 
   function openAdd() {
     setEditing(null);
@@ -132,6 +219,7 @@ export function BMCRegistration() {
       password: "",
       verifySSL: t.verifySSL,
       systemId: t.systemId ?? "",
+      imageUrl: t.imageUrl ?? "",
     });
     setFormOpen(true);
   }
@@ -154,6 +242,7 @@ export function BMCRegistration() {
                 username: payload.username,
                 verifySSL: payload.verifySSL,
                 systemId: payload.systemId,
+                imageUrl: payload.imageUrl,
               }
         );
         setTargets((prev) =>
@@ -234,6 +323,83 @@ export function BMCRegistration() {
         </Button>
       </PageHeader>
 
+      {/* Image source panel (model b global): the default image URL every BMC
+          falls back to, plus — when a local-serve listener was configured at
+          launch — the toggle and advertised URL for AuroraBoot-served ISOs. */}
+      <Card className="mb-6">
+        <CardContent className="p-5 space-y-4">
+          <div>
+            <h2 className="text-sm font-semibold">Image source</h2>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Where BMCs pull the install ISO from. A per-BMC override (below)
+              takes precedence over the global default; a per-deploy URL takes
+              precedence over both.
+            </p>
+          </div>
+          <form onSubmit={handleSaveImageSource} className="space-y-4">
+            <div className="space-y-1">
+              <Label className="text-xs">Default image URL</Label>
+              <Input
+                value={imgDefaultURL}
+                onChange={(e) => setImgDefaultURL(e.target.value)}
+                placeholder="https://images.example.com/kairos.iso"
+              />
+              <p className="text-xs text-muted-foreground">
+                The URL every BMC pulls the ISO from unless it has its own
+                override. Leave blank to require a per-BMC or per-deploy URL.
+              </p>
+            </div>
+
+            {imgSource?.localServe.configured && (
+              <div className="rounded-md border p-4 space-y-3">
+                <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
+                  <input
+                    type="checkbox"
+                    checked={imgSource.localServe.enabled}
+                    onChange={(e) => handleToggleLocalServe(e.target.checked)}
+                  />
+                  AuroraBoot serves the built artifact ISO
+                </label>
+                <p className="text-xs text-muted-foreground">
+                  When enabled, deploys with no operator-supplied URL serve the
+                  artifact's own ISO over a tokenized, BMC-reachable URL
+                  {imgSource.localServe.usesTLS ? " (HTTPS)." : " (HTTP)."}
+                </p>
+                <div className="space-y-1">
+                  <Label className="text-xs">Advertised URL</Label>
+                  <Input
+                    value={imgAdvertisedURL}
+                    onChange={(e) => setImgAdvertisedURL(e.target.value)}
+                    placeholder="http://10.0.0.5:8090"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The base URL the BMC reaches the served ISO at (the bind
+                    address is fixed at launch via --redfish-serve-addr).
+                  </p>
+                </div>
+              </div>
+            )}
+
+            {imgSource && !imgSource.localServe.configured && (
+              <p className="text-xs text-muted-foreground">
+                AuroraBoot-served ISOs are unavailable: no{" "}
+                <code className="font-mono">--redfish-serve-addr</code> was set
+                at launch. Use a default image URL or per-BMC override instead.
+              </p>
+            )}
+
+            <div className="flex justify-end">
+              <Button type="submit" disabled={savingImgSource}>
+                {savingImgSource && (
+                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                )}
+                Save image source
+              </Button>
+            </div>
+          </form>
+        </CardContent>
+      </Card>
+
       <Card>
         <CardContent className="p-0">
           {loading ? (
@@ -261,6 +427,7 @@ export function BMCRegistration() {
                   <TableHead>Endpoint</TableHead>
                   <TableHead>Vendor</TableHead>
                   <TableHead>System ID</TableHead>
+                  <TableHead>Image source</TableHead>
                   <TableHead>TLS verify</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -286,6 +453,19 @@ export function BMCRegistration() {
                               auto
                             </span>
                           )}
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const badge = imageSourceBadge(t, imgSource);
+                            return (
+                              <Badge
+                                variant={badge.variant}
+                                title={t.imageUrl || undefined}
+                              >
+                                {badge.label}
+                              </Badge>
+                            );
+                          })()}
                         </TableCell>
                         <TableCell>
                           <Badge variant={t.verifySSL ? "default" : "secondary"}>
@@ -333,7 +513,7 @@ export function BMCRegistration() {
                       {/* Inspect error row */}
                       {error && (
                         <TableRow>
-                          <TableCell colSpan={6} className="pt-0">
+                          <TableCell colSpan={7} className="pt-0">
                             <div className="bg-red-500/10 border border-red-500/25 text-red-700 rounded-md p-3 text-sm whitespace-pre-wrap">
                               {error}
                             </div>
@@ -344,7 +524,7 @@ export function BMCRegistration() {
                       {/* Inspect result row — same rendering style as DeployDialog */}
                       {result && (
                         <TableRow>
-                          <TableCell colSpan={6} className="pt-0">
+                          <TableCell colSpan={7} className="pt-0">
                             <div className="rounded-md border p-4 space-y-3">
                               <div className="text-sm font-medium">
                                 Hardware inspection
@@ -501,6 +681,20 @@ export function BMCRegistration() {
                 <p className="text-xs text-muted-foreground">
                   Leave blank for single-system BMCs; required when the BMC
                   exposes multiple ComputerSystems.
+                </p>
+              </div>
+              <div className="space-y-1 col-span-2">
+                <Label className="text-xs">Image URL override</Label>
+                <Input
+                  value={form.imageUrl}
+                  onChange={(e) =>
+                    setForm({ ...form, imageUrl: e.target.value })
+                  }
+                  placeholder="https://images.example.com/kairos.iso"
+                />
+                <p className="text-xs text-muted-foreground">
+                  URL the BMC pulls the ISO from; overrides the global default.
+                  Leave blank to use the global default image source.
                 </p>
               </div>
             </div>

@@ -23,6 +23,9 @@ export interface BMCTarget {
   // blank for single-system BMCs; required when the BMC exposes more than one,
   // mirroring the CLI's --system-id.
   systemId?: string;
+  // imageUrl optionally overrides the global default image URL for this BMC (the
+  // HTTP(S) URL the BMC pulls the ISO from). Blank to use the global default.
+  imageUrl?: string;
   nodeId?: string;
   createdAt: string;
 }
@@ -74,6 +77,7 @@ export const createBMCTarget = (t: {
   password: string;
   verifySSL: boolean;
   systemId?: string;
+  imageUrl?: string;
 }) => apiFetch<BMCTarget>("/api/v1/bmc-targets", { method: "POST", body: JSON.stringify(t) });
 
 // updateBMCTarget mirrors createBMCTarget but PUTs to an existing target. Leave
@@ -89,6 +93,7 @@ export const updateBMCTarget = (
     password?: string;
     verifySSL: boolean;
     systemId?: string;
+    imageUrl?: string;
   }
 ) =>
   apiFetch<BMCTarget>(`/api/v1/bmc-targets/${id}`, {
