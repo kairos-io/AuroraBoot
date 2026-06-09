@@ -27,7 +27,29 @@ export interface BMCTarget {
   // HTTP(S) URL the BMC pulls the ISO from). Blank to use the global default.
   imageUrl?: string;
   nodeId?: string;
+  // --- Status cache (server-owned, read-only). Populated by inspect / ping /
+  // refresh-all; never sent on create/update. "" means "unknown" (never checked).
+  lastStatus?: "" | "reachable" | "unreachable";
+  lastError?: string;
+  lastInspectAt?: string;
+  lastPingAt?: string;
+  lastModel?: string;
+  lastManufacturer?: string;
+  lastSerial?: string;
+  lastMemoryGiB?: number;
+  lastCpuCount?: number;
+  lastFeatures?: string[];
   createdAt: string;
+}
+
+// BMCStatus is the per-target reachability payload returned by the ping
+// (GET /bmc-targets/:id/status) and refresh-all endpoints. `id` is present only in
+// the refresh-all array (the single-target ping omits it; it is implicit in the URL).
+export interface BMCStatus {
+  id?: string;
+  status: "reachable" | "unreachable";
+  lastPingAt?: string;
+  error?: string;
 }
 
 // InspectResult mirrors the server's inspectResponse (POST
@@ -106,6 +128,18 @@ export const deleteBMCTarget = (id: string) =>
 
 export const inspectHardware = (id: string) =>
   apiFetch<InspectResult>(`/api/v1/bmc-targets/${id}/inspect`, { method: "POST" });
+
+// pingBMCTarget runs a session-free reachability check against one BMC's Redfish
+// ServiceRoot and returns the freshly-persisted status. It never creates a BMC
+// session, so it is cheap to call on demand.
+export const pingBMCTarget = (id: string) =>
+  apiFetch<BMCStatus>(`/api/v1/bmc-targets/${id}/status`);
+
+// refreshAllBMCTargets pings every saved BMC sequentially (throttled, single
+// in-flight server-side) and returns the per-target results. A concurrent call
+// while one is already running is rejected by the server with 409.
+export const refreshAllBMCTargets = () =>
+  apiFetch<BMCStatus[]>("/api/v1/bmc-targets/refresh-all", { method: "POST" });
 
 export const deployRedfish = (
   artifactId: string,

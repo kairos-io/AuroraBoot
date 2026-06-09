@@ -37,6 +37,8 @@ import {
   Search,
   Plus,
   ServerCog,
+  RefreshCw,
+  Wifi,
 } from "lucide-react";
 import {
   type BMCTarget,
@@ -46,6 +48,8 @@ import {
   updateBMCTarget,
   deleteBMCTarget,
   inspectHardware,
+  pingBMCTarget,
+  refreshAllBMCTargets,
 } from "@/api/deployments";
 import {
   type ImageSourceSettings,
@@ -107,6 +111,50 @@ function imageSourceBadge(
   return { label: "Unset", variant: "outline" };
 }
 
+// statusBadge maps a target's cached LastStatus to a badge label/variant. The
+// empty status ("" / undefined) renders as "Unknown" — the target has never been
+// pinged or inspected, and we never auto-contact a BMC on page load.
+function statusBadge(status: BMCTarget["lastStatus"]): {
+  label: string;
+  variant: "default" | "secondary" | "destructive" | "outline";
+} {
+  switch (status) {
+    case "reachable":
+      return { label: "Reachable", variant: "default" };
+    case "unreachable":
+      return { label: "Unreachable", variant: "destructive" };
+    default:
+      return { label: "Unknown", variant: "outline" };
+  }
+}
+
+// relativeTime renders an ISO timestamp as a short, human relative string ("just
+// now", "5m ago", "2h ago", "3d ago"). Returns "" for a missing/invalid time so
+// the caller can omit it.
+function relativeTime(iso?: string): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 45) return "just now";
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return `${mins}m ago`;
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return `${hours}h ago`;
+  const days = Math.round(hours / 24);
+  return `${days}d ago`;
+}
+
+// lastCheckedLabel describes the most recent reachability signal for a target,
+// preferring the more-recent of the ping and inspect timestamps.
+function lastCheckedLabel(t: BMCTarget): string {
+  const ping = t.lastPingAt ? new Date(t.lastPingAt).getTime() : 0;
+  const inspect = t.lastInspectAt ? new Date(t.lastInspectAt).getTime() : 0;
+  if (!ping && !inspect) return "";
+  if (ping >= inspect) return `pinged ${relativeTime(t.lastPingAt)}`;
+  return `inspected ${relativeTime(t.lastInspectAt)}`;
+}
+
 export function BMCRegistration() {
   const [targets, setTargets] = useState<BMCTarget[]>([]);
   const [loading, setLoading] = useState(true);
@@ -133,6 +181,12 @@ export function BMCRegistration() {
     Record<string, InspectResult>
   >({});
   const [inspectErrors, setInspectErrors] = useState<Record<string, string>>({});
+
+  // Per-row ping state (the session-free reachability check) and the throttled
+  // "Refresh all" sweep. Both are opt-in: status is rendered from the cached
+  // fields the list endpoint returns, never auto-fetched on load.
+  const [pingingId, setPingingId] = useState<string | null>(null);
+  const [refreshingAll, setRefreshingAll] = useState(false);
 
   function fetchTargets() {
     listBMCTargets()
@@ -298,13 +352,65 @@ export function BMCRegistration() {
     try {
       const result = await inspectHardware(t.id);
       setInspectResults((prev) => ({ ...prev, [t.id]: result }));
+      // Inspect persists the result into the server-owned status cache. Re-read
+      // the list so the row's Status badge/timestamp reflect the fresh "reachable"
+      // facts rather than stale cached values.
+      fetchTargets();
     } catch (err) {
       setInspectErrors((prev) => ({
         ...prev,
         [t.id]: err instanceof Error ? err.message : "Inspection failed",
       }));
+      // The failed inspect also persisted "unreachable"; refresh so the badge
+      // reflects it.
+      fetchTargets();
     } finally {
       setInspectingId(null);
+    }
+  }
+
+  // handlePing runs the session-free reachability check for one target and folds
+  // the freshly-persisted status into the row in place (no full re-fetch).
+  async function handlePing(t: BMCTarget) {
+    setPingingId(t.id);
+    try {
+      const status = await pingBMCTarget(t.id);
+      setTargets((prev) =>
+        prev.map((x) =>
+          x.id === t.id
+            ? {
+                ...x,
+                lastStatus: status.status,
+                lastPingAt: status.lastPingAt,
+                lastError: status.error ?? "",
+              }
+            : x
+        )
+      );
+    } catch (err) {
+      toast(`Ping failed: ${(err as Error).message}`, "error");
+    } finally {
+      setPingingId(null);
+    }
+  }
+
+  // handleRefreshAll triggers the throttled, single-in-flight server sweep and
+  // re-reads the list so every row reflects its new cached status. A concurrent
+  // sweep is rejected by the server with 409, surfaced here as a toast.
+  async function handleRefreshAll() {
+    setRefreshingAll(true);
+    try {
+      const results = await refreshAllBMCTargets();
+      fetchTargets();
+      const reachable = results.filter((r) => r.status === "reachable").length;
+      toast(
+        `Refreshed ${results.length} BMC${results.length === 1 ? "" : "s"}: ${reachable} reachable`,
+        "success"
+      );
+    } catch (err) {
+      toast(`Refresh all failed: ${(err as Error).message}`, "error");
+    } finally {
+      setRefreshingAll(false);
     }
   }
 
@@ -314,6 +420,18 @@ export function BMCRegistration() {
         title="BMC Registration"
         description="Register and manage baseboard management controllers for RedFish deployments"
       >
+        <Button
+          variant="outline"
+          onClick={handleRefreshAll}
+          disabled={refreshingAll || targets.length === 0}
+        >
+          {refreshingAll ? (
+            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+          ) : (
+            <RefreshCw className="h-4 w-4 mr-2" />
+          )}
+          Refresh all
+        </Button>
         <Button
           className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
           onClick={openAdd}
@@ -428,6 +546,7 @@ export function BMCRegistration() {
                   <TableHead>Vendor</TableHead>
                   <TableHead>System ID</TableHead>
                   <TableHead>Image source</TableHead>
+                  <TableHead>Status</TableHead>
                   <TableHead>TLS verify</TableHead>
                   <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
@@ -464,6 +583,43 @@ export function BMCRegistration() {
                               >
                                 {badge.label}
                               </Badge>
+                            );
+                          })()}
+                        </TableCell>
+                        <TableCell>
+                          {(() => {
+                            const badge = statusBadge(t.lastStatus);
+                            const checked = lastCheckedLabel(t);
+                            const pinging = pingingId === t.id;
+                            return (
+                              <div className="flex items-center gap-1.5">
+                                <Badge
+                                  variant={badge.variant}
+                                  title={t.lastError || undefined}
+                                >
+                                  {badge.label}
+                                </Badge>
+                                {checked && (
+                                  <span className="text-xs text-muted-foreground">
+                                    {checked}
+                                  </span>
+                                )}
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-6 w-6"
+                                  aria-label={`Ping ${t.name}`}
+                                  title="Reachability ping (no BMC session)"
+                                  onClick={() => handlePing(t)}
+                                  disabled={pinging}
+                                >
+                                  {pinging ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Wifi className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </div>
                             );
                           })()}
                         </TableCell>
@@ -513,7 +669,7 @@ export function BMCRegistration() {
                       {/* Inspect error row */}
                       {error && (
                         <TableRow>
-                          <TableCell colSpan={7} className="pt-0">
+                          <TableCell colSpan={8} className="pt-0">
                             <div className="bg-red-500/10 border border-red-500/25 text-red-700 rounded-md p-3 text-sm whitespace-pre-wrap">
                               {error}
                             </div>
@@ -524,7 +680,7 @@ export function BMCRegistration() {
                       {/* Inspect result row — same rendering style as DeployDialog */}
                       {result && (
                         <TableRow>
-                          <TableCell colSpan={7} className="pt-0">
+                          <TableCell colSpan={8} className="pt-0">
                             <div className="rounded-md border p-4 space-y-3">
                               <div className="text-sm font-medium">
                                 Hardware inspection
