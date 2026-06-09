@@ -20,6 +20,9 @@ type ImageSource struct {
 	Variant           string // "core" or "standard"
 	KubernetesDistro  string
 	KubernetesVersion string
+	// Insecure allows pulling the base image from a registry served over plain
+	// HTTP or presenting an untrusted/self-signed TLS certificate.
+	Insecure bool
 }
 
 // OutputOptions selects which artifact formats to produce.
@@ -81,8 +84,8 @@ type BuildOptions struct {
 	CloudImage        bool
 	Netboot           bool
 
-	CloudConfig     string // YAML cloud-config to bake in
-	OutputDir       string // where to write artifacts
+	CloudConfig string // YAML cloud-config to bake in
+	OutputDir   string // where to write artifacts
 
 	// Customization options:
 	OverlayRootfs   string // path to overlay dir (files copied on top of rootfs)

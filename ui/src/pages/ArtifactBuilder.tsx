@@ -361,6 +361,7 @@ const EMPTY_FORM: CreateArtifactInput = {
   variant: "core",
   kubernetesDistro: "",
   kubernetesVersion: "",
+  insecure: false,
   dockerfile: "",
   overlayRootfs: "",
   kairosInitImage: "",
@@ -611,6 +612,7 @@ export function ArtifactBuilder() {
       variant: src.variant || "core",
       kubernetesDistro: src.kubernetesDistro || "",
       kubernetesVersion: src.kubernetesVersion || "",
+      insecure: src.insecure ?? false,
       dockerfile: parsed.dockerfile || "",
       overlayRootfs: parsed.overlayRootfs || "",
       kairosInitImage: src.kairosInitImage || "",
@@ -677,6 +679,7 @@ export function ArtifactBuilder() {
           variant: a.variant || "core",
           kubernetesDistro: a.kubernetesDistro || "",
           kubernetesVersion: a.kubernetesVersion || "",
+          insecure: a.insecure ?? false,
           dockerfile: a.dockerfile || "",
           kairosInitImage: a.kairosInitImage || "",
           outputs: {
@@ -919,6 +922,8 @@ export function ArtifactBuilder() {
       variant: form.variant,
       kubernetesDistro: form.variant === "standard" ? form.kubernetesDistro : undefined,
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion : undefined,
+      // Only meaningful when pulling a base image from a registry.
+      insecure: buildMode === "image" ? form.insecure : undefined,
       dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
@@ -1116,6 +1121,7 @@ export function ArtifactBuilder() {
                 </div>
 
                 {buildMode === "image" ? (
+                  <>
                   <div className="grid gap-2">
                     <Label>
                       Base Image
@@ -1130,6 +1136,21 @@ export function ArtifactBuilder() {
                       onChange={(e) => update("baseImage", e.target.value)}
                     />
                   </div>
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={form.insecure ?? false}
+                        onChange={(e) => update("insecure", e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      Insecure registry
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                      Allow pulling the base image from a registry served over plain HTTP or with an untrusted/self-signed TLS certificate.
+                    </p>
+                  </div>
+                  </>
                 ) : (
                   <div className="grid gap-2">
                     <Label>
@@ -2020,6 +2041,12 @@ export function ArtifactBuilder() {
                         {buildMode === "dockerfile" ? "(Dockerfile)" : form.baseImage || "\u2014"}
                       </span>
                     </div>
+                    {buildMode === "image" && form.insecure && (
+                      <div className="flex gap-2">
+                        <span className="text-muted-foreground w-28 shrink-0">Registry:</span>
+                        <span>Insecure (plain HTTP / untrusted TLS allowed)</span>
+                      </div>
+                    )}
                   </div>
                 </div>
 

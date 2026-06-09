@@ -26,11 +26,10 @@ definitions:
   handlers.APIArtifactProvisioning:
     properties:
       allowedCommands:
-        description: |
-          Explicit list baked into phonehome.allowed_commands. Omit (or send null)
-          to use AuroraBoot's safe defaults ("upgrade", "upgrade-recovery", "reboot", "unregister").
-          Include "exec", "reset", or "apply-cloud-config" to enable remote execution
-          of those destructive commands. An empty array means deny-all (observe-only).
+        description: |-
+          AllowedCommands is the explicit list emitted under phonehome.allowed_commands.
+          Nil means "use AuroraBoot's safe default set". An empty slice means deny-all
+          (observe-only node) — the UI warns when the operator picks this.
         items:
           type: string
         type: array
@@ -87,6 +86,9 @@ definitions:
         type: string
       dockerfile:
         type: string
+      insecure:
+        example: false
+        type: boolean
       kairosInitImage:
         type: string
       kairosVersion:
@@ -235,6 +237,13 @@ definitions:
       name:
         type: string
     type: object
+  handlers.decommissionResponse:
+    properties:
+      commandID:
+        type: string
+      nodeOnline:
+        type: boolean
+    type: object
   store.ArtifactRecord:
     properties:
       arch:
@@ -263,6 +272,8 @@ definitions:
         type: boolean
       id:
         type: string
+      insecure:
+        type: boolean
       iso:
         type: boolean
       kairosInitImage:
@@ -777,6 +788,34 @@ paths:
       summary: Queue a command for a single node
       tags:
       - Commands
+  /api/v1/nodes/{nodeID}/decommission:
+    post:
+      description: Sends an `unregister` command to the node if it is currently online.
+        The UI subscribes to the returned commandID via the UI WebSocket for live
+        progress, then issues DELETE /api/v1/nodes/{nodeID} when the command reaches
+        Completed. When the node is offline, this returns nodeOnline=false with an
+        empty commandID — the operator should then force-delete and run `kairos-agent
+        phone-home uninstall` on the box manually.
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.decommissionResponse'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Dispatch remote teardown before deleting a node
+      tags:
+      - Nodes
   /api/v1/nodes/{nodeID}/group:
     put:
       consumes:
