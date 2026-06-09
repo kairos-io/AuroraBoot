@@ -173,6 +173,23 @@ var _ = Describe("Deployer", func() {
 			Expect(bmc.sawRequest(http.MethodDelete, bmc.sessionLocation)).To(BeTrue())
 		})
 
+		It("never ejects media during Deploy, even with the deprecated EjectAfter set", func() {
+			// The mid-install eject is GONE: ejecting at deploy-Task completion is the
+			// wrong moment (the install loop). Setting the deprecated EjectAfter must
+			// have no effect — eject is now Finalize's job.
+			Expect(d.Connect(ctx)).To(Succeed())
+			defer func() { _ = d.Close() }()
+
+			_, err := d.Deploy(ctx, redfish.DeployRequest{
+				ImageURL:   testImageURL,
+				BootTarget: redfish.BootTargetCd,
+				EjectAfter: true, // deprecated, must be ignored
+			})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(bmc.ejectCalled).To(BeFalse())
+			Expect(bmc.sawRequest(http.MethodPost, "/redfish/v1/Systems/sys-xyz/VirtualMedia/Cd/Actions/VirtualMedia.EjectMedia")).To(BeFalse())
+		})
+
 		It("sends BootSourceOverrideMode=UEFI when BootModeUEFI is explicitly requested", func() {
 			Expect(d.Connect(ctx)).To(Succeed())
 			defer func() { _ = d.Close() }()

@@ -27,6 +27,14 @@ type fakeBMC struct {
 	taskStates        []string
 	taskIdx           int
 
+	// ejectCalled records that the VirtualMedia.EjectMedia action was invoked, so
+	// Finalize specs can assert the load-bearing eject actually fired.
+	ejectCalled bool
+	// bootPatchStatus, when non-zero, is the HTTP status the ComputerSystem boot
+	// PATCH returns. Default 200. Set 4xx/5xx to drive the boot-to-disk error path
+	// and confirm Finalize still succeeds (boot-to-disk is best-effort).
+	bootPatchStatus int
+
 	// noSessionService, when true, serves a ServiceRoot WITHOUT a SessionService
 	// (no top-level SessionService and no Links.Sessions) and returns 404 for the
 	// session-create path, mimicking sushy-tools emulators and BMCs that expose no
@@ -187,7 +195,12 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 	case f.isSystemPath(r.URL.Path) && r.Method == http.MethodPatch:
 		f.mu.Lock()
 		f.bootPatchBody = decodeBody(r)
+		status := f.bootPatchStatus
 		f.mu.Unlock()
+		if status >= 400 {
+			http.Error(w, "boot PATCH rejected", status)
+			return
+		}
 		w.WriteHeader(http.StatusOK)
 		f.writeJSON(w, f.computerSystem(f.systemIDFromPath(r.URL.Path)))
 	case f.isSystemResetPath(r.URL.Path) && r.Method == http.MethodPost:
@@ -242,6 +255,9 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusAccepted)
 		f.writeJSON(w, f.task("Running"))
 	case strings.HasSuffix(r.URL.Path, "/VirtualMedia/Cd/Actions/VirtualMedia.EjectMedia") && r.Method == http.MethodPost:
+		f.mu.Lock()
+		f.ejectCalled = true
+		f.mu.Unlock()
 		w.WriteHeader(http.StatusNoContent)
 
 	// --- tasks ---

@@ -610,6 +610,21 @@ func (s *Store) DeploymentDelete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).Delete(&store.Deployment{}, "id = ?", id).Error
 }
 
+// DeploymentCASEjectState atomically transitions eject_state from `from` to `to`.
+// The conditional WHERE (id = ? AND eject_state = from) plus a RowsAffected check
+// makes the claim a race-free compare-and-set: when an auto eject-on-phone-home and
+// a manual finalize both target the same deployment, exactly one UPDATE matches the
+// still-`from` row and the loser sees RowsAffected == 0. Mirrors ClaimForDelivery.
+func (s *Store) DeploymentCASEjectState(ctx context.Context, id, from, to string) (bool, error) {
+	res := s.db.WithContext(ctx).Model(&store.Deployment{}).
+		Where("id = ? AND eject_state = ?", id, from).
+		Update("eject_state", to)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // --- SettingsStore ---
 
 func (s *Store) SettingGet(ctx context.Context, key string) (string, bool, error) {

@@ -194,6 +194,9 @@ func (a *DeploymentStoreAdapter) Update(ctx context.Context, dep *store.Deployme
 func (a *DeploymentStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.DeploymentDelete(ctx, id)
 }
+func (a *DeploymentStoreAdapter) CASEjectState(ctx context.Context, id, from, to string) (bool, error) {
+	return a.S.DeploymentCASEjectState(ctx, id, from, to)
+}
 
 // SettingsStoreAdapter adapts Store to the store.SettingsStore interface.
 type SettingsStoreAdapter struct{ S *Store }

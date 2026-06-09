@@ -391,17 +391,93 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 		}
 	}
 
-	// 5. Optionally eject. Most flows leave the media mounted across the install
-	//    reboot, so this is opt-in.
-	if req.EjectAfter {
-		if _, err := media.EjectMedia(); err != nil {
-			return result, fmt.Errorf("ejecting virtual media: %w", d.scrub(err))
-		}
-	}
+	// NOTE: media is intentionally NOT ejected here. Ejecting at deploy-Task
+	// completion is mid-install — the BMC is still booting the installer ISO. On
+	// BMCs that honour the one-time boot override the media can stay mounted across
+	// the install reboot harmlessly; on BMCs that ignore it, ejecting now would not
+	// help and ejecting at the wrong moment can disrupt the running install. Eject
+	// is decoupled into Finalize, driven by an "OS is up" signal (phone-home or a
+	// manual operator action). req.EjectAfter is deprecated and ignored.
 
 	report("completed", 100)
 	result.FinishedAt = time.Now()
 	return result, nil
+}
+
+// Finalize ejects the virtual media and best-effort steers the next boot to disk.
+// It is the signal-driven counterpart to Deploy: call it once the freshly-installed
+// OS is up (phone-home) or on an explicit operator action, NOT at deploy-Task
+// completion. The eject is load-bearing — it is what breaks the post-install
+// install loop on BMCs that ignore the one-time boot override, because an empty CD
+// falls through to disk. The boot-to-disk PATCH is opportunistic: some BMCs/emulators
+// (sushy-tools) error on a PATCH that clears the boot source, and the lab confirmed
+// eject alone is sufficient, so a boot-PATCH error is logged and swallowed rather
+// than failing the finalize.
+//
+// Flow: selectSystem (honours SystemID) -> findCDMedia -> EjectMedia -> opportunistic
+// boot-to-disk. The caller owns Connect/Close (session teardown), mirroring Deploy.
+func (d *Deployer) Finalize(ctx context.Context, req FinalizeRequest) error {
+	if d.client == nil {
+		return errors.New("not connected: call Connect first")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	report := newProgressReporter(req.Progress)
+
+	report("discovering", 20)
+	system, err := d.selectSystem()
+	if err != nil {
+		return err
+	}
+
+	media, err := d.findCDMedia(system)
+	if err != nil {
+		return err
+	}
+
+	// Eject is load-bearing: this is the step that breaks the install loop.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("ejecting media", 60)
+	if _, err := media.EjectMedia(); err != nil {
+		return fmt.Errorf("ejecting virtual media: %w", d.scrub(enrichRedfishError(err)))
+	}
+
+	// Best-effort boot-to-disk. Never fail Finalize on a boot-PATCH error: eject
+	// alone already breaks the loop, and some BMCs reject clearing the boot source.
+	report("boot to disk", 80)
+	d.bootToDisk(system)
+
+	report("completed", 100)
+	return nil
+}
+
+// bootToDisk best-effort steers the next boot to disk. It first tries to clear the
+// one-time boot override (BootSourceOverrideEnabled: Disabled), which on a
+// spec-compliant BMC drops back to the persistent BIOS/UEFI boot order (now the
+// freshly-installed disk). If that PATCH errors (sushy-tools has been observed to
+// reject clearing the source), it falls back to an explicit one-time Hdd override.
+// Both errors are logged credential-free and swallowed — see Finalize.
+func (d *Deployer) bootToDisk(system *schemas.ComputerSystem) {
+	disabled := &schemas.Boot{
+		BootSourceOverrideEnabled: schemas.DisabledBootSourceOverrideEnabled,
+	}
+	if err := system.SetBoot(disabled); err == nil {
+		return
+	} else {
+		log.Printf("redfish: clearing boot override failed (eject already broke the loop); trying one-time Hdd: %v", d.scrub(enrichRedfishError(err)))
+	}
+
+	hdd := &schemas.Boot{
+		BootSourceOverrideEnabled: schemas.OnceBootSourceOverrideEnabled,
+		BootSourceOverrideTarget:  schemas.HddBootSource,
+	}
+	if err := system.SetBoot(hdd); err != nil {
+		log.Printf("redfish: one-time Hdd boot override also failed (eject already broke the loop, proceeding): %v", d.scrub(enrichRedfishError(err)))
+	}
 }
 
 // selectSystem discovers the Systems collection and resolves the single

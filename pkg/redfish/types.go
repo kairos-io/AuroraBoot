@@ -98,14 +98,27 @@ type DeployRequest struct {
 	// The v1 default is HTTP-on-trusted-L2; integrity is delegated to the Kairos
 	// image signature, so HTTP is the unset default.
 	TransferProtocolHTTPS bool
-	// EjectAfter ejects the media once the deployment task reaches a terminal
-	// state. Most flows want the media to stay mounted across the install reboot,
-	// so this defaults to false.
+	// EjectAfter is DEPRECATED and no longer honoured by Deploy. Ejecting the media
+	// right after the deploy Task completes is the WRONG time: on BMCs that ignore a
+	// one-time boot override the post-install reboot then re-runs the installer (the
+	// "install loop"). Eject is now a separate, signal-driven step — call Finalize
+	// when the OS is actually up. The field is retained only so old callers still
+	// compile; setting it has no effect.
 	EjectAfter bool
 	// Progress, when non-nil, is invoked at each deploy stage with a short step
 	// label and a monotonically increasing percentage (0..100). It lets callers
 	// surface live progress (e.g. onto a Deployment row). It must be cheap and is
 	// always called synchronously from Deploy's goroutine. nil disables reporting.
+	Progress func(step string, percent int)
+}
+
+// FinalizeRequest describes a post-install finalize: eject the virtual media and
+// (best-effort) steer the next boot to disk. It carries no image URL — finalize
+// never inserts media. The connection parameters live on the Config the Deployer
+// was built with (Endpoint/SystemID/etc.); FinalizeRequest only tunes the flow.
+type FinalizeRequest struct {
+	// Progress, when non-nil, is invoked at each finalize stage with a short step
+	// label and a monotonically increasing percentage (0..100). nil disables it.
 	Progress func(step string, percent int)
 }
 
