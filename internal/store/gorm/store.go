@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 )
 
 // Store implements GroupStore, NodeStore, and CommandStore using GORM.
@@ -65,7 +67,7 @@ func New(dsn string) (*Store, error) {
 		}
 	}
 
-	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}); err != nil {
+	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.Setting{}); err != nil {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 
@@ -606,6 +608,43 @@ func (s *Store) DeploymentUpdate(ctx context.Context, dep *store.Deployment) err
 
 func (s *Store) DeploymentDelete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).Delete(&store.Deployment{}, "id = ?", id).Error
+}
+
+// --- SettingsStore ---
+
+func (s *Store) SettingGet(ctx context.Context, key string) (string, bool, error) {
+	var setting store.Setting
+	err := s.db.WithContext(ctx).First(&setting, "key = ?", key).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return "", false, nil
+	}
+	if err != nil {
+		return "", false, err
+	}
+	return setting.Value, true, nil
+}
+
+// SettingSet upserts key→value. The OnConflict clause updates the existing row in
+// place (rather than failing on the primary-key collision), so callers get
+// last-write-wins semantics on a repeated Set.
+func (s *Store) SettingSet(ctx context.Context, key, value string) error {
+	setting := store.Setting{Key: key, Value: value, UpdatedAt: time.Now()}
+	return s.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "key"}},
+		UpdateAll: true,
+	}).Create(&setting).Error
+}
+
+func (s *Store) SettingGetAll(ctx context.Context) (map[string]string, error) {
+	var settings []store.Setting
+	if err := s.db.WithContext(ctx).Find(&settings).Error; err != nil {
+		return nil, err
+	}
+	out := make(map[string]string, len(settings))
+	for _, setting := range settings {
+		out[setting.Key] = setting.Value
+	}
+	return out, nil
 }
 
 // Close closes the underlying database connection.

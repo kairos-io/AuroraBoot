@@ -32,6 +32,7 @@ type Config struct {
 	NetbootManager        *netbootpkg.Manager
 	DeploymentStore       store.DeploymentStore
 	BMCTargetStore        store.BMCTargetStore
+	SettingsStore         store.SettingsStore
 	Builder               builder.ArtifactBuilder
 	AdminPassword         string
 	RegToken              string
@@ -44,6 +45,11 @@ type Config struct {
 	// for Redfish virtual-media deployments. Optional; when nil the Redfish
 	// deploy path requires an explicit imageUrl.
 	ISOServe *isoserve.Server
+	// RedfishServeURL is the advertised base URL the BMC fetches the served ISO
+	// from, as set by the launch --redfish-serve-url flag. It seeds the
+	// image-source settings' advertised URL until an operator overrides it at
+	// runtime.
+	RedfishServeURL string
 	// BaseContext, when non-nil, is the parent context for background deploy
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
@@ -142,7 +148,8 @@ func New(cfg Config) *echo.Echo {
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
-	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile)
+	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
+		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
@@ -234,6 +241,8 @@ func New(cfg Config) *echo.Echo {
 	// Settings
 	adminGroup.GET("/settings/registration-token", settingsHandler.GetRegistrationToken)
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
+	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
+	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)
@@ -246,7 +255,8 @@ func New(cfg Config) *echo.Echo {
 	// Deploy hub
 	if cfg.DeploymentStore != nil {
 		deployHandler := handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir, cfg.ISOServe, hub).
-			WithBaseContext(cfg.BaseContext)
+			WithBaseContext(cfg.BaseContext).
+			WithSettings(cfg.SettingsStore)
 		adminGroup.POST("/netboot/start", deployHandler.StartNetboot)
 		adminGroup.POST("/netboot/stop", deployHandler.StopNetboot)
 		adminGroup.GET("/netboot/status", deployHandler.NetbootStatus)

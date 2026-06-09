@@ -229,7 +229,12 @@ type BMCTarget struct {
 	// empty when the BMC exposes exactly one system; it is required when the BMC
 	// exposes more than one, or the deploy/inspect flow refuses to guess and fails
 	// with the list of available system Ids. Mirrors the CLI's --system-id.
-	SystemID  string    `json:"systemId,omitempty"`
+	SystemID string `json:"systemId,omitempty"`
+	// ImageURL optionally overrides the global default image URL for this BMC: the
+	// HTTP(S) URL this BMC pulls the ISO from (model a, operator-hosted). When set
+	// it takes precedence over the global default but is still overridden by a
+	// per-deploy imageUrl. SSRF-validated on write and again at deploy time.
+	ImageURL  string    `json:"imageUrl,omitempty"`
 	NodeID    string    `json:"nodeId,omitempty" gorm:"index"`
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
@@ -272,4 +277,25 @@ type DeploymentStore interface {
 	ListByArtifact(ctx context.Context, artifactID string) ([]*Deployment, error)
 	Update(ctx context.Context, dep *Deployment) error
 	Delete(ctx context.Context, id string) error
+}
+
+// Setting is a single opaque key/value row backing runtime-configurable server
+// settings (e.g. the image-source defaults). Values are stored as plain strings;
+// the consuming handler owns typing and any SSRF/validation of the value. Keys are
+// namespaced (e.g. "imageSource.defaultImageURL").
+type Setting struct {
+	Key       string    `json:"key" gorm:"primaryKey"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// SettingsStore manages opaque key/value settings.
+type SettingsStore interface {
+	// Get returns the value for key. found reports whether the key exists; a
+	// missing key is (", false, nil), not an error.
+	Get(ctx context.Context, key string) (value string, found bool, err error)
+	// Set upserts key to value.
+	Set(ctx context.Context, key, value string) error
+	// GetAll returns every setting as a key→value map.
+	GetAll(ctx context.Context) (map[string]string, error)
 }

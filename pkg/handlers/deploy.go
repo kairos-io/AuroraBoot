@@ -37,6 +37,12 @@ type DeployHandler struct {
 	// May be nil, in which case a Redfish deploy must supply an explicit imageUrl.
 	isoServe *isoserve.Server
 
+	// settings exposes the runtime image-source settings (global default image URL,
+	// local-serve enable flag, advertised URL). May be nil (e.g. in tests or when
+	// no settings store is wired), in which case the deploy falls back to the
+	// request/per-BMC imageUrl or the configured local-serve.
+	settings store.SettingsStore
+
 	// hub is the WebSocket hub used to broadcast live deploy-step progress to UI
 	// clients. May be nil (e.g. in tests or when no hub is wired), in which case
 	// progress is only persisted to the Deployment row and surfaced via polling.
@@ -83,6 +89,15 @@ func (h *DeployHandler) WithBaseContext(ctx context.Context) *DeployHandler {
 	if ctx != nil {
 		h.baseCtx = ctx
 	}
+	return h
+}
+
+// WithSettings wires the runtime settings store so DeployRedfish can resolve the
+// global default image URL and the local-serve enable flag. Passing nil leaves
+// the handler using only the request/per-BMC imageUrl and the launch-configured
+// local-serve. Returns the handler for chaining.
+func (h *DeployHandler) WithSettings(s store.SettingsStore) *DeployHandler {
+	h.settings = s
 	return h
 }
 
@@ -204,6 +219,48 @@ func imageURLUsesHTTPS(imageURL string) (bool, error) {
 	return strings.EqualFold(parsed.Scheme, "https"), nil
 }
 
+// resolveOperatorImageURL applies the operator-supplied image-URL precedence
+// (per-deploy > per-BMC > global default), all model (a). It returns "" when no
+// tier supplies a URL, signalling the caller to fall back to local serving
+// (model b). It does not validate; the caller SSRF-validates the chosen URL.
+func resolveOperatorImageURL(reqURL, bmcURL, defaultURL string) string {
+	switch {
+	case reqURL != "":
+		return reqURL
+	case bmcURL != "":
+		return bmcURL
+	default:
+		return defaultURL
+	}
+}
+
+// defaultImageURL returns the global default image URL setting, or "" when no
+// settings store is wired or the key is unset. A read error is surfaced so the
+// caller can fail closed rather than silently treating it as unset.
+func (h *DeployHandler) defaultImageURL(ctx context.Context) (string, error) {
+	if h.settings == nil {
+		return "", nil
+	}
+	v, _, err := h.settings.Get(ctx, SettingDefaultImageURL)
+	return v, err
+}
+
+// localServeEnabled reports whether the runtime local-serve enable flag is set.
+// It is the gate (alongside a launch-configured listener) for serving the
+// artifact ISO locally. Defaults to false: missing setting, no settings store, or
+// a read error all yield false so deploys never silently serve without an
+// explicit opt-in.
+func (h *DeployHandler) localServeEnabled(ctx context.Context) bool {
+	if h.settings == nil {
+		return false
+	}
+	v, _, err := h.settings.Get(ctx, SettingLocalServeEnabled)
+	if err != nil {
+		return false
+	}
+	return v == "true"
+}
+
 // DeployRedfish handles POST /api/v1/artifacts/:id/deploy/redfish.
 func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	artifactID := c.Param("id")
@@ -220,13 +277,14 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	}
 
 	var (
-		endpoint  string
-		username  string
-		password  string
-		vendor    string
-		verifySSL bool
-		systemID  string
-		bmcID     string
+		endpoint    string
+		username    string
+		password    string
+		vendor      string
+		verifySSL   bool
+		systemID    string
+		bmcImageURL string
+		bmcID       string
 	)
 
 	if req.BMCTargetID != "" {
@@ -240,6 +298,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		vendor = target.Vendor
 		verifySSL = target.VerifySSL
 		systemID = target.SystemID
+		bmcImageURL = target.ImageURL
 		bmcID = target.ID
 	} else {
 		if req.Endpoint == "" || req.Username == "" || req.Password == "" {
@@ -281,13 +340,22 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 
 	// Resolve the image URL the BMC will fetch, and whether the BMC must fetch it
 	// over HTTPS. InsertMedia advertises a TransferProtocolType that must match the
-	// served URL's scheme, so derive useHTTPS alongside the URL:
-	//   1. an explicit imageUrl: SSRF-validate and use it; HTTPS iff its scheme is
-	//      "https".
-	//   2. otherwise serve the artifact's local ISO over a tokenized,
-	//      BMC-reachable URL via the ISO-serve helper; HTTPS iff the serve helper
-	//      is actually serving TLS.
-	imageURL := req.ImageURL
+	// served URL's scheme, so derive useHTTPS alongside the URL. Image-source
+	// precedence (highest to lowest), each operator-supplied URL SSRF-validated as
+	// defense in depth even when validated on write:
+	//   1. req.ImageURL  — per-deploy override (model a).
+	//   2. BMC ImageURL  — per-BMC override (model a).
+	//   3. global defaultImageURL setting (model a).
+	//   4. local serve: AuroraBoot serves the artifact's on-disk ISO over a
+	//      tokenized, BMC-reachable URL (model b), only when a listener was
+	//      configured at launch AND the runtime enable flag is set.
+	//   5. otherwise 503.
+	defaultURL, err := h.defaultImageURL(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image-source settings"})
+	}
+	imageURL := resolveOperatorImageURL(req.ImageURL, bmcImageURL, defaultURL)
+
 	serveToken := ""
 	useHTTPS := false
 	if imageURL != "" {
@@ -299,9 +367,11 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
 		}
 	} else {
-		if h.isoServe == nil {
+		// No operator-supplied URL at any tier: fall back to local serving, which
+		// requires both a launch-configured listener and the runtime enable flag.
+		if h.isoServe == nil || !h.localServeEnabled(ctx) {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{
-				"error": "local ISO serving is not configured on this server; provide imageUrl with a URL the BMC can reach",
+				"error": "local ISO serving is not enabled on this server; provide imageUrl with a URL the BMC can reach, set a default image URL, or enable AuroraBoot-served artifacts",
 			})
 		}
 		// ArtifactFiles stores each file's path relative to the server's working
@@ -563,6 +633,12 @@ func (h *DeployHandler) CreateBMCTarget(c echo.Context) error {
 	if target.Endpoint == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint is required"})
 	}
+	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
+	if target.ImageURL != "" {
+		if err := isoserve.ValidateMediaURL(target.ImageURL); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
+		}
+	}
 
 	if err := h.bmcTargets.Create(c.Request().Context(), &target); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create BMC target"})
@@ -593,6 +669,12 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	if err := c.Bind(&updated); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
+	if updated.ImageURL != "" {
+		if err := isoserve.ValidateMediaURL(updated.ImageURL); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
+		}
+	}
 
 	existing.Name = updated.Name
 	existing.Endpoint = updated.Endpoint
@@ -603,6 +685,7 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	}
 	existing.VerifySSL = updated.VerifySSL
 	existing.SystemID = updated.SystemID
+	existing.ImageURL = updated.ImageURL
 	existing.NodeID = updated.NodeID
 
 	if err := h.bmcTargets.Update(ctx, existing); err != nil {

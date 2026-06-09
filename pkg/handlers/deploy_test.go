@@ -140,18 +140,23 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		artifacts    *fakeArtifactStore
 		deployments  *fakeDeploymentStore
 		bmcTargets   *fakeBMCTargetStore
+		settings     *fakeSettingsStore
 		serve        *isoserve.Server
 		artifactsDir string
 	)
 
-	// newHandler builds a handler, optionally wiring an iso-serve.
+	// newHandler builds a handler, optionally wiring an iso-serve. When a serve is
+	// wired the runtime local-serve enable flag is also set, since local serving is
+	// now gated on both a launch-configured listener AND the enable flag.
 	newHandler := func(withServe bool) *handlers.DeployHandler {
 		if withServe {
 			serve = isoserve.New(isoserve.Config{BaseURL: "http://10.0.0.5:8090"})
+			settings.values[handlers.SettingLocalServeEnabled] = "true"
 		} else {
 			serve = nil
 		}
-		return handlers.NewDeployHandler(artifacts, deployments, bmcTargets, nil, artifactsDir, serve, nil)
+		return handlers.NewDeployHandler(artifacts, deployments, bmcTargets, nil, artifactsDir, serve, nil).
+			WithSettings(settings)
 	}
 
 	// doDeploy posts a deploy request for artifact "art-1" with the given body.
@@ -184,6 +189,7 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		})).To(Succeed())
 		deployments = &fakeDeploymentStore{}
 		bmcTargets = &fakeBMCTargetStore{}
+		settings = newFakeSettingsStore()
 	})
 
 	It("rejects an SSRF-blocked imageUrl", func() {
@@ -206,7 +212,7 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		h := newHandler(false)
 		rec := doDeploy(h, `{"endpoint":"http://10.0.0.9","username":"u","password":"p"}`)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
-		Expect(rec.Body.String()).To(ContainSubstring("local ISO serving is not configured"))
+		Expect(rec.Body.String()).To(ContainSubstring("local ISO serving is not enabled"))
 	})
 
 	It("registers the on-disk ISO with the serve helper when no imageUrl is given", func() {

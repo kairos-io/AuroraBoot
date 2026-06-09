@@ -193,6 +193,7 @@ func runWeb(c *cli.Context) error {
 	secureBootKeySetStore := &gormstore.SecureBootKeySetStoreAdapter{S: store}
 	deploymentStore := &gormstore.DeploymentStoreAdapter{S: store}
 	bmcTargetStore := &gormstore.BMCTargetStoreAdapter{S: store}
+	settingsStore := &gormstore.SettingsStoreAdapter{S: store}
 
 	netbootManager := netbootmgr.NewManager()
 
@@ -202,11 +203,14 @@ func runWeb(c *cli.Context) error {
 	// advertised base defaults to --url but can differ (the BMC management network
 	// is often not the UI network).
 	var isoServe *isoserve.Server
+	// serveURL is the advertised base URL a BMC fetches the served ISO from. It is
+	// hoisted out of the start block so it can seed the runtime image-source
+	// settings' advertised URL even before an operator overrides it.
+	serveURL := redfishServeURL
+	if serveURL == "" {
+		serveURL = externalURL
+	}
 	if redfishServeAddr != "" {
-		serveURL := redfishServeURL
-		if serveURL == "" {
-			serveURL = externalURL
-		}
 		isoServe = isoserve.New(isoserve.Config{
 			BaseURL:  serveURL,
 			BindAddr: redfishServeAddr,
@@ -239,6 +243,7 @@ func runWeb(c *cli.Context) error {
 		NetbootManager:        netbootManager,
 		DeploymentStore:       deploymentStore,
 		BMCTargetStore:        bmcTargetStore,
+		SettingsStore:         settingsStore,
 		Builder:               artifactBuilder,
 		AdminPassword:         adminPassword,
 		RegToken:              regToken,
@@ -248,6 +253,7 @@ func runWeb(c *cli.Context) error {
 		KeysDir:               keysDir,
 		Hub:                   wsHub,
 		ISOServe:              isoServe,
+		RedfishServeURL:       redfishServeURLSeed(isoServe, serveURL),
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
@@ -314,6 +320,17 @@ func loadOrGenerateSecret(path, label string) string {
 	}
 	fmt.Fprintf(os.Stderr, "Generated %s: %s (saved to %s)\n", label, secret, path)
 	return secret
+}
+
+// redfishServeURLSeed returns the advertised URL to seed the image-source
+// settings with, but only when a local ISO-serve listener was actually
+// configured. With no listener the advertised URL is irrelevant (local serving
+// cannot be enabled), so seeding it would be misleading.
+func redfishServeURLSeed(isoServe *isoserve.Server, serveURL string) string {
+	if isoServe == nil {
+		return ""
+	}
+	return serveURL
 }
 
 func generateToken(bytes int) string {

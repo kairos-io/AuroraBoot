@@ -497,6 +497,52 @@ func (f *fakeBuilder) Cancel(_ context.Context, id string) error {
 	return nil
 }
 
+// fakeSettingsStore implements store.SettingsStore for testing.
+type fakeSettingsStore struct {
+	mu     sync.Mutex
+	values map[string]string
+	getErr error // when set, Get returns this error (to exercise fail-closed paths)
+	setErr error // when set, Set returns this error
+	allErr error // when set, GetAll returns this error
+}
+
+func newFakeSettingsStore() *fakeSettingsStore {
+	return &fakeSettingsStore{values: map[string]string{}}
+}
+
+func (f *fakeSettingsStore) Get(_ context.Context, key string) (string, bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.getErr != nil {
+		return "", false, f.getErr
+	}
+	v, ok := f.values[key]
+	return v, ok, nil
+}
+
+func (f *fakeSettingsStore) Set(_ context.Context, key, value string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.setErr != nil {
+		return f.setErr
+	}
+	f.values[key] = value
+	return nil
+}
+
+func (f *fakeSettingsStore) GetAll(_ context.Context) (map[string]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.allErr != nil {
+		return nil, f.allErr
+	}
+	out := make(map[string]string, len(f.values))
+	for k, v := range f.values {
+		out[k] = v
+	}
+	return out, nil
+}
+
 // fakeSecureBootKeySetStore implements store.SecureBootKeySetStore for testing.
 type fakeSecureBootKeySetStore struct {
 	mu      sync.Mutex
