@@ -43,7 +43,8 @@ func (f *fakeDeploymentStore) GetByID(_ context.Context, id string) (*store.Depl
 	defer f.mu.Unlock()
 	for _, d := range f.deps {
 		if d.ID == id {
-			return d, nil
+			cp := *d // return a copy (gorm materializes a fresh struct)
+			return &cp, nil
 		}
 	}
 	return nil, fmt.Errorf("not found")
@@ -52,7 +53,17 @@ func (f *fakeDeploymentStore) GetByID(_ context.Context, id string) (*store.Depl
 func (f *fakeDeploymentStore) List(_ context.Context) ([]*store.Deployment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.deps, nil
+	// Return copies, not the stored pointers: real gorm List materializes a fresh
+	// struct per query, so concurrent callers (e.g. the eject-on-phone-home goroutines
+	// in MaybeFinalizeForNode) must each get their own object to read/mutate. The
+	// stored row is only mutated under-lock via CASEjectState/Update, which remain the
+	// serialization point. Returning shared pointers here races under -race.
+	out := make([]*store.Deployment, len(f.deps))
+	for i, d := range f.deps {
+		cp := *d
+		out[i] = &cp
+	}
+	return out, nil
 }
 
 func (f *fakeDeploymentStore) ListByArtifact(_ context.Context, artifactID string) ([]*store.Deployment, error) {
@@ -72,7 +83,11 @@ func (f *fakeDeploymentStore) Update(_ context.Context, dep *store.Deployment) e
 	defer f.mu.Unlock()
 	for i, d := range f.deps {
 		if d.ID == dep.ID {
-			f.deps[i] = dep
+			// Store a copy, not the caller's pointer: gorm persists values, so the
+			// caller may keep mutating its struct (e.g. finalizeDeployment after
+			// Update) without that aliasing the stored row a concurrent List reads.
+			cp := *dep
+			f.deps[i] = &cp
 			return nil
 		}
 	}
