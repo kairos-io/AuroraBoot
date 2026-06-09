@@ -55,6 +55,10 @@ type fakeBMC struct {
 	// SecureBoot feature detection can be asserted.
 	withSecureBoot bool
 
+	// biosVersion, when non-empty, is served as the ComputerSystem BiosVersion so
+	// the probe's firmware reporting can be asserted. Empty omits the field.
+	biosVersion string
+
 	// captured bodies
 	sessionBody     map[string]any
 	insertBody      map[string]any
@@ -419,6 +423,9 @@ func (f *fakeBMC) computerSystem(id string) map[string]any {
 	}
 	if f.withSecureBoot {
 		cs["SecureBoot"] = map[string]any{"@odata.id": base + "/SecureBoot"}
+	}
+	if f.biosVersion != "" {
+		cs["BiosVersion"] = f.biosVersion
 	}
 	return cs
 }

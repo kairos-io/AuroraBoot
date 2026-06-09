@@ -97,6 +97,7 @@ var RedFishDeployCmd = cli.Command{
 	Name:  "redfish",
 	Usage: "Deploy ISO to server via RedFish (EXPERIMENTAL)",
 	Subcommands: []*cli.Command{
+		redfishProbeCmd(),
 		{
 			Name:  "deploy",
 			Usage: "Deploy ISO to server via RedFish",
