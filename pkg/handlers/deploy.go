@@ -731,6 +731,13 @@ func (h *DeployHandler) CreateBMCTarget(c echo.Context) error {
 	if target.Endpoint == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint is required"})
 	}
+	// SSRF-validate the BMC endpoint on write. The session-free reachability ping
+	// and refresh-all actively GET this endpoint, so an unvalidated value is a
+	// confused-deputy/internal-fetch primitive. Mirror the CLI, which guards the
+	// endpoint with the same validator (internal/cmd/redfish.go).
+	if err := isoserve.ValidateMediaURL(target.Endpoint); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid endpoint: %v", err)})
+	}
 	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
 	if target.ImageURL != "" {
 		if err := isoserve.ValidateMediaURL(target.ImageURL); err != nil {
@@ -770,6 +777,13 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	var updated store.BMCTarget
 	if err := c.Bind(&updated); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	// SSRF-validate the BMC endpoint on write (same posture as Create and the CLI).
+	// The ping/refresh-all paths actively fetch this endpoint, so it must be guarded.
+	if updated.Endpoint != "" {
+		if err := isoserve.ValidateMediaURL(updated.Endpoint); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid endpoint: %v", err)})
+		}
 	}
 	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
 	if updated.ImageURL != "" {

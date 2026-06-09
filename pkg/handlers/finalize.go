@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/http"
 	"time"
 
@@ -15,6 +16,14 @@ import (
 // EjectMedia -> best-effort boot-to-disk -> Close). It is far shorter than a
 // deploy: there is no media fetch or install boot to wait on.
 const finalizeTimeout = 2 * time.Minute
+
+// ejectFallbackWindow time-boxes the unlinked single-pending auto-eject fallback.
+// When there is no node<->BMC link, we only treat the sole pending deployment as
+// "this node's" if it completed recently — a phone-home long after the install is
+// unlikely to be the freshly provisioned node and must not auto-eject on a guess.
+// The window is generous (slow installs, first-boot config) but bounded; older
+// pending deployments stay pending for the explicit manual Finalize endpoint.
+const ejectFallbackWindow = 60 * time.Minute
 
 // redfishFinalizer is the slice of the Redfish Deployer the finalize path needs.
 // Keeping it an interface (mirroring hardware.systemInspector) lets tests inject a
@@ -163,12 +172,21 @@ func (h *DeployHandler) MaybeFinalizeForNode(ctx context.Context, nodeID string)
 		return
 	}
 
-	chosen := h.correlateDeployment(ctx, nodeID, pending)
+	chosen, viaFallback := h.correlateDeployment(ctx, nodeID, pending)
 	if chosen == nil {
 		// Ambiguous or unlinked: refuse to auto-eject. The operator can finalize
 		// manually. This is the security-critical refusal — never finalize a
 		// deployment a node is not legitimately correlated with.
 		return
+	}
+
+	if viaFallback {
+		// Loudly distinguish the heuristic fallback from a real node<->BMC link:
+		// this path ejected a deployment a node is only *circumstantially*
+		// correlated with (sole recent pending), and is worth auditing.
+		log.Printf("finalize: node %s triggered eject of deployment %s via the unlinked single-pending fallback (no node<->BMC link)", nodeID, chosen.ID)
+	} else {
+		log.Printf("finalize: node %s triggered eject of deployment %s via node<->BMC link", nodeID, chosen.ID)
 	}
 
 	// CAS pending->ejecting: only one winner across concurrent phone-homes / a
@@ -187,13 +205,17 @@ func (h *DeployHandler) MaybeFinalizeForNode(ctx context.Context, nodeID string)
 }
 
 // correlateDeployment picks the one pending-eject deployment this node may finalize,
-// or nil when the correlation is ambiguous. Preference order:
-//  1. deployments whose linked BMCTarget.NodeID == nodeID — if exactly one, that's
-//     it (multiple linked is ambiguous -> nil).
-//  2. otherwise, when there is exactly ONE pending-eject deployment in total, use it
-//     (the unambiguous-single fallback).
+// or nil when the correlation is ambiguous. The second return reports whether the
+// pick came from the unlinked single-pending fallback (true) rather than a real
+// node<->BMC link (false), so the caller can audit-log the heuristic path. A nil
+// deployment always pairs with false. Preference order:
+//  1. deployments whose linked BMCTarget.NodeID == nodeID (or Deployment.NodeID ==
+//     nodeID) — if exactly one, that's it (multiple linked is ambiguous -> nil).
+//     The linked path is always honoured and is NOT time-boxed.
+//  2. otherwise, when there is exactly ONE pending-eject deployment in total AND it
+//     completed within ejectFallbackWindow, use it (the time-boxed fallback).
 //  3. otherwise nil.
-func (h *DeployHandler) correlateDeployment(ctx context.Context, nodeID string, pending []*store.Deployment) *store.Deployment {
+func (h *DeployHandler) correlateDeployment(ctx context.Context, nodeID string, pending []*store.Deployment) (*store.Deployment, bool) {
 	var linked []*store.Deployment
 	for _, dep := range pending {
 		// A deployment already linked to this node (e.g. a manual finalize set it).
@@ -213,17 +235,31 @@ func (h *DeployHandler) correlateDeployment(ctx context.Context, nodeID string, 
 		}
 	}
 	if len(linked) == 1 {
-		return linked[0]
+		// A real link is always honoured regardless of age.
+		return linked[0], false
 	}
 	if len(linked) > 1 {
 		// Multiple deployments correlate to this node: ambiguous, refuse.
-		return nil
+		return nil, false
 	}
-	// No explicit link. Fall back to the sole unambiguous pending deployment.
-	if len(pending) == 1 {
-		return pending[0]
+	// No explicit link. Fall back to the sole pending deployment ONLY when it
+	// completed recently: a phone-home long after install is unlikely to be the
+	// node we just provisioned, and auto-ejecting on that guess is unsafe. An
+	// out-of-window deployment stays pending for the manual Finalize endpoint.
+	if len(pending) == 1 && withinEjectFallbackWindow(pending[0]) {
+		return pending[0], true
 	}
-	return nil
+	return nil, false
+}
+
+// withinEjectFallbackWindow reports whether dep completed recently enough for the
+// unlinked single-pending fallback to act on it. A deployment with no CompletedAt
+// stamp is treated as out of window (we cannot prove it is recent).
+func withinEjectFallbackWindow(dep *store.Deployment) bool {
+	if dep.CompletedAt == nil {
+		return false
+	}
+	return time.Since(*dep.CompletedAt) <= ejectFallbackWindow
 }
 
 // --- Manual finalize / eject endpoints (admin-only) ---

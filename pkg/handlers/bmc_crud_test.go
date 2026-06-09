@@ -76,6 +76,43 @@ var _ = Describe("BMC target CRUD ImageURL validation", func() {
 		Expect(bmcTargets.targets[0].ImageURL).To(Equal("https://10.0.0.5/os.iso"))
 	})
 
+	It("accepts a normal RFC1918 endpoint on create", func() {
+		rec := create(`{"name":"h","endpoint":"https://192.168.1.50"}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(bmcTargets.targets).To(HaveLen(1))
+		Expect(bmcTargets.targets[0].Endpoint).To(Equal("https://192.168.1.50"))
+	})
+
+	It("rejects an SSRF-blocked metadata-IP endpoint on create with 400", func() {
+		rec := create(`{"name":"h","endpoint":"https://169.254.169.254"}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("invalid endpoint"))
+		Expect(bmcTargets.targets).To(BeEmpty())
+	})
+
+	It("rejects a loopback endpoint on create with 400", func() {
+		rec := create(`{"name":"h","endpoint":"https://127.0.0.1"}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("invalid endpoint"))
+		Expect(bmcTargets.targets).To(BeEmpty())
+	})
+
+	It("rejects an SSRF-blocked metadata-IP endpoint on update with 400", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9"}}
+		rec := update("bmc-1", `{"name":"h","endpoint":"https://169.254.169.254"}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("invalid endpoint"))
+		// The stored target is unchanged.
+		Expect(bmcTargets.targets[0].Endpoint).To(Equal("https://10.0.0.9"))
+	})
+
+	It("accepts a normal RFC1918 endpoint on update", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9"}}
+		rec := update("bmc-1", `{"name":"h","endpoint":"https://192.168.1.50"}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(bmcTargets.targets[0].Endpoint).To(Equal("https://192.168.1.50"))
+	})
+
 	It("ignores client-supplied status-cache fields on create (server-owned)", func() {
 		rec := create(`{"name":"h","endpoint":"https://10.0.0.9","lastStatus":"reachable","lastModel":"FAKE","lastFeatures":["UEFI"]}`)
 		Expect(rec.Code).To(Equal(http.StatusCreated))

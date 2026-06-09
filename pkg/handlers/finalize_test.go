@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -107,7 +108,42 @@ var _ = Describe("Eject / finalize", func() {
 			Expect(got.EjectedAt).NotTo(BeNil())
 		})
 
-		It("finalizes the sole unambiguous pending deployment when there is no explicit link", func() {
+		It("finalizes the sole unambiguous pending deployment when there is no explicit link and it completed within the window", func() {
+			completed := time.Now().Add(-1 * time.Minute)
+			Expect(bmcTargets.Create(context.Background(), &store.BMCTarget{ID: "bmc-1", Endpoint: "https://10.0.0.9"})).To(Succeed())
+			Expect(deployments.Create(context.Background(), &store.Deployment{
+				ID: "dep-1", Method: "redfish", Status: store.DeployCompleted,
+				BMCTargetID: "bmc-1", EjectState: store.EjectStatePending, CompletedAt: &completed,
+			})).To(Succeed())
+
+			h.MaybeFinalizeForNode(context.Background(), "node-unlinked")
+
+			Expect(fin.calls()).To(Equal(1))
+			got, _ := deployments.GetByID(context.Background(), "dep-1")
+			Expect(got.EjectState).To(Equal(store.EjectStateEjected))
+		})
+
+		It("does NOT fire the unlinked single-pending fallback when the sole deployment is older than the window", func() {
+			// Completed well past ejectFallbackWindow (60m). A late phone-home is not
+			// trusted to be the freshly provisioned node; it stays pending for the
+			// manual Finalize endpoint.
+			completed := time.Now().Add(-2 * time.Hour)
+			Expect(bmcTargets.Create(context.Background(), &store.BMCTarget{ID: "bmc-1", Endpoint: "https://10.0.0.9"})).To(Succeed())
+			Expect(deployments.Create(context.Background(), &store.Deployment{
+				ID: "dep-1", Method: "redfish", Status: store.DeployCompleted,
+				BMCTargetID: "bmc-1", EjectState: store.EjectStatePending, CompletedAt: &completed,
+			})).To(Succeed())
+
+			h.MaybeFinalizeForNode(context.Background(), "node-unlinked")
+
+			// Fallback refused: no eject, deployment untouched.
+			Expect(fin.calls()).To(Equal(0))
+			got, _ := deployments.GetByID(context.Background(), "dep-1")
+			Expect(got.EjectState).To(Equal(store.EjectStatePending))
+		})
+
+		It("does NOT fire the unlinked single-pending fallback when the sole deployment has no CompletedAt stamp", func() {
+			// No completion stamp -> cannot prove recency -> out of window.
 			Expect(bmcTargets.Create(context.Background(), &store.BMCTarget{ID: "bmc-1", Endpoint: "https://10.0.0.9"})).To(Succeed())
 			Expect(deployments.Create(context.Background(), &store.Deployment{
 				ID: "dep-1", Method: "redfish", Status: store.DeployCompleted,
@@ -115,6 +151,22 @@ var _ = Describe("Eject / finalize", func() {
 			})).To(Succeed())
 
 			h.MaybeFinalizeForNode(context.Background(), "node-unlinked")
+
+			Expect(fin.calls()).To(Equal(0))
+			got, _ := deployments.GetByID(context.Background(), "dep-1")
+			Expect(got.EjectState).To(Equal(store.EjectStatePending))
+		})
+
+		It("honours the node<->BMC link regardless of age (linked path is not time-boxed)", func() {
+			// Completed long ago, but legitimately linked to this node -> always ejects.
+			completed := time.Now().Add(-72 * time.Hour)
+			Expect(bmcTargets.Create(context.Background(), &store.BMCTarget{ID: "bmc-1", Endpoint: "https://10.0.0.9", NodeID: "node-1"})).To(Succeed())
+			Expect(deployments.Create(context.Background(), &store.Deployment{
+				ID: "dep-1", Method: "redfish", Status: store.DeployCompleted,
+				BMCTargetID: "bmc-1", EjectState: store.EjectStatePending, CompletedAt: &completed,
+			})).To(Succeed())
+
+			h.MaybeFinalizeForNode(context.Background(), "node-1")
 
 			Expect(fin.calls()).To(Equal(1))
 			got, _ := deployments.GetByID(context.Background(), "dep-1")
