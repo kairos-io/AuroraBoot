@@ -25,6 +25,7 @@ type fakeDeploymentStore struct {
 	mu        sync.Mutex
 	deps      []*store.Deployment
 	createErr error
+	casErr    error // when set, CASEjectState returns this error (fail-closed paths)
 }
 
 func (f *fakeDeploymentStore) Create(_ context.Context, dep *store.Deployment) error {
@@ -88,6 +89,24 @@ func (f *fakeDeploymentStore) Delete(_ context.Context, id string) error {
 		}
 	}
 	return fmt.Errorf("not found")
+}
+
+// CASEjectState mirrors the gorm compare-and-set: it transitions eject_state under
+// the store mutex so two concurrent finalize attempts race exactly as production
+// does (exactly one observes the still-`from` row and wins).
+func (f *fakeDeploymentStore) CASEjectState(_ context.Context, id, from, to string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.casErr != nil {
+		return false, f.casErr
+	}
+	for _, d := range f.deps {
+		if d.ID == id && d.EjectState == from {
+			d.EjectState = to
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // fakeBMCTargetStore implements store.BMCTargetStore for testing.

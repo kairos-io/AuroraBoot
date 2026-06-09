@@ -76,6 +76,7 @@ type FormState = {
   verifySSL: boolean;
   systemId: string;
   imageUrl: string;
+  ejectAfterInstall: boolean;
 };
 
 const EMPTY_FORM: FormState = {
@@ -87,6 +88,7 @@ const EMPTY_FORM: FormState = {
   verifySSL: false,
   systemId: "",
   imageUrl: "",
+  ejectAfterInstall: false,
 };
 
 function vendorLabel(vendor: string): string {
@@ -274,6 +276,7 @@ export function BMCRegistration() {
       verifySSL: t.verifySSL,
       systemId: t.systemId ?? "",
       imageUrl: t.imageUrl ?? "",
+      ejectAfterInstall: t.ejectAfterInstall ?? false,
     });
     setFormOpen(true);
   }
@@ -297,6 +300,7 @@ export function BMCRegistration() {
                 verifySSL: payload.verifySSL,
                 systemId: payload.systemId,
                 imageUrl: payload.imageUrl,
+                ejectAfterInstall: payload.ejectAfterInstall,
               }
         );
         setTargets((prev) =>
@@ -864,6 +868,23 @@ export function BMCRegistration() {
               />
               Verify TLS certificate
             </label>
+            <div className="space-y-1">
+              <label className="flex items-center gap-2 cursor-pointer text-sm">
+                <input
+                  type="checkbox"
+                  checked={form.ejectAfterInstall}
+                  onChange={(e) =>
+                    setForm({ ...form, ejectAfterInstall: e.target.checked })
+                  }
+                />
+                Eject media after install
+              </label>
+              <p className="text-xs text-muted-foreground">
+                When the freshly-installed node phones home, AuroraBoot ejects the
+                virtual media and boots from disk — breaking the install loop on
+                BMCs that ignore the one-time boot override. Opt-in.
+              </p>
+            </div>
             <div className="flex justify-end gap-2 pt-2">
               <Button
                 type="button"

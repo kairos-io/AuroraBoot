@@ -62,6 +62,11 @@ type DeployHandler struct {
 	// concurrent RefreshAllBMCTargets call returns 409 rather than launching a
 	// second parallel sweep that would double the BMC-ping load.
 	refreshAll refreshGuard
+
+	// finalizerFn builds the redfishFinalizer used by the eject/finalize path. nil
+	// uses the real gofish-backed Deployer; tests inject a fake via
+	// WithFinalizerFactory.
+	finalizerFn finalizerFactory
 }
 
 // NewDeployHandler creates a new DeployHandler.
@@ -142,6 +147,17 @@ func ReconcileOrphanedDeployments(ctx context.Context, deployments store.Deploym
 		return fmt.Errorf("listing deployments: %w", err)
 	}
 	for _, dep := range deps {
+		// A finalize goroutine that died mid-eject leaves EjectState=="ejecting"
+		// with no routine to advance it. Reset it to pending so the next phone-home
+		// or a manual finalize retries. NEVER auto-eject at startup, and never touch
+		// a terminal ejected/eject-failed row.
+		if dep.EjectState == store.EjectStateEjecting {
+			dep.EjectState = store.EjectStatePending
+			if err := deployments.Update(ctx, dep); err != nil {
+				return fmt.Errorf("resetting orphaned eject %s: %w", dep.ID, err)
+			}
+		}
+
 		if dep.Status != store.DeployActive {
 			continue
 		}
@@ -211,6 +227,11 @@ type deployRedfishRequest struct {
 	// set it takes precedence over a saved target's SystemID; required when the BMC
 	// exposes more than one system. Mirrors the CLI's --system-id.
 	SystemID string `json:"systemId"`
+	// EjectAfterInstall overrides the target's durable eject policy for this one
+	// deploy. nil leaves the target's BMCTarget.EjectAfterInstall in effect; a
+	// non-nil value forces it on/off. When effectively on, the deployment is marked
+	// pending-eject at completion and auto-ejected on the node's phone-home.
+	EjectAfterInstall *bool `json:"ejectAfterInstall"`
 }
 
 // imageURLUsesHTTPS reports whether an operator-supplied media URL is fetched
@@ -282,14 +303,15 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	}
 
 	var (
-		endpoint    string
-		username    string
-		password    string
-		vendor      string
-		verifySSL   bool
-		systemID    string
-		bmcImageURL string
-		bmcID       string
+		endpoint        string
+		username        string
+		password        string
+		vendor          string
+		verifySSL       bool
+		systemID        string
+		bmcImageURL     string
+		bmcID           string
+		bmcEjectDefault bool
 	)
 
 	if req.BMCTargetID != "" {
@@ -305,6 +327,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		systemID = target.SystemID
 		bmcImageURL = target.ImageURL
 		bmcID = target.ID
+		bmcEjectDefault = target.EjectAfterInstall
 	} else {
 		if req.Endpoint == "" || req.Username == "" || req.Password == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint, username, and password are required when bmcTargetId is not provided"})
@@ -328,6 +351,15 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	// back to whatever the saved target carries.
 	if req.SystemID != "" {
 		systemID = req.SystemID
+	}
+
+	// Resolve the effective eject policy: a per-deploy override wins, else the
+	// target's durable default, else off. Eject only makes sense for a saved BMC
+	// target (the auto path correlates node -> BMC -> deployment); an inline-creds
+	// deploy has no durable BMC to link, so it can only opt in per-deploy.
+	ejectAfter := bmcEjectDefault
+	if req.EjectAfterInstall != nil {
+		ejectAfter = *req.EjectAfterInstall
 	}
 
 	// Locate the artifact's on-disk ISO. InsertMedia is URL-pull (no byte
@@ -423,7 +455,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	runCtx, cancel := context.WithTimeout(h.baseCtx, redfishDeployTimeout)
 	h.registerRun(dep.ID, cancel)
 
-	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, systemID, verifySSL, useHTTPS)
+	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, systemID, verifySSL, useHTTPS, ejectAfter)
 
 	return c.JSON(http.StatusAccepted, dep)
 }
@@ -434,7 +466,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 // deploy timeout; cancel is its cancel func, deregistered and called on return so
 // the run-registry never retains a finished deploy. useHTTPS sets the InsertMedia
 // TransferProtocolType so it matches the scheme the BMC actually fetches over.
-func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor, systemID string, verifySSL, useHTTPS bool) {
+func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor, systemID string, verifySSL, useHTTPS, ejectAfter bool) {
 	logPrefix := fmt.Sprintf("deployment %s", deploymentID)
 
 	defer cancel()
@@ -483,6 +515,30 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		msg = fmt.Sprintf("Deployment completed (task state: %s)", result.TaskState)
 	}
 	h.completeDeployment(deploymentID, msg)
+
+	// Arm the eject lifecycle when the policy is on: mark the deployment
+	// pending-eject so the freshly-installed node's phone-home (or a manual
+	// finalize) ejects the media. We do NOT eject inline — that would be
+	// mid-reboot, the wrong moment (the install loop this whole mechanism fixes).
+	if ejectAfter {
+		h.markEjectPending(deploymentID)
+	}
+}
+
+// markEjectPending arms the eject lifecycle on a completed deployment: it sets the
+// policy to on-phone-home and EjectState to pending so the auto path (node
+// phone-home) or a manual finalize picks it up. Best-effort: a store failure leaves
+// the deployment un-armed (no eject), which is safe — the operator can finalize
+// manually.
+func (h *DeployHandler) markEjectPending(id string) {
+	ctx := context.Background()
+	dep, err := h.deployments.GetByID(ctx, id)
+	if err != nil {
+		return
+	}
+	dep.EjectPolicy = store.EjectPolicyOnPhoneHome
+	dep.EjectState = store.EjectStatePending
+	_ = h.deployments.Update(ctx, dep)
 }
 
 // broadcastProgress fans a live deploy-progress event to all connected UI
@@ -733,6 +789,7 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	existing.SystemID = updated.SystemID
 	existing.ImageURL = updated.ImageURL
 	existing.NodeID = updated.NodeID
+	existing.EjectAfterInstall = updated.EjectAfterInstall
 
 	if err := h.bmcTargets.Update(ctx, existing); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update BMC target"})

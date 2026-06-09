@@ -1,5 +1,15 @@
 import { apiFetch } from "./client";
 
+// EjectState is the finalize/eject lifecycle of a deployment. "" means the
+// deployment is not armed for eject (policy off); the rest track the auto/manual
+// eject through to a terminal ejected / eject-failed.
+export type EjectState =
+  | ""
+  | "pending"
+  | "ejecting"
+  | "ejected"
+  | "eject-failed";
+
 export interface Deployment {
   id: string;
   artifactId: string;
@@ -10,6 +20,12 @@ export interface Deployment {
   progress: number;
   startedAt: string;
   completedAt?: string;
+  // --- Eject / finalize (P5). Present only on Redfish deployments armed for eject.
+  nodeId?: string;
+  ejectPolicy?: "off" | "on-phone-home" | "manual";
+  ejectState?: EjectState;
+  ejectError?: string;
+  ejectedAt?: string;
 }
 
 export interface BMCTarget {
@@ -27,6 +43,10 @@ export interface BMCTarget {
   // HTTP(S) URL the BMC pulls the ISO from). Blank to use the global default.
   imageUrl?: string;
   nodeId?: string;
+  // ejectAfterInstall is the durable default eject policy for this BMC: when true,
+  // AuroraBoot ejects the virtual media (and boots to disk) once the freshly
+  // installed node phones home, breaking the install loop. Default false (opt-in).
+  ejectAfterInstall?: boolean;
   // --- Status cache (server-owned, read-only). Populated by inspect / ping /
   // refresh-all; never sent on create/update. "" means "unknown" (never checked).
   lastStatus?: "" | "reachable" | "unreachable";
@@ -100,6 +120,7 @@ export const createBMCTarget = (t: {
   verifySSL: boolean;
   systemId?: string;
   imageUrl?: string;
+  ejectAfterInstall?: boolean;
 }) => apiFetch<BMCTarget>("/api/v1/bmc-targets", { method: "POST", body: JSON.stringify(t) });
 
 // updateBMCTarget mirrors createBMCTarget but PUTs to an existing target. Leave
@@ -116,6 +137,7 @@ export const updateBMCTarget = (
     verifySSL: boolean;
     systemId?: string;
     imageUrl?: string;
+    ejectAfterInstall?: boolean;
   }
 ) =>
   apiFetch<BMCTarget>(`/api/v1/bmc-targets/${id}`, {
@@ -125,6 +147,17 @@ export const updateBMCTarget = (
 
 export const deleteBMCTarget = (id: string) =>
   apiFetch(`/api/v1/bmc-targets/${id}`, { method: "DELETE" });
+
+// finalizeDeployment ejects the media and best-effort boots to disk for one
+// deployment, regardless of its eject policy (operator override). Returns the
+// updated deployment with the new EjectState.
+export const finalizeDeployment = (id: string) =>
+  apiFetch<Deployment>(`/api/v1/deployments/${id}/finalize`, { method: "POST" });
+
+// ejectBMCTarget is the deployment-less operator escape hatch: eject the virtual
+// media of a BMC directly with no eject-state bookkeeping.
+export const ejectBMCTarget = (id: string) =>
+  apiFetch<{ status: string }>(`/api/v1/bmc-targets/${id}/eject`, { method: "POST" });
 
 export const inspectHardware = (id: string) =>
   apiFetch<InspectResult>(`/api/v1/bmc-targets/${id}/inspect`, { method: "POST" });
@@ -151,6 +184,7 @@ export const deployRedfish = (
     vendor?: string;
     verifySSL?: boolean;
     systemId?: string;
+    ejectAfterInstall?: boolean;
   }
 ) =>
   apiFetch<Deployment>(`/api/v1/artifacts/${artifactId}/deploy/redfish`, {

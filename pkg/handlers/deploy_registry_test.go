@@ -48,6 +48,16 @@ func (m *memDeploymentStore) ListByArtifact(_ context.Context, _ string) ([]*sto
 	return nil, nil
 }
 func (m *memDeploymentStore) Delete(_ context.Context, _ string) error { return nil }
+func (m *memDeploymentStore) CASEjectState(_ context.Context, id, from, to string) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	d, ok := m.deps[id]
+	if !ok || d.EjectState != from {
+		return false, nil
+	}
+	d.EjectState = to
+	return true, nil
+}
 
 // TestRunRegistryCancel verifies the run-registry stores a cancel func that, when
 // invoked via CancelRun, actually cancels the associated context and that the run
