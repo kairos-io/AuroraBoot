@@ -64,6 +64,9 @@ func (a *CommandStoreAdapter) GetPending(ctx context.Context, nodeID string) ([]
 func (a *CommandStoreAdapter) MarkDelivered(ctx context.Context, ids []string) error {
 	return a.S.MarkDelivered(ctx, ids)
 }
+func (a *CommandStoreAdapter) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
+	return a.S.ClaimForDelivery(ctx, id)
+}
 func (a *CommandStoreAdapter) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
 	return a.S.UpdateStatus(ctx, id, phase, result)
 }

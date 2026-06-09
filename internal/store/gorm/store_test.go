@@ -2,6 +2,8 @@ package gorm_test
 
 import (
 	"context"
+	"path/filepath"
+	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -346,6 +348,75 @@ var _ = Describe("Gorm Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Phase).To(Equal(store.CommandDelivered))
 			Expect(found.DeliveredAt).NotTo(BeNil())
+		})
+
+		It("claims a pending command for delivery exactly once", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdReset}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+
+			// First claim wins and flips the phase to Delivered.
+			claimed, err := s.ClaimForDelivery(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimed).To(BeTrue())
+
+			found, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Phase).To(Equal(store.CommandDelivered))
+			Expect(found.DeliveredAt).NotTo(BeNil())
+
+			// Second claim sees a non-Pending row and loses.
+			claimed, err = s.ClaimForDelivery(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimed).To(BeFalse())
+		})
+
+		It("does not claim a missing command", func() {
+			claimed, err := s.ClaimForDelivery(ctx, "no-such-command")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimed).To(BeFalse())
+		})
+
+		It("yields exactly one winner under concurrent claims", func() {
+			// Use a file-backed DB so concurrent goroutines share one SQLite
+			// database with WAL/busy_timeout, rather than the per-connection
+			// :memory: DB which has no table on a fresh pooled connection.
+			fs, err := gormstore.New(filepath.Join(GinkgoT().TempDir(), "claim.db"))
+			Expect(err).NotTo(HaveOccurred())
+			DeferCleanup(func() { _ = fs.Close() })
+
+			fnode := &store.ManagedNode{MachineID: "claim-node"}
+			Expect(fs.Register(ctx, fnode)).To(Succeed())
+			cmd := &store.NodeCommand{ManagedNodeID: fnode.ID, Command: store.CmdReset}
+			Expect(fs.CommandCreate(ctx, cmd)).To(Succeed())
+
+			const n = 16
+			type claimResult struct {
+				ok  bool
+				err error
+			}
+			results := make(chan claimResult, n)
+			var wg sync.WaitGroup
+			for i := 0; i < n; i++ {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					// Assertions must run on the spec goroutine; collect results
+					// and check them after the wait.
+					ok, claimErr := fs.ClaimForDelivery(ctx, cmd.ID)
+					results <- claimResult{ok: ok, err: claimErr}
+				}()
+			}
+			wg.Wait()
+			close(results)
+
+			wins := 0
+			for r := range results {
+				Expect(r.err).NotTo(HaveOccurred())
+				if r.ok {
+					wins++
+				}
+			}
+			Expect(wins).To(Equal(1))
 		})
 
 		It("updates status to completed with result and completedAt", func() {

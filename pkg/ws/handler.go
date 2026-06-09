@@ -70,8 +70,10 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	}
 	defer conn.Close()
 
-	// Register in hub and mark node online.
-	h.Hub.Register(node.ID, conn)
+	// Register in hub and mark node online. wc wraps conn with a per-connection
+	// write lock; all writes to this connection (here and from the hub) must go
+	// through it so they don't race.
+	wc := h.Hub.Register(node.ID, conn)
 	if err := h.Nodes.UpdatePhase(ctx, node.ID, store.PhaseOnline); err != nil {
 		log.Printf("ws: failed to update node phase: %v", err)
 	}
@@ -87,7 +89,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	}()
 
 	// Send pending commands on connect.
-	h.sendPendingCommands(node.ID, conn)
+	h.sendPendingCommands(node.ID, wc)
 
 	// Read loop.
 	for {
@@ -165,15 +167,27 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 	}
 }
 
-func (h *AgentHandler) sendPendingCommands(nodeID string, conn *websocket.Conn) {
+func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 	ctx := context.Background()
 	cmds, err := h.Commands.GetPending(ctx, nodeID)
 	if err != nil || len(cmds) == 0 {
 		return
 	}
 
-	var delivered []string
 	for _, cmd := range cmds {
+		// Atomically claim Pending→Delivered before sending so a concurrent REST
+		// poll or WS push can't also deliver the same command. If another path
+		// already claimed it, our claim returns false and we skip it — exactly-once
+		// delivery, consistent with the poll path in NodeHandler.GetCommands.
+		claimed, err := h.Commands.ClaimForDelivery(ctx, cmd.ID)
+		if err != nil {
+			log.Printf("ws: failed to claim pending command %s for node %s: %v", cmd.ID, nodeID, err)
+			continue
+		}
+		if !claimed {
+			continue
+		}
+
 		cmdMsg := commandData{
 			ID:      cmd.ID,
 			Command: cmd.Command,
@@ -191,16 +205,9 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *websocket.Conn) 
 			continue
 		}
 
-		if err := conn.WriteMessage(websocket.TextMessage, msgBytes); err != nil {
+		if err := conn.writeMessage(websocket.TextMessage, msgBytes); err != nil {
 			log.Printf("ws: failed to send pending command %s to node %s: %v", cmd.ID, nodeID, err)
 			break
-		}
-		delivered = append(delivered, cmd.ID)
-	}
-
-	if len(delivered) > 0 {
-		if err := h.Commands.MarkDelivered(ctx, delivered); err != nil {
-			log.Printf("ws: failed to mark commands as delivered: %v", err)
 		}
 	}
 }
@@ -218,11 +225,16 @@ func (h *UIHandler) HandleUIWS(c echo.Context) error {
 	}
 	defer conn.Close()
 
-	// Register with UIHub for broadcast support.
-	var uiID string
+	// Register with UIHub for broadcast support. wc wraps conn with a
+	// per-connection write lock; the ping ticker below writes through it so it
+	// never races a concurrent Broadcast on the same conn.
+	var wc *wsConn
 	if h.Hub != nil && h.Hub.UI != nil {
-		uiID = h.Hub.UI.Register(conn)
+		var uiID string
+		uiID, wc = h.Hub.UI.Register(conn)
 		defer h.Hub.UI.Unregister(uiID)
+	} else {
+		wc = newConn(conn)
 	}
 
 	// Keep connection alive with ping/pong.
@@ -251,7 +263,7 @@ func (h *UIHandler) HandleUIWS(c echo.Context) error {
 		case <-done:
 			return nil
 		case <-ticker.C:
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			if err := wc.writeControl(websocket.PingMessage, nil, time.Now().Add(10*time.Second)); err != nil {
 				return nil
 			}
 		}

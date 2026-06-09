@@ -243,19 +243,25 @@ func (h *NodeHandler) Decommission(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to queue unregister command"})
 	}
 
-	payload := struct {
-		ID      string            `json:"id"`
-		Command string            `json:"command"`
-		Args    map[string]string `json:"args,omitempty"`
-	}{
-		ID:      cmd.ID,
-		Command: cmd.Command,
+	// Claim the command Pending→Delivered before pushing so the agent's next
+	// REST poll won't re-deliver this same unregister command. If another path
+	// already claimed it (a poll racing this push) we skip the push: it will be
+	// delivered exactly once by whichever path won.
+	if claimed, err := h.commands.ClaimForDelivery(ctx, cmd.ID); err == nil && claimed {
+		payload := struct {
+			ID      string            `json:"id"`
+			Command string            `json:"command"`
+			Args    map[string]string `json:"args,omitempty"`
+		}{
+			ID:      cmd.ID,
+			Command: cmd.Command,
+		}
+		// Errors from SendCommand are best-effort — the command is already
+		// persisted (and now Delivered), and the WS layer will surface it on
+		// the next reconnect if the agent happens to drop between IsOnline and
+		// the write. The UI has the ExpiresAt to decide when to give up.
+		_ = h.hub.SendCommand(nodeID, payload)
 	}
-	// Errors from SendCommand are best-effort — the command is already
-	// persisted, and the WS layer will pick it up on the next reconnect if
-	// the agent happens to drop between IsOnline and the write. The UI has
-	// the ExpiresAt to decide when to give up.
-	_ = h.hub.SendCommand(nodeID, payload)
 
 	return c.JSON(http.StatusOK, decommissionResponse{CommandID: cmd.ID, NodeOnline: true})
 }
@@ -369,29 +375,33 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 			return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
 		}
 
-		cmds, err := h.commands.GetPending(c.Request().Context(), nodeID)
+		ctx := c.Request().Context()
+		cmds, err := h.commands.GetPending(ctx, nodeID)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get commands"})
 		}
-		if cmds == nil {
-			cmds = []*store.NodeCommand{}
-		}
 
-		// Mark them as delivered
-		ids := make([]string, len(cmds))
-		for i, cmd := range cmds {
-			ids[i] = cmd.ID
-		}
-		if len(ids) > 0 {
-			now := time.Now()
-			_ = h.commands.MarkDelivered(c.Request().Context(), ids)
-			for _, cmd := range cmds {
-				cmd.Phase = store.CommandDelivered
-				cmd.DeliveredAt = &now
+		// Atomically claim each pending command Pending→Delivered and return only
+		// the ones THIS poll actually claimed. Claiming per command (instead of a
+		// bulk MarkDelivered) makes delivery exactly-once: if a concurrent poll or
+		// a WS push already claimed a command, our claim returns false and we skip
+		// it, so the same command is never handed to two deliveries.
+		now := time.Now()
+		claimed := make([]*store.NodeCommand, 0, len(cmds))
+		for _, cmd := range cmds {
+			ok, err := h.commands.ClaimForDelivery(ctx, cmd.ID)
+			if err != nil {
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to get commands"})
 			}
+			if !ok {
+				continue
+			}
+			cmd.Phase = store.CommandDelivered
+			cmd.DeliveredAt = &now
+			claimed = append(claimed, cmd)
 		}
 
-		return c.JSON(http.StatusOK, cmds)
+		return c.JSON(http.StatusOK, claimed)
 	}
 
 	// Admin request: return all commands for the node
