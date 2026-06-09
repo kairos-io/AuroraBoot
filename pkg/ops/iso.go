@@ -198,23 +198,11 @@ func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.C
 		if _, err := os.Stat(filepath.Join(dst, "config.yaml")); err == nil {
 			f, err := os.ReadFile(filepath.Join(dst, "config.yaml"))
 			if err == nil && f != nil && len(f) > 0 {
-				currentCWD, err := os.Getwd()
-				if err != nil {
-					return fmt.Errorf("failed to get current working directory: %w", err)
-				}
-				// Go back to the original working directory after we are done
-				defer func() {
-					if err := os.Chdir(currentCWD); err != nil {
-						internal.Log.Logger.Error().Err(err).Msg("failed to change back to original working directory")
-					}
-				}()
-
-				// Change to the destination directory so we can run xorriso from there
-				err = os.Chdir(dst)
-				if err != nil {
-					return fmt.Errorf("failed to change to destination directory '%s': %w", dst, err)
-				}
-
+				// No os.Chdir here: every path below (isoFile, tmp, and the
+				// config.yaml source) is already absolute, and xorriso is given
+				// absolute -indev/-outdev/-map paths. Builds run as concurrent
+				// goroutines in `web` mode, where a process-global chdir would
+				// corrupt sibling builds — so we must not mutate the cwd.
 				internal.Log.Logger.Info().Msgf("Adding cloud config file to '%s'", isoFile)
 				err = copy.Copy(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
 				if err != nil {

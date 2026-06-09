@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"errors"
 	"net/http"
 
@@ -68,7 +69,7 @@ func (h *CommandHandler) Create(c echo.Context) error {
 	}
 
 	// Push command via WebSocket if node is online.
-	h.pushCommand(cmd)
+	h.pushCommand(c.Request().Context(), cmd)
 
 	return c.JSON(http.StatusCreated, cmd)
 }
@@ -113,7 +114,7 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 		}
-		h.pushCommand(cmd)
+		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
 	}
 
@@ -150,7 +151,7 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 		}
-		h.pushCommand(cmd)
+		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
 	}
 
@@ -158,10 +159,21 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 }
 
 // pushCommand attempts to deliver a command via WebSocket if the hub is available
-// and the target node is online. Errors are silently ignored since the command
-// is already persisted and can be picked up on next connect.
-func (h *CommandHandler) pushCommand(cmd *store.NodeCommand) {
-	if h.hub == nil {
+// and the target node is online.
+//
+// To avoid double-delivery (push over WS, then the agent re-polls the same
+// still-Pending command via GetCommands), the command is atomically claimed
+// Pending→Delivered first and only pushed if this call won the claim. When the
+// node is offline we do NOT claim, leaving the command Pending for the next poll
+// or reconnect. Errors are best-effort: the command is persisted either way.
+func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand) {
+	if h.hub == nil || !h.hub.IsOnline(cmd.ManagedNodeID) {
+		return
+	}
+	claimed, err := h.commands.ClaimForDelivery(ctx, cmd.ID)
+	if err != nil || !claimed {
+		// Either the claim failed or another path (a concurrent poll) already
+		// claimed it and will deliver it; don't push a duplicate.
 		return
 	}
 	payload := struct {

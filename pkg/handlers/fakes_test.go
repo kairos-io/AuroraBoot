@@ -209,7 +209,11 @@ func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*stor
 	var result []*store.NodeCommand
 	for _, cmd := range f.cmds {
 		if cmd.ManagedNodeID == nodeID && cmd.Phase == store.CommandPending {
-			result = append(result, cmd)
+			// Return a copy, not the stored pointer: real gorm GetPending
+			// materializes a fresh struct per query, so callers (e.g. concurrent
+			// polls in GetCommands) must each get their own object to mutate.
+			cp := *cmd
+			result = append(result, &cp)
 		}
 	}
 	return result, nil
@@ -226,6 +230,18 @@ func (f *fakeCommandStore) MarkDelivered(_ context.Context, ids []string) error 
 		}
 	}
 	return nil
+}
+
+func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cmd := range f.cmds {
+		if cmd.ID == id && cmd.Phase == store.CommandPending {
+			cmd.Phase = store.CommandDelivered
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func (f *fakeCommandStore) UpdateStatus(_ context.Context, id string, phase string, result string) error {

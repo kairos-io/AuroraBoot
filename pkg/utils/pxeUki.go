@@ -162,16 +162,25 @@ func offerDhcpPackage(pkt *dhcp4.Packet, serverIP net.IP, log logger.KairosLogge
 	return resp, nil
 }
 
-// serveHTTP starts an HTTP server that serves the specified ISO file for all requests.
-func serveHTTP(isoFile string, log logger.KairosLogger) error {
+// isoServeMux returns a private mux that serves isoFile for all requests. It is
+// deliberately a fresh http.NewServeMux per call rather than the global
+// http.DefaultServeMux: registering "/" on the global mux panics on a second
+// call ("multiple registrations for /") and leaks the handler across servers.
+func isoServeMux(isoFile string, log logger.KairosLogger) *http.ServeMux {
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Logger.Info().Str("method", r.Method).Str("url", r.URL.Path).Msg("Serving kairos.iso for all requests")
 		http.ServeFile(w, r, isoFile)
 	})
+	mux := http.NewServeMux()
+	mux.Handle("/", handler)
+	return mux
+}
 
-	http.Handle("/", handler)
+// serveHTTP starts an HTTP server that serves the specified ISO file for all requests.
+func serveHTTP(isoFile string, log logger.KairosLogger) error {
+	srv := &http.Server{Addr: ":80", Handler: isoServeMux(isoFile, log)}
 	log.Logger.Info().Str("subsystem", "HTTP").Msg("Listening for requests on :80")
-	err := http.ListenAndServe(":80", nil)
+	err := srv.ListenAndServe()
 	if err != nil {
 		log.Logger.Error().Err(err).Msg("Error starting HTTP server")
 	}

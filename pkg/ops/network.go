@@ -21,10 +21,14 @@ func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.
 	return func(ctx context.Context) error {
 		dir := dirFunc()
 		fs := http.FileServer(http.Dir(dir))
-		http.Handle("/", fs)
+		// Use a private mux instead of http.DefaultServeMux: registering "/" on
+		// the global mux panics ("multiple registrations for /") if this runs
+		// more than once in a process and leaks the handler across servers.
+		mux := http.NewServeMux()
+		mux.Handle("/", fs)
 		serverOne := &http.Server{
 			Addr:    listenAddr,
-			Handler: nil,
+			Handler: mux,
 		}
 		go func() {
 			<-ctx.Done()

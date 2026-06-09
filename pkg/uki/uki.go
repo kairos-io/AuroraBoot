@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -34,6 +35,16 @@ import (
 	"github.com/u-root/u-root/pkg/cpio"
 	"golang.org/x/exp/maps"
 )
+
+// buildCWDMu serializes the portion of Build that mutates the process working
+// directory. os.Chdir is process-global, and in `web` mode builds run as
+// concurrent goroutines, so two overlapping Build calls would clobber each
+// other's cwd. Eliminating the chdir here is not cleanly possible: the
+// go-ukify Builder writes its UKI to a cwd-relative OutUKIPath and the
+// downstream cpio packing walks the cwd ("."), so both depend on cwd ==
+// sourceDir. Until those are made cwd-independent, we serialize the
+// chdir->Build->restore critical section instead.
+var buildCWDMu sync.Mutex
 
 // Options configures a UKI build.
 type Options struct {
@@ -172,6 +183,14 @@ func Build(opts Options) (err error) {
 	if secureBootEnroll == "" {
 		secureBootEnroll = "if-safe"
 	}
+
+	// Serialize the cwd-mutating region: we Chdir into the rootfs during the
+	// build, and a concurrent Build in `web` mode would otherwise clobber our
+	// cwd (and vice versa). Lock before capturing origWD and unlock after the
+	// restore defer below (defers run LIFO, so this Unlock runs after the
+	// Chdir-restore), keeping the whole chdir window mutually exclusive.
+	buildCWDMu.Lock()
+	defer buildCWDMu.Unlock()
 
 	// Preserve cwd — we Chdir into the rootfs during the build and must restore
 	// it so callers using this as a library don't observe the side effect.

@@ -163,12 +163,16 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		artifactsDir = GinkgoT().TempDir()
 		// Lay down the artifact's on-disk ISO at <dir>/art-1/kairos.iso.
 		Expect(os.MkdirAll(filepath.Join(artifactsDir, "art-1"), 0755)).To(Succeed())
-		Expect(os.WriteFile(filepath.Join(artifactsDir, "art-1", "kairos.iso"), []byte("ISO-BYTES"), 0644)).To(Succeed())
+		isoPath := filepath.Join(artifactsDir, "art-1", "kairos.iso")
+		Expect(os.WriteFile(isoPath, []byte("ISO-BYTES"), 0644)).To(Succeed())
 
 		artifacts = &fakeArtifactStore{}
+		// ArtifactFiles stores each file's FULL path (as the builder writes it),
+		// not a bare basename. Modelling it as a basename previously masked a
+		// path-doubling bug in DeployRedfish, so use the real format here.
 		Expect(artifacts.Create(context.Background(), &store.ArtifactRecord{
 			ID:            "art-1",
-			ArtifactFiles: []string{"kairos.iso"},
+			ArtifactFiles: []string{isoPath},
 		})).To(Succeed())
 		deployments = &fakeDeploymentStore{}
 		bmcTargets = &fakeBMCTargetStore{}

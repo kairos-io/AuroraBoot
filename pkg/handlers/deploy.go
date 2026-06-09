@@ -291,7 +291,15 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 				"error": "local ISO serving is not configured on this server; provide imageUrl with a URL the BMC can reach",
 			})
 		}
-		absISO := filepath.Join(h.artifactsDir, artifactID, isoFile)
+		// ArtifactFiles stores each file's path relative to the server's working
+		// directory (e.g. "data/artifacts/<id>/foo.iso"). Resolve it to an
+		// absolute path: isoserve.Register requires an absolute path, and
+		// re-joining it with artifactsDir/artifactID would double the prefix into
+		// a bogus path that does not exist.
+		absISO, err := filepath.Abs(isoFile)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("resolving artifact ISO path: %v", err)})
+		}
 		servedURL, token, err := h.isoServe.Register(absISO, redfishDeployTimeout+5*time.Minute)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to serve artifact ISO: %v", err)})

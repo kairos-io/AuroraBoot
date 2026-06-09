@@ -102,6 +102,17 @@ func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*stor
 	return out, nil
 }
 func (f *fakeCommandStore) MarkDelivered(_ context.Context, _ []string) error { return nil }
+func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.cmds {
+		if c.ID == id && c.Phase == store.CommandPending {
+			c.Phase = store.CommandDelivered
+			return true, nil
+		}
+	}
+	return false, nil
+}
 func (f *fakeCommandStore) UpdateStatus(_ context.Context, _ string, _ string, _ string) error {
 	return nil
 }

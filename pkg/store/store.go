@@ -120,6 +120,12 @@ type CommandStore interface {
 	GetByID(ctx context.Context, id string) (*NodeCommand, error)
 	GetPending(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	MarkDelivered(ctx context.Context, ids []string) error
+	// ClaimForDelivery atomically transitions a single command from Pending to
+	// Delivered. It returns true only if this call performed the transition, so
+	// exactly one of several concurrent claimants (a WS push and an agent poll,
+	// or two concurrent polls) wins. A command that is missing or no longer
+	// Pending yields (false, nil).
+	ClaimForDelivery(ctx context.Context, id string) (bool, error)
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
 	// UpdateStatusForNode updates a command's status only if it belongs to
 	// nodeID. It returns ErrCommandNotFound when no command matches both the

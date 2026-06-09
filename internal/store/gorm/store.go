@@ -324,6 +324,26 @@ func (s *Store) MarkDelivered(ctx context.Context, ids []string) error {
 	}).Error
 }
 
+// ClaimForDelivery atomically transitions a single Pending command to Delivered.
+// The conditional WHERE (id = ? AND phase = Pending) plus a RowsAffected check
+// makes the claim a race-free compare-and-set: when a WS push and an agent poll
+// (or two concurrent polls) both target the same command, exactly one UPDATE
+// matches the still-Pending row and the loser sees RowsAffected == 0. Mirrors
+// the RowsAffected pattern in UpdateStatusForNode.
+func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
+	now := time.Now()
+	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("id = ? AND phase = ?", id, store.CommandPending).
+		Updates(map[string]any{
+			"phase":        store.CommandDelivered,
+			"delivered_at": &now,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
 	updates := map[string]any{
 		"phase":  phase,
