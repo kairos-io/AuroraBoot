@@ -44,11 +44,43 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// finalizeTimeout bounds one auto eject-on-phone-home attempt fired from a WS
+// heartbeat, mirroring the REST handlers' budget (pkg/handlers/finalize.go).
+const finalizeTimeout = 2 * time.Minute
+
 // AgentHandler handles WebSocket connections from agents.
 type AgentHandler struct {
 	Hub      *Hub
 	Nodes    store.NodeStore
 	Commands store.CommandStore
+
+	// Finalize, when set, is the auto eject-on-phone-home hook (the same
+	// MaybeFinalizeForNode wired into the REST Register/Heartbeat handlers). A WS
+	// heartbeat is just as much an "OS is up" signal as a REST one, so it must
+	// trigger the pending-eject finalize too — otherwise a node that reports
+	// liveness only over the agent channel never gets its media ejected.
+	Finalize func(ctx context.Context, nodeID string)
+	// BaseCtx is the server lifecycle context the finalize goroutine derives from
+	// (cancelled on shutdown). Nil means context.Background().
+	BaseCtx context.Context
+}
+
+// triggerFinalize fires the auto eject-on-phone-home hook off the WS read loop so
+// it never blocks message handling. Nil-safe; the hook's per-deployment CAS makes
+// repeated heartbeats harmless no-ops.
+func (h *AgentHandler) triggerFinalize(nodeID string) {
+	if h.Finalize == nil || nodeID == "" {
+		return
+	}
+	base := h.BaseCtx
+	if base == nil {
+		base = context.Background()
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(base, finalizeTimeout)
+		defer cancel()
+		h.Finalize(ctx, nodeID)
+	}()
 }
 
 // HandleAgentWS handles GET /api/v1/ws?token=<apiKey>.
@@ -134,6 +166,9 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {
 		log.Printf("ws: failed to update node phase: %v", err)
 	}
+	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
+	// attempt the auto eject-on-phone-home (nil-safe, off this goroutine).
+	h.triggerFinalize(nodeID)
 }
 
 // handleCommandStatus applies a command_status report from the agent. The

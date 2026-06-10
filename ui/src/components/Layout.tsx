@@ -5,6 +5,7 @@ import {
   Server,
   Package,
   Rocket,
+  ServerCog,
   KeyRound,
   Download,
   Settings,
@@ -53,6 +54,7 @@ const navSections: NavSection[] = [
   {
     label: "Deploy",
     items: [
+      { to: "/bmc", icon: ServerCog, label: "BMC Registration" },
       { to: "/deployments", icon: Rocket, label: "Deployments" },
       { to: "/import", icon: Download, label: "Import" },
     ],

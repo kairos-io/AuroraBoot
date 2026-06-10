@@ -37,6 +37,12 @@ type DeployHandler struct {
 	// May be nil, in which case a Redfish deploy must supply an explicit imageUrl.
 	isoServe *isoserve.Server
 
+	// settings exposes the runtime image-source settings (global default image URL,
+	// local-serve enable flag, advertised URL). May be nil (e.g. in tests or when
+	// no settings store is wired), in which case the deploy falls back to the
+	// request/per-BMC imageUrl or the configured local-serve.
+	settings store.SettingsStore
+
 	// hub is the WebSocket hub used to broadcast live deploy-step progress to UI
 	// clients. May be nil (e.g. in tests or when no hub is wired), in which case
 	// progress is only persisted to the Deployment row and surfaced via polling.
@@ -51,6 +57,16 @@ type DeployHandler struct {
 	// can abort it. Guarded by runsMu.
 	runsMu sync.Mutex
 	runs   map[string]context.CancelFunc
+
+	// refreshAll enforces a single in-flight "refresh all" BMC-status sweep: a
+	// concurrent RefreshAllBMCTargets call returns 409 rather than launching a
+	// second parallel sweep that would double the BMC-ping load.
+	refreshAll refreshGuard
+
+	// finalizerFn builds the redfishFinalizer used by the eject/finalize path. nil
+	// uses the real gofish-backed Deployer; tests inject a fake via
+	// WithFinalizerFactory.
+	finalizerFn finalizerFactory
 }
 
 // NewDeployHandler creates a new DeployHandler.
@@ -83,6 +99,15 @@ func (h *DeployHandler) WithBaseContext(ctx context.Context) *DeployHandler {
 	if ctx != nil {
 		h.baseCtx = ctx
 	}
+	return h
+}
+
+// WithSettings wires the runtime settings store so DeployRedfish can resolve the
+// global default image URL and the local-serve enable flag. Passing nil leaves
+// the handler using only the request/per-BMC imageUrl and the launch-configured
+// local-serve. Returns the handler for chaining.
+func (h *DeployHandler) WithSettings(s store.SettingsStore) *DeployHandler {
+	h.settings = s
 	return h
 }
 
@@ -122,6 +147,17 @@ func ReconcileOrphanedDeployments(ctx context.Context, deployments store.Deploym
 		return fmt.Errorf("listing deployments: %w", err)
 	}
 	for _, dep := range deps {
+		// A finalize goroutine that died mid-eject leaves EjectState=="ejecting"
+		// with no routine to advance it. Reset it to pending so the next phone-home
+		// or a manual finalize retries. NEVER auto-eject at startup, and never touch
+		// a terminal ejected/eject-failed row.
+		if dep.EjectState == store.EjectStateEjecting {
+			dep.EjectState = store.EjectStatePending
+			if err := deployments.Update(ctx, dep); err != nil {
+				return fmt.Errorf("resetting orphaned eject %s: %w", dep.ID, err)
+			}
+		}
+
 		if dep.Status != store.DeployActive {
 			continue
 		}
@@ -187,6 +223,15 @@ type deployRedfishRequest struct {
 	Password  string `json:"password"`
 	Vendor    string `json:"vendor"`
 	VerifySSL *bool  `json:"verifySSL"`
+	// SystemID optionally pins the target ComputerSystem by its Redfish Id. When
+	// set it takes precedence over a saved target's SystemID; required when the BMC
+	// exposes more than one system. Mirrors the CLI's --system-id.
+	SystemID string `json:"systemId"`
+	// EjectAfterInstall overrides the target's durable eject policy for this one
+	// deploy. nil leaves the target's BMCTarget.EjectAfterInstall in effect; a
+	// non-nil value forces it on/off. When effectively on, the deployment is marked
+	// pending-eject at completion and auto-ejected on the node's phone-home.
+	EjectAfterInstall *bool `json:"ejectAfterInstall"`
 }
 
 // imageURLUsesHTTPS reports whether an operator-supplied media URL is fetched
@@ -198,6 +243,48 @@ func imageURLUsesHTTPS(imageURL string) (bool, error) {
 		return false, err
 	}
 	return strings.EqualFold(parsed.Scheme, "https"), nil
+}
+
+// resolveOperatorImageURL applies the operator-supplied image-URL precedence
+// (per-deploy > per-BMC > global default), all model (a). It returns "" when no
+// tier supplies a URL, signalling the caller to fall back to local serving
+// (model b). It does not validate; the caller SSRF-validates the chosen URL.
+func resolveOperatorImageURL(reqURL, bmcURL, defaultURL string) string {
+	switch {
+	case reqURL != "":
+		return reqURL
+	case bmcURL != "":
+		return bmcURL
+	default:
+		return defaultURL
+	}
+}
+
+// defaultImageURL returns the global default image URL setting, or "" when no
+// settings store is wired or the key is unset. A read error is surfaced so the
+// caller can fail closed rather than silently treating it as unset.
+func (h *DeployHandler) defaultImageURL(ctx context.Context) (string, error) {
+	if h.settings == nil {
+		return "", nil
+	}
+	v, _, err := h.settings.Get(ctx, SettingDefaultImageURL)
+	return v, err
+}
+
+// localServeEnabled reports whether the runtime local-serve enable flag is set.
+// It is the gate (alongside a launch-configured listener) for serving the
+// artifact ISO locally. Defaults to false: missing setting, no settings store, or
+// a read error all yield false so deploys never silently serve without an
+// explicit opt-in.
+func (h *DeployHandler) localServeEnabled(ctx context.Context) bool {
+	if h.settings == nil {
+		return false
+	}
+	v, _, err := h.settings.Get(ctx, SettingLocalServeEnabled)
+	if err != nil {
+		return false
+	}
+	return v == "true"
 }
 
 // DeployRedfish handles POST /api/v1/artifacts/:id/deploy/redfish.
@@ -216,12 +303,15 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	}
 
 	var (
-		endpoint  string
-		username  string
-		password  string
-		vendor    string
-		verifySSL bool
-		bmcID     string
+		endpoint        string
+		username        string
+		password        string
+		vendor          string
+		verifySSL       bool
+		systemID        string
+		bmcImageURL     string
+		bmcID           string
+		bmcEjectDefault bool
 	)
 
 	if req.BMCTargetID != "" {
@@ -234,7 +324,10 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		password = target.Password
 		vendor = target.Vendor
 		verifySSL = target.VerifySSL
+		systemID = target.SystemID
+		bmcImageURL = target.ImageURL
 		bmcID = target.ID
+		bmcEjectDefault = target.EjectAfterInstall
 	} else {
 		if req.Endpoint == "" || req.Username == "" || req.Password == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint, username, and password are required when bmcTargetId is not provided"})
@@ -253,6 +346,22 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		}
 	}
 
+	// An explicit request SystemID overrides the saved target's (and is the only
+	// way to select a system for an inline-credentials deploy). When empty, fall
+	// back to whatever the saved target carries.
+	if req.SystemID != "" {
+		systemID = req.SystemID
+	}
+
+	// Resolve the effective eject policy: a per-deploy override wins, else the
+	// target's durable default, else off. Eject only makes sense for a saved BMC
+	// target (the auto path correlates node -> BMC -> deployment); an inline-creds
+	// deploy has no durable BMC to link, so it can only opt in per-deploy.
+	ejectAfter := bmcEjectDefault
+	if req.EjectAfterInstall != nil {
+		ejectAfter = *req.EjectAfterInstall
+	}
+
 	// Locate the artifact's on-disk ISO. InsertMedia is URL-pull (no byte
 	// upload), so the BMC fetches the image from a URL.
 	isoFile := ""
@@ -268,13 +377,22 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 
 	// Resolve the image URL the BMC will fetch, and whether the BMC must fetch it
 	// over HTTPS. InsertMedia advertises a TransferProtocolType that must match the
-	// served URL's scheme, so derive useHTTPS alongside the URL:
-	//   1. an explicit imageUrl: SSRF-validate and use it; HTTPS iff its scheme is
-	//      "https".
-	//   2. otherwise serve the artifact's local ISO over a tokenized,
-	//      BMC-reachable URL via the ISO-serve helper; HTTPS iff the serve helper
-	//      is actually serving TLS.
-	imageURL := req.ImageURL
+	// served URL's scheme, so derive useHTTPS alongside the URL. Image-source
+	// precedence (highest to lowest), each operator-supplied URL SSRF-validated as
+	// defense in depth even when validated on write:
+	//   1. req.ImageURL  — per-deploy override (model a).
+	//   2. BMC ImageURL  — per-BMC override (model a).
+	//   3. global defaultImageURL setting (model a).
+	//   4. local serve: AuroraBoot serves the artifact's on-disk ISO over a
+	//      tokenized, BMC-reachable URL (model b), only when a listener was
+	//      configured at launch AND the runtime enable flag is set.
+	//   5. otherwise 503.
+	defaultURL, err := h.defaultImageURL(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image-source settings"})
+	}
+	imageURL := resolveOperatorImageURL(req.ImageURL, bmcImageURL, defaultURL)
+
 	serveToken := ""
 	useHTTPS := false
 	if imageURL != "" {
@@ -286,9 +404,11 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
 		}
 	} else {
-		if h.isoServe == nil {
+		// No operator-supplied URL at any tier: fall back to local serving, which
+		// requires both a launch-configured listener and the runtime enable flag.
+		if h.isoServe == nil || !h.localServeEnabled(ctx) {
 			return c.JSON(http.StatusServiceUnavailable, map[string]string{
-				"error": "local ISO serving is not configured on this server; provide imageUrl with a URL the BMC can reach",
+				"error": "local ISO serving is not enabled on this server; provide imageUrl with a URL the BMC can reach, set a default image URL, or enable AuroraBoot-served artifacts",
 			})
 		}
 		// ArtifactFiles stores each file's path relative to the server's working
@@ -335,7 +455,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 	runCtx, cancel := context.WithTimeout(h.baseCtx, redfishDeployTimeout)
 	h.registerRun(dep.ID, cancel)
 
-	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, verifySSL, useHTTPS)
+	go h.runRedfishDeploy(runCtx, cancel, dep.ID, imageURL, serveToken, endpoint, username, password, vendor, systemID, verifySSL, useHTTPS, ejectAfter)
 
 	return c.JSON(http.StatusAccepted, dep)
 }
@@ -346,7 +466,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 // deploy timeout; cancel is its cancel func, deregistered and called on return so
 // the run-registry never retains a finished deploy. useHTTPS sets the InsertMedia
 // TransferProtocolType so it matches the scheme the BMC actually fetches over.
-func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor string, verifySSL, useHTTPS bool) {
+func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.CancelFunc, deploymentID, imageURL, serveToken, endpoint, username, password, vendor, systemID string, verifySSL, useHTTPS, ejectAfter bool) {
 	logPrefix := fmt.Sprintf("deployment %s", deploymentID)
 
 	defer cancel()
@@ -365,6 +485,7 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		Password:  password,
 		Vendor:    redfish.VendorType(vendor),
 		VerifySSL: verifySSL,
+		SystemID:  systemID,
 		Timeout:   redfishDeployTimeout,
 	})
 
@@ -394,6 +515,30 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		msg = fmt.Sprintf("Deployment completed (task state: %s)", result.TaskState)
 	}
 	h.completeDeployment(deploymentID, msg)
+
+	// Arm the eject lifecycle when the policy is on: mark the deployment
+	// pending-eject so the freshly-installed node's phone-home (or a manual
+	// finalize) ejects the media. We do NOT eject inline — that would be
+	// mid-reboot, the wrong moment (the install loop this whole mechanism fixes).
+	if ejectAfter {
+		h.markEjectPending(deploymentID)
+	}
+}
+
+// markEjectPending arms the eject lifecycle on a completed deployment: it sets the
+// policy to on-phone-home and EjectState to pending so the auto path (node
+// phone-home) or a manual finalize picks it up. Best-effort: a store failure leaves
+// the deployment un-armed (no eject), which is safe — the operator can finalize
+// manually.
+func (h *DeployHandler) markEjectPending(id string) {
+	ctx := context.Background()
+	dep, err := h.deployments.GetByID(ctx, id)
+	if err != nil {
+		return
+	}
+	dep.EjectPolicy = store.EjectPolicyOnPhoneHome
+	dep.EjectState = store.EjectStatePending
+	_ = h.deployments.Update(ctx, dep)
 }
 
 // broadcastProgress fans a live deploy-progress event to all connected UI
@@ -500,9 +645,11 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 		Password:  target.Password,
 		Vendor:    redfish.VendorType(target.Vendor),
 		VerifySSL: target.VerifySSL,
+		SystemID:  target.SystemID,
 		Timeout:   30 * time.Second,
 	})
 	if err := deployer.Connect(ctx); err != nil {
+		h.persistInspectFailure(ctx, target, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to connect to redfish endpoint: %v", err)})
 	}
 	// Always tear the session down (DELETE) on both success and error.
@@ -511,8 +658,12 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 	inspector := hardware.NewInspector(deployer)
 	info, err := inspector.InspectSystem(ctx)
 	if err != nil {
+		h.persistInspectFailure(ctx, target, err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to inspect hardware: %v", err)})
 	}
+
+	features := sortedFeatures(info.Features)
+	h.persistInspectSuccess(ctx, target, info, features)
 
 	return c.JSON(http.StatusOK, inspectResponse{
 		MemoryGiB:         info.MemoryGiB,
@@ -520,8 +671,40 @@ func (h *DeployHandler) InspectHardware(c echo.Context) error {
 		Model:             info.Model,
 		Manufacturer:      info.Manufacturer,
 		SerialNumber:      info.SerialNumber,
-		SupportedFeatures: sortedFeatures(info.Features),
+		SupportedFeatures: features,
 	})
+}
+
+// persistInspectSuccess writes a successful inspect result into the BMC target's
+// server-owned status cache so the BMC page can render details without contacting
+// the BMC again. It sets LastStatus="reachable", the hardware facts, LastInspectAt,
+// and clears LastError. A store failure is best-effort and swallowed: the inspect
+// response itself is authoritative and must not fail because the cache write did.
+func (h *DeployHandler) persistInspectSuccess(ctx context.Context, target *store.BMCTarget, info *hardware.SystemInfo, features []string) {
+	now := time.Now()
+	target.LastStatus = bmcStatusReachable
+	target.LastError = ""
+	target.LastInspectAt = &now
+	target.LastModel = info.Model
+	target.LastManufacturer = info.Manufacturer
+	target.LastSerial = info.SerialNumber
+	target.LastMemoryGiB = info.MemoryGiB
+	target.LastCPUCount = info.ProcessorCount
+	target.LastFeatures = features
+	_ = h.bmcTargets.Update(ctx, target)
+}
+
+// persistInspectFailure records an unreachable/inspect-error outcome into the
+// status cache: LastStatus="unreachable", a scrubbed LastError, LastInspectAt=now.
+// The error text is scrubbed of credentials at its source (the redfish package),
+// but is re-scrubbed defensively here in case a future error path is not. A store
+// failure is best-effort and swallowed.
+func (h *DeployHandler) persistInspectFailure(ctx context.Context, target *store.BMCTarget, cause error) {
+	now := time.Now()
+	target.LastStatus = bmcStatusUnreachable
+	target.LastError = scrubBMCError(cause)
+	target.LastInspectAt = &now
+	_ = h.bmcTargets.Update(ctx, target)
 }
 
 // sortedFeatures returns the detected feature names as a stable, sorted slice for
@@ -548,6 +731,23 @@ func (h *DeployHandler) CreateBMCTarget(c echo.Context) error {
 	if target.Endpoint == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint is required"})
 	}
+	// SSRF-validate the BMC endpoint on write. The session-free reachability ping
+	// and refresh-all actively GET this endpoint, so an unvalidated value is a
+	// confused-deputy/internal-fetch primitive. Mirror the CLI, which guards the
+	// endpoint with the same validator (internal/cmd/redfish.go).
+	if err := isoserve.ValidateMediaURL(target.Endpoint); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid endpoint: %v", err)})
+	}
+	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
+	if target.ImageURL != "" {
+		if err := isoserve.ValidateMediaURL(target.ImageURL); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
+		}
+	}
+	// Status-cache fields are server-owned (populated only by inspect/ping/refresh).
+	// Drop anything a client may have smuggled in via the bound body so it cannot
+	// fabricate a "reachable" status without an actual check.
+	clearBMCStatusCache(&target)
 
 	if err := h.bmcTargets.Create(c.Request().Context(), &target); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create BMC target"})
@@ -578,6 +778,19 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	if err := c.Bind(&updated); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	// SSRF-validate the BMC endpoint on write (same posture as Create and the CLI).
+	// The ping/refresh-all paths actively fetch this endpoint, so it must be guarded.
+	if updated.Endpoint != "" {
+		if err := isoserve.ValidateMediaURL(updated.Endpoint); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid endpoint: %v", err)})
+		}
+	}
+	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
+	if updated.ImageURL != "" {
+		if err := isoserve.ValidateMediaURL(updated.ImageURL); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
+		}
+	}
 
 	existing.Name = updated.Name
 	existing.Endpoint = updated.Endpoint
@@ -587,7 +800,11 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 		existing.Password = updated.Password
 	}
 	existing.VerifySSL = updated.VerifySSL
+	existing.SystemID = updated.SystemID
+	existing.ImageURL = updated.ImageURL
 	existing.NodeID = updated.NodeID
+	existing.EjectAfterInstall = updated.EjectAfterInstall
+	existing.EjectPowerCycle = updated.EjectPowerCycle
 
 	if err := h.bmcTargets.Update(ctx, existing); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update BMC target"})

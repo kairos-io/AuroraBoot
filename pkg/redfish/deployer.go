@@ -25,6 +25,17 @@ import (
 // context aborts promptly.
 const taskPollInterval = 3 * time.Second
 
+// powerOffTimeout bounds how long Finalize's power-cycle path waits for the system
+// to reach the Off PowerState after the shutdown request. It is deliberately short:
+// a graceful shutdown that has not landed within this window is escalated to a
+// ForceOff, and if even the off-poll never reports Off we proceed with the eject
+// anyway (the eject is what breaks the install loop). Honour ctx alongside it.
+const powerOffTimeout = 60 * time.Second
+
+// powerPollInterval is the delay between PowerState polls during the power-cycle
+// finalize. Kept modest so a cancelled context aborts promptly.
+const powerPollInterval = 3 * time.Second
+
 // Deployer drives a Redfish virtual-media deployment against one BMC. Create it
 // with NewDeployer, call Connect, defer Close (which logs the session out), then
 // Inspect and/or Deploy. It is not safe for concurrent use.
@@ -107,7 +118,11 @@ func NewDeployer(cfg Config) *Deployer {
 		timeout:   timeout,
 		systemID:  cfg.SystemID,
 		authMode:  authMode,
-		quirks:    quirksFor(vendor),
+		// Resolve through the process-wide registry: name-first (operator/built-in),
+		// then the VendorType mapping, then generic. This honours operator-supplied
+		// profiles installed via SetDefaultRegistry while preserving the invariant
+		// that an unknown vendor/name resolves to the spec-default generic profile.
+		quirks: resolveQuirks(string(vendor)),
 	}
 }
 
@@ -197,45 +212,62 @@ func (d *Deployer) resolveBasicAuth(ctx context.Context) (bool, error) {
 // the defensive HTTP client (cross-origin redirect reject + body cap + TLS-verify
 // honouring Insecure). The endpoint URL it fetches carries no credentials.
 func (d *Deployer) serviceRootHasSessionService(ctx context.Context) (bool, error) {
-	rootURL := strings.TrimRight(d.endpoint, "/") + "/redfish/v1/"
+	root, err := fetchServiceRoot(ctx, d.endpoint, !d.verifySSL)
+	if err != nil {
+		return false, err
+	}
+	return root.SessionService.ODataID != "" || root.Links.Sessions.ODataID != "", nil
+}
 
-	client := newDefensiveHTTPClient(!d.verifySSL)
+// serviceRoot is the minimal subset of the Redfish ServiceRoot we parse for the
+// session-free reachability checks (auth-mode detection and Ping).
+type serviceRoot struct {
+	SessionService struct {
+		ODataID string `json:"@odata.id"`
+	} `json:"SessionService"`
+	Links struct {
+		Sessions struct {
+			ODataID string `json:"@odata.id"`
+		} `json:"Sessions"`
+	} `json:"Links"`
+}
+
+// fetchServiceRoot performs an unauthenticated GET of {endpoint}/redfish/v1/ using
+// the defensive HTTP client (cross-origin redirect reject + body cap + TLS-verify
+// honouring insecure) and parses the minimal ServiceRoot shape. It sends NO
+// credentials and creates NO session, so it never adds to a BMC's session count.
+// A non-2xx status (including 401 on hardened BMCs) or an unparseable body is an
+// error. The endpoint URL it fetches carries no credentials.
+func fetchServiceRoot(ctx context.Context, endpoint string, insecure bool) (*serviceRoot, error) {
+	rootURL := strings.TrimRight(endpoint, "/") + "/redfish/v1/"
+
+	client := newDefensiveHTTPClient(insecure)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, rootURL, nil)
 	if err != nil {
-		return false, fmt.Errorf("building ServiceRoot request: %w", err)
+		return nil, fmt.Errorf("building ServiceRoot request: %w", err)
 	}
 	req.Header.Set("Accept", "application/json")
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return false, fmt.Errorf("fetching ServiceRoot: %w", err)
+		return nil, fmt.Errorf("fetching ServiceRoot: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	if resp.StatusCode != http.StatusOK {
-		return false, fmt.Errorf("fetching ServiceRoot: unexpected status %d", resp.StatusCode)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("fetching ServiceRoot: unexpected status %d", resp.StatusCode)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return false, fmt.Errorf("reading ServiceRoot: %w", err)
+		return nil, fmt.Errorf("reading ServiceRoot: %w", err)
 	}
 
-	var root struct {
-		SessionService struct {
-			ODataID string `json:"@odata.id"`
-		} `json:"SessionService"`
-		Links struct {
-			Sessions struct {
-				ODataID string `json:"@odata.id"`
-			} `json:"Sessions"`
-		} `json:"Links"`
-	}
+	var root serviceRoot
 	if err := json.Unmarshal(body, &root); err != nil {
-		return false, fmt.Errorf("parsing ServiceRoot: %w", err)
+		return nil, fmt.Errorf("parsing ServiceRoot: %w", err)
 	}
-
-	return root.SessionService.ODataID != "" || root.Links.Sessions.ODataID != "", nil
+	return &root, nil
 }
 
 // Close drops the connection. For session auth it logs the Redfish session out
@@ -320,7 +352,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	}
 	result.SystemID = system.ID
 
-	media, err := d.findCDMedia(system)
+	media, mediaView, err := d.findCDMedia(system)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +363,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 		return nil, err
 	}
 	report("inserting media", 30)
-	insertTask, err := d.insertMedia(media, req)
+	insertTask, err := d.insertMedia(media, mediaView, req)
 	if err != nil {
 		return nil, fmt.Errorf("inserting virtual media: %w", d.scrub(enrichRedfishError(err)))
 	}
@@ -374,17 +406,228 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 		}
 	}
 
-	// 5. Optionally eject. Most flows leave the media mounted across the install
-	//    reboot, so this is opt-in.
-	if req.EjectAfter {
-		if _, err := media.EjectMedia(); err != nil {
-			return result, fmt.Errorf("ejecting virtual media: %w", d.scrub(err))
-		}
-	}
+	// NOTE: media is intentionally NOT ejected here. Ejecting at deploy-Task
+	// completion is mid-install — the BMC is still booting the installer ISO. On
+	// BMCs that honour the one-time boot override the media can stay mounted across
+	// the install reboot harmlessly; on BMCs that ignore it, ejecting now would not
+	// help and ejecting at the wrong moment can disrupt the running install. Eject
+	// is decoupled into Finalize, driven by an "OS is up" signal (phone-home or a
+	// manual operator action). req.EjectAfter is deprecated and ignored.
 
 	report("completed", 100)
 	result.FinishedAt = time.Now()
 	return result, nil
+}
+
+// Finalize ejects the virtual media and best-effort steers the next boot to disk.
+// It is the signal-driven counterpart to Deploy: call it once the freshly-installed
+// OS is up (phone-home) or on an explicit operator action, NOT at deploy-Task
+// completion. The eject is load-bearing — it is what breaks the post-install
+// install loop on BMCs that ignore the one-time boot override, because an empty CD
+// falls through to disk. The boot-to-disk PATCH is opportunistic: some BMCs/emulators
+// (sushy-tools) error on a PATCH that clears the boot source, and the lab confirmed
+// eject alone is sufficient, so a boot-PATCH error is logged and swallowed rather
+// than failing the finalize.
+//
+// Flow (default, in-place): selectSystem (honours SystemID) -> findCDMedia ->
+// EjectMedia -> opportunistic boot-to-disk. The caller owns Connect/Close (session
+// teardown), mirroring Deploy.
+//
+// Flow (req.PowerCycle): selectSystem -> findCDMedia -> power OFF (GracefulShutdown,
+// escalating to ForceOff, polled to the Off PowerState within powerOffTimeout) ->
+// EjectMedia (now applied while the machine is off) -> opportunistic boot-to-disk ->
+// power ON. This is the robust mode for BMCs/emulators that do not apply a live eject.
+// The power-off poll degrades gracefully: a poll timeout is logged and the eject is
+// attempted anyway rather than aborting the whole finalize.
+func (d *Deployer) Finalize(ctx context.Context, req FinalizeRequest) error {
+	if d.client == nil {
+		return errors.New("not connected: call Connect first")
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	report := newProgressReporter(req.Progress)
+
+	report("discovering", 20)
+	system, err := d.selectSystem()
+	if err != nil {
+		return err
+	}
+
+	media, _, err := d.findCDMedia(system)
+	if err != nil {
+		return err
+	}
+
+	if req.PowerCycle {
+		return d.finalizePowerCycle(ctx, system, media, report)
+	}
+
+	// Eject is load-bearing: this is the step that breaks the install loop.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("ejecting media", 60)
+	if _, err := media.EjectMedia(); err != nil {
+		return fmt.Errorf("ejecting virtual media: %w", d.scrub(enrichRedfishError(err)))
+	}
+
+	// Best-effort boot-to-disk. Never fail Finalize on a boot-PATCH error: eject
+	// alone already breaks the loop, and some BMCs reject clearing the boot source.
+	report("boot to disk", 80)
+	d.bootToDisk(system)
+
+	report("completed", 100)
+	return nil
+}
+
+// finalizePowerCycle runs the opt-in power-cycle finalize: power off -> eject ->
+// boot-to-disk -> power on. It is the robust path for BMCs/emulators that report a
+// live eject but keep the running machine booting the ISO; performing the eject while
+// the system is powered off forces the BMC to apply it.
+//
+// The power-off is graceful-first (GracefulShutdown, falling back to ForceOff if the
+// system has not reached Off within powerOffTimeout) and the PowerState is polled to
+// Off. A power-off poll timeout is NON-fatal: it is logged and the eject proceeds, so
+// a stubborn power-state report never blocks the load-bearing eject. Context
+// cancellation is honoured throughout. The final power-on is a best-effort On Reset.
+func (d *Deployer) finalizePowerCycle(ctx context.Context, system *schemas.ComputerSystem, media *schemas.VirtualMedia, report progressFunc) error {
+	// 1. Power off (graceful first, escalate to ForceOff, poll to Off). A timeout
+	//    here is logged and swallowed: we still eject below.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("powering off", 40)
+	if err := d.powerOff(ctx, system); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return err
+		}
+		// Degrade gracefully: a power-off poll timeout (or a transient reset error)
+		// must not abort the finalize — proceed to the load-bearing eject regardless.
+		log.Printf("redfish: power-off before eject did not confirm Off (proceeding to eject anyway): %v", d.scrub(err))
+	}
+
+	// 2. Eject is load-bearing and now applied while the system is off.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("ejecting media", 60)
+	if _, err := media.EjectMedia(); err != nil {
+		return fmt.Errorf("ejecting virtual media: %w", d.scrub(enrichRedfishError(err)))
+	}
+
+	// 3. Best-effort boot-to-disk, same as the in-place path.
+	report("boot to disk", 80)
+	d.bootToDisk(system)
+
+	// 4. Power back on. Best-effort: the eject already broke the loop; a power-on
+	//    failure is logged, not fatal, so operators can still power the node on.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	report("powering on", 90)
+	if _, err := system.Reset(schemas.OnResetType); err != nil {
+		log.Printf("redfish: powering system back on after eject failed (media is ejected; power it on manually): %v", d.scrub(enrichRedfishError(err)))
+	}
+
+	report("completed", 100)
+	return nil
+}
+
+// powerOff drives the system to the Off PowerState. It issues a GracefulShutdown
+// (preferred, validated against the system's allowable values) and polls the
+// PowerState until Off or powerOffTimeout. If the graceful shutdown has not landed
+// within the window it escalates to a ForceOff and polls once more. A system already
+// Off returns immediately. The supplied ctx bounds the whole operation and is honoured
+// during polling; a poll that exhausts powerOffTimeout (but not ctx) returns a
+// non-cancellation error the caller may log-and-proceed on.
+func (d *Deployer) powerOff(ctx context.Context, system *schemas.ComputerSystem) error {
+	if system.PowerState == schemas.OffPowerState {
+		return nil
+	}
+
+	graceful := firstSupportedPowerOff(system, schemas.GracefulShutdownResetType, schemas.ForceOffResetType)
+	if _, err := system.Reset(graceful); err != nil {
+		return fmt.Errorf("requesting power off (%s): %w", graceful, enrichRedfishError(err))
+	}
+
+	if err := d.pollPowerOff(ctx, system); err == nil {
+		return nil
+	} else if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
+	}
+
+	// Graceful shutdown did not reach Off in time: escalate to a hard ForceOff and
+	// poll once more. If ForceOff is not advertised we still try it (the BMC will
+	// reject it with a useful error, surfaced by the poll's final state).
+	if force := firstSupportedPowerOff(system, schemas.ForceOffResetType); force != graceful {
+		if _, err := system.Reset(force); err != nil {
+			return fmt.Errorf("requesting forced power off (%s): %w", force, enrichRedfishError(err))
+		}
+	}
+	return d.pollPowerOff(ctx, system)
+}
+
+// pollPowerOff polls the system's PowerState until it reports Off, ctx is cancelled,
+// or powerOffTimeout elapses. It re-fetches the ComputerSystem each tick (the gofish
+// struct is a snapshot; PowerState does not update in place). A timeout returns a
+// non-cancellation error so the caller can degrade gracefully and still eject.
+func (d *Deployer) pollPowerOff(ctx context.Context, system *schemas.ComputerSystem) error {
+	deadline := time.Now().Add(powerOffTimeout)
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		fresh, err := schemas.GetComputerSystem(d.client, system.ODataID)
+		if err == nil && fresh.PowerState == schemas.OffPowerState {
+			return nil
+		}
+
+		if time.Now().After(deadline) {
+			return fmt.Errorf("system did not reach Off PowerState within %s", powerOffTimeout)
+		}
+
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(powerPollInterval):
+		}
+	}
+}
+
+// firstSupportedPowerOff returns the first preference advertised in the system's
+// allowable ResetTypes; when the system advertises nothing it returns the first
+// preference unchanged (the BMC then rejects an unsupported type with a useful error).
+func firstSupportedPowerOff(system *schemas.ComputerSystem, preferences ...schemas.ResetType) schemas.ResetType {
+	allowed, _ := system.GetSupportedResetTypes()
+	return firstSupported(allowed, preferences...)
+}
+
+// bootToDisk best-effort steers the next boot to disk. It first tries to clear the
+// one-time boot override (BootSourceOverrideEnabled: Disabled), which on a
+// spec-compliant BMC drops back to the persistent BIOS/UEFI boot order (now the
+// freshly-installed disk). If that PATCH errors (sushy-tools has been observed to
+// reject clearing the source), it falls back to an explicit one-time Hdd override.
+// Both errors are logged credential-free and swallowed — see Finalize.
+func (d *Deployer) bootToDisk(system *schemas.ComputerSystem) {
+	disabled := &schemas.Boot{
+		BootSourceOverrideEnabled: schemas.DisabledBootSourceOverrideEnabled,
+	}
+	if err := system.SetBoot(disabled); err == nil {
+		return
+	} else {
+		log.Printf("redfish: clearing boot override failed (eject already broke the loop); trying one-time Hdd: %v", d.scrub(enrichRedfishError(err)))
+	}
+
+	hdd := &schemas.Boot{
+		BootSourceOverrideEnabled: schemas.OnceBootSourceOverrideEnabled,
+		BootSourceOverrideTarget:  schemas.HddBootSource,
+	}
+	if err := system.SetBoot(hdd); err != nil {
+		log.Printf("redfish: one-time Hdd boot override also failed (eject already broke the loop, proceeding): %v", d.scrub(enrichRedfishError(err)))
+	}
 }
 
 // selectSystem discovers the Systems collection and resolves the single
@@ -444,43 +687,123 @@ func systemIDs(systems []*schemas.ComputerSystem) []string {
 // System first, then each Manager; a vendor quirk profile (e.g. HPE iLO) may
 // reorder this. A member with no advertised MediaTypes is accepted as a last
 // resort (some BMCs omit the field).
-func (d *Deployer) findCDMedia(system *schemas.ComputerSystem) (*schemas.VirtualMedia, error) {
-	collections := d.defaultMediaCollections(system)
+//
+// The mediaSearch quirk hook works over a read-only []MediaView (the §2 boundary):
+// the core flattens the spec-default collections into the candidate list, lets the
+// hook return an ordering of indexes, then maps those indexes back to its own
+// *VirtualMedia slice (out-of-range/duplicate indexes dropped). The hook never
+// sees a gofish object or the *Deployer.
+func (d *Deployer) findCDMedia(system *schemas.ComputerSystem) (*schemas.VirtualMedia, MediaView, error) {
+	candidates, views := d.mediaCandidates(system)
+
+	order := defaultMediaOrder(len(candidates))
 	if d.quirks.mediaSearch != nil {
-		if reordered := d.quirks.mediaSearch(d, system, collections); reordered != nil {
-			collections = reordered
+		if reordered := sanitizeMediaOrder(d.quirks.mediaSearch(views), len(candidates)); len(reordered) > 0 {
+			order = reordered
 		}
 	}
 
-	var fallback *schemas.VirtualMedia
-	for _, media := range collections {
-		for _, vm := range media {
-			if mediaSupportsCD(vm) {
-				return vm, nil
-			}
-			if fallback == nil && len(vm.MediaTypes) == 0 {
-				fallback = vm
-			}
+	fallback := -1
+	for _, i := range order {
+		if mediaSupportsCD(candidates[i]) {
+			return candidates[i], views[i], nil
+		}
+		if fallback < 0 && len(candidates[i].MediaTypes) == 0 {
+			fallback = i
 		}
 	}
-	if fallback != nil {
-		return fallback, nil
+	if fallback >= 0 {
+		return candidates[fallback], views[fallback], nil
 	}
-	return nil, errors.New("no CD/DVD-capable VirtualMedia resource found on the system or its managers")
+	return nil, MediaView{}, errors.New("no CD/DVD-capable VirtualMedia resource found on the system or its managers")
 }
 
-// defaultMediaCollections returns the spec-default VirtualMedia search set:
-// System-hosted media first, then each Manager's media. quirk profiles receive
-// this as their starting point.
-func (d *Deployer) defaultMediaCollections(system *schemas.ComputerSystem) mediaCollections {
-	collections := d.systemMediaCollections(system)
-	collections = append(collections, d.managerMediaCollections()...)
-	return collections
+// mediaCandidates flattens the spec-default VirtualMedia collections (System-hosted
+// first, then each Manager's) into a parallel pair: the gofish members the core
+// will act on, and their read-only MediaView projections handed to a quirk hook.
+// The two slices share indexes, which is how a hook's returned ordering maps back
+// to the real members. Manager-hosted members are labelled "manager:<id>" and
+// System-hosted ones "system" so a profile can select by location.
+func (d *Deployer) mediaCandidates(system *schemas.ComputerSystem) ([]*schemas.VirtualMedia, []MediaView) {
+	var (
+		members []*schemas.VirtualMedia
+		views   []MediaView
+	)
+	add := func(vms []*schemas.VirtualMedia, location string) {
+		for _, vm := range vms {
+			views = append(views, MediaView{
+				Index:        len(members),
+				ID:           vm.ID,
+				Location:     location,
+				MediaTypes:   mediaTypeStrings(vm.MediaTypes),
+				ConnectedVia: string(vm.ConnectedVia),
+				Inserted:     vm.Inserted != nil && *vm.Inserted,
+			})
+			members = append(members, vm)
+		}
+	}
+
+	for _, c := range d.systemMediaCollections(system) {
+		add(c, "system")
+	}
+	if managers, err := d.client.GetService().Managers(); err == nil {
+		for _, m := range managers {
+			if mgrMedia, err := m.VirtualMedia(); err == nil {
+				add(mgrMedia, "manager:"+m.ID)
+			}
+		}
+	}
+	return members, views
+}
+
+// defaultMediaOrder returns the identity ordering 0..n-1, the spec-default search
+// order used when no quirk hook reorders the candidates.
+func defaultMediaOrder(n int) []int {
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
+	}
+	return order
+}
+
+// sanitizeMediaOrder constrains a quirk hook's returned ordering to valid,
+// de-duplicated indexes into a candidate list of length n. Out-of-range and
+// duplicate indexes are dropped — a profile can reorder/filter but never conjure a
+// member that does not exist. An empty result tells the caller to fall back to the
+// default order.
+func sanitizeMediaOrder(order []int, n int) []int {
+	if len(order) == 0 {
+		return nil
+	}
+	seen := make(map[int]bool, len(order))
+	out := make([]int, 0, len(order))
+	for _, i := range order {
+		if i < 0 || i >= n || seen[i] {
+			continue
+		}
+		seen[i] = true
+		out = append(out, i)
+	}
+	return out
+}
+
+// mediaTypeStrings projects gofish VirtualMediaType values to plain strings for a
+// MediaView (the boundary carries no gofish types).
+func mediaTypeStrings(types []schemas.VirtualMediaType) []string {
+	if len(types) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		out = append(out, string(t))
+	}
+	return out
 }
 
 // systemMediaCollections returns the VirtualMedia hosted on the ComputerSystem
 // (zero or one collection). Errors are swallowed: a missing System.VirtualMedia
-// link simply means there is nothing to search there.
+// link simply means there is nothing to search there. mediaCandidates uses it for
+// the System-hosted half of the flat candidate list.
 func (d *Deployer) systemMediaCollections(system *schemas.ComputerSystem) mediaCollections {
 	if sysMedia, err := system.VirtualMedia(); err == nil {
 		return mediaCollections{sysMedia}
@@ -488,27 +811,12 @@ func (d *Deployer) systemMediaCollections(system *schemas.ComputerSystem) mediaC
 	return nil
 }
 
-// managerMediaCollections returns the VirtualMedia hosted on each Manager. This is
-// where HPE iLO (and many BMCs) expose virtual media. Errors are swallowed per
-// manager so one unreadable manager does not hide the others.
-func (d *Deployer) managerMediaCollections() mediaCollections {
-	var collections mediaCollections
-	if managers, err := d.client.GetService().Managers(); err == nil {
-		for _, m := range managers {
-			if mgrMedia, err := m.VirtualMedia(); err == nil {
-				collections = append(collections, mgrMedia)
-			}
-		}
-	}
-	return collections
-}
-
 // insertMedia performs the media insertion. By default this is the spec
 // VirtualMedia.InsertMedia URL-pull action; a vendor profile may take over via the
 // pushMedia hook (a stub seam for a future multipart push — no profile uses it
 // today). The InsertMedia parameters and MediaType flow through the quirk profile
 // so a vendor can tweak them without re-implementing the flow.
-func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (*schemas.TaskMonitorInfo, error) {
+func (d *Deployer) insertMedia(media *schemas.VirtualMedia, view MediaView, req DeployRequest) (*schemas.TaskMonitorInfo, error) {
 	// Future multipart-push extension point. No profile implements it yet; the
 	// default (nil hook) always falls through to the URL-pull InsertMedia below.
 	if d.quirks.pushMedia != nil {
@@ -522,7 +830,7 @@ func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (
 
 	mediaType := schemas.CDVirtualMediaType
 	if d.quirks.mediaType != nil {
-		mediaType = d.quirks.mediaType(media)
+		mediaType = d.quirks.mediaType(view)
 	}
 
 	params := &schemas.VirtualMediaInsertMediaParameters{
@@ -537,11 +845,60 @@ func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (
 	}
 	params.TransferProtocolType = &protocol
 
+	// tuneInsertParams works over a read-only InsertParamsView (which carries NO
+	// image URL) and returns a sparse patch the core applies to the allowlisted
+	// fields. The image URL is core-owned and SSRF-validated, so it is structurally
+	// out of a profile's reach.
 	if d.quirks.tuneInsertParams != nil {
-		d.quirks.tuneInsertParams(params, req)
+		applyInsertPatch(params, d.quirks.tuneInsertParams(insertParamsView(params)))
 	}
 
 	return media.InsertMedia(params)
+}
+
+// insertParamsView projects the spec-default InsertMedia parameters into the
+// read-only InsertParamsView handed to the tuneInsertParams hook. It deliberately
+// drops the image URL, exposing only HasImage.
+func insertParamsView(p *schemas.VirtualMediaInsertMediaParameters) InsertParamsView {
+	v := InsertParamsView{
+		MediaType: string(p.MediaType),
+		HasImage:  p.Image != "",
+	}
+	if p.TransferProtocolType != nil {
+		v.TransferProtocolType = string(*p.TransferProtocolType)
+	}
+	if p.Inserted != nil {
+		v.Inserted, v.InsertedSet = *p.Inserted, true
+	}
+	if p.WriteProtected != nil {
+		v.WriteProtected, v.WriteProtectedSet = *p.WriteProtected, true
+	}
+	return v
+}
+
+// applyInsertPatch applies a tuneInsertParams hook's sparse patch to the
+// InsertMedia parameters. Only the allowlisted fields are reachable; the image URL
+// is never touched. Clear takes precedence over Set for TransferProtocolType so a
+// profile can unconditionally drop it.
+func applyInsertPatch(p *schemas.VirtualMediaInsertMediaParameters, patch InsertParamsPatch) {
+	if patch.SetMediaType != "" {
+		p.MediaType = schemas.VirtualMediaType(patch.SetMediaType)
+	}
+	switch {
+	case patch.ClearTransferProtocolType:
+		p.TransferProtocolType = nil
+	case patch.SetTransferProtocolType != "":
+		t := schemas.TransferProtocolType(patch.SetTransferProtocolType)
+		p.TransferProtocolType = &t
+	}
+	if patch.SetInsertedSet {
+		v := patch.SetInserted
+		p.Inserted = &v
+	}
+	if patch.SetWriteProtectedSet {
+		v := patch.SetWriteProtected
+		p.WriteProtected = &v
+	}
 }
 
 // setOneTimeBoot patches the system to boot once from the requested target. The
@@ -565,17 +922,43 @@ func (d *Deployer) setOneTimeBoot(system *schemas.ComputerSystem, req DeployRequ
 // reset powers/restarts the system using an explicit ResetType. The caller can
 // force a ResetType; otherwise one is chosen from the current power state and
 // validated against the system's allowable values.
+//
+// A vendor profile may prefer a different ResetType via the resetType hook (over a
+// read-only ResetView). It only runs when the caller did not force one, so an
+// explicit DeployRequest.ResetType always wins. The hook's preference is still
+// re-validated against the system's advertised allowable values (firstSupported):
+// a profile can prefer but never force an unsupported type.
 func (d *Deployer) reset(system *schemas.ComputerSystem, req DeployRequest) (*schemas.TaskMonitorInfo, error) {
 	rt := schemas.ResetType(req.ResetType)
 	if rt == "" {
 		rt = chooseResetType(system)
-		// A vendor profile may prefer a different ResetType. It only runs when the
-		// caller did not force one, so an explicit DeployRequest.ResetType always wins.
 		if d.quirks.resetType != nil {
-			rt = d.quirks.resetType(system, rt)
+			allowed, _ := system.GetSupportedResetTypes()
+			preferred := d.quirks.resetType(ResetView{
+				PowerState:          string(system.PowerState),
+				AllowableResetTypes: resetTypeStrings(allowed),
+				Default:             string(rt),
+			})
+			// Re-validate the hook's preference: if the BMC advertises allowable
+			// values and the preference is not among them, fall back to the core
+			// default rather than sending an unsupported type.
+			rt = firstSupported(allowed, preferred, rt)
 		}
 	}
 	return system.Reset(rt)
+}
+
+// resetTypeStrings projects gofish ResetType values to plain strings for a
+// ResetView (the boundary carries no gofish types).
+func resetTypeStrings(types []schemas.ResetType) []string {
+	if len(types) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		out = append(out, string(t))
+	}
+	return out
 }
 
 // pollTask GETs the Task at uri repeatedly until it reaches a terminal state or
@@ -619,15 +1002,5 @@ func (d *Deployer) pollTask(ctx context.Context, uri string, report progressFunc
 // gofish does not place credentials in error strings, but a creds-bearing URL
 // could theoretically appear; redact basic-auth userinfo defensively.
 func (d *Deployer) scrub(err error) error {
-	if err == nil {
-		return nil
-	}
-	msg := err.Error()
-	if d.password != "" {
-		msg = strings.ReplaceAll(msg, d.password, "[REDACTED]")
-	}
-	if msg == err.Error() {
-		return err
-	}
-	return errors.New(msg)
+	return scrubError(err, d.password)
 }

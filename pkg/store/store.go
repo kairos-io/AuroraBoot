@@ -218,14 +218,56 @@ type SecureBootKeySetStore interface {
 
 // BMCTarget stores saved RedFish/IPMI credentials for a baseboard management controller.
 type BMCTarget struct {
-	ID        string    `json:"id" gorm:"primaryKey"`
-	Name      string    `json:"name"`
-	Endpoint  string    `json:"endpoint"`
-	Vendor    string    `json:"vendor"`
-	Username  string    `json:"username"`
-	Password  string    `json:"-"`
-	VerifySSL bool      `json:"verifySSL"`
-	NodeID    string    `json:"nodeId,omitempty" gorm:"index"`
+	ID        string `json:"id" gorm:"primaryKey"`
+	Name      string `json:"name"`
+	Endpoint  string `json:"endpoint"`
+	Vendor    string `json:"vendor"`
+	Username  string `json:"username"`
+	Password  string `json:"-"`
+	VerifySSL bool   `json:"verifySSL"`
+	// SystemID optionally pins the target ComputerSystem by its Redfish Id. Leave
+	// empty when the BMC exposes exactly one system; it is required when the BMC
+	// exposes more than one, or the deploy/inspect flow refuses to guess and fails
+	// with the list of available system Ids. Mirrors the CLI's --system-id.
+	SystemID string `json:"systemId,omitempty"`
+	// ImageURL optionally overrides the global default image URL for this BMC: the
+	// HTTP(S) URL this BMC pulls the ISO from (model a, operator-hosted). When set
+	// it takes precedence over the global default but is still overridden by a
+	// per-deploy imageUrl. SSRF-validated on write and again at deploy time.
+	ImageURL string `json:"imageUrl,omitempty"`
+	NodeID   string `json:"nodeId,omitempty" gorm:"index"`
+	// EjectAfterInstall is the durable default eject policy for deployments made
+	// against this BMC: when true, AuroraBoot ejects the virtual media (and steers
+	// the next boot to disk) once the freshly-installed node phones home, breaking
+	// the post-install install loop on BMCs that ignore the one-time boot override.
+	// Default false (opt-in). A per-deploy request may override it.
+	EjectAfterInstall bool `json:"ejectAfterInstall,omitempty"`
+	// EjectPowerCycle, when true, makes the finalize/eject for this BMC power the
+	// machine OFF before ejecting and back ON afterwards, instead of ejecting in
+	// place on the running machine. It is the robust mode for BMCs/emulators (e.g.
+	// sushy-tools on libvirt) that report a live eject but keep the running machine
+	// booting the ISO. Default false (in-place eject), correct for hardware that
+	// ejects live. It applies to every Finalize path for this BMC (auto and manual).
+	EjectPowerCycle bool `json:"ejectPowerCycle,omitempty"`
+
+	// --- Status cache (P4) ---
+	//
+	// These fields are server-owned denormalized snapshots of the last inspect /
+	// reachability ping so the BMC page can render status without contacting the
+	// BMC on load. Clients MUST NOT write them: CreateBMCTarget/UpdateBMCTarget
+	// never copy them from the request body. They are populated only by the
+	// inspect, status-ping and refresh-all handlers.
+	LastStatus       string     `json:"lastStatus,omitempty"` // "", "reachable", "unreachable"
+	LastError        string     `json:"lastError,omitempty"`
+	LastInspectAt    *time.Time `json:"lastInspectAt,omitempty"`
+	LastPingAt       *time.Time `json:"lastPingAt,omitempty"`
+	LastModel        string     `json:"lastModel,omitempty"`
+	LastManufacturer string     `json:"lastManufacturer,omitempty"`
+	LastSerial       string     `json:"lastSerial,omitempty"`
+	LastMemoryGiB    int        `json:"lastMemoryGiB,omitempty"`
+	LastCPUCount     int        `json:"lastCpuCount,omitempty"`
+	LastFeatures     []string   `json:"lastFeatures,omitempty" gorm:"serializer:json"`
+
 	CreatedAt time.Time `json:"createdAt"`
 	UpdatedAt time.Time `json:"updatedAt"`
 }
@@ -250,6 +292,26 @@ type Deployment struct {
 	Progress    int        `json:"progress"`
 	StartedAt   time.Time  `json:"startedAt"`
 	CompletedAt *time.Time `json:"completedAt,omitempty"`
+
+	// --- Eject / finalize (P5) ---
+	//
+	// NodeID links this deployment to the node that phoned home from it, so an
+	// auto eject-on-phone-home can correlate node -> deployment. It is set lazily
+	// when the finalize path picks this deployment for a node.
+	NodeID string `json:"nodeId,omitempty" gorm:"index"`
+	// EjectPolicy records the resolved policy at deploy completion: "" / "off"
+	// (no eject), "on-phone-home" (auto eject when the node registers/heartbeats),
+	// or "manual" (operator-only).
+	EjectPolicy string `json:"ejectPolicy,omitempty"`
+	// EjectState is the CAS idempotency key for the finalize lifecycle:
+	// "" (not applicable) -> "pending" -> "ejecting" -> "ejected" | "eject-failed".
+	// The pending->ejecting transition is a compare-and-set so exactly one finalize
+	// attempt (auto or manual) wins.
+	EjectState string `json:"ejectState,omitempty"`
+	// EjectError carries a scrubbed failure reason when EjectState == "eject-failed".
+	EjectError string `json:"ejectError,omitempty"`
+	// EjectedAt is set when the media was successfully ejected.
+	EjectedAt *time.Time `json:"ejectedAt,omitempty"`
 }
 
 // Deployment statuses.
@@ -257,6 +319,22 @@ const (
 	DeployActive    = "Active"
 	DeployCompleted = "Completed"
 	DeployFailed    = "Failed"
+)
+
+// Eject policies (Deployment.EjectPolicy).
+const (
+	EjectPolicyOff         = "off"
+	EjectPolicyOnPhoneHome = "on-phone-home"
+	EjectPolicyManual      = "manual"
+)
+
+// Eject states (Deployment.EjectState). EjectStatePending is the entry point the
+// deploy path sets when the policy is not off; the rest are driven by Finalize.
+const (
+	EjectStatePending  = "pending"
+	EjectStateEjecting = "ejecting"
+	EjectStateEjected  = "ejected"
+	EjectStateFailed   = "eject-failed"
 )
 
 // DeploymentStore manages deployment records.
@@ -267,4 +345,32 @@ type DeploymentStore interface {
 	ListByArtifact(ctx context.Context, artifactID string) ([]*Deployment, error)
 	Update(ctx context.Context, dep *Deployment) error
 	Delete(ctx context.Context, id string) error
+	// CASEjectState atomically transitions a deployment's EjectState from `from`
+	// to `to`, returning true only if this call performed the transition. It is the
+	// idempotency guard for finalize: when an auto eject-on-phone-home and a manual
+	// finalize (or two concurrent phone-homes) target the same deployment, exactly
+	// one observes the still-`from` row and wins; the losers see (false, nil). A
+	// missing deployment or a mismatched current state yields (false, nil).
+	CASEjectState(ctx context.Context, id, from, to string) (bool, error)
+}
+
+// Setting is a single opaque key/value row backing runtime-configurable server
+// settings (e.g. the image-source defaults). Values are stored as plain strings;
+// the consuming handler owns typing and any SSRF/validation of the value. Keys are
+// namespaced (e.g. "imageSource.defaultImageURL").
+type Setting struct {
+	Key       string    `json:"key" gorm:"primaryKey"`
+	Value     string    `json:"value"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// SettingsStore manages opaque key/value settings.
+type SettingsStore interface {
+	// Get returns the value for key. found reports whether the key exists; a
+	// missing key is (", false, nil), not an error.
+	Get(ctx context.Context, key string) (value string, found bool, err error)
+	// Set upserts key to value.
+	Set(ctx context.Context, key, value string) error
+	// GetAll returns every setting as a key→value map.
+	GetAll(ctx context.Context) (map[string]string, error)
 }

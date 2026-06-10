@@ -25,6 +25,7 @@ type fakeDeploymentStore struct {
 	mu        sync.Mutex
 	deps      []*store.Deployment
 	createErr error
+	casErr    error // when set, CASEjectState returns this error (fail-closed paths)
 }
 
 func (f *fakeDeploymentStore) Create(_ context.Context, dep *store.Deployment) error {
@@ -42,7 +43,8 @@ func (f *fakeDeploymentStore) GetByID(_ context.Context, id string) (*store.Depl
 	defer f.mu.Unlock()
 	for _, d := range f.deps {
 		if d.ID == id {
-			return d, nil
+			cp := *d // return a copy (gorm materializes a fresh struct)
+			return &cp, nil
 		}
 	}
 	return nil, fmt.Errorf("not found")
@@ -51,7 +53,17 @@ func (f *fakeDeploymentStore) GetByID(_ context.Context, id string) (*store.Depl
 func (f *fakeDeploymentStore) List(_ context.Context) ([]*store.Deployment, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.deps, nil
+	// Return copies, not the stored pointers: real gorm List materializes a fresh
+	// struct per query, so concurrent callers (e.g. the eject-on-phone-home goroutines
+	// in MaybeFinalizeForNode) must each get their own object to read/mutate. The
+	// stored row is only mutated under-lock via CASEjectState/Update, which remain the
+	// serialization point. Returning shared pointers here races under -race.
+	out := make([]*store.Deployment, len(f.deps))
+	for i, d := range f.deps {
+		cp := *d
+		out[i] = &cp
+	}
+	return out, nil
 }
 
 func (f *fakeDeploymentStore) ListByArtifact(_ context.Context, artifactID string) ([]*store.Deployment, error) {
@@ -71,7 +83,11 @@ func (f *fakeDeploymentStore) Update(_ context.Context, dep *store.Deployment) e
 	defer f.mu.Unlock()
 	for i, d := range f.deps {
 		if d.ID == dep.ID {
-			f.deps[i] = dep
+			// Store a copy, not the caller's pointer: gorm persists values, so the
+			// caller may keep mutating its struct (e.g. finalizeDeployment after
+			// Update) without that aliasing the stored row a concurrent List reads.
+			cp := *dep
+			f.deps[i] = &cp
 			return nil
 		}
 	}
@@ -88,6 +104,24 @@ func (f *fakeDeploymentStore) Delete(_ context.Context, id string) error {
 		}
 	}
 	return fmt.Errorf("not found")
+}
+
+// CASEjectState mirrors the gorm compare-and-set: it transitions eject_state under
+// the store mutex so two concurrent finalize attempts race exactly as production
+// does (exactly one observes the still-`from` row and wins).
+func (f *fakeDeploymentStore) CASEjectState(_ context.Context, id, from, to string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.casErr != nil {
+		return false, f.casErr
+	}
+	for _, d := range f.deps {
+		if d.ID == id && d.EjectState == from {
+			d.EjectState = to
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // fakeBMCTargetStore implements store.BMCTargetStore for testing.
@@ -119,7 +153,15 @@ func (f *fakeBMCTargetStore) List(_ context.Context) ([]*store.BMCTarget, error)
 }
 
 func (f *fakeBMCTargetStore) Update(_ context.Context, t *store.BMCTarget) error {
-	return nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, existing := range f.targets {
+		if existing.ID == t.ID {
+			f.targets[i] = t
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
 }
 
 func (f *fakeBMCTargetStore) Delete(_ context.Context, id string) error {
@@ -132,18 +174,23 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		artifacts    *fakeArtifactStore
 		deployments  *fakeDeploymentStore
 		bmcTargets   *fakeBMCTargetStore
+		settings     *fakeSettingsStore
 		serve        *isoserve.Server
 		artifactsDir string
 	)
 
-	// newHandler builds a handler, optionally wiring an iso-serve.
+	// newHandler builds a handler, optionally wiring an iso-serve. When a serve is
+	// wired the runtime local-serve enable flag is also set, since local serving is
+	// now gated on both a launch-configured listener AND the enable flag.
 	newHandler := func(withServe bool) *handlers.DeployHandler {
 		if withServe {
 			serve = isoserve.New(isoserve.Config{BaseURL: "http://10.0.0.5:8090"})
+			settings.values[handlers.SettingLocalServeEnabled] = "true"
 		} else {
 			serve = nil
 		}
-		return handlers.NewDeployHandler(artifacts, deployments, bmcTargets, nil, artifactsDir, serve, nil)
+		return handlers.NewDeployHandler(artifacts, deployments, bmcTargets, nil, artifactsDir, serve, nil).
+			WithSettings(settings)
 	}
 
 	// doDeploy posts a deploy request for artifact "art-1" with the given body.
@@ -176,6 +223,7 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		})).To(Succeed())
 		deployments = &fakeDeploymentStore{}
 		bmcTargets = &fakeBMCTargetStore{}
+		settings = newFakeSettingsStore()
 	})
 
 	It("rejects an SSRF-blocked imageUrl", func() {
@@ -198,7 +246,7 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		h := newHandler(false)
 		rec := doDeploy(h, `{"endpoint":"http://10.0.0.9","username":"u","password":"p"}`)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
-		Expect(rec.Body.String()).To(ContainSubstring("local ISO serving is not configured"))
+		Expect(rec.Body.String()).To(ContainSubstring("local ISO serving is not enabled"))
 	})
 
 	It("registers the on-disk ISO with the serve helper when no imageUrl is given", func() {
