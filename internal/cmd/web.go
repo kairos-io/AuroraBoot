@@ -98,6 +98,7 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "redfish-serve-addr", Usage: "Bind address for the Redfish ISO-serve (e.g. 10.0.0.5:8090). Required to enable serving local artifact ISOs to a BMC", EnvVars: []string{"AURORABOOT_REDFISH_SERVE_ADDR"}},
 		&cli.StringFlag{Name: "redfish-serve-tls-cert", Usage: "TLS certificate for the Redfish ISO-serve (opt-in HTTPS; requires a BMC-trusted cert)"},
 		&cli.StringFlag{Name: "redfish-serve-tls-key", Usage: "TLS key for the Redfish ISO-serve"},
+		&cli.StringFlag{Name: "redfish-quirks-dir", Usage: "Directory of operator-supplied *.yaml/*.yml Redfish quirk profiles, loaded once at server start (not hot-reloaded). A BMCTarget's vendor resolves to a profile by name; an operator profile named the same as a built-in overrides it (logged). A malformed profile is skipped, not fatal", EnvVars: []string{redfishQuirksDirEnv}},
 	},
 	Action: runWeb,
 }
@@ -116,6 +117,7 @@ func runWeb(c *cli.Context) error {
 	redfishServeAddr := c.String("redfish-serve-addr")
 	redfishServeTLSCert := c.String("redfish-serve-tls-cert")
 	redfishServeTLSKey := c.String("redfish-serve-tls-key")
+	redfishQuirksDir := c.String("redfish-quirks-dir")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -226,6 +228,16 @@ func runWeb(c *cli.Context) error {
 			_ = isoServe.Shutdown(shutdownCtx)
 		}()
 		fmt.Fprintf(os.Stderr, "  ISO-serve: %s (bind %s)\n", serveURL, redfishServeAddr)
+	}
+
+	// Load operator-supplied Redfish quirk profiles once at start (not
+	// hot-reloaded: an in-flight deploy must never have its profile swapped). The
+	// loaded registry becomes the process-wide default, so the Redfish deploy path
+	// resolves a BMCTarget's vendor to a profile by name — operator profiles
+	// included — inside redfish.NewDeployer. Each profile and each skipped file is
+	// logged by the loader.
+	if err := loadRedfishQuirksDir(redfishQuirksDir); err != nil {
+		return err
 	}
 
 	// Root context for background deploy goroutines, cancelled when runWeb

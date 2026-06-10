@@ -118,7 +118,11 @@ func NewDeployer(cfg Config) *Deployer {
 		timeout:   timeout,
 		systemID:  cfg.SystemID,
 		authMode:  authMode,
-		quirks:    quirksFor(vendor),
+		// Resolve through the process-wide registry: name-first (operator/built-in),
+		// then the VendorType mapping, then generic. This honours operator-supplied
+		// profiles installed via SetDefaultRegistry while preserving the invariant
+		// that an unknown vendor/name resolves to the spec-default generic profile.
+		quirks: resolveQuirks(string(vendor)),
 	}
 }
 
@@ -348,7 +352,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 	}
 	result.SystemID = system.ID
 
-	media, err := d.findCDMedia(system)
+	media, mediaView, err := d.findCDMedia(system)
 	if err != nil {
 		return nil, err
 	}
@@ -359,7 +363,7 @@ func (d *Deployer) Deploy(ctx context.Context, req DeployRequest) (*DeployResult
 		return nil, err
 	}
 	report("inserting media", 30)
-	insertTask, err := d.insertMedia(media, req)
+	insertTask, err := d.insertMedia(media, mediaView, req)
 	if err != nil {
 		return nil, fmt.Errorf("inserting virtual media: %w", d.scrub(enrichRedfishError(err)))
 	}
@@ -451,7 +455,7 @@ func (d *Deployer) Finalize(ctx context.Context, req FinalizeRequest) error {
 		return err
 	}
 
-	media, err := d.findCDMedia(system)
+	media, _, err := d.findCDMedia(system)
 	if err != nil {
 		return err
 	}
@@ -683,43 +687,123 @@ func systemIDs(systems []*schemas.ComputerSystem) []string {
 // System first, then each Manager; a vendor quirk profile (e.g. HPE iLO) may
 // reorder this. A member with no advertised MediaTypes is accepted as a last
 // resort (some BMCs omit the field).
-func (d *Deployer) findCDMedia(system *schemas.ComputerSystem) (*schemas.VirtualMedia, error) {
-	collections := d.defaultMediaCollections(system)
+//
+// The mediaSearch quirk hook works over a read-only []MediaView (the §2 boundary):
+// the core flattens the spec-default collections into the candidate list, lets the
+// hook return an ordering of indexes, then maps those indexes back to its own
+// *VirtualMedia slice (out-of-range/duplicate indexes dropped). The hook never
+// sees a gofish object or the *Deployer.
+func (d *Deployer) findCDMedia(system *schemas.ComputerSystem) (*schemas.VirtualMedia, MediaView, error) {
+	candidates, views := d.mediaCandidates(system)
+
+	order := defaultMediaOrder(len(candidates))
 	if d.quirks.mediaSearch != nil {
-		if reordered := d.quirks.mediaSearch(d, system, collections); reordered != nil {
-			collections = reordered
+		if reordered := sanitizeMediaOrder(d.quirks.mediaSearch(views), len(candidates)); len(reordered) > 0 {
+			order = reordered
 		}
 	}
 
-	var fallback *schemas.VirtualMedia
-	for _, media := range collections {
-		for _, vm := range media {
-			if mediaSupportsCD(vm) {
-				return vm, nil
-			}
-			if fallback == nil && len(vm.MediaTypes) == 0 {
-				fallback = vm
-			}
+	fallback := -1
+	for _, i := range order {
+		if mediaSupportsCD(candidates[i]) {
+			return candidates[i], views[i], nil
+		}
+		if fallback < 0 && len(candidates[i].MediaTypes) == 0 {
+			fallback = i
 		}
 	}
-	if fallback != nil {
-		return fallback, nil
+	if fallback >= 0 {
+		return candidates[fallback], views[fallback], nil
 	}
-	return nil, errors.New("no CD/DVD-capable VirtualMedia resource found on the system or its managers")
+	return nil, MediaView{}, errors.New("no CD/DVD-capable VirtualMedia resource found on the system or its managers")
 }
 
-// defaultMediaCollections returns the spec-default VirtualMedia search set:
-// System-hosted media first, then each Manager's media. quirk profiles receive
-// this as their starting point.
-func (d *Deployer) defaultMediaCollections(system *schemas.ComputerSystem) mediaCollections {
-	collections := d.systemMediaCollections(system)
-	collections = append(collections, d.managerMediaCollections()...)
-	return collections
+// mediaCandidates flattens the spec-default VirtualMedia collections (System-hosted
+// first, then each Manager's) into a parallel pair: the gofish members the core
+// will act on, and their read-only MediaView projections handed to a quirk hook.
+// The two slices share indexes, which is how a hook's returned ordering maps back
+// to the real members. Manager-hosted members are labelled "manager:<id>" and
+// System-hosted ones "system" so a profile can select by location.
+func (d *Deployer) mediaCandidates(system *schemas.ComputerSystem) ([]*schemas.VirtualMedia, []MediaView) {
+	var (
+		members []*schemas.VirtualMedia
+		views   []MediaView
+	)
+	add := func(vms []*schemas.VirtualMedia, location string) {
+		for _, vm := range vms {
+			views = append(views, MediaView{
+				Index:        len(members),
+				ID:           vm.ID,
+				Location:     location,
+				MediaTypes:   mediaTypeStrings(vm.MediaTypes),
+				ConnectedVia: string(vm.ConnectedVia),
+				Inserted:     vm.Inserted != nil && *vm.Inserted,
+			})
+			members = append(members, vm)
+		}
+	}
+
+	for _, c := range d.systemMediaCollections(system) {
+		add(c, "system")
+	}
+	if managers, err := d.client.GetService().Managers(); err == nil {
+		for _, m := range managers {
+			if mgrMedia, err := m.VirtualMedia(); err == nil {
+				add(mgrMedia, "manager:"+m.ID)
+			}
+		}
+	}
+	return members, views
+}
+
+// defaultMediaOrder returns the identity ordering 0..n-1, the spec-default search
+// order used when no quirk hook reorders the candidates.
+func defaultMediaOrder(n int) []int {
+	order := make([]int, n)
+	for i := range order {
+		order[i] = i
+	}
+	return order
+}
+
+// sanitizeMediaOrder constrains a quirk hook's returned ordering to valid,
+// de-duplicated indexes into a candidate list of length n. Out-of-range and
+// duplicate indexes are dropped — a profile can reorder/filter but never conjure a
+// member that does not exist. An empty result tells the caller to fall back to the
+// default order.
+func sanitizeMediaOrder(order []int, n int) []int {
+	if len(order) == 0 {
+		return nil
+	}
+	seen := make(map[int]bool, len(order))
+	out := make([]int, 0, len(order))
+	for _, i := range order {
+		if i < 0 || i >= n || seen[i] {
+			continue
+		}
+		seen[i] = true
+		out = append(out, i)
+	}
+	return out
+}
+
+// mediaTypeStrings projects gofish VirtualMediaType values to plain strings for a
+// MediaView (the boundary carries no gofish types).
+func mediaTypeStrings(types []schemas.VirtualMediaType) []string {
+	if len(types) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		out = append(out, string(t))
+	}
+	return out
 }
 
 // systemMediaCollections returns the VirtualMedia hosted on the ComputerSystem
 // (zero or one collection). Errors are swallowed: a missing System.VirtualMedia
-// link simply means there is nothing to search there.
+// link simply means there is nothing to search there. mediaCandidates uses it for
+// the System-hosted half of the flat candidate list.
 func (d *Deployer) systemMediaCollections(system *schemas.ComputerSystem) mediaCollections {
 	if sysMedia, err := system.VirtualMedia(); err == nil {
 		return mediaCollections{sysMedia}
@@ -727,27 +811,12 @@ func (d *Deployer) systemMediaCollections(system *schemas.ComputerSystem) mediaC
 	return nil
 }
 
-// managerMediaCollections returns the VirtualMedia hosted on each Manager. This is
-// where HPE iLO (and many BMCs) expose virtual media. Errors are swallowed per
-// manager so one unreadable manager does not hide the others.
-func (d *Deployer) managerMediaCollections() mediaCollections {
-	var collections mediaCollections
-	if managers, err := d.client.GetService().Managers(); err == nil {
-		for _, m := range managers {
-			if mgrMedia, err := m.VirtualMedia(); err == nil {
-				collections = append(collections, mgrMedia)
-			}
-		}
-	}
-	return collections
-}
-
 // insertMedia performs the media insertion. By default this is the spec
 // VirtualMedia.InsertMedia URL-pull action; a vendor profile may take over via the
 // pushMedia hook (a stub seam for a future multipart push — no profile uses it
 // today). The InsertMedia parameters and MediaType flow through the quirk profile
 // so a vendor can tweak them without re-implementing the flow.
-func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (*schemas.TaskMonitorInfo, error) {
+func (d *Deployer) insertMedia(media *schemas.VirtualMedia, view MediaView, req DeployRequest) (*schemas.TaskMonitorInfo, error) {
 	// Future multipart-push extension point. No profile implements it yet; the
 	// default (nil hook) always falls through to the URL-pull InsertMedia below.
 	if d.quirks.pushMedia != nil {
@@ -761,7 +830,7 @@ func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (
 
 	mediaType := schemas.CDVirtualMediaType
 	if d.quirks.mediaType != nil {
-		mediaType = d.quirks.mediaType(media)
+		mediaType = d.quirks.mediaType(view)
 	}
 
 	params := &schemas.VirtualMediaInsertMediaParameters{
@@ -776,11 +845,60 @@ func (d *Deployer) insertMedia(media *schemas.VirtualMedia, req DeployRequest) (
 	}
 	params.TransferProtocolType = &protocol
 
+	// tuneInsertParams works over a read-only InsertParamsView (which carries NO
+	// image URL) and returns a sparse patch the core applies to the allowlisted
+	// fields. The image URL is core-owned and SSRF-validated, so it is structurally
+	// out of a profile's reach.
 	if d.quirks.tuneInsertParams != nil {
-		d.quirks.tuneInsertParams(params, req)
+		applyInsertPatch(params, d.quirks.tuneInsertParams(insertParamsView(params)))
 	}
 
 	return media.InsertMedia(params)
+}
+
+// insertParamsView projects the spec-default InsertMedia parameters into the
+// read-only InsertParamsView handed to the tuneInsertParams hook. It deliberately
+// drops the image URL, exposing only HasImage.
+func insertParamsView(p *schemas.VirtualMediaInsertMediaParameters) InsertParamsView {
+	v := InsertParamsView{
+		MediaType: string(p.MediaType),
+		HasImage:  p.Image != "",
+	}
+	if p.TransferProtocolType != nil {
+		v.TransferProtocolType = string(*p.TransferProtocolType)
+	}
+	if p.Inserted != nil {
+		v.Inserted, v.InsertedSet = *p.Inserted, true
+	}
+	if p.WriteProtected != nil {
+		v.WriteProtected, v.WriteProtectedSet = *p.WriteProtected, true
+	}
+	return v
+}
+
+// applyInsertPatch applies a tuneInsertParams hook's sparse patch to the
+// InsertMedia parameters. Only the allowlisted fields are reachable; the image URL
+// is never touched. Clear takes precedence over Set for TransferProtocolType so a
+// profile can unconditionally drop it.
+func applyInsertPatch(p *schemas.VirtualMediaInsertMediaParameters, patch InsertParamsPatch) {
+	if patch.SetMediaType != "" {
+		p.MediaType = schemas.VirtualMediaType(patch.SetMediaType)
+	}
+	switch {
+	case patch.ClearTransferProtocolType:
+		p.TransferProtocolType = nil
+	case patch.SetTransferProtocolType != "":
+		t := schemas.TransferProtocolType(patch.SetTransferProtocolType)
+		p.TransferProtocolType = &t
+	}
+	if patch.SetInsertedSet {
+		v := patch.SetInserted
+		p.Inserted = &v
+	}
+	if patch.SetWriteProtectedSet {
+		v := patch.SetWriteProtected
+		p.WriteProtected = &v
+	}
 }
 
 // setOneTimeBoot patches the system to boot once from the requested target. The
@@ -804,17 +922,43 @@ func (d *Deployer) setOneTimeBoot(system *schemas.ComputerSystem, req DeployRequ
 // reset powers/restarts the system using an explicit ResetType. The caller can
 // force a ResetType; otherwise one is chosen from the current power state and
 // validated against the system's allowable values.
+//
+// A vendor profile may prefer a different ResetType via the resetType hook (over a
+// read-only ResetView). It only runs when the caller did not force one, so an
+// explicit DeployRequest.ResetType always wins. The hook's preference is still
+// re-validated against the system's advertised allowable values (firstSupported):
+// a profile can prefer but never force an unsupported type.
 func (d *Deployer) reset(system *schemas.ComputerSystem, req DeployRequest) (*schemas.TaskMonitorInfo, error) {
 	rt := schemas.ResetType(req.ResetType)
 	if rt == "" {
 		rt = chooseResetType(system)
-		// A vendor profile may prefer a different ResetType. It only runs when the
-		// caller did not force one, so an explicit DeployRequest.ResetType always wins.
 		if d.quirks.resetType != nil {
-			rt = d.quirks.resetType(system, rt)
+			allowed, _ := system.GetSupportedResetTypes()
+			preferred := d.quirks.resetType(ResetView{
+				PowerState:          string(system.PowerState),
+				AllowableResetTypes: resetTypeStrings(allowed),
+				Default:             string(rt),
+			})
+			// Re-validate the hook's preference: if the BMC advertises allowable
+			// values and the preference is not among them, fall back to the core
+			// default rather than sending an unsupported type.
+			rt = firstSupported(allowed, preferred, rt)
 		}
 	}
 	return system.Reset(rt)
+}
+
+// resetTypeStrings projects gofish ResetType values to plain strings for a
+// ResetView (the boundary carries no gofish types).
+func resetTypeStrings(types []schemas.ResetType) []string {
+	if len(types) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(types))
+	for _, t := range types {
+		out = append(out, string(t))
+	}
+	return out
 }
 
 // pollTask GETs the Task at uri repeatedly until it reaches a terminal state or

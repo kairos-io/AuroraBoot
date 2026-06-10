@@ -63,6 +63,10 @@ type fakeBMC struct {
 	// SecureBoot feature detection can be asserted.
 	withSecureBoot bool
 
+	// biosVersion, when non-empty, is served as the ComputerSystem BiosVersion so
+	// the probe's firmware reporting can be asserted. Empty omits the field.
+	biosVersion string
+
 	// captured bodies
 	sessionBody     map[string]any
 	insertBody      map[string]any
@@ -244,10 +248,10 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		}
 		w.WriteHeader(http.StatusOK)
 		f.writeJSON(w, f.computerSystem(f.systemIDFromPath(r.URL.Path)))
-	case f.isSystemResetPath(r.URL.Path) && r.Method == http.MethodPost:
+	case strings.HasSuffix(r.URL.Path, "/Actions/ComputerSystem.Reset") && r.Method == http.MethodPost:
 		f.mu.Lock()
 		f.resetBody = decodeBody(r)
-		f.resetSystemID = f.systemIDFromResetPath(r.URL.Path)
+		f.resetSystemID = resetSystemIDFromPath(r.URL.Path)
 		if rt, ok := f.resetBody["ResetType"].(string); ok {
 			f.resetTypes = append(f.resetTypes, rt)
 			// Reflect the requested power transition so a power-cycle finalize can
@@ -280,7 +284,7 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		f.writeJSON(w, f.collection("VirtualMedia Collection", "/redfish/v1/Managers/mgr-1/VirtualMedia/Cd"))
 	case r.URL.Path == "/redfish/v1/Managers/mgr-1/VirtualMedia/Cd" && r.Method == http.MethodGet:
 		f.writeJSON(w, f.virtualMedia("/redfish/v1/Managers/mgr-1/VirtualMedia/Cd"))
-	case strings.HasSuffix(r.URL.Path, "/VirtualMedia/Cd/Actions/VirtualMedia.InsertMedia") && r.Method == http.MethodPost:
+	case strings.HasSuffix(r.URL.Path, "/Actions/VirtualMedia.InsertMedia") && r.Method == http.MethodPost:
 		f.mu.Lock()
 		f.insertBody = decodeBody(r)
 		status := f.insertMediaStatus
@@ -306,7 +310,7 @@ func (f *fakeBMC) handle(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Location", "/redfish/v1/TaskService/Tasks/task-insert")
 		w.WriteHeader(http.StatusAccepted)
 		f.writeJSON(w, f.task("Running"))
-	case strings.HasSuffix(r.URL.Path, "/VirtualMedia/Cd/Actions/VirtualMedia.EjectMedia") && r.Method == http.MethodPost:
+	case strings.HasSuffix(r.URL.Path, "/Actions/VirtualMedia.EjectMedia") && r.Method == http.MethodPost:
 		f.mu.Lock()
 		f.ejectCalled = true
 		f.mu.Unlock()
@@ -409,17 +413,19 @@ func (f *fakeBMC) systemIDFromPath(path string) string {
 	return rest
 }
 
-func (f *fakeBMC) isSystemResetPath(path string) bool {
-	return f.systemIDFromResetPath(path) != ""
-}
-
-func (f *fakeBMC) systemIDFromResetPath(path string) string {
+// resetSystemIDFromPath extracts the ComputerSystem Id from a Reset action path
+// (/redfish/v1/Systems/{id}/Actions/ComputerSystem.Reset). Unlike the GET/PATCH
+// member routing it does NOT gate on the configured systemIDs: the Reset handler
+// is matched purely by its action suffix so it works for both the synthesized
+// fake (sys-xyz / node-*) and a recorded mockup tree (e.g. iLO's "1"). Returns ""
+// when the path is not a System Reset action.
+func resetSystemIDFromPath(path string) string {
 	rest, ok := strings.CutPrefix(path, "/redfish/v1/Systems/")
 	if !ok {
 		return ""
 	}
 	id, ok := strings.CutSuffix(rest, "/Actions/ComputerSystem.Reset")
-	if !ok || strings.Contains(id, "/") || !f.knownSystemID(id) {
+	if !ok || strings.Contains(id, "/") {
 		return ""
 	}
 	return id
@@ -493,6 +499,9 @@ func (f *fakeBMC) computerSystem(id string) map[string]any {
 	}
 	if f.withSecureBoot {
 		cs["SecureBoot"] = map[string]any{"@odata.id": base + "/SecureBoot"}
+	}
+	if f.biosVersion != "" {
+		cs["BiosVersion"] = f.biosVersion
 	}
 	return cs
 }
