@@ -88,12 +88,56 @@ func deriveTier(name string, src origin, hasMockup bool) Tier {
 }
 
 // registryEntry is one resolvable profile: its compiled quirks, declared name,
-// derived tier, and origin.
+// derived tier, origin, and the informational firmware label a profile may carry.
 type registryEntry struct {
-	quirks quirks
-	name   string
-	tier   Tier
-	origin origin
+	quirks            quirks
+	name              string
+	tier              Tier
+	origin            origin
+	validatedFirmware string
+}
+
+// ProfileInfo is a read-only description of one registered quirk profile, for
+// listing (e.g. the fleet server's quirk-profiles endpoint that populates the UI
+// vendor selector with tier badges). It carries no quirks/closures — purely the
+// labelling an operator needs to pick a profile.
+type ProfileInfo struct {
+	// Name is the profile's selection name (what a BMCTarget.Vendor matches).
+	Name string
+	// Tier is the project-derived support tier (A/B/C); a profile never asserts it.
+	Tier Tier
+	// TierDescription is the human-readable annotation, e.g.
+	// "tier C: UNVERIFIED — no recorded mockup".
+	TierDescription string
+	// Origin is "builtin" for in-tree profiles or "operator" for ones loaded from
+	// the quirks directory.
+	Origin string
+	// ValidatedFirmware is the informational firmware label the profile declared,
+	// when any (empty for built-ins without recorded evidence).
+	ValidatedFirmware string
+}
+
+// Profiles returns every registered profile as a read-only ProfileInfo, sorted by
+// name. It is the listing seam the fleet server exposes so the UI can populate the
+// vendor selector from the profiles actually loaded (built-in + operator) instead
+// of a hardcoded list, and surface each profile's support tier.
+func (r *Registry) Profiles() []ProfileInfo {
+	infos := make([]ProfileInfo, 0, len(r.byName))
+	for _, e := range r.byName {
+		o := "builtin"
+		if e.origin == originOperator {
+			o = "operator"
+		}
+		infos = append(infos, ProfileInfo{
+			Name:              e.name,
+			Tier:              e.tier,
+			TierDescription:   e.tier.describe(),
+			Origin:            o,
+			ValidatedFirmware: e.validatedFirmware,
+		})
+	}
+	sort.Slice(infos, func(i, j int) bool { return infos[i].Name < infos[j].Name })
+	return infos
 }
 
 // ProfileLoadResult records the outcome of loading one operator profile file. A
@@ -243,10 +287,11 @@ func LoadProfileDir(dir string) (*Registry, []ProfileLoadResult, error) {
 		res.Name = profile.Name
 		res.Tier = deriveTier(profile.Name, originOperator, false)
 		res.Overrode = r.add(registryEntry{
-			quirks: q,
-			name:   profile.Name,
-			tier:   res.Tier,
-			origin: originOperator,
+			quirks:            q,
+			name:              profile.Name,
+			tier:              res.Tier,
+			origin:            originOperator,
+			validatedFirmware: profile.ValidatedFirmware,
 		})
 		results = append(results, res)
 	}
@@ -281,6 +326,16 @@ func SetDefaultRegistry(r *Registry) {
 	defaultRegistryMu.Lock()
 	defaultRegistry = r
 	defaultRegistryMu.Unlock()
+}
+
+// DefaultRegistry returns the process-wide registry installed at start (built-in
+// profiles, plus any operator profiles loaded via SetDefaultRegistry). The fleet
+// server uses it to list the loaded profiles for the UI. The returned Registry is
+// read-only after start; callers must only read it (e.g. via Profiles).
+func DefaultRegistry() *Registry {
+	defaultRegistryMu.RLock()
+	defer defaultRegistryMu.RUnlock()
+	return defaultRegistry
 }
 
 // resolveQuirks selects the quirks for a profile name / vendor string using the

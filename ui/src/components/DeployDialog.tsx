@@ -32,6 +32,7 @@ import {
   startNetboot,
   stopNetboot,
 } from "@/api/deployments";
+import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
 
 // Minimum hardware AuroraBoot wants before deploying. Kept deliberately simple
 // and visible: a node below either threshold raises a warning that the operator
@@ -78,7 +79,7 @@ export function DeployDialog({
   const [newTarget, setNewTarget] = useState({
     name: "",
     endpoint: "",
-    vendor: "dell",
+    vendor: "generic",
     username: "",
     password: "",
     verifySSL: false,
@@ -86,12 +87,17 @@ export function DeployDialog({
   });
   const [creatingTarget, setCreatingTarget] = useState(false);
 
+  // Quirk profiles loaded by the server (built-in + operator), for the vendor
+  // selector — same source as the BMC Registration page.
+  const [profiles, setProfiles] = useState<QuirkProfile[]>([]);
+
   useEffect(() => {
     if (hasNetboot) {
       getNetbootStatus().then(setNetbootStatus).catch(() => {});
     }
     if (hasIso) {
       listBMCTargets().then(setBmcTargets).catch(() => {});
+      listQuirkProfiles().then(setProfiles).catch(() => {});
     }
   }, [hasNetboot, hasIso]);
 
@@ -176,7 +182,7 @@ export function DeployDialog({
       setBmcTargets((prev) => [...prev, created]);
       setSelectedTarget(created.id);
       setShowNewTarget(false);
-      setNewTarget({ name: "", endpoint: "", vendor: "dell", username: "", password: "", verifySSL: false, systemId: "" });
+      setNewTarget({ name: "", endpoint: "", vendor: "generic", username: "", password: "", verifySSL: false, systemId: "" });
     } catch {
       // ignore
     } finally {
@@ -407,7 +413,7 @@ export function DeployDialog({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Vendor</Label>
+                      <Label className="text-xs">Vendor profile</Label>
                       <Select
                         value={newTarget.vendor}
                         onValueChange={(v) => setNewTarget({ ...newTarget, vendor: v })}
@@ -416,10 +422,11 @@ export function DeployDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="dell">Dell</SelectItem>
-                          <SelectItem value="hp">HP</SelectItem>
-                          <SelectItem value="supermicro">Supermicro</SelectItem>
-                          <SelectItem value="lenovo">Lenovo</SelectItem>
+                          {profiles.map((p) => (
+                            <SelectItem key={p.name} value={p.name}>
+                              {p.name} (tier {p.tier})
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
                     </div>

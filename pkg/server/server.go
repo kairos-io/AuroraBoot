@@ -276,6 +276,7 @@ func New(cfg Config) *echo.Echo {
 		adminGroup.POST("/netboot/stop", deployHandler.StopNetboot)
 		adminGroup.GET("/netboot/status", deployHandler.NetbootStatus)
 		adminGroup.POST("/artifacts/:id/deploy/redfish", deployHandler.DeployRedfish)
+		adminGroup.GET("/redfish/quirk-profiles", deployHandler.ListQuirkProfiles)
 		adminGroup.POST("/bmc-targets", deployHandler.CreateBMCTarget)
 		adminGroup.GET("/bmc-targets", deployHandler.ListBMCTargets)
 		adminGroup.PUT("/bmc-targets/:id", deployHandler.UpdateBMCTarget)

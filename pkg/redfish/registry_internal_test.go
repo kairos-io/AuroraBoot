@@ -237,3 +237,52 @@ func TestExampleProfilesParse(t *testing.T) {
 		t.Fatal("expected at least one example profile in examples/redfish/quirks")
 	}
 }
+
+// TestRegistryProfiles locks the listing seam the fleet server exposes for the UI
+// vendor selector: every registered profile is returned, sorted by name, with its
+// project-derived tier, origin, and (for operator profiles) the declared firmware
+// label. Built-ins carry no validatedFirmware.
+func TestRegistryProfiles(t *testing.T) {
+	dir := t.TempDir()
+	writeProfile(t, dir, "acme.yaml",
+		"name: acme\nmatch: { vendor: Acme }\nmediaSearch: { order: [manager, system] }\nvalidatedFirmware: \"FW 1.23\"\n")
+
+	r, _, err := LoadProfileDir(dir)
+	if err != nil {
+		t.Fatalf("LoadProfileDir: %v", err)
+	}
+
+	infos := r.Profiles()
+
+	// Sorted by name.
+	for i := 1; i < len(infos); i++ {
+		if infos[i-1].Name > infos[i].Name {
+			t.Fatalf("Profiles() not sorted by name: %q before %q", infos[i-1].Name, infos[i].Name)
+		}
+	}
+
+	byName := make(map[string]ProfileInfo, len(infos))
+	for _, p := range infos {
+		byName[p.Name] = p
+	}
+
+	// generic is the core-tested built-in (tier A, no firmware label).
+	if g, ok := byName["generic"]; !ok || g.Tier != TierA || g.Origin != "builtin" || g.ValidatedFirmware != "" {
+		t.Fatalf("generic: %+v (ok=%v)", byName["generic"], ok)
+	}
+
+	// The operator profile is tier C, origin operator, and surfaces its firmware.
+	c, ok := byName["acme"]
+	if !ok {
+		t.Fatal("acme operator profile missing from Profiles()")
+	}
+	if c.Tier != TierC || c.Origin != "operator" {
+		t.Fatalf("acme tier/origin: %+v", c)
+	}
+	if c.ValidatedFirmware != "FW 1.23" {
+		t.Fatalf("acme validatedFirmware not surfaced: %q", c.ValidatedFirmware)
+	}
+	if c.TierDescription == "" || c.TierDescription != TierC.describe() {
+		t.Fatalf("acme tierDescription: %q", c.TierDescription)
+	}
+}

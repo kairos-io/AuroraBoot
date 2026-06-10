@@ -56,16 +56,29 @@ import {
   getImageSourceSettings,
   updateImageSourceSettings,
 } from "@/api/settings";
+import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
 import { toast } from "@/hooks/useToast";
 
-// Vendor options match the inline "new target" form in DeployDialog so a target
-// created here behaves identically to one created mid-deploy.
-const VENDORS = [
-  { value: "dell", label: "Dell" },
-  { value: "hp", label: "HP" },
-  { value: "supermicro", label: "Supermicro" },
-  { value: "lenovo", label: "Lenovo" },
-];
+// Vendor options are no longer a hardcoded list: they come from the quirk profiles
+// the server actually loaded (built-in + operator-supplied via --redfish-quirks-dir),
+// fetched from GET /api/v1/redfish/quirk-profiles. This is what makes an operator's
+// own profile selectable here. "generic" always exists (the spec-default path) and
+// is the safe default.
+const DEFAULT_VENDOR = "generic";
+
+// tierVariant maps a profile's support tier to a Badge variant: A (core-tested)
+// reads as a positive default, B (community-validated) as secondary, C (unverified)
+// as a muted outline.
+function tierVariant(tier: string): "default" | "secondary" | "outline" {
+  switch (tier) {
+    case "A":
+      return "default";
+    case "B":
+      return "secondary";
+    default:
+      return "outline";
+  }
+}
 
 type FormState = {
   name: string;
@@ -83,7 +96,7 @@ type FormState = {
 const EMPTY_FORM: FormState = {
   name: "",
   endpoint: "",
-  vendor: "dell",
+  vendor: DEFAULT_VENDOR,
   username: "",
   password: "",
   verifySSL: false,
@@ -92,10 +105,6 @@ const EMPTY_FORM: FormState = {
   ejectAfterInstall: false,
   ejectPowerCycle: false,
 };
-
-function vendorLabel(vendor: string): string {
-  return VENDORS.find((v) => v.value === vendor)?.label ?? vendor;
-}
 
 // imageSourceBadge describes how a BMC row resolves its image source, given the
 // per-BMC override and the global image-source settings.
@@ -163,6 +172,11 @@ export function BMCRegistration() {
   const [targets, setTargets] = useState<BMCTarget[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // Quirk profiles the server loaded (built-in + operator). Drives the vendor
+  // selector and the per-row tier badge. Fetched once on mount; the registry is
+  // load-at-start on the server, so it never changes during a session.
+  const [profiles, setProfiles] = useState<QuirkProfile[]>([]);
+
   // Global image-source settings (model b): the top-of-page panel. `imgSource`
   // is null until the first fetch resolves.
   const [imgSource, setImgSource] = useState<ImageSourceSettings | null>(null);
@@ -218,9 +232,21 @@ export function BMCRegistration() {
       );
   }
 
+  function fetchProfiles() {
+    listQuirkProfiles()
+      .then(setProfiles)
+      .catch((err) =>
+        toast(
+          `Failed to load Redfish quirk profiles: ${(err as Error).message}`,
+          "error"
+        )
+      );
+  }
+
   useEffect(() => {
     fetchTargets();
     fetchImageSource();
+    fetchProfiles();
   }, []);
 
   async function handleSaveImageSource(e: React.FormEvent) {
@@ -571,7 +597,35 @@ export function BMCRegistration() {
                         <TableCell className="font-mono text-xs">
                           {t.endpoint}
                         </TableCell>
-                        <TableCell>{vendorLabel(t.vendor)}</TableCell>
+                        <TableCell>
+                          {(() => {
+                            const p = profiles.find(
+                              (pr) => pr.name === t.vendor
+                            );
+                            return (
+                              <span className="flex items-center gap-2">
+                                {t.vendor}
+                                {p ? (
+                                  <Badge
+                                    variant={tierVariant(p.tier)}
+                                    className="px-1 py-0 text-[10px]"
+                                    title={p.tierDescription}
+                                  >
+                                    Tier {p.tier}
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="px-1 py-0 text-[10px]"
+                                    title="No matching profile loaded; falls back to generic"
+                                  >
+                                    generic fallback
+                                  </Badge>
+                                )}
+                              </span>
+                            );
+                          })()}
+                        </TableCell>
                         <TableCell>
                           {t.systemId ? (
                             <span className="font-mono text-xs">{t.systemId}</span>
@@ -785,7 +839,7 @@ export function BMCRegistration() {
                 />
               </div>
               <div className="space-y-1">
-                <Label className="text-xs">Vendor</Label>
+                <Label className="text-xs">Vendor profile</Label>
                 <Select
                   value={form.vendor}
                   onValueChange={(v) => setForm({ ...form, vendor: v })}
@@ -794,13 +848,39 @@ export function BMCRegistration() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {VENDORS.map((v) => (
-                      <SelectItem key={v.value} value={v.value}>
-                        {v.label}
+                    {profiles.map((p) => (
+                      <SelectItem key={p.name} value={p.name}>
+                        <span className="flex items-center gap-2">
+                          {p.name}
+                          <Badge
+                            variant={tierVariant(p.tier)}
+                            className="px-1 py-0 text-[10px]"
+                          >
+                            Tier {p.tier}
+                          </Badge>
+                        </span>
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
+                {(() => {
+                  const sel = profiles.find((p) => p.name === form.vendor);
+                  if (!sel) {
+                    return (
+                      <p className="text-[11px] text-muted-foreground">
+                        No profile named “{form.vendor}” is loaded — this BMC will
+                        use the spec-default <code>generic</code> behaviour.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className="text-[11px] text-muted-foreground">
+                      {sel.tierDescription}
+                      {sel.validatedFirmware ? ` · ${sel.validatedFirmware}` : ""}
+                      {sel.origin === "operator" ? " · operator-supplied" : ""}
+                    </p>
+                  );
+                })()}
               </div>
               <div className="space-y-1">
                 <Label className="text-xs">Username</Label>
