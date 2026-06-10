@@ -174,6 +174,13 @@ func New(cfg Config) *echo.Echo {
 		Nodes:    cfg.NodeStore,
 		Commands: cfg.CommandStore,
 	}
+	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
+	// same auto eject-on-phone-home hook — a node that reports liveness only over
+	// the agent channel must still get its pending-eject media ejected.
+	if deployHandler != nil {
+		agentWSHandler.Finalize = deployHandler.MaybeFinalizeForNode
+		agentWSHandler.BaseCtx = cfg.BaseContext
+	}
 	uiWSHandler := &ws.UIHandler{Hub: hub}
 
 	// Public endpoints
