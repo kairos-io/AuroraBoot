@@ -32,6 +32,7 @@ type Config struct {
 	NetbootManager        *netbootpkg.Manager
 	DeploymentStore       store.DeploymentStore
 	BMCTargetStore        store.BMCTargetStore
+	SettingsStore         store.SettingsStore
 	Builder               builder.ArtifactBuilder
 	AdminPassword         string
 	RegToken              string
@@ -44,6 +45,11 @@ type Config struct {
 	// for Redfish virtual-media deployments. Optional; when nil the Redfish
 	// deploy path requires an explicit imageUrl.
 	ISOServe *isoserve.Server
+	// RedfishServeURL is the advertised base URL the BMC fetches the served ISO
+	// from, as set by the launch --redfish-serve-url flag. It seeds the
+	// image-source settings' advertised URL until an operator overrides it at
+	// runtime.
+	RedfishServeURL string
 	// BaseContext, when non-nil, is the parent context for background deploy
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
@@ -137,18 +143,43 @@ func New(cfg Config) *echo.Echo {
 		return c.HTML(http.StatusOK, swaggerUIPage)
 	})
 
+	// Build the deploy handler first (when a deployment store is wired) so its auto
+	// eject-on-phone-home hook can be handed to the node handler below. The same
+	// instance is reused for the deploy routes in the cfg.DeploymentStore block.
+	var deployHandler *handlers.DeployHandler
+	if cfg.DeploymentStore != nil {
+		deployHandler = handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir, cfg.ISOServe, hub).
+			WithBaseContext(cfg.BaseContext).
+			WithSettings(cfg.SettingsStore)
+	}
+
 	// Create handlers
 	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, hub, regToken, cfg.AuroraBootURL)
+	// Wire the auto eject-on-phone-home hook so a freshly-installed node's
+	// Register/Heartbeat ejects its pending-eject Redfish deployment's media. The
+	// hook lives on the deploy handler (it holds the deployment + BMC stores and the
+	// Deployer factory); the node handler only invokes it off-request.
+	if deployHandler != nil {
+		nodeHandler.WithFinalizer(deployHandler.MaybeFinalizeForNode, cfg.BaseContext)
+	}
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
-	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile)
+	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
+		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
 		Hub:      hub,
 		Nodes:    cfg.NodeStore,
 		Commands: cfg.CommandStore,
+	}
+	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
+	// same auto eject-on-phone-home hook — a node that reports liveness only over
+	// the agent channel must still get its pending-eject media ejected.
+	if deployHandler != nil {
+		agentWSHandler.Finalize = deployHandler.MaybeFinalizeForNode
+		agentWSHandler.BaseCtx = cfg.BaseContext
 	}
 	uiWSHandler := &ws.UIHandler{Hub: hub}
 
@@ -234,6 +265,8 @@ func New(cfg Config) *echo.Echo {
 	// Settings
 	adminGroup.GET("/settings/registration-token", settingsHandler.GetRegistrationToken)
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
+	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
+	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)
@@ -243,21 +276,25 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/secureboot-keys/import", sbHandler.ImportKeys)
 	adminGroup.DELETE("/secureboot-keys/:id", sbHandler.DeleteKeys)
 
-	// Deploy hub
-	if cfg.DeploymentStore != nil {
-		deployHandler := handlers.NewDeployHandler(cfg.ArtifactStore, cfg.DeploymentStore, cfg.BMCTargetStore, cfg.NetbootManager, cfg.ArtifactsDir, cfg.ISOServe, hub).
-			WithBaseContext(cfg.BaseContext)
+	// Deploy hub. deployHandler was constructed above so its eject hook could be
+	// wired into the node handler; here we register its routes.
+	if deployHandler != nil {
 		adminGroup.POST("/netboot/start", deployHandler.StartNetboot)
 		adminGroup.POST("/netboot/stop", deployHandler.StopNetboot)
 		adminGroup.GET("/netboot/status", deployHandler.NetbootStatus)
 		adminGroup.POST("/artifacts/:id/deploy/redfish", deployHandler.DeployRedfish)
+		adminGroup.GET("/redfish/quirk-profiles", deployHandler.ListQuirkProfiles)
 		adminGroup.POST("/bmc-targets", deployHandler.CreateBMCTarget)
 		adminGroup.GET("/bmc-targets", deployHandler.ListBMCTargets)
 		adminGroup.PUT("/bmc-targets/:id", deployHandler.UpdateBMCTarget)
 		adminGroup.DELETE("/bmc-targets/:id", deployHandler.DeleteBMCTarget)
 		adminGroup.POST("/bmc-targets/:id/inspect", deployHandler.InspectHardware)
+		adminGroup.GET("/bmc-targets/:id/status", deployHandler.PingBMCTarget)
+		adminGroup.POST("/bmc-targets/refresh-all", deployHandler.RefreshAllBMCTargets)
+		adminGroup.POST("/bmc-targets/:id/eject", deployHandler.EjectBMCTarget)
 		adminGroup.GET("/deployments", deployHandler.ListDeployments)
 		adminGroup.GET("/deployments/:id", deployHandler.GetDeployment)
+		adminGroup.POST("/deployments/:id/finalize", deployHandler.FinalizeDeployment)
 	}
 
 	// SPA static files - serve from embedded UI assets

@@ -194,3 +194,19 @@ func (a *DeploymentStoreAdapter) Update(ctx context.Context, dep *store.Deployme
 func (a *DeploymentStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.DeploymentDelete(ctx, id)
 }
+func (a *DeploymentStoreAdapter) CASEjectState(ctx context.Context, id, from, to string) (bool, error) {
+	return a.S.DeploymentCASEjectState(ctx, id, from, to)
+}
+
+// SettingsStoreAdapter adapts Store to the store.SettingsStore interface.
+type SettingsStoreAdapter struct{ S *Store }
+
+func (a *SettingsStoreAdapter) Get(ctx context.Context, key string) (string, bool, error) {
+	return a.S.SettingGet(ctx, key)
+}
+func (a *SettingsStoreAdapter) Set(ctx context.Context, key, value string) error {
+	return a.S.SettingSet(ctx, key, value)
+}
+func (a *SettingsStoreAdapter) GetAll(ctx context.Context) (map[string]string, error) {
+	return a.S.SettingGetAll(ctx)
+}

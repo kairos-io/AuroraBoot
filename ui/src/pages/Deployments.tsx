@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import {
@@ -11,18 +13,54 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Wifi, Server, Rocket } from "lucide-react";
+import { Wifi, Server, Rocket, Disc } from "lucide-react";
 import {
   listDeployments,
+  finalizeDeployment,
   type Deployment,
   type DeployProgress,
+  type EjectState,
 } from "@/api/deployments";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
+import { toast } from "@/hooks/useToast";
+
+// ejectBadge maps a deployment's EjectState to a badge. "" (not armed) renders
+// nothing — only deployments in the eject lifecycle get a badge.
+function ejectBadge(state: EjectState | undefined): {
+  label: string;
+  variant: "default" | "secondary" | "destructive" | "outline";
+} | null {
+  switch (state) {
+    case "pending":
+      return { label: "Eject pending", variant: "secondary" };
+    case "ejecting":
+      return { label: "Ejecting…", variant: "outline" };
+    case "ejected":
+      return { label: "Ejected", variant: "default" };
+    case "eject-failed":
+      return { label: "Eject failed", variant: "destructive" };
+    default:
+      return null;
+  }
+}
+
+// canFinalize reports whether the "Finalize" action should be offered: a Redfish
+// deployment with a BMC target that is not already mid-eject. It is offered even
+// for deployments whose policy was off, since manual finalize is an operator
+// override.
+function canFinalize(d: Deployment): boolean {
+  return (
+    d.method.toLowerCase() === "redfish" &&
+    !!d.bmcTargetId &&
+    d.ejectState !== "ejecting"
+  );
+}
 
 export function Deployments() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
+  const [finalizing, setFinalizing] = useState<string | null>(null);
 
   function fetchDeployments() {
     listDeployments()
@@ -60,6 +98,31 @@ export function Deployments() {
     const interval = setInterval(fetchDeployments, 15000);
     return () => clearInterval(interval);
   }, [deployments]);
+
+  async function handleFinalize(d: Deployment) {
+    // One finalize at a time: a second click while a request is in flight would
+    // overwrite the tracked id, re-enabling the first button mid-request.
+    if (finalizing) return;
+    setFinalizing(d.id);
+    try {
+      const updated = await finalizeDeployment(d.id);
+      setDeployments((prev) =>
+        prev.map((x) => (x.id === updated.id ? updated : x))
+      );
+      if (updated.ejectState === "eject-failed") {
+        toast(
+          `Eject failed: ${updated.ejectError || "unknown error"}`,
+          "error"
+        );
+      } else {
+        toast("Media ejected; node will boot from disk", "success");
+      }
+    } catch (err) {
+      toast(`Finalize failed: ${(err as Error).message}`, "error");
+    } finally {
+      setFinalizing(null);
+    }
+  }
 
   function methodIcon(method: string) {
     if (method.toLowerCase() === "pxe" || method.toLowerCase() === "netboot") {
@@ -119,6 +182,7 @@ export function Deployments() {
                   <TableHead>Status</TableHead>
                   <TableHead>Progress</TableHead>
                   <TableHead>Started</TableHead>
+                  <TableHead className="text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -132,7 +196,17 @@ export function Deployments() {
                       {d.bmcTargetId ? d.bmcTargetId.slice(0, 12) : "-"}
                     </TableCell>
                     <TableCell>
-                      <StatusBadge status={d.status} />
+                      <div className="flex flex-col items-start gap-1">
+                        <StatusBadge status={d.status} />
+                        {(() => {
+                          const eb = ejectBadge(d.ejectState);
+                          return eb ? (
+                            <Badge variant={eb.variant} title={d.ejectError || undefined}>
+                              {eb.label}
+                            </Badge>
+                          ) : null;
+                        })()}
+                      </div>
                     </TableCell>
                     <TableCell>
                       {d.progress > 0 ? (
@@ -162,6 +236,25 @@ export function Deployments() {
                       {d.startedAt
                         ? new Date(d.startedAt).toLocaleString()
                         : "-"}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      {canFinalize(d) ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          // Disable ALL finalize buttons while one is in flight
+                          // (not just the active row) so a click can't silently
+                          // no-op against the in-progress guard.
+                          disabled={finalizing !== null}
+                          onClick={() => handleFinalize(d)}
+                          title="Eject the virtual media and boot from disk"
+                        >
+                          <Disc className="h-3.5 w-3.5 mr-1" />
+                          {finalizing === d.id ? "Finalizing…" : "Finalize"}
+                        </Button>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">-</span>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

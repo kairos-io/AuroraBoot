@@ -73,13 +73,14 @@ func readMsg(conn *websocket.Conn) (*wsMessage, error) {
 
 var _ = Describe("WebSocket Handler", func() {
 	var (
-		hub      *ws.Hub
-		gormDB   *gormstore.Store
-		nodes    store.NodeStore
-		commands store.CommandStore
-		server   *httptest.Server
-		nodeID   string
-		apiKey   string
+		hub       *ws.Hub
+		gormDB    *gormstore.Store
+		nodes     store.NodeStore
+		commands  store.CommandStore
+		server    *httptest.Server
+		nodeID    string
+		apiKey    string
+		finalized chan string
 	)
 
 	bg := context.Background()
@@ -116,10 +117,14 @@ var _ = Describe("WebSocket Handler", func() {
 		Expect(nodeID).NotTo(BeEmpty())
 		Expect(apiKey).NotTo(BeEmpty())
 
+		// Record auto eject-on-phone-home invocations: a WS heartbeat must fire
+		// the same finalize hook as the REST register/heartbeat path.
+		finalized = make(chan string, 8)
 		agentHandler := &ws.AgentHandler{
 			Hub:      hub,
 			Nodes:    nodes,
 			Commands: commands,
+			Finalize: func(_ context.Context, id string) { finalized <- id },
 		}
 		uiHandler := &ws.UIHandler{Hub: hub}
 
@@ -214,6 +219,22 @@ var _ = Describe("WebSocket Handler", func() {
 				}
 				return node.AgentVersion
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal("2.0.0"))
+		})
+
+		It("should trigger the auto eject-on-phone-home finalizer on heartbeat", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(sendMsg(conn, "heartbeat", heartbeatData{AgentVersion: "2.0.0"})).To(Succeed())
+
+			// The hook fires off the read loop with the node this connection
+			// authenticated as — never an agent-chosen id.
+			Eventually(finalized, 10*time.Second).Should(Receive(Equal(nodeID)))
 		})
 
 		It("should handle command_status and update command", func() {

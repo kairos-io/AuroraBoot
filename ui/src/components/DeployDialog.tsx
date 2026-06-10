@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Dialog,
   DialogContent,
@@ -31,6 +32,7 @@ import {
   startNetboot,
   stopNetboot,
 } from "@/api/deployments";
+import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
 
 // Minimum hardware AuroraBoot wants before deploying. Kept deliberately simple
 // and visible: a node below either threshold raises a warning that the operator
@@ -77,12 +79,29 @@ export function DeployDialog({
   const [newTarget, setNewTarget] = useState({
     name: "",
     endpoint: "",
-    vendor: "dell",
+    vendor: "generic",
     username: "",
     password: "",
     verifySSL: false,
+    systemId: "",
   });
   const [creatingTarget, setCreatingTarget] = useState(false);
+
+  // Quirk profiles loaded by the server (built-in + operator), for the vendor
+  // selector — same source as the BMC Registration page. Until the fetch
+  // resolves (or if it fails), fall back to the spec-default generic profile so
+  // the selector is never empty/unusable: generic always exists server-side.
+  const [profiles, setProfiles] = useState<QuirkProfile[]>([]);
+  const vendorOptions: QuirkProfile[] = profiles.length
+    ? profiles
+    : [
+        {
+          name: "generic",
+          tier: "A",
+          tierDescription: "tier A: core-tested",
+          origin: "builtin",
+        },
+      ];
 
   useEffect(() => {
     if (hasNetboot) {
@@ -90,6 +109,7 @@ export function DeployDialog({
     }
     if (hasIso) {
       listBMCTargets().then(setBmcTargets).catch(() => {});
+      listQuirkProfiles().then(setProfiles).catch(() => {});
     }
   }, [hasNetboot, hasIso]);
 
@@ -174,7 +194,7 @@ export function DeployDialog({
       setBmcTargets((prev) => [...prev, created]);
       setSelectedTarget(created.id);
       setShowNewTarget(false);
-      setNewTarget({ name: "", endpoint: "", vendor: "dell", username: "", password: "", verifySSL: false });
+      setNewTarget({ name: "", endpoint: "", vendor: "generic", username: "", password: "", verifySSL: false, systemId: "" });
     } catch {
       // ignore
     } finally {
@@ -236,7 +256,16 @@ export function DeployDialog({
             <TabsContent value="redfish" className="space-y-4">
               {/* Target selector */}
               <div className="space-y-2">
-                <Label>BMC Target</Label>
+                <div className="flex items-center justify-between">
+                  <Label>BMC Target</Label>
+                  <Link
+                    to="/bmc"
+                    className="text-xs text-[#EE5007] hover:underline"
+                    onClick={onClose}
+                  >
+                    Manage BMCs →
+                  </Link>
+                </div>
                 <Select value={selectedTarget} onValueChange={setSelectedTarget}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a BMC target..." />
@@ -396,7 +425,7 @@ export function DeployDialog({
                       />
                     </div>
                     <div className="space-y-1">
-                      <Label className="text-xs">Vendor</Label>
+                      <Label className="text-xs">Vendor profile</Label>
                       <Select
                         value={newTarget.vendor}
                         onValueChange={(v) => setNewTarget({ ...newTarget, vendor: v })}
@@ -405,12 +434,25 @@ export function DeployDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="dell">Dell</SelectItem>
-                          <SelectItem value="hp">HP</SelectItem>
-                          <SelectItem value="supermicro">Supermicro</SelectItem>
-                          <SelectItem value="lenovo">Lenovo</SelectItem>
+                          {vendorOptions.map((p) => (
+                            <SelectItem key={p.name} value={p.name}>
+                              {p.name} (tier {p.tier})
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                    </div>
+                    <div className="space-y-1 col-span-2">
+                      <Label className="text-xs">System ID</Label>
+                      <Input
+                        value={newTarget.systemId}
+                        onChange={(e) => setNewTarget({ ...newTarget, systemId: e.target.value })}
+                        placeholder="optional"
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        Leave blank for single-system BMCs; required when the BMC
+                        exposes multiple ComputerSystems.
+                      </p>
                     </div>
                   </div>
                   <Button type="submit" size="sm" disabled={creatingTarget} className="w-full">

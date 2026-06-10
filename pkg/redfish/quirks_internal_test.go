@@ -37,16 +37,40 @@ func TestVendorProfilesSelected(t *testing.T) {
 }
 
 // TestILOPrefersManagerMedia documents/locks the one safe iLO divergence at the
-// hook level: given Manager-hosted media it is searched ahead of System media.
+// hook level: given Manager-hosted media it is ordered ahead of System media, and
+// with no Manager media it abstains (nil) so the core uses the default order. The
+// hook now works purely over []MediaView (the §2 boundary), so we can exercise it
+// directly here; the end-to-end ordering is also asserted in the fake-BMC-driven
+// spec (deployer_test.go).
 func TestILOPrefersManagerMedia(t *testing.T) {
 	q := iloQuirks()
 	if q.mediaSearch == nil {
 		t.Fatal("iLO profile must define a mediaSearch hook")
 	}
-	// The hook needs a *Deployer to read managers; we cannot easily fake the
-	// gofish service here, so the end-to-end ordering is asserted in the
-	// fake-BMC-driven spec (deployer_test.go). This test just guards the hook's
-	// presence and the supermicro profile's deliberate absence of hooks.
+
+	// Manager-hosted media present: manager indexes come first, then system.
+	views := []MediaView{
+		{Index: 0, ID: "Cd", Location: "system"},
+		{Index: 1, ID: "Cd", Location: "manager:mgr-1"},
+		{Index: 2, ID: "Floppy", Location: "manager:mgr-1"},
+	}
+	got := q.mediaSearch(views)
+	want := []int{1, 2, 0}
+	if len(got) != len(want) {
+		t.Fatalf("mediaSearch order = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("mediaSearch order = %v, want %v", got, want)
+		}
+	}
+
+	// No Manager-hosted media: the hook abstains (nil) so the core keeps the
+	// default order — i.e. behaviour identical to the generic/default path.
+	if got := q.mediaSearch([]MediaView{{Index: 0, ID: "Cd", Location: "system"}}); got != nil {
+		t.Fatalf("mediaSearch with no manager media must abstain (nil), got %v", got)
+	}
+
 	if iloQuirks().tuneInsertParams != nil {
 		t.Fatal("iLO must not silently tweak InsertMedia params (no verified need)")
 	}

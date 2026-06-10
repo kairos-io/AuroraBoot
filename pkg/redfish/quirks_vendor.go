@@ -1,6 +1,6 @@
 package redfish
 
-import "github.com/stmcginnis/gofish/schemas"
+import "strings"
 
 // This file holds the conservative, documented per-vendor quirk profiles. Every
 // quirk here is derived from public Redfish/vendor documentation, NOT from
@@ -38,26 +38,37 @@ import "github.com/stmcginnis/gofish/schemas"
 // one-time Cd boot override drives the install boot as expected.
 func iloQuirks() quirks {
 	return quirks{
-		name: "ilo",
-		mediaSearch: func(d *Deployer, system *schemas.ComputerSystem, def mediaCollections) mediaCollections {
-			// Prefer Manager-hosted media first, then fall back to whatever the
-			// System exposed (defensive: some iLO firmware also surfaces it on the
-			// System). We rebuild the order rather than dropping the System
-			// collections entirely so a future/unexpected layout still works.
-			managerMedia := d.managerMediaCollections()
-			if len(managerMedia) == 0 {
-				// Nothing under the Manager — behave exactly like the default.
-				return def
-			}
-			systemMedia := d.systemMediaCollections(system)
-			ordered := make(mediaCollections, 0, len(managerMedia)+len(systemMedia))
-			ordered = append(ordered, managerMedia...)
-			ordered = append(ordered, systemMedia...)
-			return ordered
-		},
+		name:        "ilo",
+		mediaSearch: managerFirstMediaSearch,
 		// iLO accepts the spec-default MediaType (CD) and the URL-pull params, so we
 		// leave mediaType/tuneInsertParams/resetType at spec default.
 	}
+}
+
+// managerFirstMediaSearch is the iLO media-ordering hook: prefer Manager-hosted
+// media, then fall back to whatever the System exposed (defensive: some iLO
+// firmware also surfaces it on the System). It works purely over the read-only
+// []MediaView the core supplies — it has no *Deployer and issues no requests.
+//
+// It preserves the exact semantics of the original hook: when there is no
+// Manager-hosted media it returns nil, which the core reads as "use the default
+// order" — i.e. behaviour identical to the generic/default path. Otherwise it
+// emits the manager-located member indexes first, then the system-located ones,
+// dropping nothing.
+func managerFirstMediaSearch(media []MediaView) []int {
+	var managerIdx, systemIdx []int
+	for _, m := range media {
+		if strings.HasPrefix(m.Location, "manager:") {
+			managerIdx = append(managerIdx, m.Index)
+		} else {
+			systemIdx = append(systemIdx, m.Index)
+		}
+	}
+	if len(managerIdx) == 0 {
+		// Nothing under the Manager — behave exactly like the default.
+		return nil
+	}
+	return append(managerIdx, systemIdx...)
 }
 
 // supermicroQuirks is the Supermicro (X11/X12/H12 BMC) profile.

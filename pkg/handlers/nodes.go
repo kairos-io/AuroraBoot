@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"strings"
@@ -19,6 +20,12 @@ import (
 // that comes online after the window is closed will not run the teardown.
 const decommissionTimeout = 30 * time.Second
 
+// nodeFinalizer is the auto eject-on-phone-home hook: given a node id it ejects the
+// virtual media of that node's pending-eject Redfish deployment (when one can be
+// unambiguously correlated). It is satisfied by DeployHandler.maybeFinalizeForNode.
+// It is always invoked off the request goroutine so it adds no registration latency.
+type nodeFinalizer func(ctx context.Context, nodeID string)
+
 // NodeHandler handles node-related REST endpoints.
 type NodeHandler struct {
 	nodes         store.NodeStore
@@ -27,6 +34,15 @@ type NodeHandler struct {
 	hub           *ws.Hub // optional; when nil, Decommission reports the node as offline
 	regToken      string
 	aurorabootURL string
+
+	// finalize, when non-nil, is the auto eject-on-phone-home hook invoked from
+	// Register and Heartbeat on a background goroutine bound to baseCtx. nil
+	// disables auto-eject (e.g. when no deploy/BMC stores are wired).
+	finalize nodeFinalizer
+	// baseCtx is the parent context for the background finalize goroutine, tied to
+	// the server lifecycle so a shutdown cancels an in-flight eject. Defaults to
+	// context.Background().
+	baseCtx context.Context
 }
 
 // NewNodeHandler creates a new NodeHandler.
@@ -38,7 +54,35 @@ func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups s
 		hub:           hub,
 		regToken:      regToken,
 		aurorabootURL: aurorabootURL,
+		baseCtx:       context.Background(),
 	}
+}
+
+// WithFinalizer wires the auto eject-on-phone-home hook and the server base context
+// for its background goroutine. Passing a nil finalizer leaves auto-eject disabled.
+// Returns the handler for chaining.
+func (h *NodeHandler) WithFinalizer(f nodeFinalizer, baseCtx context.Context) *NodeHandler {
+	h.finalize = f
+	if baseCtx != nil {
+		h.baseCtx = baseCtx
+	}
+	return h
+}
+
+// triggerFinalize fires the auto eject-on-phone-home hook off the request goroutine
+// so it never adds latency to register/heartbeat. The background context is derived
+// from the server base context (cancelled on shutdown) plus a short timeout; the
+// finalize hook owns its own per-deployment CAS so a duplicate phone-home is a
+// harmless no-op. It is nil-safe.
+func (h *NodeHandler) triggerFinalize(nodeID string) {
+	if h.finalize == nil || nodeID == "" {
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(h.baseCtx, finalizeTimeout)
+		defer cancel()
+		h.finalize(ctx, nodeID)
+	}()
 }
 
 // registerRequest is the expected body for node registration.
@@ -75,6 +119,9 @@ func (h *NodeHandler) Register(c echo.Context) error {
 	// Check if node already exists by machineID
 	existing, _ := h.nodes.GetByMachineID(c.Request().Context(), req.MachineID)
 	if existing != nil {
+		// A re-register is a strong "OS is up" signal too (a freshly-installed node
+		// phones home on first boot): attempt the auto eject-on-phone-home.
+		h.triggerFinalize(existing.ID)
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,
@@ -95,6 +142,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to register node"})
 	}
+
+	// The node just phoned home for the first time — the OS is up. Attempt the auto
+	// eject-on-phone-home for its pending-eject Redfish deployment, off-request.
+	h.triggerFinalize(node.ID)
 
 	return c.JSON(http.StatusCreated, map[string]any{
 		"id":     node.ID,
@@ -350,6 +401,10 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update phase"})
 	}
+	// Heartbeat is the universal "OS is up" signal (and the fallback when a node
+	// never re-registers): attempt the auto eject-on-phone-home off-request. The
+	// per-deployment CAS makes a repeated heartbeat a harmless no-op once ejected.
+	h.triggerFinalize(nodeID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
