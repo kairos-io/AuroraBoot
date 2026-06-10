@@ -100,6 +100,9 @@ export function Deployments() {
   }, [deployments]);
 
   async function handleFinalize(d: Deployment) {
+    // One finalize at a time: a second click while a request is in flight would
+    // overwrite the tracked id, re-enabling the first button mid-request.
+    if (finalizing) return;
     setFinalizing(d.id);
     try {
       const updated = await finalizeDeployment(d.id);
@@ -239,7 +242,10 @@ export function Deployments() {
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={finalizing === d.id}
+                          // Disable ALL finalize buttons while one is in flight
+                          // (not just the active row) so a click can't silently
+                          // no-op against the in-progress guard.
+                          disabled={finalizing !== null}
                           onClick={() => handleFinalize(d)}
                           title="Eject the virtual media and boot from disk"
                         >

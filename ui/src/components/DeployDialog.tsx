@@ -88,8 +88,20 @@ export function DeployDialog({
   const [creatingTarget, setCreatingTarget] = useState(false);
 
   // Quirk profiles loaded by the server (built-in + operator), for the vendor
-  // selector — same source as the BMC Registration page.
+  // selector — same source as the BMC Registration page. Until the fetch
+  // resolves (or if it fails), fall back to the spec-default generic profile so
+  // the selector is never empty/unusable: generic always exists server-side.
   const [profiles, setProfiles] = useState<QuirkProfile[]>([]);
+  const vendorOptions: QuirkProfile[] = profiles.length
+    ? profiles
+    : [
+        {
+          name: "generic",
+          tier: "A",
+          tierDescription: "tier A: core-tested",
+          origin: "builtin",
+        },
+      ];
 
   useEffect(() => {
     if (hasNetboot) {
@@ -422,7 +434,7 @@ export function DeployDialog({
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
-                          {profiles.map((p) => (
+                          {vendorOptions.map((p) => (
                             <SelectItem key={p.name} value={p.name}>
                               {p.name} (tier {p.tier})
                             </SelectItem>

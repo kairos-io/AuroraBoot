@@ -174,8 +174,21 @@ export function BMCRegistration() {
 
   // Quirk profiles the server loaded (built-in + operator). Drives the vendor
   // selector and the per-row tier badge. Fetched once on mount; the registry is
-  // load-at-start on the server, so it never changes during a session.
+  // load-at-start on the server, so it never changes during a session. Until
+  // the fetch resolves (or if it fails), the selector falls back to the
+  // spec-default generic profile so the form is never left without options:
+  // generic always exists server-side.
   const [profiles, setProfiles] = useState<QuirkProfile[]>([]);
+  const vendorOptions: QuirkProfile[] = profiles.length
+    ? profiles
+    : [
+        {
+          name: DEFAULT_VENDOR,
+          tier: "A",
+          tierDescription: "tier A: core-tested",
+          origin: "builtin",
+        },
+      ];
 
   // Global image-source settings (model b): the top-of-page panel. `imgSource`
   // is null until the first fetch resolves.
@@ -848,7 +861,7 @@ export function BMCRegistration() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {profiles.map((p) => (
+                    {vendorOptions.map((p) => (
                       <SelectItem key={p.name} value={p.name}>
                         <span className="flex items-center gap-2">
                           {p.name}
@@ -864,7 +877,7 @@ export function BMCRegistration() {
                   </SelectContent>
                 </Select>
                 {(() => {
-                  const sel = profiles.find((p) => p.name === form.vendor);
+                  const sel = vendorOptions.find((p) => p.name === form.vendor);
                   if (!sel) {
                     return (
                       <p className="text-[11px] text-muted-foreground">
