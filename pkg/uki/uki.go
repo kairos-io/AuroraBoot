@@ -21,7 +21,6 @@ import (
 	"regexp"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -35,16 +34,6 @@ import (
 	"github.com/u-root/u-root/pkg/cpio"
 	"golang.org/x/exp/maps"
 )
-
-// buildCWDMu serializes the portion of Build that mutates the process working
-// directory. os.Chdir is process-global, and in `web` mode builds run as
-// concurrent goroutines, so two overlapping Build calls would clobber each
-// other's cwd. Eliminating the chdir here is not cleanly possible: the
-// go-ukify Builder writes its UKI to a cwd-relative OutUKIPath and the
-// downstream cpio packing walks the cwd ("."), so both depend on cwd ==
-// sourceDir. Until those are made cwd-independent, we serialize the
-// chdir->Build->restore critical section instead.
-var buildCWDMu sync.Mutex
 
 // Options configures a UKI build.
 type Options struct {
@@ -136,12 +125,17 @@ type Options struct {
 	Logger *logger.KairosLogger
 }
 
-// absolutizeKeyPaths rewrites the key/cert/splash path options to absolute
-// paths. The build Chdir's into the rootfs partway through, so any relative
-// path must be resolved against the original working directory first.
-// pkcs11 URIs (valid for SBKey) and empty values are left untouched.
-func absolutizeKeyPaths(opts *Options) error {
-	for _, p := range []*string{&opts.TPMPCRPrivateKey, &opts.SBKey, &opts.SBCert, &opts.PublicKeysDir, &opts.Splash} {
+// absolutizePaths rewrites every path option to an absolute path. These are
+// handed to go-ukify and to host subprocesses (mcopy, xorriso, ...) that run
+// with an unspecified working directory, so relative paths (e.g. the web
+// server passes paths relative to its working dir like "data/keys/...") must
+// be resolved against the caller's working directory up-front to resolve
+// reliably. pkcs11 URIs (valid for SBKey) and empty values are left untouched.
+func absolutizePaths(opts *Options) error {
+	for _, p := range []*string{
+		&opts.TPMPCRPrivateKey, &opts.SBKey, &opts.SBCert, &opts.PublicKeysDir, &opts.Splash,
+		&opts.OverlayRootfs, &opts.OverlayISO, &opts.OutputDir,
+	} {
 		if *p == "" || strings.Contains(*p, "pkcs11") {
 			continue
 		}
@@ -160,18 +154,19 @@ func absolutizeKeyPaths(opts *Options) error {
 // systemd-boot files are available, extracts the source image, generates the
 // EFI files via go-ukify and finally assembles the requested output type.
 //
-// Build changes the process working directory during the build and restores
-// it before returning.
+// Build does not mutate the process working directory: every artifact is
+// written under a per-build temporary sourceDir using absolute paths, so
+// concurrent Build calls (e.g. in `web` mode) are safe to run in parallel.
 func Build(opts Options) (err error) {
 	if err := opts.validate(); err != nil {
 		return err
 	}
 
-	// Resolve key/cert/splash paths to absolute before the build Chdir's into
-	// the rootfs. Relative paths (e.g. the web server passes paths relative to
-	// its working dir like "data/keys/...") would otherwise resolve against the
-	// wrong directory once os.Chdir runs and fail with "no such file".
-	if err := absolutizeKeyPaths(&opts); err != nil {
+	// Resolve all path options to absolute up-front so they resolve against the
+	// caller's working directory rather than wherever subprocesses happen to
+	// run (e.g. the web server passes paths relative to its working dir like
+	// "data/keys/...").
+	if err := absolutizePaths(&opts); err != nil {
 		return err
 	}
 
@@ -210,26 +205,6 @@ func Build(opts Options) (err error) {
 		secureBootEnroll = "if-safe"
 	}
 
-	// Serialize the cwd-mutating region: we Chdir into the rootfs during the
-	// build, and a concurrent Build in `web` mode would otherwise clobber our
-	// cwd (and vice versa). Lock before capturing origWD and unlock after the
-	// restore defer below (defers run LIFO, so this Unlock runs after the
-	// Chdir-restore), keeping the whole chdir window mutually exclusive.
-	buildCWDMu.Lock()
-	defer buildCWDMu.Unlock()
-
-	// Preserve cwd — we Chdir into the rootfs during the build and must restore
-	// it so callers using this as a library don't observe the side effect.
-	origWD, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting working directory: %w", err)
-	}
-	defer func() {
-		if cderr := os.Chdir(origWD); cderr != nil && err == nil {
-			err = fmt.Errorf("restoring working directory: %w", cderr)
-		}
-	}()
-
 	artifactsTempDir, err := os.MkdirTemp("", "auroraboot-build-uki-artifacts-")
 	if err != nil {
 		return err
@@ -259,12 +234,8 @@ func Build(opts Options) (err error) {
 	}
 
 	if opts.OverlayRootfs != "" {
-		absolutePath, err := filepath.Abs(opts.OverlayRootfs)
-		if err != nil {
-			return fmt.Errorf("converting overlay-rootfs to absolute path: %w", err)
-		}
-		log.Infof("Adding files from %s to rootfs", absolutePath)
-		overlay, err := sdkImages.NewSrcFromURI(fmt.Sprintf("dir:%s", absolutePath))
+		log.Infof("Adding files from %s to rootfs", opts.OverlayRootfs)
+		overlay, err := sdkImages.NewSrcFromURI(fmt.Sprintf("dir:%s", opts.OverlayRootfs))
 		if err != nil {
 			return fmt.Errorf("error creating overlay image: %s", err)
 		}
@@ -326,13 +297,13 @@ func Build(opts Options) (err error) {
 			InitrdPath:    filepath.Join(artifactsTempDir, "initrd"),
 			Cmdline:       entry.Cmdline,
 			OsRelease:     filepath.Join(sourceDir, "etc/os-release"),
-			OutUKIPath:    entry.FileName + ".efi",
+			OutUKIPath:    filepath.Join(sourceDir, entry.FileName+".efi"),
 			PCRKey:        opts.TPMPCRPrivateKey,
 			SBKey:         opts.SBKey,
 			SBCert:        opts.SBCert,
 			SdBootPath:    systemdBoot,
 			SdStubPath:    stub,
-			OutSdBootPath: outputSystemdBootEfi,
+			OutSdBootPath: filepath.Join(sourceDir, outputSystemdBootEfi),
 			Splash:        opts.Splash,
 		}
 
@@ -341,10 +312,6 @@ func Build(opts Options) (err error) {
 				slog.Debug("Expanding extra cmdline with base", "cmdline", cmd, "base", entry.Cmdline)
 				builder.ExtraCmdlines = append(builder.ExtraCmdlines, fmt.Sprintf("%s %s", entry.Cmdline, cmd))
 			}
-		}
-
-		if err := os.Chdir(sourceDir); err != nil {
-			return fmt.Errorf("changing to %s directory: %w", sourceDir, err)
 		}
 
 		if err := builder.Build(); err != nil {
@@ -375,14 +342,7 @@ func Build(opts Options) (err error) {
 
 	switch outputType {
 	case string(constants.IsoOutput):
-		var absolutePathIso string
-		if opts.OverlayISO != "" {
-			absolutePathIso, err = filepath.Abs(opts.OverlayISO)
-			if err != nil {
-				return fmt.Errorf("converting overlay-iso to absolute path: %w", err)
-			}
-		}
-		if err := createISO(e, sourceDir, outputDir, absolutePathIso, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch); err != nil {
+		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch); err != nil {
 			return err
 		}
 	case string(constants.ContainerOutput):
@@ -679,18 +639,21 @@ func createInitramfs(sourceDir, artifactsTempDir string) error {
 		"proc": true,
 	}
 
-	if err := os.Chdir(sourceDir); err != nil {
-		return fmt.Errorf("changing to %s directory: %w", sourceDir, err)
-	}
-
-	err = filepath.Walk(".", func(filePath string, fileInfo os.FileInfo, err error) error {
+	// Walk sourceDir with absolute paths (no os.Chdir) and record each entry
+	// under a path relative to sourceDir, so the initramfs layout is rooted at
+	// "." regardless of the process working directory.
+	err = filepath.Walk(sourceDir, func(filePath string, fileInfo os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
-		if fileInfo.IsDir() && excludeDirs[filePath] {
+		relPath, err := filepath.Rel(sourceDir, filePath)
+		if err != nil {
+			return fmt.Errorf("resolving %q relative to %q: %w", filePath, sourceDir, err)
+		}
+		if fileInfo.IsDir() && excludeDirs[relPath] {
 			return filepath.SkipDir
 		}
-		if strings.Contains(filePath, "initramfs.cpio") {
+		if strings.Contains(relPath, "initramfs.cpio") {
 			return nil
 		}
 
@@ -699,7 +662,7 @@ func createInitramfs(sourceDir, artifactsTempDir string) error {
 			return fmt.Errorf("getting record of %q failed: %w", filePath, err)
 		}
 
-		rec.Name = strings.TrimPrefix(rec.Name, sourceDir)
+		rec.Name = relPath
 
 		// MakeReproducible currently breaks hardlinks
 		// (https://github.com/u-root/u-root/issues/3031); zero out the metadata
