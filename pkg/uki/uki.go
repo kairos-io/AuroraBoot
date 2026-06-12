@@ -130,20 +130,36 @@ type Options struct {
 // with an unspecified working directory, so relative paths (e.g. the web
 // server passes paths relative to its working dir like "data/keys/...") must
 // be resolved against the caller's working directory up-front to resolve
-// reliably. pkcs11 URIs (valid for SBKey) and empty values are left untouched.
+// reliably. pkcs11 URIs (valid for SBKey and TPMPCRPrivateKey) and empty values are left untouched.
 func absolutizePaths(opts *Options) error {
-	for _, p := range []*string{
-		&opts.TPMPCRPrivateKey, &opts.SBKey, &opts.SBCert, &opts.PublicKeysDir, &opts.Splash,
-		&opts.OverlayRootfs, &opts.OverlayISO, &opts.OutputDir,
-	} {
-		if *p == "" || strings.Contains(*p, "pkcs11") {
-			continue
+	absIfNeeded := func(p *string) error {
+		if *p == "" || filepath.IsAbs(*p) {
+			return nil
 		}
 		abs, err := filepath.Abs(*p)
 		if err != nil {
 			return fmt.Errorf("resolving path %q: %w", *p, err)
 		}
 		*p = abs
+		return nil
+	}
+
+	// Only these options can be PKCS#11 URIs.
+	if opts.TPMPCRPrivateKey != "" && !strings.HasPrefix(opts.TPMPCRPrivateKey, "pkcs11:") {
+		if err := absIfNeeded(&opts.TPMPCRPrivateKey); err != nil {
+			return err
+		}
+	}
+	if opts.SBKey != "" && !strings.HasPrefix(opts.SBKey, "pkcs11:") {
+		if err := absIfNeeded(&opts.SBKey); err != nil {
+			return err
+		}
+	}
+
+	for _, p := range []*string{&opts.SBCert, &opts.PublicKeysDir, &opts.Splash, &opts.OverlayRootfs, &opts.OverlayISO, &opts.OutputDir} {
+		if err := absIfNeeded(p); err != nil {
+			return err
+		}
 	}
 	return nil
 }

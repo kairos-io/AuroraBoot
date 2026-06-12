@@ -53,10 +53,10 @@ func readInitrd(initrdPath string) (map[string]cpio.Record, error) {
 
 // recordContent reads the bytes of a regular-file record.
 func recordContent(rec cpio.Record) ([]byte, error) {
-	buf := make([]byte, rec.FileSize)
 	if rec.FileSize == 0 {
-		return buf, nil
+		return []byte{}, nil
 	}
+	buf := make([]byte, int(rec.FileSize))
 	_, err := rec.ReadAt(buf, 0)
 	return buf, err
 }
