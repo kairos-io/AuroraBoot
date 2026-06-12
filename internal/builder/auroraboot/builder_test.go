@@ -292,7 +292,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 
 			ukiMu.Lock()
 			defer ukiMu.Unlock()
-			Expect(capturedUKI.Source).To(Equal("docker:quay.io/kairos/ubuntu:latest"))
+			Expect(capturedUKI.Source).To(Equal("quay.io/kairos/ubuntu:latest"))
 			Expect(capturedUKI.OutputDir).To(ContainSubstring("uki-ok"))
 			Expect(capturedUKI.OutputType).To(Equal("iso"))
 			Expect(capturedUKI.Name).To(Equal("kairos"))

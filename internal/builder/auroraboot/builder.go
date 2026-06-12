@@ -610,7 +610,10 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 	}
 
 	ukiOpts := uki.Options{
-		Source:           "docker:" + containerImage,
+		// containerImage is a full source URI; its scheme (oci:, docker:, a
+		// local daemon ref, etc.) is resolved downstream by NewSrcFromURI, so
+		// pass it through unchanged rather than forcing a scheme here.
+		Source:           containerImage,
 		OutputDir:        outputDir,
 		OutputType:       string(constants.IsoOutput),
 		Name:             "kairos",
