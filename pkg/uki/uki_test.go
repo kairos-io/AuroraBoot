@@ -101,3 +101,57 @@ var _ = Describe("sumFileSizes", func() {
 		Expect(err.Error()).To(ContainSubstring("finding file info"))
 	})
 })
+
+var _ = Describe("absolutizePaths", func() {
+	It("rewrites relative key/cert/splash paths to absolute", func() {
+		opts := &Options{
+			TPMPCRPrivateKey: "data/keys/production/tpm2-pcr-private.pem",
+			SBKey:            "data/keys/db.key",
+			SBCert:           "data/keys/db.pem",
+			PublicKeysDir:    "data/keys",
+			Splash:           "data/splash.bmp",
+		}
+		Expect(absolutizePaths(opts)).To(Succeed())
+
+		Expect(filepath.IsAbs(opts.TPMPCRPrivateKey)).To(BeTrue())
+		Expect(filepath.IsAbs(opts.SBKey)).To(BeTrue())
+		Expect(filepath.IsAbs(opts.SBCert)).To(BeTrue())
+		Expect(filepath.IsAbs(opts.PublicKeysDir)).To(BeTrue())
+		Expect(filepath.IsAbs(opts.Splash)).To(BeTrue())
+		Expect(opts.TPMPCRPrivateKey).To(HaveSuffix("/data/keys/production/tpm2-pcr-private.pem"))
+	})
+
+	It("rewrites relative overlay and output paths to absolute", func() {
+		opts := &Options{
+			OverlayRootfs: "data/overlay-rootfs",
+			OverlayISO:    "data/overlay-iso",
+			OutputDir:     "build/out",
+		}
+		Expect(absolutizePaths(opts)).To(Succeed())
+
+		Expect(filepath.IsAbs(opts.OverlayRootfs)).To(BeTrue())
+		Expect(filepath.IsAbs(opts.OverlayISO)).To(BeTrue())
+		Expect(filepath.IsAbs(opts.OutputDir)).To(BeTrue())
+		Expect(opts.OutputDir).To(HaveSuffix("/build/out"))
+	})
+
+	It("leaves empty values and pkcs11 URIs untouched", func() {
+		opts := &Options{
+			SBKey:            "pkcs11:token=mytoken;object=mykey",
+			TPMPCRPrivateKey: "",
+			OverlayISO:       "",
+			OutputDir:        "",
+		}
+		Expect(absolutizePaths(opts)).To(Succeed())
+		Expect(opts.SBKey).To(Equal("pkcs11:token=mytoken;object=mykey"))
+		Expect(opts.TPMPCRPrivateKey).To(BeEmpty())
+		Expect(opts.OverlayISO).To(BeEmpty())
+		Expect(opts.OutputDir).To(BeEmpty())
+	})
+
+	It("leaves already-absolute paths unchanged", func() {
+		opts := &Options{TPMPCRPrivateKey: "/data/keys/production/tpm2-pcr-private.pem"}
+		Expect(absolutizePaths(opts)).To(Succeed())
+		Expect(opts.TPMPCRPrivateKey).To(Equal("/data/keys/production/tpm2-pcr-private.pem"))
+	})
+})
