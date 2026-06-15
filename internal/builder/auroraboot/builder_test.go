@@ -304,6 +304,33 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(capturedUKI.OverlayRootfs).To(Equal("/tmp/my-overlay"))
 		})
 
+		It("passes a schemed source reference through to UKI unchanged", func() {
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:        "uki-schemed",
+				BaseImage: "oci:quay.io/kairos/ubuntu:latest",
+				Outputs: builder.OutputOptions{
+					ISO: true, // so the deployer step runs and we hit buildUKI after
+					UKI: true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:    "/keys/db.key",
+					UKISecureBootCert:   "/keys/db.pem",
+					UKITPMPCRKey:        "/keys/tpm.pem",
+					UKIPublicKeysDir:    "/keys",
+					UKISecureBootEnroll: "force",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(deployCalled, 5*time.Second).Should(Receive())
+			Eventually(ukiCalled, 5*time.Second).Should(Receive())
+
+			ukiMu.Lock()
+			defer ukiMu.Unlock()
+			// The scheme must survive untouched: no extra "docker:" prefixing.
+			Expect(capturedUKI.Source).To(Equal("oci:quay.io/kairos/ubuntu:latest"))
+		})
+
 		It("fails the build with a helpful message when UKI keys are missing", func() {
 			_, err := b.Build(context.Background(), builder.BuildOptions{
 				ID:        "uki-nokeys",
