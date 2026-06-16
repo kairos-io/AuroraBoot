@@ -37,9 +37,14 @@ type Config struct {
 	// Architecture to use for container image pulling (e.g., "amd64", "arm64")
 	Arch string `yaml:"arch"`
 
-	// Insecure allows pulling container images from registries over plain HTTP
-	// or presenting untrusted/self-signed TLS certificates
-	Insecure bool `yaml:"insecure"`
+	// AllowInsecureRegistries allows pulling container images from registries
+	// over plain HTTP or presenting untrusted/self-signed TLS certificates
+	AllowInsecureRegistries bool `yaml:"allow-insecure-registries"`
+
+	// DeprecatedInsecure preserves the old "insecure" config key so configs
+	// written against v0.22.0 keep working. Prefer "allow-insecure-registries".
+	// Reconciled into AllowInsecureRegistries by NormalizeDeprecated.
+	DeprecatedInsecure bool `yaml:"insecure"`
 
 	// ISO block configuration
 	ISO ISO `yaml:"iso"`
@@ -99,6 +104,19 @@ func (i *ISO) HandleDeprecations(log logger.KairosLogger) {
 		log.Logger.Warn().Msg("'iso.data' is deprecated and will be removed in a future release. Both 'iso.data' and 'iso.overlay_iso' are set; 'iso.data' will be ignored.")
 	}
 	i.DataPath = ""
+}
+
+// HandleDeprecations reconciles deprecated top-level config keys into their
+// current equivalents. The old "insecure" key is migrated to
+// "allow-insecure-registries".
+func (c *Config) HandleDeprecations(log logger.KairosLogger) {
+	if c.DeprecatedInsecure {
+		log.Logger.Warn().Msg("'insecure' is deprecated and will be removed in a future release. Use 'allow-insecure-registries' instead.")
+		if !c.AllowInsecureRegistries {
+			c.AllowInsecureRegistries = c.DeprecatedInsecure
+		}
+		c.DeprecatedInsecure = false
+	}
 }
 
 func (c Config) StateDir(s ...string) string {

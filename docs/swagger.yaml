@@ -74,6 +74,9 @@ definitions:
     type: object
   handlers.APICreateArtifactRequest:
     properties:
+      allow-insecure-registries:
+        example: false
+        type: boolean
       arch:
         enum:
         - amd64
@@ -86,9 +89,6 @@ definitions:
         type: string
       dockerfile:
         type: string
-      insecure:
-        example: false
-        type: boolean
       kairosInitImage:
         type: string
       kairosVersion:
@@ -244,8 +244,35 @@ definitions:
       nodeOnline:
         type: boolean
     type: object
+  handlers.imageSourceLocalServe:
+    properties:
+      advertisedURL:
+        description: AdvertisedURL is the advertised base URL the BMC reaches the
+          served ISO at.
+        type: string
+      configured:
+        description: |-
+          Configured reports whether a local ISO-serve listener was configured at
+          launch (--redfish-serve-addr). Without it, local serving cannot be enabled.
+        type: boolean
+      enabled:
+        description: Enabled is the runtime gate (only meaningful when Configured).
+        type: boolean
+      usesTLS:
+        description: UsesTLS reports whether the listener serves over HTTPS.
+        type: boolean
+    type: object
+  handlers.imageSourceResponse:
+    properties:
+      defaultImageURL:
+        type: string
+      localServe:
+        $ref: '#/definitions/handlers.imageSourceLocalServe'
+    type: object
   store.ArtifactRecord:
     properties:
+      allow-insecure-registries:
+        type: boolean
       arch:
         type: string
       artifacts:
@@ -272,8 +299,6 @@ definitions:
         type: boolean
       id:
         type: string
-      insecure:
-        type: boolean
       iso:
         type: boolean
       kairosInitImage:
@@ -1036,6 +1061,37 @@ paths:
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/settings/image-source:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.imageSourceResponse'
+      security:
+      - AdminBearer: []
+      summary: Read the runtime image-source settings
+      tags:
+      - Settings
+    put:
+      consumes:
+      - application/json
+      description: Sets the global default image URL and the local-serve enable flag
+        / advertised URL. Enabling local serve requires a launch-configured listener.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.imageSourceResponse'
+      security:
+      - AdminBearer: []
+      summary: Update the runtime image-source settings
+      tags:
+      - Settings
   /api/v1/settings/registration-token:
     get:
       produces:

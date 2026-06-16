@@ -66,6 +66,8 @@ func LoadByte(b []byte) (*schema.Config, *schema.ReleaseArtifact, error) {
 		return nil, nil, err
 	}
 
+	config.HandleDeprecations(internal.Log)
+
 	return config, release, nil
 }
 

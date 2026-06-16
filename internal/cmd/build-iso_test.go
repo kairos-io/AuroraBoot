@@ -89,9 +89,16 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err.Error()).ToNot(ContainSubstring("extend-live-cmdline"))
 	})
 
-	It("Accepts the insecure flag", Label("flags"), func() {
-		err = app.Run([]string{"", "build-iso", "--insecure", "system/cos"})
+	It("Accepts the allow-insecure-registries flag", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--allow-insecure-registries", "system/cos"})
 		// Fails on image reference, but the flag should be accepted (no "unknown flag" error)
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+	})
+
+	It("Accepts the deprecated insecure alias", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--insecure", "system/cos"})
+		// The deprecated alias must keep working for v0.22.0 scripts.
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 	})
