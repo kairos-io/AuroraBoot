@@ -70,29 +70,40 @@ var _ = Describe("Config HandleDeprecations", func() {
 
 	It("does nothing when neither key is set", func() {
 		cfg.HandleDeprecations(log)
-		Expect(cfg.AllowInsecureRegistries).To(BeFalse())
+		Expect(cfg.AllowInsecureRegistriesBool()).To(BeFalse())
 		Expect(cfg.DeprecatedInsecure).To(BeFalse())
 	})
 
 	It("migrates the deprecated insecure key to allow-insecure-registries", func() {
 		cfg.DeprecatedInsecure = true
 		cfg.HandleDeprecations(log)
-		Expect(cfg.AllowInsecureRegistries).To(BeTrue())
+		Expect(cfg.AllowInsecureRegistriesBool()).To(BeTrue())
 		Expect(cfg.DeprecatedInsecure).To(BeFalse())
 	})
 
 	It("keeps allow-insecure-registries when only that key is set", func() {
-		cfg.AllowInsecureRegistries = true
+		t := true
+		cfg.AllowInsecureRegistries = &t
 		cfg.HandleDeprecations(log)
-		Expect(cfg.AllowInsecureRegistries).To(BeTrue())
+		Expect(cfg.AllowInsecureRegistriesBool()).To(BeTrue())
 		Expect(cfg.DeprecatedInsecure).To(BeFalse())
 	})
 
-	It("does not clobber allow-insecure-registries when both keys are set", func() {
-		cfg.AllowInsecureRegistries = true
+	It("does not clobber allow-insecure-registries when both keys are set to true", func() {
+		t := true
+		cfg.AllowInsecureRegistries = &t
 		cfg.DeprecatedInsecure = true
 		cfg.HandleDeprecations(log)
-		Expect(cfg.AllowInsecureRegistries).To(BeTrue())
+		Expect(cfg.AllowInsecureRegistriesBool()).To(BeTrue())
+		Expect(cfg.DeprecatedInsecure).To(BeFalse())
+	})
+
+	It("does not override an explicit false allow-insecure-registries when insecure is true", func() {
+		f := false
+		cfg.AllowInsecureRegistries = &f
+		cfg.DeprecatedInsecure = true
+		cfg.HandleDeprecations(log)
+		Expect(cfg.AllowInsecureRegistriesBool()).To(BeFalse())
 		Expect(cfg.DeprecatedInsecure).To(BeFalse())
 	})
 })
