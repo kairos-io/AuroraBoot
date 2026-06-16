@@ -101,22 +101,22 @@ type APIUpdateCommandStatusRequest struct {
 // Mirrors the shape the frontend sends; see internal/handlers/artifacts.go
 // for the authoritative parser.
 type APICreateArtifactRequest struct {
-	Name              string                  `json:"name"`
-	BaseImage         string                  `json:"baseImage"`
-	KairosVersion     string                  `json:"kairosVersion" example:"v1.0"`
-	Model             string                  `json:"model" example:"generic"`
-	Arch              string                  `json:"arch" example:"amd64" enums:"amd64,arm64"`
-	Variant           string                  `json:"variant" example:"core" enums:"core,standard"`
-	KubernetesDistro  string                  `json:"kubernetesDistro" enums:"k3s,k0s"`
-	KubernetesVersion string                  `json:"kubernetesVersion"`
-	Insecure          bool                    `json:"insecure" example:"false"`
-	Dockerfile        string                  `json:"dockerfile"`
-	OverlayRootfs     string                  `json:"overlayRootfs"`
-	KairosInitImage   string                  `json:"kairosInitImage"`
-	Outputs           APIArtifactOutputs      `json:"outputs"`
-	Signing           APIArtifactSigning      `json:"signing"`
-	Provisioning      APIArtifactProvisioning `json:"provisioning"`
-	CloudConfig       string                  `json:"cloudConfig"`
+	Name                    string                  `json:"name"`
+	BaseImage               string                  `json:"baseImage"`
+	KairosVersion           string                  `json:"kairosVersion" example:"v1.0"`
+	Model                   string                  `json:"model" example:"generic"`
+	Arch                    string                  `json:"arch" example:"amd64" enums:"amd64,arm64"`
+	Variant                 string                  `json:"variant" example:"core" enums:"core,standard"`
+	KubernetesDistro        string                  `json:"kubernetesDistro" enums:"k3s,k0s"`
+	KubernetesVersion       string                  `json:"kubernetesVersion"`
+	AllowInsecureRegistries bool                    `json:"allow-insecure-registries" example:"false"`
+	Dockerfile              string                  `json:"dockerfile"`
+	OverlayRootfs           string                  `json:"overlayRootfs"`
+	KairosInitImage         string                  `json:"kairosInitImage"`
+	Outputs                 APIArtifactOutputs      `json:"outputs"`
+	Signing                 APIArtifactSigning      `json:"signing"`
+	Provisioning            APIArtifactProvisioning `json:"provisioning"`
+	CloudConfig             string                  `json:"cloudConfig"`
 }
 
 // APIArtifactOutputs toggles the build's output formats.
@@ -145,13 +145,13 @@ type APIArtifactSigning struct {
 
 // APIArtifactProvisioning holds cloud-config injection options.
 type APIArtifactProvisioning struct {
-	AutoInstall        bool     `json:"autoInstall"`
-	RegisterAuroraBoot bool     `json:"registerAuroraBoot"`
-	TargetGroupID      string   `json:"targetGroupId"`
-	UserMode           string   `json:"userMode" enums:"default,custom,none"`
-	Username           string   `json:"username"`
-	Password           string   `json:"password"`
-	SSHKeys            string   `json:"sshKeys"`
+	AutoInstall        bool   `json:"autoInstall"`
+	RegisterAuroraBoot bool   `json:"registerAuroraBoot"`
+	TargetGroupID      string `json:"targetGroupId"`
+	UserMode           string `json:"userMode" enums:"default,custom,none"`
+	Username           string `json:"username"`
+	Password           string `json:"password"`
+	SSHKeys            string `json:"sshKeys"`
 	// AllowedCommands is the explicit list emitted under phonehome.allowed_commands.
 	// Nil means "use AuroraBoot's safe default set". An empty slice means deny-all
 	// (observe-only node) — the UI warns when the operator picks this.

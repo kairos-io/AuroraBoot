@@ -64,7 +64,7 @@ var BuildISOCmd = cli.Command{
 			Name:  "extend-live-cmdline",
 			Usage: "Append options to the kernel cmdline when booting from the live/installer ISO (e.g. rd.debug rd.shell). Does not affect the installed system.",
 		},
-		InsecureFlag,
+		AllowInsecureRegistriesFlag,
 	},
 	ArgsUsage: "<source>",
 	Action: func(ctx *cli.Context) error {
@@ -111,10 +111,10 @@ var BuildISOCmd = cli.Command{
 			ContainerImage: source,
 		}
 		isoOptions := schema.ISO{
-			OverrideName:  ctx.String("override-name"),
-			IncludeDate:   ctx.Bool("date"),
-			OverlayISO:    ctx.String("overlay-iso"),
-			OverlayRootfs: ctx.String("overlay-rootfs"),
+			OverrideName:      ctx.String("override-name"),
+			IncludeDate:       ctx.Bool("date"),
+			OverlayISO:        ctx.String("overlay-iso"),
+			OverlayRootfs:     ctx.String("overlay-rootfs"),
 			ExtendLiveCmdline: ctx.String("extend-live-cmdline"),
 		}
 
@@ -123,11 +123,11 @@ var BuildISOCmd = cli.Command{
 		}
 
 		c := schema.Config{
-			ISO:         isoOptions,
-			State:       ctx.String("output"),
-			CloudConfig: cloudConfig,
-			Arch:        ctx.String("arch"),
-			Insecure:    ctx.Bool("insecure"),
+			ISO:                     isoOptions,
+			State:                   ctx.String("output"),
+			CloudConfig:             cloudConfig,
+			Arch:                    ctx.String("arch"),
+			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
 		}
 
 		if c.State == "" {

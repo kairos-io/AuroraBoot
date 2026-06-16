@@ -11,7 +11,7 @@ export interface Artifact {
   model: string;
   arch?: string;
   variant?: string;
-  insecure?: boolean;
+  "allow-insecure-registries"?: boolean;
   iso: boolean;
   cloudImage: boolean;
   netboot: boolean;
@@ -87,7 +87,7 @@ export interface CreateArtifactInput {
    * Allow pulling the base image from a registry served over plain HTTP or
    * presenting an untrusted/self-signed TLS certificate.
    */
-  insecure?: boolean;
+  "allow-insecure-registries"?: boolean;
   dockerfile?: string;
   overlayRootfs?: string;
   kairosInitImage?: string;

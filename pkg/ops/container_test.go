@@ -95,7 +95,7 @@ var _ = Describe("DumpSource against an insecure registry", Label("ops"), func()
 		Expect(os.RemoveAll(destDir)).To(Succeed())
 	})
 
-	It("fails without the insecure flag", func() {
+	It("fails without allow-insecure-registries", func() {
 		err := DumpSource("docker://"+imageRef, func() string { return destDir }, "", false)(context.Background())
 		Expect(err).To(HaveOccurred())
 		// It must fail because of TLS verification, not because the ref is
@@ -107,7 +107,7 @@ var _ = Describe("DumpSource against an insecure registry", Label("ops"), func()
 		))
 	})
 
-	It("succeeds with the insecure flag and extracts the image", func() {
+	It("succeeds with allow-insecure-registries and extracts the image", func() {
 		err := DumpSource("docker://"+imageRef, func() string { return destDir }, "", true)(context.Background())
 		Expect(err).ToNot(HaveOccurred())
 

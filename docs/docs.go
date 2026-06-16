@@ -991,6 +991,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/settings/image-source": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Read the runtime image-source settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.imageSourceResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Sets the global default image URL and the local-serve enable flag / advertised URL. Enabling local serve requires a launch-configured listener.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Update the runtime image-source settings",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.imageSourceResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/settings/registration-token": {
             "get": {
                 "security": [
@@ -1147,6 +1197,10 @@ const docTemplate = `{
         "handlers.APICreateArtifactRequest": {
             "type": "object",
             "properties": {
+                "allow-insecure-registries": {
+                    "type": "boolean",
+                    "example": false
+                },
                 "arch": {
                     "type": "string",
                     "enum": [
@@ -1163,10 +1217,6 @@ const docTemplate = `{
                 },
                 "dockerfile": {
                     "type": "string"
-                },
-                "insecure": {
-                    "type": "boolean",
-                    "example": false
                 },
                 "kairosInitImage": {
                     "type": "string"
@@ -1395,9 +1445,44 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.imageSourceLocalServe": {
+            "type": "object",
+            "properties": {
+                "advertisedURL": {
+                    "description": "AdvertisedURL is the advertised base URL the BMC reaches the served ISO at.",
+                    "type": "string"
+                },
+                "configured": {
+                    "description": "Configured reports whether a local ISO-serve listener was configured at\nlaunch (--redfish-serve-addr). Without it, local serving cannot be enabled.",
+                    "type": "boolean"
+                },
+                "enabled": {
+                    "description": "Enabled is the runtime gate (only meaningful when Configured).",
+                    "type": "boolean"
+                },
+                "usesTLS": {
+                    "description": "UsesTLS reports whether the listener serves over HTTPS.",
+                    "type": "boolean"
+                }
+            }
+        },
+        "handlers.imageSourceResponse": {
+            "type": "object",
+            "properties": {
+                "defaultImageURL": {
+                    "type": "string"
+                },
+                "localServe": {
+                    "$ref": "#/definitions/handlers.imageSourceLocalServe"
+                }
+            }
+        },
         "store.ArtifactRecord": {
             "type": "object",
             "properties": {
+                "allow-insecure-registries": {
+                    "type": "boolean"
+                },
                 "arch": {
                     "type": "string"
                 },
@@ -1436,9 +1521,6 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
-                },
-                "insecure": {
-                    "type": "boolean"
                 },
                 "iso": {
                     "type": "boolean"

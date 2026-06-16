@@ -14,11 +14,11 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/AuroraBoot/pkg/uki"
-	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
+	"github.com/kairos-io/AuroraBoot/pkg/uki"
 	sdklogger "github.com/kairos-io/kairos-sdk/types/logger"
 	"github.com/spectrocloud-labs/herd"
 )
@@ -50,9 +50,9 @@ func DefaultUKIBuildFunc(opts uki.Options) error { return uki.Build(opts) }
 
 // Builder implements builder.ArtifactBuilder using AuroraBoot.
 type Builder struct {
-	builds      map[string]*buildState
-	mu          sync.RWMutex
-	baseDir     string
+	builds         map[string]*buildState
+	mu             sync.RWMutex
+	baseDir        string
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
 	store          store.ArtifactStore
@@ -182,32 +182,32 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	// Persist artifact record in DB if store is available.
 	if b.store != nil {
 		rec := &store.ArtifactRecord{
-			ID:               id,
-			Name:             opts.Name,
-			Phase:            store.ArtifactPending,
-			BaseImage:        opts.BaseImage,
-			KairosVersion:    opts.KairosVersion,
-			Model:            opts.Model,
-			ISO:              opts.ISO,
-			CloudImage:       opts.CloudImage,
-			Netboot:          opts.Netboot,
-			FIPS:             opts.FIPS,
-			TrustedBoot:      opts.TrustedBoot,
-			Arch:             opts.Source.Arch,
-			Variant:          opts.Source.Variant,
-			Insecure:         opts.Source.Insecure,
-			RawDisk:          opts.Outputs.RawDisk,
-			Tar:              opts.Outputs.Tar,
-			GCE:              opts.Outputs.GCE,
-			VHD:              opts.Outputs.VHD,
-			UKI:              opts.Outputs.UKI,
-			KairosInitImage:  opts.KairosInitImage,
-			AutoInstall:      opts.Provisioning.AutoInstall,
-			RegisterAuroraBoot: opts.Provisioning.RegisterAuroraBoot,
-			Dockerfile:       opts.Dockerfile,
-			CloudConfig:      opts.CloudConfig,
-			CreatedAt:        time.Now(),
-			UpdatedAt:        time.Now(),
+			ID:                      id,
+			Name:                    opts.Name,
+			Phase:                   store.ArtifactPending,
+			BaseImage:               opts.BaseImage,
+			KairosVersion:           opts.KairosVersion,
+			Model:                   opts.Model,
+			ISO:                     opts.ISO,
+			CloudImage:              opts.CloudImage,
+			Netboot:                 opts.Netboot,
+			FIPS:                    opts.FIPS,
+			TrustedBoot:             opts.TrustedBoot,
+			Arch:                    opts.Source.Arch,
+			Variant:                 opts.Source.Variant,
+			AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
+			RawDisk:                 opts.Outputs.RawDisk,
+			Tar:                     opts.Outputs.Tar,
+			GCE:                     opts.Outputs.GCE,
+			VHD:                     opts.Outputs.VHD,
+			UKI:                     opts.Outputs.UKI,
+			KairosInitImage:         opts.KairosInitImage,
+			AutoInstall:             opts.Provisioning.AutoInstall,
+			RegisterAuroraBoot:      opts.Provisioning.RegisterAuroraBoot,
+			Dockerfile:              opts.Dockerfile,
+			CloudConfig:             opts.CloudConfig,
+			CreatedAt:               time.Now(),
+			UpdatedAt:               time.Now(),
 		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()
@@ -292,9 +292,15 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	if logWriter != nil {
 		fmt.Fprintf(logWriter, "=== Starting AuroraBoot build ===\n")
 		fmt.Fprintf(logWriter, "Image: %s\n", containerImage)
-		if opts.ISO { fmt.Fprintf(logWriter, "Output: ISO\n") }
-		if opts.CloudImage { fmt.Fprintf(logWriter, "Output: Cloud Image (raw disk)\n") }
-		if opts.Netboot { fmt.Fprintf(logWriter, "Output: Netboot\n") }
+		if opts.ISO {
+			fmt.Fprintf(logWriter, "Output: ISO\n")
+		}
+		if opts.CloudImage {
+			fmt.Fprintf(logWriter, "Output: Cloud Image (raw disk)\n")
+		}
+		if opts.Netboot {
+			fmt.Fprintf(logWriter, "Output: Netboot\n")
+		}
 		fmt.Fprintf(logWriter, "Output dir: %s\n", outputDir)
 		if opts.CloudConfig != "" {
 			fmt.Fprintf(logWriter, "Cloud config:\n%s\n", opts.CloudConfig)
@@ -566,7 +572,7 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		config.Arch = opts.Source.Arch
 	}
 
-	config.Insecure = opts.Source.Insecure
+	config.AllowInsecureRegistries = opts.Source.AllowInsecureRegistries
 
 	if opts.CloudImage || opts.Outputs.RawDisk || opts.Outputs.GCE || opts.Outputs.VHD {
 		config.Disk.EFI = true
@@ -750,7 +756,7 @@ func collectArtifacts(dir string) []string {
 		".tar":    true,
 		".tar.gz": true,
 		".vhd":    true,
-		".sha256":  true,
+		".sha256": true,
 	}
 
 	var artifacts []string

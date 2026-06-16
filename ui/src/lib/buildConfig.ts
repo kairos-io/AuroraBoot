@@ -50,7 +50,7 @@ export interface BuildConfigPayload {
     kubernetesDistro?: string;
     kubernetesVersion?: string;
     kairosInitImage?: string;
-    insecure?: boolean;
+    "allow-insecure-registries"?: boolean;
   };
   dockerfile?: string;
   overlayRootfs?: string;
@@ -105,7 +105,8 @@ export function payloadFromBuilder(args: {
       kubernetesDistro: form.variant === "standard" ? form.kubernetesDistro || undefined : undefined,
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion || undefined : undefined,
       kairosInitImage: form.kairosInitImage || undefined,
-      insecure: buildMode === "image" ? form.insecure || undefined : undefined,
+      "allow-insecure-registries":
+        buildMode === "image" ? form["allow-insecure-registries"] || undefined : undefined,
     },
     dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
     overlayRootfs: form.overlayRootfs || undefined,
@@ -152,7 +153,8 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
       kubernetesDistro: artifact.kubernetesDistro || undefined,
       kubernetesVersion: artifact.kubernetesVersion || undefined,
       kairosInitImage: artifact.kairosInitImage || undefined,
-      insecure: buildMode === "image" ? artifact.insecure || undefined : undefined,
+      "allow-insecure-registries":
+        buildMode === "image" ? artifact["allow-insecure-registries"] || undefined : undefined,
     },
     dockerfile: buildMode === "dockerfile" ? artifact.dockerfile : undefined,
     outputs: {
