@@ -56,3 +56,43 @@ var _ = Describe("ISO HandleDeprecations", func() {
 		Expect(iso.Name).To(Equal("test-iso"))
 	})
 })
+
+var _ = Describe("Config HandleDeprecations", func() {
+	var (
+		cfg schema.Config
+		log logger.KairosLogger
+	)
+
+	BeforeEach(func() {
+		cfg = schema.Config{}
+		log = logger.NewKairosLogger("test", "error", false)
+	})
+
+	It("does nothing when neither key is set", func() {
+		cfg.HandleDeprecations(log)
+		Expect(cfg.AllowInsecureRegistries).To(BeFalse())
+		Expect(cfg.DeprecatedInsecure).To(BeFalse())
+	})
+
+	It("migrates the deprecated insecure key to allow-insecure-registries", func() {
+		cfg.DeprecatedInsecure = true
+		cfg.HandleDeprecations(log)
+		Expect(cfg.AllowInsecureRegistries).To(BeTrue())
+		Expect(cfg.DeprecatedInsecure).To(BeFalse())
+	})
+
+	It("keeps allow-insecure-registries when only that key is set", func() {
+		cfg.AllowInsecureRegistries = true
+		cfg.HandleDeprecations(log)
+		Expect(cfg.AllowInsecureRegistries).To(BeTrue())
+		Expect(cfg.DeprecatedInsecure).To(BeFalse())
+	})
+
+	It("does not clobber allow-insecure-registries when both keys are set", func() {
+		cfg.AllowInsecureRegistries = true
+		cfg.DeprecatedInsecure = true
+		cfg.HandleDeprecations(log)
+		Expect(cfg.AllowInsecureRegistries).To(BeTrue())
+		Expect(cfg.DeprecatedInsecure).To(BeFalse())
+	})
+})

@@ -39,7 +39,7 @@ Examples:
 			Usage:   "Set the log level",
 			Value:   "info",
 		},
-		InsecureFlag,
+		AllowInsecureRegistriesFlag,
 	},
 	ArgsUsage: "<image> <destination>",
 	Action: func(ctx *cli.Context) error {
@@ -82,7 +82,7 @@ Examples:
 			Msg("Unpacking container image")
 
 		// Use the existing DumpSource function which already supports arch
-		dumpFn := ops.DumpSource(image, func() string { return destination }, arch, ctx.Bool("insecure"))
+		dumpFn := ops.DumpSource(image, func() string { return destination }, arch, ctx.Bool("allow-insecure-registries"))
 		if err := dumpFn(ctx.Context); err != nil {
 			return fmt.Errorf("failed to unpack image: %w", err)
 		}

@@ -146,60 +146,60 @@ const (
 // image and used for upgrade tracking), not the Kairos framework
 // version of the base image.
 type Artifact struct {
-	ID               string        `json:"id"`
-	Name             string        `json:"name,omitempty"`
-	Saved            bool          `json:"saved,omitempty"`
-	Phase            ArtifactPhase `json:"phase"`
-	Message          string        `json:"message,omitempty"`
-	BaseImage        string        `json:"baseImage"`
-	KairosVersion    string        `json:"kairosVersion"`
-	Model            string        `json:"model"`
-	Arch             string        `json:"arch"`
-	Variant          string        `json:"variant"`
-	Insecure         bool          `json:"insecure"`
-	KubernetesDistro string        `json:"kubernetesDistro,omitempty"`
-	ISO              bool          `json:"iso"`
-	CloudImage       bool          `json:"cloudImage"`
-	Netboot          bool          `json:"netboot"`
-	RawDisk          bool          `json:"rawDisk"`
-	Tar              bool          `json:"tar"`
-	GCE              bool          `json:"gce"`
-	VHD              bool          `json:"vhd"`
-	UKI              bool          `json:"uki"`
-	FIPS             bool          `json:"fips"`
-	TrustedBoot      bool          `json:"trustedBoot"`
-	AutoInstall      bool          `json:"autoInstall"`
-	RegisterAuroraBoot bool          `json:"registerAuroraBoot"`
-	Dockerfile       string        `json:"dockerfile,omitempty"`
-	CloudConfig      string        `json:"cloudConfig,omitempty"`
-	TargetGroupID    string        `json:"targetGroupId,omitempty"`
-	ContainerImage   string        `json:"containerImage,omitempty"`
-	Artifacts        []string      `json:"artifacts,omitempty"`
-	CreatedAt        time.Time     `json:"createdAt"`
-	UpdatedAt        time.Time     `json:"updatedAt"`
+	ID                      string        `json:"id"`
+	Name                    string        `json:"name,omitempty"`
+	Saved                   bool          `json:"saved,omitempty"`
+	Phase                   ArtifactPhase `json:"phase"`
+	Message                 string        `json:"message,omitempty"`
+	BaseImage               string        `json:"baseImage"`
+	KairosVersion           string        `json:"kairosVersion"`
+	Model                   string        `json:"model"`
+	Arch                    string        `json:"arch"`
+	Variant                 string        `json:"variant"`
+	AllowInsecureRegistries bool          `json:"allow-insecure-registries"`
+	KubernetesDistro        string        `json:"kubernetesDistro,omitempty"`
+	ISO                     bool          `json:"iso"`
+	CloudImage              bool          `json:"cloudImage"`
+	Netboot                 bool          `json:"netboot"`
+	RawDisk                 bool          `json:"rawDisk"`
+	Tar                     bool          `json:"tar"`
+	GCE                     bool          `json:"gce"`
+	VHD                     bool          `json:"vhd"`
+	UKI                     bool          `json:"uki"`
+	FIPS                    bool          `json:"fips"`
+	TrustedBoot             bool          `json:"trustedBoot"`
+	AutoInstall             bool          `json:"autoInstall"`
+	RegisterAuroraBoot      bool          `json:"registerAuroraBoot"`
+	Dockerfile              string        `json:"dockerfile,omitempty"`
+	CloudConfig             string        `json:"cloudConfig,omitempty"`
+	TargetGroupID           string        `json:"targetGroupId,omitempty"`
+	ContainerImage          string        `json:"containerImage,omitempty"`
+	Artifacts               []string      `json:"artifacts,omitempty"`
+	CreatedAt               time.Time     `json:"createdAt"`
+	UpdatedAt               time.Time     `json:"updatedAt"`
 }
 
 // CreateArtifactRequest is the body of POST /api/v1/artifacts.
 // This is a large struct; most fields are optional and reasonable
 // defaults are applied server-side. Mirrors internal handler DTO.
 type CreateArtifactRequest struct {
-	Name              string                 `json:"name,omitempty"`
-	BaseImage         string                 `json:"baseImage,omitempty"`
-	KairosVersion     string                 `json:"kairosVersion,omitempty"`
-	Model             string                 `json:"model,omitempty"`
-	Arch              string                 `json:"arch,omitempty"`
-	Variant           string                 `json:"variant,omitempty"`
-	KubernetesDistro  string                 `json:"kubernetesDistro,omitempty"`
-	KubernetesVersion string                 `json:"kubernetesVersion,omitempty"`
-	Insecure          bool                   `json:"insecure,omitempty"`
-	Dockerfile        string                 `json:"dockerfile,omitempty"`
-	OverlayRootfs     string                 `json:"overlayRootfs,omitempty"`
-	KairosInitImage   string                 `json:"kairosInitImage,omitempty"`
-	Outputs           ArtifactOutputs        `json:"outputs"`
-	Signing           ArtifactSigning        `json:"signing"`
-	Provisioning      ArtifactProvisioning   `json:"provisioning"`
-	CloudConfig       string                 `json:"cloudConfig,omitempty"`
-	Extra             map[string]interface{} `json:"-"` // reserved for future fields
+	Name                    string                 `json:"name,omitempty"`
+	BaseImage               string                 `json:"baseImage,omitempty"`
+	KairosVersion           string                 `json:"kairosVersion,omitempty"`
+	Model                   string                 `json:"model,omitempty"`
+	Arch                    string                 `json:"arch,omitempty"`
+	Variant                 string                 `json:"variant,omitempty"`
+	KubernetesDistro        string                 `json:"kubernetesDistro,omitempty"`
+	KubernetesVersion       string                 `json:"kubernetesVersion,omitempty"`
+	AllowInsecureRegistries bool                   `json:"allow-insecure-registries,omitempty"`
+	Dockerfile              string                 `json:"dockerfile,omitempty"`
+	OverlayRootfs           string                 `json:"overlayRootfs,omitempty"`
+	KairosInitImage         string                 `json:"kairosInitImage,omitempty"`
+	Outputs                 ArtifactOutputs        `json:"outputs"`
+	Signing                 ArtifactSigning        `json:"signing"`
+	Provisioning            ArtifactProvisioning   `json:"provisioning"`
+	CloudConfig             string                 `json:"cloudConfig,omitempty"`
+	Extra                   map[string]interface{} `json:"-"` // reserved for future fields
 }
 
 // ArtifactOutputs toggles build output formats.
@@ -228,13 +228,13 @@ type ArtifactSigning struct {
 
 // ArtifactProvisioning describes cloud-config injection options.
 type ArtifactProvisioning struct {
-	AutoInstall      bool   `json:"autoInstall"`
+	AutoInstall        bool   `json:"autoInstall"`
 	RegisterAuroraBoot bool   `json:"registerAuroraBoot"`
-	TargetGroupID    string `json:"targetGroupId,omitempty"`
-	UserMode         string `json:"userMode,omitempty"`
-	Username         string `json:"username,omitempty"`
-	Password         string `json:"password,omitempty"`
-	SSHKeys          string `json:"sshKeys,omitempty"`
+	TargetGroupID      string `json:"targetGroupId,omitempty"`
+	UserMode           string `json:"userMode,omitempty"`
+	Username           string `json:"username,omitempty"`
+	Password           string `json:"password,omitempty"`
+	SSHKeys            string `json:"sshKeys,omitempty"`
 }
 
 // UpdateArtifactRequest is the body of PATCH /api/v1/artifacts/:id.

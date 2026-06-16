@@ -12,16 +12,16 @@ import (
 	imageutils "github.com/kairos-io/kairos-sdk/utils/image"
 )
 
-// insecureImageExtractor pulls OCI images allowing plain-HTTP registries and
-// registries serving untrusted/self-signed TLS certificates. It implements
-// kairos-sdk's imagetypes.ImageExtractor so it can be plugged into elemental
-// via WithImageExtractor, mirroring kairos-agent's OCIImageExtractor but
-// passing the insecure option down to the SDK.
-type insecureImageExtractor struct{}
+// allowInsecureRegistriesImageExtractor pulls OCI images allowing plain-HTTP
+// registries and registries serving untrusted/self-signed TLS certificates. It
+// implements kairos-sdk's imagetypes.ImageExtractor so it can be plugged into
+// elemental via WithImageExtractor, mirroring kairos-agent's OCIImageExtractor
+// but passing the insecure-registry option down to the SDK.
+type allowInsecureRegistriesImageExtractor struct{}
 
-var _ sdkImage.ImageExtractor = insecureImageExtractor{}
+var _ sdkImage.ImageExtractor = allowInsecureRegistriesImageExtractor{}
 
-func (e insecureImageExtractor) ExtractImage(imageRef, destination, platformRef string, excludes ...string) error {
+func (e allowInsecureRegistriesImageExtractor) ExtractImage(imageRef, destination, platformRef string, excludes ...string) error {
 	if platformRef == "" {
 		platformRef = utils.GetCurrentPlatform()
 	}
@@ -32,7 +32,7 @@ func (e insecureImageExtractor) ExtractImage(imageRef, destination, platformRef 
 	return imageutils.ExtractOCIImage(img, destination, excludes...)
 }
 
-func (e insecureImageExtractor) GetOCIImageSize(imageRef, platformRef string) (int64, error) {
+func (e allowInsecureRegistriesImageExtractor) GetOCIImageSize(imageRef, platformRef string) (int64, error) {
 	if platformRef == "" {
 		platformRef = utils.GetCurrentPlatform()
 	}
@@ -41,21 +41,22 @@ func (e insecureImageExtractor) GetOCIImageSize(imageRef, platformRef string) (i
 
 // DumpSource pulls a container image either remotely or locally from a docker daemon
 // or simply copies the directory to the destination.
-// When insecure is true, pulls are allowed from plain-HTTP registries and from
-// registries presenting untrusted/self-signed TLS certificates.
+// When allowInsecureRegistries is true, pulls are allowed from plain-HTTP
+// registries and from registries presenting untrusted/self-signed TLS
+// certificates.
 // Supports these prefixes:
 // https://github.com/kairos-io/kairos-agent/blob/1e81cdef38677c8a36cae50d3334559976f66481/pkg/types/v1/common.go#L30-L33
-func DumpSource(image string, dstFunc valueGetOnCall, arch string, insecure bool) func(ctx context.Context) error {
+func DumpSource(image string, dstFunc valueGetOnCall, arch string, allowInsecureRegistries bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
 		if image == "" {
 			return fmt.Errorf("image source is empty, cannot dump to %s", dst)
 		}
-		internal.Log.Logger.Debug().Str("arch", arch).Bool("insecure", insecure).Msg("DumpSource: arch parameter")
+		internal.Log.Logger.Debug().Str("arch", arch).Bool("allow-insecure-registries", allowInsecureRegistries).Msg("DumpSource: arch parameter")
 
 		var extractor sdkImage.ImageExtractor = imageextractor.OCIImageExtractor{}
-		if insecure {
-			extractor = insecureImageExtractor{}
+		if allowInsecureRegistries {
+			extractor = allowInsecureRegistriesImageExtractor{}
 		}
 		opts := []GenericOptions{
 			WithImageExtractor(extractor),

@@ -26,7 +26,7 @@ type ArtifactHandler struct {
 	groups         store.GroupStore
 	secureBootKeys store.SecureBootKeySetStore
 	regToken       string
-	aurorabootURL    string
+	aurorabootURL  string
 	artifactsDir   string
 }
 
@@ -38,26 +38,26 @@ func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactS
 		groups:         groups,
 		secureBootKeys: secureBootKeys,
 		regToken:       regToken,
-		aurorabootURL:    aurorabootURL,
+		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
 	}
 }
 
 // createArtifactRequest is the expected body for creating an artifact build.
 type createArtifactRequest struct {
-	Name              string `json:"name"`
-	BaseImage         string `json:"baseImage"`
-	KairosVersion     string `json:"kairosVersion"`
-	Model             string `json:"model"`
-	Arch              string `json:"arch"`
-	Variant           string `json:"variant"`
-	KubernetesDistro  string `json:"kubernetesDistro"`
-	KubernetesVersion string `json:"kubernetesVersion"`
-	Insecure          bool   `json:"insecure"`
-	Dockerfile        string `json:"dockerfile"`
-	BuildContextDir   string `json:"buildContextDir"`
-	OverlayRootfs     string `json:"overlayRootfs"`
-	KairosInitImage   string `json:"kairosInitImage"`
+	Name                    string `json:"name"`
+	BaseImage               string `json:"baseImage"`
+	KairosVersion           string `json:"kairosVersion"`
+	Model                   string `json:"model"`
+	Arch                    string `json:"arch"`
+	Variant                 string `json:"variant"`
+	KubernetesDistro        string `json:"kubernetesDistro"`
+	KubernetesVersion       string `json:"kubernetesVersion"`
+	AllowInsecureRegistries bool   `json:"allow-insecure-registries"`
+	Dockerfile              string `json:"dockerfile"`
+	BuildContextDir         string `json:"buildContextDir"`
+	OverlayRootfs           string `json:"overlayRootfs"`
+	KairosInitImage         string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
 	Signing      *signingConfig     `json:"signing,omitempty"`
@@ -81,11 +81,11 @@ type artifactOutputs struct {
 }
 
 type signingConfig struct {
-	UKIKeySetID        string `json:"ukiKeySetId"`
-	UKISecureBootKey   string `json:"ukiSecureBootKey"`
-	UKISecureBootCert  string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey       string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir   string `json:"ukiPublicKeysDir"`
+	UKIKeySetID         string `json:"ukiKeySetId"`
+	UKISecureBootKey    string `json:"ukiSecureBootKey"`
+	UKISecureBootCert   string `json:"ukiSecureBootCert"`
+	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
+	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
 }
 
@@ -185,14 +185,14 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	}
 	// Set grouped fields.
 	opts.Source = builder.ImageSource{
-		BaseImage:         req.BaseImage,
-		KairosVersion:     req.KairosVersion,
-		Model:             req.Model,
-		Arch:              req.Arch,
-		Variant:           req.Variant,
-		KubernetesDistro:  req.KubernetesDistro,
-		KubernetesVersion: req.KubernetesVersion,
-		Insecure:          req.Insecure,
+		BaseImage:               req.BaseImage,
+		KairosVersion:           req.KairosVersion,
+		Model:                   req.Model,
+		Arch:                    req.Arch,
+		Variant:                 req.Variant,
+		KubernetesDistro:        req.KubernetesDistro,
+		KubernetesVersion:       req.KubernetesVersion,
+		AllowInsecureRegistries: req.AllowInsecureRegistries,
 	}
 	opts.Outputs = builder.OutputOptions{
 		ISO:         req.Outputs.ISO,
@@ -274,38 +274,38 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// primary key. But builders that don't persist (e.g. the mock builder used
 	// in tests, or any builder constructed without a store) rely on this Create
 	// being the one that writes the row — so keep it. Both sites set the same
-	// fields, including Insecure, so the stored record is identical either way.
+	// fields, including AllowInsecureRegistries, so the stored record is identical either way.
 	if h.store != nil {
 		rec := &store.ArtifactRecord{
-			ID:                status.ID,
-			Name:              req.Name,
-			Phase:             status.Phase,
-			Message:           status.Message,
-			BaseImage:         req.BaseImage,
-			KairosVersion:     req.KairosVersion,
-			Model:             req.Model,
-			ISO:               req.Outputs.ISO,
-			CloudImage:        req.Outputs.CloudImage,
-			Netboot:           req.Outputs.Netboot,
-			FIPS:              req.Outputs.FIPS,
-			TrustedBoot:       req.Outputs.TrustedBoot,
-			Arch:              req.Arch,
-			Variant:           req.Variant,
-			Insecure:          req.Insecure,
-			RawDisk:           req.Outputs.RawDisk,
-			Tar:               req.Outputs.Tar,
-			GCE:               req.Outputs.GCE,
-			VHD:               req.Outputs.VHD,
-			UKI:               req.Outputs.UKI,
-			KairosInitImage:   req.KairosInitImage,
-			AutoInstall:       autoInstall,
-			RegisterAuroraBoot:  registerAuroraBoot,
-			Dockerfile:        req.Dockerfile,
-			CloudConfig:       opts.CloudConfig,
-			KubernetesDistro:  req.KubernetesDistro,
-			KubernetesVersion: req.KubernetesVersion,
-			TargetGroupID:     req.Provisioning.TargetGroupId,
-			OverlayRootfs:     req.OverlayRootfs,
+			ID:                      status.ID,
+			Name:                    req.Name,
+			Phase:                   status.Phase,
+			Message:                 status.Message,
+			BaseImage:               req.BaseImage,
+			KairosVersion:           req.KairosVersion,
+			Model:                   req.Model,
+			ISO:                     req.Outputs.ISO,
+			CloudImage:              req.Outputs.CloudImage,
+			Netboot:                 req.Outputs.Netboot,
+			FIPS:                    req.Outputs.FIPS,
+			TrustedBoot:             req.Outputs.TrustedBoot,
+			Arch:                    req.Arch,
+			Variant:                 req.Variant,
+			AllowInsecureRegistries: req.AllowInsecureRegistries,
+			RawDisk:                 req.Outputs.RawDisk,
+			Tar:                     req.Outputs.Tar,
+			GCE:                     req.Outputs.GCE,
+			VHD:                     req.Outputs.VHD,
+			UKI:                     req.Outputs.UKI,
+			KairosInitImage:         req.KairosInitImage,
+			AutoInstall:             autoInstall,
+			RegisterAuroraBoot:      registerAuroraBoot,
+			Dockerfile:              req.Dockerfile,
+			CloudConfig:             opts.CloudConfig,
+			KubernetesDistro:        req.KubernetesDistro,
+			KubernetesVersion:       req.KubernetesVersion,
+			TargetGroupID:           req.Provisioning.TargetGroupId,
+			OverlayRootfs:           req.OverlayRootfs,
 		}
 		_ = h.store.Create(ctx, rec)
 	}

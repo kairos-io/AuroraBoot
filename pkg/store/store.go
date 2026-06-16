@@ -139,41 +139,41 @@ type CommandStore interface {
 
 // ArtifactRecord stores a build artifact and its metadata.
 type ArtifactRecord struct {
-	ID                 string    `json:"id" gorm:"primaryKey"`
-	Name               string    `json:"name,omitempty"`
-	Saved              bool      `json:"saved,omitempty"`
-	Phase              string    `json:"phase"`
-	Message            string    `json:"message"`
-	BaseImage          string    `json:"baseImage"`
-	KairosVersion      string    `json:"kairosVersion"`
-	Model              string    `json:"model"`
-	ISO                bool      `json:"iso"`
-	CloudImage         bool      `json:"cloudImage"`
-	Netboot            bool      `json:"netboot"`
-	FIPS               bool      `json:"fips"`
-	TrustedBoot        bool      `json:"trustedBoot"`
-	Arch               string    `json:"arch,omitempty"`
-	Variant            string    `json:"variant,omitempty"`
-	Insecure           bool      `json:"insecure"`
-	RawDisk            bool      `json:"rawDisk"`
-	Tar                bool      `json:"tar"`
-	GCE                bool      `json:"gce"`
-	VHD                bool      `json:"vhd"`
-	UKI                bool      `json:"uki"`
-	KairosInitImage    string    `json:"kairosInitImage,omitempty"`
-	AutoInstall        bool      `json:"autoInstall"`
-	RegisterAuroraBoot bool      `json:"registerAuroraBoot"`
-	Dockerfile         string    `json:"dockerfile,omitempty"`
-	CloudConfig        string    `json:"cloudConfig,omitempty" gorm:"type:text"`
-	KubernetesDistro   string    `json:"kubernetesDistro,omitempty"`
-	KubernetesVersion  string    `json:"kubernetesVersion,omitempty"`
-	TargetGroupID      string    `json:"targetGroupId,omitempty"`
-	ContainerImage     string    `json:"containerImage,omitempty"`
-	OverlayRootfs      string    `json:"overlayRootfs,omitempty"`
-	ArtifactFiles      []string  `json:"artifacts" gorm:"serializer:json"`
-	Logs               string    `json:"-" gorm:"type:text"`
-	CreatedAt          time.Time `json:"createdAt"`
-	UpdatedAt          time.Time `json:"updatedAt"`
+	ID                      string    `json:"id" gorm:"primaryKey"`
+	Name                    string    `json:"name,omitempty"`
+	Saved                   bool      `json:"saved,omitempty"`
+	Phase                   string    `json:"phase"`
+	Message                 string    `json:"message"`
+	BaseImage               string    `json:"baseImage"`
+	KairosVersion           string    `json:"kairosVersion"`
+	Model                   string    `json:"model"`
+	ISO                     bool      `json:"iso"`
+	CloudImage              bool      `json:"cloudImage"`
+	Netboot                 bool      `json:"netboot"`
+	FIPS                    bool      `json:"fips"`
+	TrustedBoot             bool      `json:"trustedBoot"`
+	Arch                    string    `json:"arch,omitempty"`
+	Variant                 string    `json:"variant,omitempty"`
+	AllowInsecureRegistries bool      `json:"allow-insecure-registries"`
+	RawDisk                 bool      `json:"rawDisk"`
+	Tar                     bool      `json:"tar"`
+	GCE                     bool      `json:"gce"`
+	VHD                     bool      `json:"vhd"`
+	UKI                     bool      `json:"uki"`
+	KairosInitImage         string    `json:"kairosInitImage,omitempty"`
+	AutoInstall             bool      `json:"autoInstall"`
+	RegisterAuroraBoot      bool      `json:"registerAuroraBoot"`
+	Dockerfile              string    `json:"dockerfile,omitempty"`
+	CloudConfig             string    `json:"cloudConfig,omitempty" gorm:"type:text"`
+	KubernetesDistro        string    `json:"kubernetesDistro,omitempty"`
+	KubernetesVersion       string    `json:"kubernetesVersion,omitempty"`
+	TargetGroupID           string    `json:"targetGroupId,omitempty"`
+	ContainerImage          string    `json:"containerImage,omitempty"`
+	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
+	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
+	Logs                    string    `json:"-" gorm:"type:text"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
 // Artifact phases.

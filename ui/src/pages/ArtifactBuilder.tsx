@@ -361,7 +361,7 @@ const EMPTY_FORM: CreateArtifactInput = {
   variant: "core",
   kubernetesDistro: "",
   kubernetesVersion: "",
-  insecure: false,
+  "allow-insecure-registries": false,
   dockerfile: "",
   overlayRootfs: "",
   kairosInitImage: "",
@@ -612,7 +612,7 @@ export function ArtifactBuilder() {
       variant: src.variant || "core",
       kubernetesDistro: src.kubernetesDistro || "",
       kubernetesVersion: src.kubernetesVersion || "",
-      insecure: src.insecure ?? false,
+      "allow-insecure-registries": src["allow-insecure-registries"] ?? false,
       dockerfile: parsed.dockerfile || "",
       overlayRootfs: parsed.overlayRootfs || "",
       kairosInitImage: src.kairosInitImage || "",
@@ -679,7 +679,7 @@ export function ArtifactBuilder() {
           variant: a.variant || "core",
           kubernetesDistro: a.kubernetesDistro || "",
           kubernetesVersion: a.kubernetesVersion || "",
-          insecure: a.insecure ?? false,
+          "allow-insecure-registries": a["allow-insecure-registries"] ?? false,
           dockerfile: a.dockerfile || "",
           kairosInitImage: a.kairosInitImage || "",
           outputs: {
@@ -923,7 +923,8 @@ export function ArtifactBuilder() {
       kubernetesDistro: form.variant === "standard" ? form.kubernetesDistro : undefined,
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion : undefined,
       // Only meaningful when pulling a base image from a registry.
-      insecure: buildMode === "image" ? form.insecure : undefined,
+      "allow-insecure-registries":
+        buildMode === "image" ? form["allow-insecure-registries"] : undefined,
       dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
@@ -1140,11 +1141,11 @@ export function ArtifactBuilder() {
                     <label className="flex items-center gap-2 text-sm font-medium">
                       <input
                         type="checkbox"
-                        checked={form.insecure ?? false}
-                        onChange={(e) => update("insecure", e.target.checked)}
+                        checked={form["allow-insecure-registries"] ?? false}
+                        onChange={(e) => update("allow-insecure-registries", e.target.checked)}
                         className="rounded border-input"
                       />
-                      Insecure registry
+                      Allow insecure registries
                     </label>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
                       Allow pulling the base image from a registry served over plain HTTP or with an untrusted/self-signed TLS certificate.
@@ -2041,10 +2042,10 @@ export function ArtifactBuilder() {
                         {buildMode === "dockerfile" ? "(Dockerfile)" : form.baseImage || "\u2014"}
                       </span>
                     </div>
-                    {buildMode === "image" && form.insecure && (
+                    {buildMode === "image" && form["allow-insecure-registries"] && (
                       <div className="flex gap-2">
                         <span className="text-muted-foreground w-28 shrink-0">Registry:</span>
-                        <span>Insecure (plain HTTP / untrusted TLS allowed)</span>
+                        <span>Insecure registries allowed (plain HTTP / untrusted TLS)</span>
                       </div>
                     )}
                   </div>
