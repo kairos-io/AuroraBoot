@@ -6,38 +6,9 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/imageextractor"
 	sdkImage "github.com/kairos-io/kairos-sdk/types/images"
-	"github.com/kairos-io/kairos-sdk/utils"
 	imageutils "github.com/kairos-io/kairos-sdk/utils/image"
 )
-
-// allowInsecureRegistriesImageExtractor pulls OCI images allowing plain-HTTP
-// registries and registries serving untrusted/self-signed TLS certificates. It
-// implements kairos-sdk's imagetypes.ImageExtractor so it can be plugged into
-// elemental via WithImageExtractor, mirroring kairos-agent's OCIImageExtractor
-// but passing the insecure-registry option down to the SDK.
-type allowInsecureRegistriesImageExtractor struct{}
-
-var _ sdkImage.ImageExtractor = allowInsecureRegistriesImageExtractor{}
-
-func (e allowInsecureRegistriesImageExtractor) ExtractImage(imageRef, destination, platformRef string, excludes ...string) error {
-	if platformRef == "" {
-		platformRef = utils.GetCurrentPlatform()
-	}
-	img, err := imageutils.GetImage(imageRef, platformRef, nil, nil, imageutils.WithInsecureRegistry())
-	if err != nil {
-		return err
-	}
-	return imageutils.ExtractOCIImage(img, destination, excludes...)
-}
-
-func (e allowInsecureRegistriesImageExtractor) GetOCIImageSize(imageRef, platformRef string) (int64, error) {
-	if platformRef == "" {
-		platformRef = utils.GetCurrentPlatform()
-	}
-	return imageutils.GetOCIImageSize(imageRef, platformRef, nil, nil, imageutils.WithInsecureRegistry())
-}
 
 // DumpSource pulls a container image either remotely or locally from a docker daemon
 // or simply copies the directory to the destination.
@@ -54,12 +25,8 @@ func DumpSource(image string, dstFunc valueGetOnCall, arch string, allowInsecure
 		}
 		internal.Log.Logger.Debug().Str("arch", arch).Bool("allow-insecure-registries", allowInsecureRegistries).Msg("DumpSource: arch parameter")
 
-		var extractor sdkImage.ImageExtractor = imageextractor.OCIImageExtractor{}
-		if allowInsecureRegistries {
-			extractor = allowInsecureRegistriesImageExtractor{}
-		}
 		opts := []GenericOptions{
-			WithImageExtractor(extractor),
+			WithImageExtractor(imageutils.OCIImageExtractor{Insecure: allowInsecureRegistries}),
 			WithLogger(internal.Log),
 		}
 		if arch != "" {

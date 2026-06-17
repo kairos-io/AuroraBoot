@@ -18,7 +18,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.4.0
 	github.com/kairos-io/kairos-agent/v2 v2.26.0
-	github.com/kairos-io/kairos-sdk v0.22.0
+	github.com/kairos-io/kairos-sdk v0.22.1
 	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba
 	github.com/klauspost/compress v1.18.6
 	github.com/labstack/echo/v4 v4.15.2
@@ -34,7 +34,7 @@ require (
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f
-	golang.org/x/mod v0.36.0
+	golang.org/x/mod v0.37.0
 	golang.org/x/net v0.55.0 // indirect
 	golang.org/x/sys v0.45.0
 	gopkg.in/yaml.v3 v3.0.1
