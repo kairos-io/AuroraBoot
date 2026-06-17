@@ -30,7 +30,7 @@ require (
 	github.com/sanity-io/litter v1.5.8
 	github.com/spectrocloud-labs/herd v0.4.2
 	github.com/spectrocloud/peg v0.0.0-20260123084329-97c9703181cf
-	github.com/spf13/viper v1.21.0 // agent cant use 1.20.0 due to some marshall changes
+	github.com/spf13/viper v1.21.0 // agent can't use 1.20.0 due to some marshalling changes
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
 	golang.org/x/exp v0.0.0-20260611194520-c48552f49976
