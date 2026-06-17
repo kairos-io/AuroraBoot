@@ -154,7 +154,7 @@ type ArtifactRecord struct {
 	TrustedBoot             bool      `json:"trustedBoot"`
 	Arch                    string    `json:"arch,omitempty"`
 	Variant                 string    `json:"variant,omitempty"`
-	AllowInsecureRegistries bool      `json:"allow-insecure-registries"`
+	AllowInsecureRegistries bool      `json:"allow-insecure-registries" gorm:"column:insecure"`
 	RawDisk                 bool      `json:"rawDisk"`
 	Tar                     bool      `json:"tar"`
 	GCE                     bool      `json:"gce"`

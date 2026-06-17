@@ -38,12 +38,15 @@ type Config struct {
 	Arch string `yaml:"arch"`
 
 	// AllowInsecureRegistries allows pulling container images from registries
-	// over plain HTTP or presenting untrusted/self-signed TLS certificates
-	AllowInsecureRegistries bool `yaml:"allow-insecure-registries"`
+	// over plain HTTP or presenting untrusted/self-signed TLS certificates.
+	// It is a pointer so that HandleDeprecations can distinguish "explicitly
+	// set to false" from "absent"; the new key always wins when both it and
+	// the deprecated "insecure" key are present.
+	AllowInsecureRegistries *bool `yaml:"allow-insecure-registries"`
 
 	// DeprecatedInsecure preserves the old "insecure" config key so configs
 	// written against v0.22.0 keep working. Prefer "allow-insecure-registries".
-	// Reconciled into AllowInsecureRegistries by NormalizeDeprecated.
+	// Reconciled into AllowInsecureRegistries by HandleDeprecations.
 	DeprecatedInsecure bool `yaml:"insecure"`
 
 	// ISO block configuration
@@ -108,15 +111,27 @@ func (i *ISO) HandleDeprecations(log logger.KairosLogger) {
 
 // HandleDeprecations reconciles deprecated top-level config keys into their
 // current equivalents. The old "insecure" key is migrated to
-// "allow-insecure-registries".
+// "allow-insecure-registries" only when the new key is absent; if the new key
+// is already set (to any value, including false) it is left untouched so that
+// an explicit "allow-insecure-registries: false" is never overridden.
 func (c *Config) HandleDeprecations(log logger.KairosLogger) {
 	if c.DeprecatedInsecure {
 		log.Logger.Warn().Msg("'insecure' is deprecated and will be removed in a future release. Use 'allow-insecure-registries' instead.")
-		if !c.AllowInsecureRegistries {
-			c.AllowInsecureRegistries = c.DeprecatedInsecure
+		if c.AllowInsecureRegistries == nil {
+			t := true
+			c.AllowInsecureRegistries = &t
 		}
 		c.DeprecatedInsecure = false
 	}
+}
+
+// AllowInsecureRegistriesBool returns the resolved boolean value of
+// AllowInsecureRegistries, returning false when the field has not been set.
+func (c *Config) AllowInsecureRegistriesBool() bool {
+	if c.AllowInsecureRegistries == nil {
+		return false
+	}
+	return *c.AllowInsecureRegistries
 }
 
 func (c Config) StateDir(s ...string) string {

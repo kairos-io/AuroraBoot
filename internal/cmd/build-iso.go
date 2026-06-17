@@ -122,12 +122,13 @@ var BuildISOCmd = cli.Command{
 			return err
 		}
 
+		allowInsecure := ctx.Bool("allow-insecure-registries")
 		c := schema.Config{
 			ISO:                     isoOptions,
 			State:                   ctx.String("output"),
 			CloudConfig:             cloudConfig,
 			Arch:                    ctx.String("arch"),
-			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
+			AllowInsecureRegistries: &allowInsecure,
 		}
 
 		if c.State == "" {

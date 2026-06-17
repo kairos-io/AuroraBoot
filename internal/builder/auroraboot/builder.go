@@ -572,7 +572,8 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		config.Arch = opts.Source.Arch
 	}
 
-	config.AllowInsecureRegistries = opts.Source.AllowInsecureRegistries
+	allowInsecure := opts.Source.AllowInsecureRegistries
+	config.AllowInsecureRegistries = &allowInsecure
 
 	if opts.CloudImage || opts.Outputs.RawDisk || opts.Outputs.GCE || opts.Outputs.VHD {
 		config.Disk.EFI = true
