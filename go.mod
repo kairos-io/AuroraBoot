@@ -19,7 +19,7 @@ require (
 	github.com/kairos-io/go-ukify v0.4.0
 	github.com/kairos-io/kairos-agent/v2 v2.26.0
 	github.com/kairos-io/kairos-sdk v0.22.0
-	github.com/kairos-io/netboot v0.0.0-20250707091041-e289e132c0ba
+	github.com/kairos-io/netboot v0.0.0-20260608072358-c81b678db427
 	github.com/klauspost/compress v1.18.6
 	github.com/labstack/echo/v4 v4.15.2
 	github.com/mudler/go-processmanager v0.1.1
