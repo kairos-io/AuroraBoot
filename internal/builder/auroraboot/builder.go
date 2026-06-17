@@ -610,7 +610,11 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 	}
 
 	ukiOpts := uki.Options{
-		Source:           "docker:" + containerImage,
+		// containerImage may be a plain Docker reference (quay.io/...), a
+		// locally-tagged image (auroraboot-*), or a fully schemed source URI
+		// (oci:, docker:, etc.). NewSrcFromURI resolves all of these downstream,
+		// so pass it through unchanged rather than forcing a scheme here.
+		Source:           containerImage,
 		OutputDir:        outputDir,
 		OutputType:       string(constants.IsoOutput),
 		Name:             "kairos",
