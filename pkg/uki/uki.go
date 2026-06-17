@@ -27,9 +27,9 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	goukiuki "github.com/kairos-io/go-ukify/pkg/uki"
 	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	"github.com/kairos-io/kairos-agent/v2/pkg/implementations/imageextractor"
 	sdkImages "github.com/kairos-io/kairos-sdk/types/images"
 	"github.com/kairos-io/kairos-sdk/types/logger"
+	imageutils "github.com/kairos-io/kairos-sdk/utils/image"
 	"github.com/klauspost/compress/zstd"
 	"github.com/u-root/u-root/pkg/cpio"
 	"golang.org/x/exp/maps"
@@ -57,6 +57,11 @@ type Options struct {
 	// Arch overrides the target architecture. Defaults to the runtime arch
 	// resolved by ops.NewConfig.
 	Arch string
+
+	// AllowInsecureRegistries allows pulling the source image from a registry
+	// served over plain HTTP or presenting an untrusted/self-signed TLS
+	// certificate.
+	AllowInsecureRegistries bool
 
 	// OverlayRootfs is an optional directory whose contents are copied into
 	// the rootfs before the UKI is built.
@@ -193,7 +198,7 @@ func Build(opts Options) (err error) {
 	}
 
 	config := ops.NewConfig(
-		ops.WithImageExtractor(imageextractor.OCIImageExtractor{}),
+		ops.WithImageExtractor(imageutils.OCIImageExtractor{Insecure: opts.AllowInsecureRegistries}),
 		ops.WithLogger(*log),
 	)
 	if opts.Arch != "" {

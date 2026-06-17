@@ -614,17 +614,18 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 		// locally-tagged image (auroraboot-*), or a fully schemed source URI
 		// (oci:, docker:, etc.). NewSrcFromURI resolves all of these downstream,
 		// so pass it through unchanged rather than forcing a scheme here.
-		Source:           containerImage,
-		OutputDir:        outputDir,
-		OutputType:       string(constants.IsoOutput),
-		Name:             "kairos",
-		SBKey:            signing.UKISecureBootKey,
-		SBCert:           signing.UKISecureBootCert,
-		TPMPCRPrivateKey: signing.UKITPMPCRKey,
-		PublicKeysDir:    signing.UKIPublicKeysDir,
-		SecureBootEnroll: signing.UKISecureBootEnroll,
-		OverlayRootfs:    opts.OverlayRootfs,
-		Logger:           &log,
+		Source:                  containerImage,
+		OutputDir:               outputDir,
+		OutputType:              string(constants.IsoOutput),
+		Name:                    "kairos",
+		SBKey:                   signing.UKISecureBootKey,
+		SBCert:                  signing.UKISecureBootCert,
+		TPMPCRPrivateKey:        signing.UKITPMPCRKey,
+		PublicKeysDir:           signing.UKIPublicKeysDir,
+		SecureBootEnroll:        signing.UKISecureBootEnroll,
+		OverlayRootfs:           opts.OverlayRootfs,
+		AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
+		Logger:                  &log,
 	}
 
 	errCh := make(chan error, 1)
