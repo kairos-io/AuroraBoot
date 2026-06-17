@@ -217,7 +217,7 @@ const OPENSUSE_LEAP_VERSION = "15.6";
 // renovate: datasource=docker depName=debian
 const DEBIAN_VERSION = "12";
 // renovate: datasource=docker depName=alpine
-const ALPINE_VERSION = "3.21";
+const ALPINE_VERSION = "3.24";
 // renovate: datasource=docker depName=rockylinux
 const ROCKYLINUX_VERSION = "9";
 
