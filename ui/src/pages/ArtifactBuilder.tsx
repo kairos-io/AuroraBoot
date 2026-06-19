@@ -205,7 +205,7 @@ interface BuildTemplate {
 }
 
 // renovate: datasource=docker depName=ghcr.io/kairos-io/hadron extractVersion=^(?<version>v\d+\.\d+\.\d+)
-const HADRON_VERSION = "v0.2.0";
+const HADRON_VERSION = "v0.4.0";
 // renovate: datasource=github-releases depName=kairos-io/kairos
 const KAIROS_VERSION = "v4.1.2";
 // renovate: datasource=docker depName=ubuntu

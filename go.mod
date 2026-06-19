@@ -13,7 +13,7 @@ require (
 	github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29
 	github.com/foxboron/sbctl v0.0.0-20240526163235-64e649b31c8e
 	github.com/gofrs/uuid v4.4.0+incompatible
-	github.com/google/go-containerregistry v0.21.6
+	github.com/google/go-containerregistry v0.21.7
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.4.0
@@ -21,7 +21,7 @@ require (
 	github.com/kairos-io/kairos-sdk v0.22.1
 	github.com/kairos-io/netboot v0.0.0-20260608072358-c81b678db427
 	github.com/klauspost/compress v1.18.6
-	github.com/labstack/echo/v4 v4.15.2
+	github.com/labstack/echo/v4 v4.15.4
 	github.com/mudler/go-processmanager v0.1.1
 	github.com/onsi/ginkgo/v2 v2.29.0
 	github.com/onsi/gomega v1.41.0
@@ -89,7 +89,7 @@ require (
 	github.com/denisbrodbeck/machineid v1.0.1 // indirect
 	github.com/distribution/reference v0.6.0 // indirect
 	github.com/djherbis/times v1.6.0 // indirect
-	github.com/docker/cli v29.4.3+incompatible // indirect
+	github.com/docker/cli v29.5.3+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.3 // indirect
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
@@ -146,7 +146,7 @@ require (
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/mailru/easyjson v0.7.6 // indirect
-	github.com/mattn/go-colorable v0.1.14 // indirect
+	github.com/mattn/go-colorable v0.1.15 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
