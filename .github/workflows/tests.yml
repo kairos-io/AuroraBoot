@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Go
@@ -47,7 +47,7 @@ jobs:
     runs-on: kvm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Docker Buildx
@@ -80,7 +80,7 @@ jobs:
     runs-on: kvm
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Set up Go
@@ -117,7 +117,7 @@ jobs:
     needs: build-image
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install deps
@@ -168,7 +168,7 @@ jobs:
     needs: build-image
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install deps
@@ -211,7 +211,7 @@ jobs:
     needs: build-image
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Install deps
@@ -249,7 +249,7 @@ jobs:
     needs: build-image
     steps:
      - name: Checkout code
-       uses: actions/checkout@v6
+       uses: actions/checkout@v7
        with:
          fetch-depth: 1
      - name: Set up Docker Buildx
