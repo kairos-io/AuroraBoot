@@ -503,8 +503,7 @@ IFS=','
 for c in $ALLOWED_RAW; do
     c=$(echo "$c" | xargs)  # trim whitespace
     if [ -n "$c" ]; then
-        ALLOWED_YAML="${ALLOWED_YAML}    - ${c}
-"
+        ALLOWED_YAML="${ALLOWED_YAML}    - ${c}$(printf '\n')"
     fi
 done
 IFS="$_old_ifs"

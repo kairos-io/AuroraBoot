@@ -435,6 +435,9 @@ var _ = Describe("NodeHandler", func() {
 			Expect(tmp.Close()).To(Succeed())
 
 			for _, shell := range []string{"sh", "bash"} {
+				if _, err := exec.LookPath(shell); err != nil {
+					Skip(shell + " not installed")
+				}
 				cmd := exec.Command(shell, "-n", tmp.Name())
 				out, err := cmd.CombinedOutput()
 				Expect(err).NotTo(HaveOccurred(), "%s: %s", shell, out)
