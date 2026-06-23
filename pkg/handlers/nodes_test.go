@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"os/exec"
 	"strings"
 	"sync"
 
@@ -404,7 +406,7 @@ var _ = Describe("NodeHandler", func() {
 	})
 
 	Describe("InstallScript", func() {
-		It("should return a bash script", func() {
+		It("should return an install shell script", func() {
 			req := httptest.NewRequest(http.MethodGet, "/api/v1/install-agent", nil)
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
@@ -412,8 +414,31 @@ var _ = Describe("NodeHandler", func() {
 			err := handler.InstallScript(c)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusOK))
-			Expect(rec.Body.String()).To(ContainSubstring("#!/bin/bash"))
+			Expect(rec.Body.String()).To(ContainSubstring("#!/bin/sh"))
 			Expect(rec.Body.String()).To(ContainSubstring("http://localhost:8080"))
+		})
+
+		It("should emit a shell script that passes sh -n and bash -n", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/install-agent", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			err := handler.InstallScript(c)
+			Expect(err).NotTo(HaveOccurred())
+
+			tmp, err := os.CreateTemp("", "install-agent-*.sh")
+			Expect(err).NotTo(HaveOccurred())
+			defer os.Remove(tmp.Name())
+
+			_, err = tmp.Write(rec.Body.Bytes())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(tmp.Close()).To(Succeed())
+
+			for _, shell := range []string{"sh", "bash"} {
+				cmd := exec.Command(shell, "-n", tmp.Name())
+				out, err := cmd.CombinedOutput()
+				Expect(err).NotTo(HaveOccurred(), "%s: %s", shell, out)
+			}
 		})
 	})
 })

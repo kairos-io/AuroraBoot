@@ -14,10 +14,11 @@ var _ = Describe("Install Script", func() {
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 
 		body := readBody(resp)
-		Expect(body).To(ContainSubstring("#!/bin/bash"))
+		Expect(body).To(ContainSubstring("#!/bin/sh"))
 		Expect(body).To(ContainSubstring("AURORABOOT_URL"))
 		Expect(body).To(ContainSubstring("/oem/phonehome.yaml"))
-		Expect(body).To(ContainSubstring("kairos-agent-phonehome"))
+		Expect(body).To(ContainSubstring("sed -i"))
+		Expect(body).To(ContainSubstring("systemctl restart kairos-agent-phonehome"))
 	})
 
 	// The install script bakes allowed_commands into the node's cloud-config
