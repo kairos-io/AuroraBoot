@@ -16,6 +16,9 @@ import (
 // RegisterAll registers the op dag based on the configuration and the artifact wanted.
 // This registers all steps for the top level Auroraboot command.
 func RegisterAll(d *Deployer) error {
+	if err := d.Config.Validate(); err != nil {
+		return err
+	}
 	for _, step := range []func() error{
 		d.PrepDirs,
 		d.StepCopyCloudConfig,
