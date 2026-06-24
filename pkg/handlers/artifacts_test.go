@@ -131,6 +131,35 @@ var _ = Describe("ArtifactHandler", func() {
 		})
 	})
 
+	Describe("Create — kubernetes provider cloud-config", func() {
+		post := func(body string) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+		}
+
+		It("enables k3s in cloud-config for the standard variant", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k3s:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
+		})
+
+		It("enables k0s in cloud-config for the standard variant", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k0s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k0s:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
+		})
+
+		It("omits kubernetes provider stanzas for the core variant", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"core","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k3s:"))
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k0s:"))
+		})
+	})
+
 	Describe("List", func() {
 		It("should list all builds", func() {
 			fb.builds = []*builder.BuildStatus{
