@@ -472,9 +472,9 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 
 // InstallScript handles GET /api/v1/install-agent.
 func (h *NodeHandler) InstallScript(c echo.Context) error {
-	script := fmt.Sprintf(`#!/bin/bash
+	script := fmt.Sprintf(`#!/bin/sh
 # AuroraBoot agent install script
-# Usage: curl -sSL %s/api/v1/install-agent | AURORABOOT_GROUP=mygroup bash
+# Usage: curl -sSL %s/api/v1/install-agent | AURORABOOT_GROUP=mygroup sh
 
 set -e
 
@@ -498,11 +498,15 @@ GROUP="${AURORABOOT_GROUP:-}"
 # defaults too — deny-all must be configured from the AuroraBoot UI instead.
 ALLOWED_RAW="${AURORABOOT_ALLOWED_COMMANDS:-upgrade,upgrade-recovery,reboot,unregister}"
 ALLOWED_YAML=""
-IFS=',' read -ra _cmds <<< "$ALLOWED_RAW"
-for c in "${_cmds[@]}"; do
+_old_ifs="$IFS"
+IFS=','
+for c in $ALLOWED_RAW; do
     c=$(echo "$c" | xargs)  # trim whitespace
-    [ -n "$c" ] && ALLOWED_YAML="${ALLOWED_YAML}    - ${c}"$'\n'
+    if [ -n "$c" ]; then
+        ALLOWED_YAML="${ALLOWED_YAML}    - ${c}$(printf '\n')"
+    fi
 done
+IFS="$_old_ifs"
 
 echo "Installing AuroraBoot agent..."
 echo "Server: ${AURORABOOT_URL}"
@@ -516,7 +520,8 @@ phonehome:
   registration_token: "${REG_TOKEN}"
   group: "${GROUP}"
   allowed_commands:
-${ALLOWED_YAML}EOF
+${ALLOWED_YAML}
+EOF
 
 echo "Config written to /oem/phonehome.yaml"
 
@@ -528,7 +533,23 @@ if ! command -v kairos-agent >/dev/null 2>&1; then
 fi
 echo "Starting kairos-agent..."
 kairos-agent start
-echo "kairos-agent-phonehome service installed and started."
+
+# kairos-agent writes the phone-home unit with a hardcoded /usr/sbin/kairos-agent
+# path, but some images install the binary elsewhere (e.g. /usr/bin). systemd
+# then fails with status=203/EXEC and the node never registers.
+AGENT_BIN="$(command -v kairos-agent)"
+UNIT=/etc/systemd/system/kairos-agent-phonehome.service
+if [ -n "$AGENT_BIN" ] && [ -f "$UNIT" ]; then
+    sed -i "s|^ExecStart=.*|ExecStart=${AGENT_BIN} phone-home|" "$UNIT"
+    systemctl daemon-reload
+    systemctl restart kairos-agent-phonehome
+fi
+
+if systemctl is-active --quiet kairos-agent-phonehome; then
+    echo "kairos-agent-phonehome service is active."
+else
+    echo "Warning: kairos-agent-phonehome is not active — check: systemctl status kairos-agent-phonehome" >&2
+fi
 
 echo "AuroraBoot agent installation complete."
 `, h.aurorabootURL, h.aurorabootURL)

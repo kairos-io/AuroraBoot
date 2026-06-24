@@ -43,7 +43,7 @@ describe("AuroraBoot web smoke", () => {
   it("serves the install-agent script", () => {
     cy.request({ url: "/api/v1/install-agent", failOnStatusCode: true }).then((res) => {
       expect(res.status).to.eq(200);
-      expect(res.body).to.include("#!/bin/bash");
+      expect(res.body).to.include("#!/bin/sh");
       expect(res.body).to.include("AURORABOOT_URL");
       expect(res.body).to.include("kairos-agent-phonehome");
     });
