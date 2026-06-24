@@ -316,6 +316,8 @@ github.com/kairos-io/go-ukify v0.4.0 h1:Iop44nIvPMCygw3W/Ji3VdEZAcpXMc17wFtJWIVr
 github.com/kairos-io/go-ukify v0.4.0/go.mod h1:zdyO9+A4is8kaJ75A+7mfZdvQifLyxc+FPg3j8WzR+U=
 github.com/kairos-io/kairos-agent/v2 v2.29.4 h1:f3cx+kqqnwBlUpbLY20mBpiw5jAK/E1W9Fi+j/kOd50=
 github.com/kairos-io/kairos-agent/v2 v2.29.4/go.mod h1:udZ6FdPj1o9yFrmVkGIreXYMTL4nMdm76b+P83yzLAg=
+github.com/kairos-io/kairos-agent/v2 v2.30.0 h1:qegZuccR8DzHFoOK0KPVRl/aH5G0bQc9e1Rchc2JTDI=
+github.com/kairos-io/kairos-agent/v2 v2.30.0/go.mod h1:tJfroV6v6ePyUhuZOuDMI3FSzouI/nzOypUVvWqcQOE=
 github.com/kairos-io/kairos-sdk v0.22.1 h1:h1IuF8LiHo8vHdcQo7MJAWHNbm4nr+q/hIf+QYpVwKg=
 github.com/kairos-io/kairos-sdk v0.22.1/go.mod h1:GuUCzYyKzMkmGYqEL03ni9HKKkQIcahto53YnK2taXA=
 github.com/kairos-io/kairos-sdk v0.23.0 h1:tLFPfXxxAOhtPIZPwmOH01aVbpZ6xiGGcf/synefvtY=
