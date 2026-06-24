@@ -51,11 +51,11 @@ type RawImage struct {
 	elemental            *elemental.Elemental // Elemental instance to use for the operations
 	efi                  bool                 // If the image should be EFI or BIOS
 	config               *sdkConfig.Config    // config to use for the operations
-	// Partitions, when true, emits each partition as a separate image file
-	// (efi.img, oem.img, recovery_partition.img) into Output and skips merging
-	// them into a single .raw disk. Used by flashing workflows such as Nvidia
-	// Jetson AGX Orin. Only valid together with an EFI build.
-	Partitions bool
+	// SeparatePartitionsImages, when true, emits each partition as a separate
+	// image file (efi.img, oem.img, recovery_partition.img) into Output and
+	// skips merging them into a single .raw disk. Used by flashing workflows
+	// such as Nvidia Jetson AGX Orin. Only valid together with an EFI build.
+	SeparatePartitionsImages bool
 }
 
 // NewEFIRawImage creates a new RawImage struct
@@ -502,7 +502,7 @@ func (r *RawImage) Build() error {
 	// merge/truncate/finalize steps. The flashing workflow (e.g. Nvidia Jetson
 	// AGX Orin) consumes the individual images, and state/persistent are created
 	// on first boot by the reset/expand cloud-init baked into the OEM partition.
-	if r.Partitions {
+	if r.SeparatePartitionsImages {
 		internal.Log.Logger.Info().Str("target", r.Output).Msg("Emitting individual partition images")
 		if err = r.emitPartitionImages(bootImagePath, oemImagePath, recoveryImagePath); err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("failed to emit partition images")

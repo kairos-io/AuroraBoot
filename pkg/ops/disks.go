@@ -16,7 +16,7 @@ func GenEFIRawDisk(src, dst string, size uint64, stateSize int64, noDefaultCloud
 		// TODO: We need to talk about how the config.yaml is magically here no? is done in a previous step but maybe we should have constant that we can check?
 		// Maybe on its own function that returns the tmpdir + config.yaml or something? we need a safe way of accessing it form any step in the DAG.
 		raw := NewEFIRawImage(src, dst, filepath.Join(dst, "config.yaml"), size, stateSize, noDefaultCloudConfig)
-		raw.Partitions = partitions
+		raw.SeparatePartitionsImages = partitions
 		err := raw.Build()
 		if err != nil {
 			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
