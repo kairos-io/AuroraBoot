@@ -249,6 +249,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		regToken:           h.regToken,
 		groupName:          groupName,
 		allowedCommands:    allowedCommands,
+		variant:            req.Variant,
+		kubernetesDistro:   req.KubernetesDistro,
 		userMode:           req.Provisioning.UserMode,
 		username:           req.Provisioning.Username,
 		password:           req.Provisioning.Password,
@@ -791,6 +793,8 @@ type cloudConfigParams struct {
 	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
 	// Callers substitute phonehomeSafeDefaults for nil input before calling.
 	allowedCommands []string
+	variant          string // "core" or "standard"
+	kubernetesDistro string // "k3s" or "k0s" when variant=standard
 	userMode        string // "default", "custom", "none"
 	username        string
 	password        string
@@ -815,6 +819,15 @@ func buildCloudConfig(p cloudConfigParams) string {
 			"auto":   true,
 			"device": "auto",
 			"reboot": true,
+		}
+	}
+
+	if p.variant == "standard" {
+		switch p.kubernetesDistro {
+		case "k3s":
+			doc["k3s"] = map[string]interface{}{"enabled": true}
+		case "k0s":
+			doc["k0s"] = map[string]interface{}{"enabled": true}
 		}
 	}
 

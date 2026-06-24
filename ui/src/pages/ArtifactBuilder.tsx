@@ -230,7 +230,7 @@ const TEMPLATES: BuildTemplate[] = [
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
-      variant: "core",
+      variant: "standard",
       kubernetesDistro: "k3s",
       outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
     },
@@ -755,6 +755,16 @@ export function ArtifactBuilder() {
       lines.push("  auto: true");
       lines.push("  device: auto");
       lines.push("  reboot: true");
+    }
+
+    if (form.variant === "standard") {
+      if (form.kubernetesDistro === "k3s") {
+        lines.push("k3s:");
+        lines.push("  enabled: true");
+      } else if (form.kubernetesDistro === "k0s") {
+        lines.push("k0s:");
+        lines.push("  enabled: true");
+      }
     }
 
     if (form.provisioning.registerAuroraBoot) {
@@ -1315,7 +1325,22 @@ export function ArtifactBuilder() {
                     <button
                       key={v.value}
                       type="button"
-                      onClick={() => update("variant", v.value)}
+                      onClick={() => {
+                        if (v.value === "standard") {
+                          setForm((prev) => ({
+                            ...prev,
+                            variant: "standard",
+                            kubernetesDistro: prev.kubernetesDistro || "k3s",
+                          }));
+                        } else {
+                          setForm((prev) => ({
+                            ...prev,
+                            variant: "core",
+                            kubernetesDistro: "",
+                            kubernetesVersion: "",
+                          }));
+                        }
+                      }}
                       className={`text-left rounded-lg border p-4 transition-colors ${
                         selected
                           ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
