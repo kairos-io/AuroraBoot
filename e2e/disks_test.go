@@ -178,6 +178,54 @@ stages:
 				Expect(err).ToNot(HaveOccurred(), out)
 			})
 		})
+		Describe("Partition images", Label("partitions"), func() {
+			It("emits individual partition image files instead of a merged disk", func() {
+				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"
+				_, err := PullImage(image)
+				Expect(err).ToNot(HaveOccurred())
+
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "container_image=oci://"+image,
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.partitions=true",
+					"--cloud-config", "/config.yaml",
+				)
+
+				Expect(out).To(ContainSubstring(constants.OpGenEFIRawDisk), out)
+				Expect(out).To(ContainSubstring(constants.OpDumpSource), out)
+				Expect(out).To(ContainSubstring("Emitting individual partition images"), out)
+				Expect(err).ToNot(HaveOccurred(), out)
+
+				// The three partition images are produced with the script-matching names.
+				for _, name := range []string{"efi.img", "oem.img", "recovery_partition.img"} {
+					info, statErr := os.Stat(filepath.Join(tempDir, name))
+					Expect(statErr).ToNot(HaveOccurred(), out)
+					Expect(info.Size()).To(BeNumerically(">", 0), name)
+				}
+
+				// No merged .raw disk is produced in partitions mode.
+				matches, globErr := filepath.Glob(filepath.Join(tempDir, "kairos-*.raw"))
+				Expect(globErr).ToNot(HaveOccurred())
+				Expect(matches).To(BeEmpty(), out)
+			})
+			It("rejects disk.partitions combined with disk.gce before building", func() {
+				out, err := aurora.Run("--debug",
+					"--set", "disable_http_server=true",
+					"--set", "disable_netboot=true",
+					"--set", "container_image=oci://quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1",
+					"--set", "state_dir=/tmp/auroraboot",
+					"--set", "disk.partitions=true",
+					"--set", "disk.gce=true",
+					"--cloud-config", "/config.yaml",
+				)
+				Expect(err).To(HaveOccurred(), out)
+				Expect(out).To(ContainSubstring("disk.partitions cannot be combined with disk.gce"), out)
+				// Fail fast: never reaches the build/dump step.
+				Expect(out).ToNot(ContainSubstring("Emitting individual partition images"), out)
+			})
+		})
 		Describe("MBR", Label("mbr"), func() {
 			It("generates a raw image", func() {
 				image := "quay.io/kairos/opensuse:tumbleweed-core-amd64-generic-v3.2.1"

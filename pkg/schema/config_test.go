@@ -107,3 +107,49 @@ var _ = Describe("Config HandleDeprecations", func() {
 		Expect(cfg.DeprecatedInsecure).To(BeFalse())
 	})
 })
+
+var _ = Describe("Config Validate", func() {
+	var cfg schema.Config
+
+	BeforeEach(func() {
+		cfg = schema.Config{}
+	})
+
+	It("passes with no disk options set", func() {
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("passes for a plain EFI raw disk build", func() {
+		cfg.Disk.EFI = true
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("passes for partition-image output on its own", func() {
+		cfg.Disk.Partitions = true
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("passes for partition-image output combined with efi", func() {
+		cfg.Disk.Partitions = true
+		cfg.Disk.EFI = true
+		Expect(cfg.Validate()).To(Succeed())
+	})
+
+	It("rejects partition-image output combined with gce", func() {
+		cfg.Disk.Partitions = true
+		cfg.Disk.GCE = true
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("partitions"))
+		Expect(err.Error()).To(ContainSubstring("gce"))
+	})
+
+	It("rejects partition-image output combined with vhd", func() {
+		cfg.Disk.Partitions = true
+		cfg.Disk.VHD = true
+		err := cfg.Validate()
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("partitions"))
+		Expect(err.Error()).To(ContainSubstring("vhd"))
+	})
+})
