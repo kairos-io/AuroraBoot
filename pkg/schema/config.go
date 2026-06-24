@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"fmt"
 	"path/filepath"
 
 	"github.com/kairos-io/kairos-sdk/types/logger"
@@ -68,12 +69,18 @@ type System struct {
 }
 
 type Disk struct {
-	EFI       bool   `yaml:"efi"`
-	GCE       bool   `yaml:"gce"`
-	VHD       bool   `yaml:"vhd"`
-	BIOS      bool   `yaml:"bios"`
-	Size      string `yaml:"size"`
-	StateSize string `yaml:"state_size"`
+	EFI  bool `yaml:"efi"`
+	GCE  bool `yaml:"gce"`
+	VHD  bool `yaml:"vhd"`
+	BIOS bool `yaml:"bios"`
+	// Partitions, when true, makes the EFI raw-disk build emit each partition as
+	// a separate image file (efi.img, oem.img, recovery_partition.img) instead
+	// of merging them into a single .raw disk. Intended for flashing workflows
+	// such as Nvidia Jetson AGX Orin. Implies an EFI build and is mutually
+	// exclusive with the gce/vhd cloud-image conversions.
+	Partitions bool   `yaml:"partitions"`
+	Size       string `yaml:"size"`
+	StateSize  string `yaml:"state_size"`
 }
 
 type NetBoot struct {
@@ -132,6 +139,24 @@ func (c *Config) AllowInsecureRegistriesBool() bool {
 		return false
 	}
 	return *c.AllowInsecureRegistries
+}
+
+// Validate checks the configuration for unsupported combinations before a build
+// starts, so we fail fast with a clear message instead of deep inside a build
+// step.
+func (c Config) Validate() error {
+	// Partition-image output skips the final merge into a single .raw disk, so
+	// the gce/vhd conversions (which operate on that merged disk) have nothing
+	// to convert. Reject the combination up front.
+	if c.Disk.Partitions {
+		if c.Disk.GCE {
+			return fmt.Errorf("disk.partitions cannot be combined with disk.gce: partition-image output does not produce a merged disk to convert")
+		}
+		if c.Disk.VHD {
+			return fmt.Errorf("disk.partitions cannot be combined with disk.vhd: partition-image output does not produce a merged disk to convert")
+		}
+	}
+	return nil
 }
 
 func (c Config) StateDir(s ...string) string {

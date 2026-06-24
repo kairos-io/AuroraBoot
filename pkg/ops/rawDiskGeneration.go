@@ -51,6 +51,11 @@ type RawImage struct {
 	elemental            *elemental.Elemental // Elemental instance to use for the operations
 	efi                  bool                 // If the image should be EFI or BIOS
 	config               *sdkConfig.Config    // config to use for the operations
+	// SeparatePartitionsImages, when true, emits each partition as a separate
+	// image file (efi.img, oem.img, recovery_partition.img) into Output and
+	// skips merging them into a single .raw disk. Used by flashing workflows
+	// such as Nvidia Jetson AGX Orin. Only valid together with an EFI build.
+	SeparatePartitionsImages bool
 }
 
 // NewEFIRawImage creates a new RawImage struct
@@ -493,6 +498,20 @@ func (r *RawImage) Build() error {
 	defer r.config.Fs.Remove(oemImagePath)
 	internal.Log.Logger.Info().Msg("Created OEM image")
 
+	// Partition-image mode: emit each partition as its own file and skip the
+	// merge/truncate/finalize steps. The flashing workflow (e.g. Nvidia Jetson
+	// AGX Orin) consumes the individual images, and state/persistent are created
+	// on first boot by the reset/expand cloud-init baked into the OEM partition.
+	if r.SeparatePartitionsImages {
+		internal.Log.Logger.Info().Str("target", r.Output).Msg("Emitting individual partition images")
+		if err = r.emitPartitionImages(bootImagePath, oemImagePath, recoveryImagePath); err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to emit partition images")
+			return err
+		}
+		internal.Log.Logger.Info().Str("target", r.Output).Msg("Emitted individual partition images")
+		return nil
+	}
+
 	// Create the final disk image
 	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembling final disk image")
 	err = r.createDiskImage(filepath.Join(r.Output, outputName), []string{bootImagePath, oemImagePath, recoveryImagePath})
@@ -519,6 +538,37 @@ func (r *RawImage) Build() error {
 	// Do some final adjustments for boards
 	err = r.FinalizeImage(filepath.Join(r.Output, outputName))
 	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembled final disk image")
+
+	return nil
+}
+
+// emitPartitionImages copies the already-built partition images out of the temp
+// dir into the output directory, naming them to match the existing Nvidia Orin
+// flashing convention (efi.img, oem.img, recovery_partition.img). It is used in
+// partitions mode instead of merging the partitions into a single .raw disk.
+func (r *RawImage) emitPartitionImages(bootImagePath, oemImagePath, recoveryImagePath string) error {
+	outputs := []struct {
+		src, dst string
+	}{
+		{bootImagePath, filepath.Join(r.Output, "efi.img")},
+		{oemImagePath, filepath.Join(r.Output, "oem.img")},
+		{recoveryImagePath, filepath.Join(r.Output, "recovery_partition.img")},
+	}
+
+	for _, o := range outputs {
+		if _, err := r.config.Fs.Stat(o.src); err != nil {
+			internal.Log.Logger.Error().Err(err).Str("source", o.src).Msg("partition image not found")
+			return fmt.Errorf("partition image %s not found: %w", o.src, err)
+		}
+		internal.Log.Logger.Debug().Str("source", o.src).Str("target", o.dst).Msg("Copying partition image")
+		if err := utils.CopyFile(r.config.Fs, o.src, o.dst); err != nil {
+			return fmt.Errorf("copying partition image to %s: %w", o.dst, err)
+		}
+		// Make the image usable outside the build container, which runs as root.
+		if err := r.config.Fs.Chmod(o.dst, 0o777); err != nil {
+			return fmt.Errorf("chmod partition image %s: %w", o.dst, err)
+		}
+	}
 
 	return nil
 }
