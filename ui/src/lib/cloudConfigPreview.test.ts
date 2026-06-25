@@ -79,4 +79,13 @@ describe("buildCloudConfigPreview", () => {
     expect(stages.initramfs).toBeDefined();
     expect(stages.boot).toBeDefined();
   });
+
+  it("ignores prototype-pollution keys in extra YAML", () => {
+    const protoKey = "__proto__";
+    buildCloudConfigPreview({
+      ...base,
+      extraYAML: `${protoKey}:\n  polluted: true\nk3s:\n  enabled: false`,
+    });
+    expect(Object.prototype).not.toHaveProperty("polluted");
+  });
 });
