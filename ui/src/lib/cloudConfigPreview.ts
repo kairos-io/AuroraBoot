@@ -18,15 +18,24 @@ export interface CloudConfigPreviewInput {
   extraYAML: string;
 }
 
+const UNSAFE_MERGE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+function isSafeMergeKey(key: string): boolean {
+  return !UNSAFE_MERGE_KEYS.has(key);
+}
+
 // Mirrors pkg/handlers/artifacts.go mergeYAML: maps merge recursively, slices
 // concatenate, scalars from extra YAML override canonical defaults.
 function mergeYAML(dst: YamlMap, src: YamlMap): void {
   for (const [k, sv] of Object.entries(src)) {
-    const dv = dst[k];
-    if (dv === undefined) {
+    if (!isSafeMergeKey(k)) {
+      continue;
+    }
+    if (!Object.hasOwn(dst, k)) {
       dst[k] = sv;
       continue;
     }
+    const dv = dst[k];
     if (isMap(dv) && isMap(sv)) {
       mergeYAML(dv, sv);
       continue;
@@ -46,7 +55,7 @@ function isMap(v: YamlValue): v is YamlMap {
 // Builds the Review-step cloud-config preview. Logic must stay aligned with
 // buildCloudConfig in pkg/handlers/artifacts.go (canonical doc + merged extra).
 export function buildCloudConfigPreview(input: CloudConfigPreviewInput): string {
-  const doc: YamlMap = {};
+  const doc = Object.create(null) as YamlMap;
 
   if (input.autoInstall) {
     doc.install = { auto: true, device: "auto", reboot: true };
