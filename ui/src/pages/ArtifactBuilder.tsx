@@ -13,6 +13,7 @@ import {
   PHONEHOME_SAFE_DEFAULTS,
   PHONEHOME_DESTRUCTIVE_COMMANDS,
 } from "@/lib/buildConfig";
+import { buildCloudConfigPreview } from "@/lib/cloudConfigPreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -748,80 +749,26 @@ export function ArtifactBuilder() {
     }
   }
 
-  // Frontend cloud-config preview — must match the backend's buildCloudConfig
-  // in internal/handlers/artifacts.go. The backend is the source of truth at
-  // build time; this function only powers the Review-step preview.
+  // Frontend cloud-config preview — must match buildCloudConfig in
+  // pkg/handlers/artifacts.go. The backend is the source of truth at build
+  // time; this function only powers the Review-step preview.
   function buildCloudConfig(): string {
-    const lines: string[] = ["#cloud-config"];
-
-    if (form.provisioning.autoInstall) {
-      lines.push("install:");
-      lines.push("  auto: true");
-      lines.push("  device: auto");
-      lines.push("  reboot: true");
-    }
-
-    if (form.variant === "standard" && form.kubernetesDistro) {
-      const enabled = form.kubernetesEnabled ?? true;
-      if (form.kubernetesDistro === "k3s") {
-        lines.push("k3s:");
-        lines.push(`  enabled: ${enabled}`);
-      } else if (form.kubernetesDistro === "k0s") {
-        lines.push("k0s:");
-        lines.push(`  enabled: ${enabled}`);
-      }
-    }
-
-    if (form.provisioning.registerAuroraBoot) {
-      const groupName = groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || "";
-      lines.push("phonehome:");
-      lines.push(`  url: "<server-url>"`);
-      lines.push(`  registration_token: "<token>"`);
-      lines.push(`  group: "${groupName}"`);
-      const allowed = form.provisioning.allowedCommands ?? [];
-      if (allowed.length === 0) {
-        lines.push("  allowed_commands: []");
-      } else {
-        lines.push("  allowed_commands:");
-        for (const cmd of allowed) {
-          lines.push(`    - ${cmd}`);
-        }
-      }
-    }
-
-    if (userMode !== "none") {
-      const u = userMode === "default" || !username ? "kairos" : username;
-      const p = userMode === "default" || !password ? "kairos" : password;
-      const sshList = sshKeys.split("\n").map((s) => s.trim()).filter(Boolean);
-      const stage = sshList.length > 0 ? "network" : "initramfs";
-
-      lines.push("stages:");
-      lines.push(`  ${stage}:`);
-      lines.push("    - users:");
-      lines.push(`        ${u}:`);
-      lines.push(`          passwd: ${p}`);
-      lines.push("          groups:");
-      lines.push("            - admin");
-
-      if (sshList.length > 0) {
-        lines.push("          ssh_authorized_keys:");
-        sshList.forEach((key) => {
-          lines.push(`            - "${key}"`);
-        });
-      }
-    }
-
-    let cc = lines.join("\n") + "\n";
-
-    if (advancedConfig.trim()) {
-      let extra = advancedConfig.trim();
-      if (extra.startsWith("#cloud-config")) {
-        extra = extra.replace(/^#cloud-config\s*\n?/, "");
-      }
-      cc += "\n" + extra + "\n";
-    }
-
-    return cc;
+    const groupName =
+      groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || "";
+    return buildCloudConfigPreview({
+      autoInstall: form.provisioning.autoInstall,
+      registerAuroraBoot: form.provisioning.registerAuroraBoot,
+      groupName,
+      allowedCommands: form.provisioning.allowedCommands ?? [],
+      variant: form.variant,
+      kubernetesDistro: form.kubernetesDistro || "",
+      kubernetesEnabled: form.kubernetesEnabled ?? true,
+      userMode,
+      username,
+      password,
+      sshKeys,
+      extraYAML: advancedConfig,
+    });
   }
 
   // computeErrors produces a structured list: each error knows which wizard
