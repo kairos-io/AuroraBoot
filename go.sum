@@ -314,6 +314,8 @@ github.com/joshdk/go-junit v1.0.0 h1:S86cUKIdwBHWwA6xCmFlf3RTLfVXYQfvanM5Uh+K6GE
 github.com/joshdk/go-junit v1.0.0/go.mod h1:TiiV0PqkaNfFXjEiyjWM3XXrhVyCa1K4Zfga6W52ung=
 github.com/kairos-io/go-ukify v0.4.0 h1:Iop44nIvPMCygw3W/Ji3VdEZAcpXMc17wFtJWIVr4wg=
 github.com/kairos-io/go-ukify v0.4.0/go.mod h1:zdyO9+A4is8kaJ75A+7mfZdvQifLyxc+FPg3j8WzR+U=
+github.com/kairos-io/go-ukify v0.5.0 h1:cmEauHZ6RdPk/2xkfG2EPxjEYqfSZGuCYIHpnYRLbPQ=
+github.com/kairos-io/go-ukify v0.5.0/go.mod h1:vUmdBgpj4AyW/0an0ZDfeGE1f6NRDpbQ2MILJtAvy+4=
 github.com/kairos-io/kairos-agent/v2 v2.29.4 h1:f3cx+kqqnwBlUpbLY20mBpiw5jAK/E1W9Fi+j/kOd50=
 github.com/kairos-io/kairos-agent/v2 v2.29.4/go.mod h1:udZ6FdPj1o9yFrmVkGIreXYMTL4nMdm76b+P83yzLAg=
 github.com/kairos-io/kairos-agent/v2 v2.30.0 h1:qegZuccR8DzHFoOK0KPVRl/aH5G0bQc9e1Rchc2JTDI=
