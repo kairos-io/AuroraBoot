@@ -169,6 +169,12 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k3s:"))
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k0s:"))
 		})
+
+		It("merges extra k3s YAML without duplicating the top-level key", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true},"cloudConfig":"k3s:\n  enabled: true\n  cluster-cidr: 10.42.0.0/16"}`)
+			Expect(strings.Count(fb.lastOpts.CloudConfig, "k3s:")).To(Equal(1))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("cluster-cidr"))
+		})
 	})
 
 	Describe("List", func() {
