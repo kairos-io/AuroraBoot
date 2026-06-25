@@ -444,10 +444,12 @@ func (o Options) validate() error {
 		}
 	}
 
-	if _, err := os.Stat(o.TPMPCRPrivateKey); err != nil {
-		return fmt.Errorf("tpm-pcr-private-key does not exist: %s", o.TPMPCRPrivateKey)
+	if !strings.HasPrefix(o.TPMPCRPrivateKey, "pkcs11:") {
+		if _, err := os.Stat(o.TPMPCRPrivateKey); err != nil {
+			return fmt.Errorf("tpm-pcr-private-key does not exist: %s", o.TPMPCRPrivateKey)
+		}
 	}
-	if !strings.Contains(o.SBKey, "pkcs11") {
+	if !strings.HasPrefix(o.SBKey, "pkcs11:") {
 		if _, err := os.Stat(o.SBKey); err != nil {
 			return fmt.Errorf("sb-key does not exist: %s", o.SBKey)
 		}
