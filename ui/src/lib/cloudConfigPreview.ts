@@ -31,7 +31,7 @@ function mergeYAML(dst: YamlMap, src: YamlMap): void {
     if (!isSafeMergeKey(k)) {
       continue;
     }
-    if (!Object.hasOwn(dst, k)) {
+    if (!Object.prototype.hasOwnProperty.call(dst, k)) {
       dst[k] = sv;
       continue;
     }
