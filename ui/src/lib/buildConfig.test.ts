@@ -138,6 +138,7 @@ describe("payloadFromBuilder", () => {
 
     expect(p.source.kubernetesDistro).toBeUndefined();
     expect(p.source.kubernetesVersion).toBeUndefined();
+    expect(p.source.kubernetesEnabled).toBeUndefined();
   });
 
   it("preserves Kubernetes fields on the standard variant", () => {
@@ -158,6 +159,26 @@ describe("payloadFromBuilder", () => {
 
     expect(p.source.kubernetesDistro).toBe("k3s");
     expect(p.source.kubernetesVersion).toBe("v1.28.0");
+    expect(p.source.kubernetesEnabled).toBe(true);
+  });
+
+  it("preserves kubernetesEnabled=false on the standard variant", () => {
+    const p = payloadFromBuilder({
+      form: makeForm({
+        variant: "standard",
+        kubernetesDistro: "k3s",
+        kubernetesEnabled: false,
+      }),
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+
+    expect(p.source.kubernetesEnabled).toBe(false);
   });
 
   it("resolves group + key set to names for portability", () => {

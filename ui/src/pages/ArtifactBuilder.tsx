@@ -232,6 +232,7 @@ const TEMPLATES: BuildTemplate[] = [
       arch: "amd64",
       variant: "standard",
       kubernetesDistro: "k3s",
+      kubernetesEnabled: true,
       outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
     },
   },
@@ -361,6 +362,7 @@ const EMPTY_FORM: CreateArtifactInput = {
   variant: "core",
   kubernetesDistro: "",
   kubernetesVersion: "",
+  kubernetesEnabled: true,
   "allow-insecure-registries": false,
   dockerfile: "",
   overlayRootfs: "",
@@ -612,6 +614,7 @@ export function ArtifactBuilder() {
       variant: src.variant || "core",
       kubernetesDistro: src.kubernetesDistro || "",
       kubernetesVersion: src.kubernetesVersion || "",
+      kubernetesEnabled: src.kubernetesEnabled ?? true,
       "allow-insecure-registries": src["allow-insecure-registries"] ?? false,
       dockerfile: parsed.dockerfile || "",
       overlayRootfs: parsed.overlayRootfs || "",
@@ -679,6 +682,7 @@ export function ArtifactBuilder() {
           variant: a.variant || "core",
           kubernetesDistro: a.kubernetesDistro || "",
           kubernetesVersion: a.kubernetesVersion || "",
+          kubernetesEnabled: a.variant === "standard" ? a.kubernetesEnabled ?? true : true,
           "allow-insecure-registries": a["allow-insecure-registries"] ?? false,
           dockerfile: a.dockerfile || "",
           kairosInitImage: a.kairosInitImage || "",
@@ -757,13 +761,14 @@ export function ArtifactBuilder() {
       lines.push("  reboot: true");
     }
 
-    if (form.variant === "standard") {
+    if (form.variant === "standard" && form.kubernetesDistro) {
+      const enabled = form.kubernetesEnabled ?? true;
       if (form.kubernetesDistro === "k3s") {
         lines.push("k3s:");
-        lines.push("  enabled: true");
+        lines.push(`  enabled: ${enabled}`);
       } else if (form.kubernetesDistro === "k0s") {
         lines.push("k0s:");
-        lines.push("  enabled: true");
+        lines.push(`  enabled: ${enabled}`);
       }
     }
 
@@ -932,6 +937,7 @@ export function ArtifactBuilder() {
       variant: form.variant,
       kubernetesDistro: form.variant === "standard" ? form.kubernetesDistro : undefined,
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion : undefined,
+      kubernetesEnabled: form.variant === "standard" ? form.kubernetesEnabled ?? true : undefined,
       // Only meaningful when pulling a base image from a registry.
       "allow-insecure-registries":
         buildMode === "image" ? form["allow-insecure-registries"] : undefined,
@@ -1331,6 +1337,7 @@ export function ArtifactBuilder() {
                             ...prev,
                             variant: "standard",
                             kubernetesDistro: prev.kubernetesDistro || "k3s",
+                            kubernetesEnabled: prev.kubernetesEnabled ?? true,
                           }));
                         } else {
                           setForm((prev) => ({
@@ -1338,6 +1345,7 @@ export function ArtifactBuilder() {
                             variant: "core",
                             kubernetesDistro: "",
                             kubernetesVersion: "",
+                            kubernetesEnabled: true,
                           }));
                         }
                       }}
@@ -1370,6 +1378,20 @@ export function ArtifactBuilder() {
                   <CardTitle className="text-sm">Kubernetes</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={form.kubernetesEnabled ?? true}
+                      onChange={(e) => update("kubernetesEnabled", e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    Enable Kubernetes on first boot
+                    <InfoTooltip>
+                      Baked into cloud-config as <code className="font-mono">k3s.enabled</code> or{" "}
+                      <code className="font-mono">k0s.enabled</code>. The distribution is still bundled
+                      into the image for offline installs; disable this to defer starting the cluster.
+                    </InfoTooltip>
+                  </label>
                   <div className="grid gap-2">
                     <Label>
                       Distribution
@@ -2094,6 +2116,10 @@ export function ArtifactBuilder() {
                     </div>
                     {form.variant === "standard" && (
                       <>
+                        <div className="flex gap-2">
+                          <span className="text-muted-foreground w-28 shrink-0">K8s Enabled:</span>
+                          <span>{form.kubernetesEnabled ?? true ? "Yes" : "No"}</span>
+                        </div>
                         <div className="flex gap-2">
                           <span className="text-muted-foreground w-28 shrink-0">K8s Distro:</span>
                           <span>{form.kubernetesDistro || "\u2014"}</span>

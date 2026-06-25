@@ -153,6 +153,17 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
 		})
 
+		It("disables k3s in cloud-config when kubernetesEnabled is false", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k3s:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: false"))
+		})
+
+		It("defaults kubernetesEnabled to true when omitted", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
+		})
+
 		It("omits kubernetes provider stanzas for the core variant", func() {
 			post(`{"baseImage":"ubuntu:24.04","variant":"core","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k3s:"))
