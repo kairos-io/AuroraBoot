@@ -17,12 +17,15 @@ limitations under the License.
 package utils_test
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	v1mock "github.com/kairos-io/kairos-agent/v2/tests/mocks"
@@ -434,6 +437,107 @@ IMAGE_LABEL=custom-label`
 			name := utils.NameFromRootfs(tmpDir)
 			// Should not panic, may return incomplete name
 			Expect(name).To(ContainSubstring("ubuntu"))
+		})
+	})
+
+	// CreateTar exercises the containerd v2 DecompressStream API:
+	// github.com/containerd/containerd/v2/pkg/archive/compression.DecompressStream
+	Describe("CreateTar", Label("CreateTar"), func() {
+		var tmpDir string
+
+		BeforeEach(func() {
+			var err error
+			tmpDir, err = os.MkdirTemp("", "createtar-test-*")
+			Expect(err).ToNot(HaveOccurred())
+		})
+
+		AfterEach(func() {
+			os.RemoveAll(tmpDir)
+		})
+
+		// makeGzippedTar creates a gzip-compressed tar file at destPath containing
+		// a single file named fileName with the given content. It returns the path.
+		makeGzippedTar := func(destPath, fileName, content string) {
+			f, err := os.Create(destPath)
+			Expect(err).ToNot(HaveOccurred())
+			defer f.Close()
+
+			gw := gzip.NewWriter(f)
+			defer gw.Close()
+
+			tw := tar.NewWriter(gw)
+			defer tw.Close()
+
+			data := []byte(content)
+			hdr := &tar.Header{
+				Name: fileName,
+				Mode: 0644,
+				Size: int64(len(data)),
+			}
+			Expect(tw.WriteHeader(hdr)).ToNot(HaveOccurred())
+			_, err = tw.Write(data)
+			Expect(err).ToNot(HaveOccurred())
+		}
+
+		It("converts a gzip-compressed tar to a valid OCI image tarball", func() {
+			srcTar := filepath.Join(tmpDir, "input.tar.gz")
+			dstTar := filepath.Join(tmpDir, "output.tar")
+
+			makeGzippedTar(srcTar, "hello.txt", "hello from containerd v2")
+
+			err := utils.CreateTar(sdkLogger.NewNullLogger(), srcTar, dstTar, "test-image:latest", "amd64", "linux")
+			Expect(err).ToNot(HaveOccurred())
+
+			// Verify the output file exists and is non-empty
+			fi, err := os.Stat(dstTar)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(fi.Size()).To(BeNumerically(">", 0))
+
+			// Verify it is a valid OCI image tarball that can be loaded
+			img, err := tarball.ImageFromPath(dstTar, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			// Confirm the image metadata is set correctly
+			cfg, err := img.ConfigFile()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Architecture).To(Equal("amd64"))
+			Expect(cfg.OS).To(Equal("linux"))
+		})
+
+		It("sets the architecture and OS from parameters", func() {
+			srcTar := filepath.Join(tmpDir, "input.tar.gz")
+			dstTar := filepath.Join(tmpDir, "output.tar")
+
+			makeGzippedTar(srcTar, "file.txt", "arm64 content")
+
+			err := utils.CreateTar(sdkLogger.NewNullLogger(), srcTar, dstTar, "test-image:arm", "arm64", "linux")
+			Expect(err).ToNot(HaveOccurred())
+
+			img, err := tarball.ImageFromPath(dstTar, nil)
+			Expect(err).ToNot(HaveOccurred())
+
+			cfg, err := img.ConfigFile()
+			Expect(err).ToNot(HaveOccurred())
+			Expect(cfg.Architecture).To(Equal("arm64"))
+			Expect(cfg.OS).To(Equal("linux"))
+		})
+
+		It("returns an error when the source tar does not exist", func() {
+			srcTar := filepath.Join(tmpDir, "nonexistent.tar.gz")
+			dstTar := filepath.Join(tmpDir, "output.tar")
+
+			err := utils.CreateTar(sdkLogger.NewNullLogger(), srcTar, dstTar, "test-image:latest", "amd64", "linux")
+			Expect(err).To(HaveOccurred())
+		})
+
+		It("returns an error when the image name is invalid", func() {
+			srcTar := filepath.Join(tmpDir, "input.tar.gz")
+			dstTar := filepath.Join(tmpDir, "output.tar")
+
+			makeGzippedTar(srcTar, "file.txt", "content")
+
+			err := utils.CreateTar(sdkLogger.NewNullLogger(), srcTar, dstTar, "INVALID IMAGE NAME !!!", "amd64", "linux")
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })
