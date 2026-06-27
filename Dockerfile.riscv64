@@ -31,7 +31,7 @@ ENV VERSION=$VERSION
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
-FROM fedorariscv/base:41 AS riscv64
+FROM fedorariscv/base:44 AS riscv64
 ENV BUILDKIT_PROGRESS=plain
 ENV TMPDIR=/tmp
 # Install base dependencies
