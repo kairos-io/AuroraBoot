@@ -24,8 +24,9 @@ func TestStageCurtinLanding(t *testing.T) {
 		t.Fatalf("bin/busybox content mismatch")
 	}
 
-	// bin/sh must be a symlink pointing to busybox
-	for _, link := range []string{"sh", "ash", "bash"} {
+	// sh/ash are real busybox applets -> symlinks. bash is not an applet, so it
+	// must be a wrapper script forwarding to busybox sh (curtin runs bash -c).
+	for _, link := range []string{"sh", "ash"} {
 		target, err := os.Readlink(filepath.Join(dir, "bin", link))
 		if err != nil {
 			t.Fatalf("bin/%s symlink missing: %v", link, err)
@@ -33,6 +34,16 @@ func TestStageCurtinLanding(t *testing.T) {
 		if target != "busybox" {
 			t.Fatalf("bin/%s -> %q, want busybox", link, target)
 		}
+	}
+	bashWrapper, err := os.ReadFile(filepath.Join(dir, "bin", "bash"))
+	if err != nil {
+		t.Fatalf("bin/bash wrapper missing: %v", err)
+	}
+	if string(bashWrapper) != "#!/bin/sh\nexec /bin/busybox sh \"$@\"\n" {
+		t.Fatalf("bin/bash wrapper content wrong: %q", string(bashWrapper))
+	}
+	if fi, _ := os.Lstat(filepath.Join(dir, "bin", "bash")); fi != nil && fi.Mode()&0o111 == 0 {
+		t.Fatalf("bin/bash not executable")
 	}
 
 	// stub executables
