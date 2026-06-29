@@ -67,13 +67,7 @@ func TestStageCurtinLanding(t *testing.T) {
 	if len(hookBytes) == 0 || string(hookBytes) != string(maasCurtinHook) {
 		t.Fatalf("curtin/curtin-hooks does not match embedded asset (len=%d)", len(hookBytes))
 	}
-
-	// curtin's ChrootableTarget bind-mounts these into the target before the
-	// in-target validation; they must exist as empty dirs or the deploy fails.
-	for _, d := range []string{"proc", "sys", "dev", "run", "tmp"} {
-		fi, err := os.Stat(filepath.Join(dir, d))
-		if err != nil || !fi.IsDir() {
-			t.Fatalf("mountpoint dir %q missing: %v", d, err)
-		}
-	}
+	// Mountpoints (/proc /sys /dev /run /tmp) are created at image-build time by
+	// CreateDirStructure (DeployImage), not by stageCurtinLanding, so they are
+	// validated by the live deploy / in-chroot bind-mount check, not here.
 }
