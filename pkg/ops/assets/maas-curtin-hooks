@@ -127,6 +127,10 @@ def main():
                 with open(os.path.join(oem, "90_maas_network.yaml"), "w") as fh:
                     yaml.safe_dump(doc, fh, default_flow_style=False)
                 print("Kairos MAAS hook: wrote 90_maas_network.yaml to COS_OEM")
+            else:
+                print("Kairos MAAS hook: no network to translate; Kairos default DHCP applies")
+        else:
+            print("Kairos MAAS hook: no network to translate; Kairos default DHCP applies")
     finally:
         subprocess.call(["umount", oem])
 
