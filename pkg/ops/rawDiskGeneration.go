@@ -56,6 +56,7 @@ type RawImage struct {
 	// skips merging them into a single .raw disk. Used by flashing workflows
 	// such as Nvidia Jetson AGX Orin. Only valid together with an EFI build.
 	SeparatePartitionsImages bool
+	maas                     bool // if true, bake /curtin/curtin-hooks into the OEM partition (MAAS deploy)
 }
 
 // NewEFIRawImage creates a new RawImage struct
@@ -208,6 +209,11 @@ stages:
 		return "", err
 	}
 
+	if err := r.stageMaasCurtinHook(tmpDirOem); err != nil {
+		internal.Log.Logger.Error().Err(err).Msg("failed to stage maas curtin-hook")
+		return "", err
+	}
+
 	OemPartitionImage := sdkImage.Image{
 		File:       filepath.Join(r.TempDir(), "oem.img"),
 		FS:         sdkConstants.LinuxImgFs,
@@ -226,6 +232,20 @@ stages:
 
 	// return the created image file
 	return OemPartitionImage.File, nil
+}
+
+// stageMaasCurtinHook writes the MAAS curtin-hook into <oemDir>/curtin/curtin-hooks
+// when building a disk.maas image. curtin mounts the COS_OEM partition as its
+// target (it is the partition holding /curtin) and runs the hook on deploy.
+func (r *RawImage) stageMaasCurtinHook(oemDir string) error {
+	if !r.maas {
+		return nil
+	}
+	curtinDir := filepath.Join(oemDir, "curtin")
+	if err := fsutils.MkdirAll(r.config.Fs, curtinDir, 0o755); err != nil {
+		return err
+	}
+	return r.config.Fs.WriteFile(filepath.Join(curtinDir, "curtin-hooks"), maasCurtinHook, 0o750)
 }
 
 // createRecoveryPartitionImage creates a recovery partition image with the given source
