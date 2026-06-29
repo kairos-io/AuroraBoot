@@ -55,6 +55,18 @@ class TranslateNetworkTest(unittest.TestCase):
         netcfg = {"version": 2, "ethernets": {"enp1s0": {"dhcp4": True}}}
         f = self._only_file(self.h.translate_network(netcfg))
         self.assertIn("DHCP=yes", f["content"])
+        self.assertNotIn("Address=", f["content"])
+        self.assertNotIn("Gateway=", f["content"])
+        self.assertNotIn("DNS=", f["content"])
+
+    def test_v1_dhcp(self):
+        netcfg = {"version": 1, "config": [{
+            "type": "physical", "name": "eth0",
+            "subnets": [{"type": "dhcp4"}]}]}
+        f = self._only_file(self.h.translate_network(netcfg))
+        self.assertIn("DHCP=yes", f["content"])
+        self.assertNotIn("Address=", f["content"])
+        self.assertNotIn("Gateway=", f["content"])
 
     def test_v1_static(self):
         netcfg = {"version": 1, "config": [{
