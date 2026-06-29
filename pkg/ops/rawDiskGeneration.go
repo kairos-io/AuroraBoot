@@ -236,33 +236,14 @@ stages:
 func (r *RawImage) createCurtinLandingPartitionImage() (string, error) {
 	staging := filepath.Join(r.TempDir(), "curtin-landing")
 	mountp := filepath.Join(r.TempDir(), "curtin-landing-mount")
-	if err := fsutils.MkdirAll(r.config.Fs, filepath.Join(staging, "bin"), 0o755); err != nil {
-		return "", err
-	}
-	for _, d := range []string{"usr/bin", "curtin"} {
-		if err := fsutils.MkdirAll(r.config.Fs, filepath.Join(staging, d), 0o755); err != nil {
-			return "", err
-		}
-	}
+
 	// static busybox from the auroraboot runtime (added to the image via dnf)
 	bb, err := r.config.Fs.ReadFile("/usr/sbin/busybox")
 	if err != nil {
 		return "", fmt.Errorf("reading busybox (is it dnf-installed in the auroraboot image?): %w", err)
 	}
-	if err := r.config.Fs.WriteFile(filepath.Join(staging, "bin", "busybox"), bb, 0o755); err != nil {
-		return "", err
-	}
-	for _, link := range []string{"sh", "ash", "bash"} {
-		_ = r.config.Fs.Symlink("busybox", filepath.Join(staging, "bin", link))
-	}
-	stub := []byte("#!/bin/sh\nexit 0\n")
-	for _, s := range []string{"cloud-init", "netplan"} {
-		if err := r.config.Fs.WriteFile(filepath.Join(staging, "usr/bin", s), stub, 0o755); err != nil {
-			return "", err
-		}
-	}
-	if err := r.config.Fs.WriteFile(filepath.Join(staging, "curtin", "curtin-hooks"), maasCurtinHook, 0o750); err != nil {
-		return "", err
+	if err := stageCurtinLanding(staging, bb); err != nil {
+		return "", fmt.Errorf("staging curtin-landing directory: %w", err)
 	}
 
 	img := sdkImage.Image{
@@ -293,7 +274,9 @@ func stageCurtinLanding(dir string, busybox []byte) error {
 		return err
 	}
 	for _, link := range []string{"sh", "ash", "bash"} {
-		_ = os.Symlink("busybox", filepath.Join(dir, "bin", link))
+		if err := os.Symlink("busybox", filepath.Join(dir, "bin", link)); err != nil {
+			return err
+		}
 	}
 	stub := []byte("#!/bin/sh\nexit 0\n")
 	for _, s := range []string{"cloud-init", "netplan"} {
