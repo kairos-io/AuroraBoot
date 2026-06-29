@@ -254,7 +254,12 @@ func (r *RawImage) createCurtinLandingPartitionImage() (string, error) {
 		Source:     sdkImage.NewDirSrc(staging),
 		MountPoint: mountp,
 	}
-	if _, err := r.elemental.DeployImageNodirs(&img, false); err != nil {
+	// Use DeployImage (not DeployImageNodirs) so CreateDirStructure creates the
+	// /proc /sys /dev /run /tmp mountpoints in the image. curtin's
+	// ChrootableTarget bind-mounts those before the in-target validation; empty
+	// dirs staged by hand do not survive the deploy, so the dir-creating variant
+	// is required here.
+	if _, err := r.elemental.DeployImage(&img, false); err != nil {
 		return "", fmt.Errorf("creating curtin-landing image: %w", err)
 	}
 	return img.File, nil
@@ -265,11 +270,11 @@ func (r *RawImage) createCurtinLandingPartitionImage() (string, error) {
 // curtin/curtin-hooks. It uses the real OS filesystem and is designed to be
 // tested without a full image build.
 func stageCurtinLanding(dir string, busybox []byte) error {
-	// bin/usr-bin/curtin hold the payload; proc/sys/dev/run/tmp are empty
-	// mountpoints curtin's ChrootableTarget bind-mounts into before running the
-	// in-target validation (missing mountpoints make `curtin in-target` fail with
-	// "Unexpected error" before the command runs).
-	for _, d := range []string{"bin", "usr/bin", "curtin", "proc", "sys", "dev", "run", "tmp"} {
+	// Payload dirs only. The chroot mountpoints (/proc /sys /dev /run /tmp) are
+	// created at image-build time by CreateDirStructure via DeployImage (see
+	// createCurtinLandingPartitionImage); empty dirs staged here would not
+	// survive the deploy.
+	for _, d := range []string{"bin", "usr/bin", "curtin"} {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
 			return err
 		}
