@@ -273,10 +273,17 @@ func stageCurtinLanding(dir string, busybox []byte) error {
 	if err := os.WriteFile(filepath.Join(dir, "bin", "busybox"), busybox, 0o755); err != nil {
 		return err
 	}
-	for _, link := range []string{"sh", "ash", "bash"} {
+	// sh/ash are real busybox applets, so symlinks work. bash is NOT a busybox
+	// applet (busybox errors "applet not found" when invoked as bash), but MAAS
+	// curtin runs `in-target bash -c ...`, so provide /bin/bash as a wrapper
+	// script that forwards to busybox sh.
+	for _, link := range []string{"sh", "ash"} {
 		if err := os.Symlink("busybox", filepath.Join(dir, "bin", link)); err != nil {
 			return err
 		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "bash"), []byte("#!/bin/sh\nexec /bin/busybox sh \"$@\"\n"), 0o755); err != nil {
+		return err
 	}
 	stub := []byte("#!/bin/sh\nexit 0\n")
 	for _, s := range []string{"cloud-init", "netplan"} {
