@@ -265,7 +265,11 @@ func (r *RawImage) createCurtinLandingPartitionImage() (string, error) {
 // curtin/curtin-hooks. It uses the real OS filesystem and is designed to be
 // tested without a full image build.
 func stageCurtinLanding(dir string, busybox []byte) error {
-	for _, d := range []string{"bin", "usr/bin", "curtin"} {
+	// bin/usr-bin/curtin hold the payload; proc/sys/dev/run/tmp are empty
+	// mountpoints curtin's ChrootableTarget bind-mounts into before running the
+	// in-target validation (missing mountpoints make `curtin in-target` fail with
+	// "Unexpected error" before the command runs).
+	for _, d := range []string{"bin", "usr/bin", "curtin", "proc", "sys", "dev", "run", "tmp"} {
 		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
 			return err
 		}
