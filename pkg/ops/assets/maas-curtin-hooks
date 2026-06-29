@@ -2,13 +2,13 @@
 """Kairos MAAS curtin hook.
 
 Runs in the MAAS ephemeral environment after the Kairos raw image is written to
-disk. curtin selects the Kairos COS_OEM partition as the target because it is
+disk. curtin selects the curtin-landing partition as the target because it is
 the partition that contains /curtin. This hook deliberately does NOT install or
 modify the kernel, GRUB, EFI, or fstab: the Kairos image is already bootable.
 
 It hands MAAS's per-machine network config and the MAAS datasource credentials
-to the OEM partition (the curtin target), where Kairos cloud-config and the yip
-MAAS datasource provider consume them on first boot.
+to COS_OEM (mounted by label), where Kairos cloud-config and the yip MAAS
+datasource provider consume them on first boot.
 
 curtin and yaml imports are kept inside main() so the pure functions below can
 be imported and unit-tested without curtin installed.
@@ -94,6 +94,7 @@ def _networkd_file(idx, name, dhcp, addresses, gateway, dns):
 
 def main():
     import os
+    import subprocess
     import sys
 
     import yaml
@@ -101,32 +102,33 @@ def main():
     from curtin.util import load_command_environment
 
     state = load_command_environment()
-    target = state["target"]
     cfg = load_command_config(None, state)
 
-    datasource = extract_datasource(cfg)
-    if datasource:
-        ds_dir = os.path.join(target, "maas")
-        os.makedirs(ds_dir, exist_ok=True)
-        with open(os.path.join(ds_dir, "datasource.yaml"), "w") as fh:
-            fh.write(datasource)
-        print("Kairos MAAS hook: wrote maas/datasource.yaml")
-    else:
-        print("Kairos MAAS hook: no MAAS datasource in curtin config", file=sys.stderr)
-
-    netpath = state.get("network_config")
-    if netpath and os.path.exists(netpath):
-        with open(netpath) as fh:
-            netcfg = yaml.safe_load(fh) or {}
-        doc = translate_network(netcfg)
-        if doc:
-            with open(os.path.join(target, "90_maas_network.yaml"), "w") as fh:
-                yaml.safe_dump(doc, fh, default_flow_style=False)
-            print("Kairos MAAS hook: wrote 90_maas_network.yaml")
+    oem_dev = subprocess.check_output(["blkid", "-L", "COS_OEM"]).decode().strip()
+    oem = "/tmp/kairos_oem"
+    os.makedirs(oem, exist_ok=True)
+    subprocess.check_call(["mount", oem_dev, oem])
+    try:
+        datasource = extract_datasource(cfg)
+        if datasource:
+            os.makedirs(os.path.join(oem, "maas"), exist_ok=True)
+            with open(os.path.join(oem, "maas", "datasource.yaml"), "w") as fh:
+                fh.write(datasource)
+            print("Kairos MAAS hook: wrote maas/datasource.yaml to COS_OEM")
         else:
-            print("Kairos MAAS hook: no network to translate; Kairos default DHCP applies")
-    else:
-        print("Kairos MAAS hook: no network_config; Kairos default DHCP applies")
+            print("Kairos MAAS hook: no MAAS datasource in curtin config", file=sys.stderr)
+
+        netpath = state.get("network_config")
+        if netpath and os.path.exists(netpath):
+            with open(netpath) as fh:
+                netcfg = yaml.safe_load(fh) or {}
+            doc = translate_network(netcfg)
+            if doc:
+                with open(os.path.join(oem, "90_maas_network.yaml"), "w") as fh:
+                    yaml.safe_dump(doc, fh, default_flow_style=False)
+                print("Kairos MAAS hook: wrote 90_maas_network.yaml to COS_OEM")
+    finally:
+        subprocess.call(["umount", oem])
 
     print("Kairos MAAS hook: done (kernel/grub/efi/fstab intentionally untouched)")
 
