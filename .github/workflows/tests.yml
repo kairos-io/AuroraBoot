@@ -260,7 +260,7 @@ jobs:
      - name: Preload the Aurora image
        run: docker pull quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
      - name: Cypress run
-       uses: cypress-io/github-action@v7.4.0
+       uses: cypress-io/github-action@v7.4.1
        with:
          working-directory: e2e/web/
          start: docker run --network=host --rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web
