@@ -31,6 +31,7 @@ func RegisterAll(d *Deployer) error {
 		d.StepGenMBRRawDisk,
 		d.StepConvertGCE,
 		d.StepConvertVHD,
+		d.StepConvertMAAS,
 		// Inject the data into the ISO
 		d.StepInjectCC,
 		// Start servers
