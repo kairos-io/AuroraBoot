@@ -166,6 +166,7 @@ type Artifact struct {
 	Tar                     bool          `json:"tar"`
 	GCE                     bool          `json:"gce"`
 	VHD                     bool          `json:"vhd"`
+	MAAS                    bool          `json:"maas"`
 	UKI                     bool          `json:"uki"`
 	FIPS                    bool          `json:"fips"`
 	TrustedBoot             bool          `json:"trustedBoot"`
@@ -221,6 +222,7 @@ type ArtifactOutputs struct {
 	Tar         bool `json:"tar,omitempty"`
 	GCE         bool `json:"gce,omitempty"`
 	VHD         bool `json:"vhd,omitempty"`
+	MAAS        bool `json:"maas,omitempty"`
 	UKI         bool `json:"uki,omitempty"`
 	FIPS        bool `json:"fips,omitempty"`
 	TrustedBoot bool `json:"trustedBoot,omitempty"`
