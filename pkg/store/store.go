@@ -167,6 +167,7 @@ type ArtifactRecord struct {
 	CloudConfig             string    `json:"cloudConfig,omitempty" gorm:"type:text"`
 	KubernetesDistro        string    `json:"kubernetesDistro,omitempty"`
 	KubernetesVersion       string    `json:"kubernetesVersion,omitempty"`
+	KubernetesEnabled       *bool     `json:"kubernetesEnabled,omitempty"`
 	TargetGroupID           string    `json:"targetGroupId,omitempty"`
 	ContainerImage          string    `json:"containerImage,omitempty"`
 	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`

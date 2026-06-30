@@ -131,6 +131,52 @@ var _ = Describe("ArtifactHandler", func() {
 		})
 	})
 
+	Describe("Create — kubernetes provider cloud-config", func() {
+		post := func(body string) {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+		}
+
+		It("enables k3s in cloud-config for the standard variant", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k3s:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
+		})
+
+		It("enables k0s in cloud-config for the standard variant", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k0s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k0s:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
+		})
+
+		It("disables k3s in cloud-config when kubernetesEnabled is false", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k3s:"))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: false"))
+		})
+
+		It("defaults kubernetesEnabled to true when omitted", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
+		})
+
+		It("omits kubernetes provider stanzas for the core variant", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"core","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k3s:"))
+			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k0s:"))
+		})
+
+		It("merges extra k3s YAML without duplicating the top-level key", func() {
+			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true},"cloudConfig":"k3s:\n  enabled: true\n  cluster-cidr: 10.42.0.0/16"}`)
+			Expect(strings.Count(fb.lastOpts.CloudConfig, "k3s:")).To(Equal(1))
+			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("cluster-cidr"))
+		})
+	})
+
 	Describe("List", func() {
 		It("should list all builds", func() {
 			fb.builds = []*builder.BuildStatus{

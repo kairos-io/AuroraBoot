@@ -158,6 +158,7 @@ type Artifact struct {
 	Variant                 string        `json:"variant"`
 	AllowInsecureRegistries bool          `json:"allow-insecure-registries"`
 	KubernetesDistro        string        `json:"kubernetesDistro,omitempty"`
+	KubernetesEnabled       *bool         `json:"kubernetesEnabled,omitempty"`
 	ISO                     bool          `json:"iso"`
 	CloudImage              bool          `json:"cloudImage"`
 	Netboot                 bool          `json:"netboot"`
@@ -191,6 +192,7 @@ type CreateArtifactRequest struct {
 	Variant                 string                 `json:"variant,omitempty"`
 	KubernetesDistro        string                 `json:"kubernetesDistro,omitempty"`
 	KubernetesVersion       string                 `json:"kubernetesVersion,omitempty"`
+	KubernetesEnabled       *bool                  `json:"kubernetesEnabled,omitempty"`
 	AllowInsecureRegistries bool                   `json:"allow-insecure-registries,omitempty"`
 	Dockerfile              string                 `json:"dockerfile,omitempty"`
 	OverlayRootfs           string                 `json:"overlayRootfs,omitempty"`

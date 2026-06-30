@@ -49,6 +49,7 @@ export interface BuildConfigPayload {
     variant: string;
     kubernetesDistro?: string;
     kubernetesVersion?: string;
+    kubernetesEnabled?: boolean;
     kairosInitImage?: string;
     "allow-insecure-registries"?: boolean;
   };
@@ -104,6 +105,7 @@ export function payloadFromBuilder(args: {
       variant: form.variant,
       kubernetesDistro: form.variant === "standard" ? form.kubernetesDistro || undefined : undefined,
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion || undefined : undefined,
+      kubernetesEnabled: form.variant === "standard" ? form.kubernetesEnabled ?? true : undefined,
       kairosInitImage: form.kairosInitImage || undefined,
       "allow-insecure-registries":
         buildMode === "image" ? form["allow-insecure-registries"] || undefined : undefined,
@@ -152,6 +154,8 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
       variant: artifact.variant || "core",
       kubernetesDistro: artifact.kubernetesDistro || undefined,
       kubernetesVersion: artifact.kubernetesVersion || undefined,
+      kubernetesEnabled:
+        artifact.variant === "standard" ? artifact.kubernetesEnabled ?? true : undefined,
       kairosInitImage: artifact.kairosInitImage || undefined,
       "allow-insecure-registries":
         buildMode === "image" ? artifact["allow-insecure-registries"] || undefined : undefined,
