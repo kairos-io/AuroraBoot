@@ -46,6 +46,12 @@ def translate_network(netcfg):
 
 
 def _networkd_files(netcfg):
+    netcfg = netcfg or {}
+    # MAAS/curtin and cloud-init wrap the config in a top-level "network:" key
+    # (e.g. {"network": {"version": 2, "ethernets": {...}}}). Unwrap it so both
+    # the wrapped real-world shape and a bare config are handled.
+    if isinstance(netcfg.get("network"), dict):
+        netcfg = netcfg["network"]
     files = []
     if netcfg.get("version") == 2:
         ethernets = netcfg.get("ethernets") or {}

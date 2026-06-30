@@ -51,6 +51,25 @@ class TranslateNetworkTest(unittest.TestCase):
         self.assertIn("DNS=1.1.1.1", f["content"])
         self.assertNotIn("DHCP=yes", f["content"])
 
+    def test_v2_static_maas_wrapped(self):
+        # MAAS/curtin hand the netplan config wrapped in a top-level "network:"
+        # key (this is the exact shape seen on a real deploy). translate_network
+        # must unwrap it; otherwise the static config is silently dropped and
+        # the node falls back to DHCP.
+        netcfg = {"network": {"version": 2, "ethernets": {"ens3": {
+            "addresses": ["172.16.0.207/24"],
+            "gateway4": "172.16.0.1",
+            "match": {"macaddress": "52:54:00:ef:89:5c"},
+            "mtu": 1500,
+            "nameservers": {"addresses": ["172.16.0.1"], "search": ["maas"]},
+            "set-name": "ens3"}}}}
+        f = self._only_file(self.h.translate_network(netcfg))
+        self.assertIn("Name=ens3", f["content"])
+        self.assertIn("Address=172.16.0.207/24", f["content"])
+        self.assertIn("Gateway=172.16.0.1", f["content"])
+        self.assertIn("DNS=172.16.0.1", f["content"])
+        self.assertNotIn("DHCP=yes", f["content"])
+
     def test_v2_dhcp(self):
         netcfg = {"version": 2, "ethernets": {"enp1s0": {"dhcp4": True}}}
         f = self._only_file(self.h.translate_network(netcfg))
