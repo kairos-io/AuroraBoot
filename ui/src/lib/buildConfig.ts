@@ -165,6 +165,7 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
       tar: artifact.tar ?? false,
       gce: artifact.gce ?? false,
       vhd: artifact.vhd ?? false,
+      maas: artifact.maas ?? false,
       uki: artifact.uki ?? false,
       fips: artifact.fips,
       trustedBoot: artifact.trustedBoot,
