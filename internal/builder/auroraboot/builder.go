@@ -200,6 +200,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			Tar:                     opts.Outputs.Tar,
 			GCE:                     opts.Outputs.GCE,
 			VHD:                     opts.Outputs.VHD,
+			MAAS:                    opts.Outputs.MAAS,
 			UKI:                     opts.Outputs.UKI,
 			KairosInitImage:         opts.KairosInitImage,
 			AutoInstall:             opts.Provisioning.AutoInstall,
@@ -575,11 +576,12 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 	allowInsecure := opts.Source.AllowInsecureRegistries
 	config.AllowInsecureRegistries = &allowInsecure
 
-	if opts.CloudImage || opts.Outputs.RawDisk || opts.Outputs.GCE || opts.Outputs.VHD {
+	if opts.CloudImage || opts.Outputs.RawDisk || opts.Outputs.GCE || opts.Outputs.VHD || opts.Outputs.MAAS {
 		config.Disk.EFI = true
 	}
 	config.Disk.GCE = opts.Outputs.GCE
 	config.Disk.VHD = opts.Outputs.VHD
+	config.Disk.MAAS = opts.Outputs.MAAS
 
 	if opts.CloudConfig != "" {
 		config.CloudConfig = opts.CloudConfig
