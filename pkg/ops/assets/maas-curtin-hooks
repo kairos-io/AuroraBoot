@@ -56,9 +56,10 @@ def _networkd_files(netcfg):
     if netcfg.get("version") == 2:
         ethernets = netcfg.get("ethernets") or {}
         for idx, (name, e) in enumerate(sorted(ethernets.items())):
+            ns = e.get("nameservers") or {}
             files.append(_networkd_file(
                 idx, name, bool(e.get("dhcp4")), e.get("addresses"),
-                _v2_gateway(e), (e.get("nameservers") or {}).get("addresses")))
+                _v2_gateway(e), ns.get("addresses"), ns.get("search")))
     else:
         for idx, item in enumerate(netcfg.get("config") or []):
             if item.get("type") != "physical":
@@ -68,7 +69,8 @@ def _networkd_files(netcfg):
             addresses = [subnet["address"]] if subnet.get("address") else None
             files.append(_networkd_file(
                 idx, item.get("name"), dhcp, addresses,
-                subnet.get("gateway"), item.get("dns_nameservers")))
+                subnet.get("gateway"), item.get("dns_nameservers"),
+                item.get("dns_search")))
     return [f for f in files if f]
 
 
@@ -81,7 +83,7 @@ def _v2_gateway(e):
     return None
 
 
-def _networkd_file(idx, name, dhcp, addresses, gateway, dns):
+def _networkd_file(idx, name, dhcp, addresses, gateway, dns, search=None):
     lines = ["[Match]", "Name=%s" % (name or "en*"), "", "[Network]"]
     if dhcp:
         lines.append("DHCP=yes")
@@ -91,6 +93,8 @@ def _networkd_file(idx, name, dhcp, addresses, gateway, dns):
         lines.append("Gateway=%s" % gateway)
     for entry in dns or []:
         lines.append("DNS=%s" % entry)
+    if search:
+        lines.append("Domains=%s" % " ".join(search))
     return {
         "path": "/etc/systemd/network/%02d-maas.network" % (10 + idx),
         "permissions": 420,
