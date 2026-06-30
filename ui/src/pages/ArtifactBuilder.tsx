@@ -94,7 +94,7 @@ const OUTPUT_GROUPS: { title: string; tone: OutputTone; items: OutputCardDef[] }
       { field: "cloudImage", label: "Cloud Image", desc: "Generic cloud disk", icon: Cloud },
       { field: "gce", label: "Google Cloud", desc: "GCE-compatible image", icon: CloudCog },
       { field: "vhd", label: "Azure (VHD)", desc: "Azure VHD image", icon: CloudCog },
-      { field: "maas", label: "MAAS", desc: "MAAS-deployable raw image", icon: Server },
+      { field: "maas", label: "MAAS", desc: "MAAS-deployable image (ddgz)", icon: Server },
     ],
   },
   {

@@ -172,6 +172,15 @@ func (d *Deployer) StepConvertVHD() error {
 		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
 }
 
+// StepConvertMAAS compresses the raw disk into the ddgz format MAAS expects for
+// a custom uploaded image, so the artifact is directly uploadable.
+func (d *Deployer) StepConvertMAAS() error {
+	return d.Add(constants.OpConvertMAAS,
+		herd.EnableIf(func() bool { return d.Config.Disk.MAAS }),
+		herd.WithDeps(constants.OpGenEFIRawDisk),
+		herd.WithCallback(ops.ConvertRawDiskToMAAS(d.rawDiskPath())))
+}
+
 func (d *Deployer) StepInjectCC() error {
 	return d.Add(constants.OpInjectCC,
 		herd.EnableIf(func() bool { return !d.rawDiskIsSet() && d.isoOption() }),
