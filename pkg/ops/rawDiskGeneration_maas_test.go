@@ -35,15 +35,22 @@ func TestStageCurtinLanding(t *testing.T) {
 			t.Fatalf("bin/%s -> %q, want busybox", link, target)
 		}
 	}
-	bashWrapper, err := os.ReadFile(filepath.Join(dir, "bin", "bash"))
+	// bash must exist in /usr/bin: curtin runs `chroot target bash` resolving via
+	// PATH, and the merged-usr Ubuntu ephemeral env's PATH is
+	// /usr/sbin:/usr/bin:/sbin (it omits /bin), so the wrapper goes in /usr/bin.
+	bashWrapper, err := os.ReadFile(filepath.Join(dir, "usr/bin", "bash"))
 	if err != nil {
-		t.Fatalf("bin/bash wrapper missing: %v", err)
+		t.Fatalf("usr/bin/bash wrapper missing: %v", err)
 	}
 	if string(bashWrapper) != "#!/bin/sh\nexec /bin/busybox sh \"$@\"\n" {
-		t.Fatalf("bin/bash wrapper content wrong: %q", string(bashWrapper))
+		t.Fatalf("usr/bin/bash wrapper content wrong: %q", string(bashWrapper))
 	}
-	if fi, _ := os.Lstat(filepath.Join(dir, "bin", "bash")); fi != nil && fi.Mode()&0o111 == 0 {
-		t.Fatalf("bin/bash not executable")
+	if fi, _ := os.Lstat(filepath.Join(dir, "usr/bin", "bash")); fi != nil && fi.Mode()&0o111 == 0 {
+		t.Fatalf("usr/bin/bash not executable")
+	}
+	// bash is intentionally NOT in /bin (nothing resolves it there).
+	if _, err := os.Lstat(filepath.Join(dir, "bin", "bash")); err == nil {
+		t.Fatalf("/bin/bash should not exist (only /usr/bin/bash is needed)")
 	}
 
 	// stub executables
