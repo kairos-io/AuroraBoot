@@ -282,16 +282,23 @@ func stageCurtinLanding(dir string, busybox []byte) error {
 	if err := os.WriteFile(filepath.Join(dir, "bin", "busybox"), busybox, 0o755); err != nil {
 		return err
 	}
-	// sh/ash are real busybox applets, so symlinks work. bash is NOT a busybox
-	// applet (busybox errors "applet not found" when invoked as bash), but MAAS
-	// curtin runs `in-target bash -c ...`, so provide /bin/bash as a wrapper
-	// script that forwards to busybox sh.
+	// sh/ash are real busybox applets, so symlinks work. They stay in /bin
+	// because the bash wrapper below references /bin/sh (its shebang) and
+	// /bin/busybox.
 	for _, link := range []string{"sh", "ash"} {
 		if err := os.Symlink("busybox", filepath.Join(dir, "bin", link)); err != nil {
 			return err
 		}
 	}
-	if err := os.WriteFile(filepath.Join(dir, "bin", "bash"), []byte("#!/bin/sh\nexec /bin/busybox sh \"$@\"\n"), 0o755); err != nil {
+	// bash is NOT a busybox applet (busybox errors "applet not found" when
+	// invoked as bash), so it is a wrapper script that forwards to busybox sh.
+	// curtin validates the custom image with `chroot target bash`, resolving
+	// bash via PATH. The MAAS ephemeral env is merged-usr (/bin -> /usr/bin) so
+	// its PATH is /usr/sbin:/usr/bin:/sbin and omits /bin; the wrapper therefore
+	// lives in /usr/bin (where curtin looks), not /bin. Without it, chroot
+	// reports "failed to run command 'bash': No such file or directory".
+	bashWrapper := []byte("#!/bin/sh\nexec /bin/busybox sh \"$@\"\n")
+	if err := os.WriteFile(filepath.Join(dir, "usr/bin", "bash"), bashWrapper, 0o755); err != nil {
 		return err
 	}
 	stub := []byte("#!/bin/sh\nexit 0\n")
