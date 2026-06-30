@@ -763,6 +763,7 @@ func collectArtifacts(dir string) []string {
 	artifactExts := map[string]bool{
 		".iso":    true,
 		".raw":    true,
+		".raw.gz": true, // MAAS ddgz output (gzipped raw)
 		".img":    true,
 		".tar":    true,
 		".tar.gz": true,
