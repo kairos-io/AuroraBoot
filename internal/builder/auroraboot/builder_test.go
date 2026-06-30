@@ -107,6 +107,24 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(capturedConfig.ISO.OverlayRootfs).To(Equal("/tmp/overlay"))
 		})
 
+		It("should set Disk.MAAS and Disk.EFI when the MAAS output is selected", func() {
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:        "test-maas",
+				BaseImage: "quay.io/kairos/ubuntu:latest",
+				Outputs: builder.OutputOptions{
+					MAAS: true,
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			waitForBuild()
+
+			mu.Lock()
+			defer mu.Unlock()
+			Expect(capturedConfig.Disk.MAAS).To(BeTrue())
+			// MAAS is a raw-disk variant, so it implies the EFI raw build.
+			Expect(capturedConfig.Disk.EFI).To(BeTrue())
+		})
+
 		It("should inject cloud-config into AuroraBoot config", func() {
 			cc := "#cloud-config\nusers:\n- name: test\n"
 			_, err := b.Build(context.Background(), builder.BuildOptions{

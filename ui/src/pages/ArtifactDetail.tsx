@@ -331,6 +331,7 @@ export function ArtifactDetail() {
         { on: artifact.cloudImage, label: "Cloud image", icon: Cloud },
         { on: artifact.gce, label: "Google Cloud", icon: CloudCog },
         { on: artifact.vhd, label: "Azure (VHD)", icon: CloudCog },
+        { on: artifact.maas, label: "MAAS", icon: Server },
       ],
     },
     {

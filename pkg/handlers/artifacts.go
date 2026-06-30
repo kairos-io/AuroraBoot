@@ -82,6 +82,7 @@ type artifactOutputs struct {
 	Tar         bool `json:"tar"`
 	GCE         bool `json:"gce"`
 	VHD         bool `json:"vhd"`
+	MAAS        bool `json:"maas"`
 	UKI         bool `json:"uki"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`
@@ -213,6 +214,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		Tar:         req.Outputs.Tar,
 		GCE:         req.Outputs.GCE,
 		VHD:         req.Outputs.VHD,
+		MAAS:        req.Outputs.MAAS,
 		UKI:         req.Outputs.UKI,
 		FIPS:        req.Outputs.FIPS,
 		TrustedBoot: req.Outputs.TrustedBoot,
@@ -315,6 +317,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			Tar:                     req.Outputs.Tar,
 			GCE:                     req.Outputs.GCE,
 			VHD:                     req.Outputs.VHD,
+			MAAS:                    req.Outputs.MAAS,
 			UKI:                     req.Outputs.UKI,
 			KairosInitImage:         req.KairosInitImage,
 			AutoInstall:             autoInstall,
