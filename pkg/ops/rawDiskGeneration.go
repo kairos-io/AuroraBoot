@@ -56,7 +56,7 @@ type RawImage struct {
 	// skips merging them into a single .raw disk. Used by flashing workflows
 	// such as Nvidia Jetson AGX Orin. Only valid together with an EFI build.
 	SeparatePartitionsImages bool
-	maas                     bool // if true, bake /curtin/curtin-hooks into the OEM partition (MAAS deploy)
+	maas                     bool // if true, add the curtin-landing partition (COS_CURTIN) carrying /curtin/curtin-hooks (MAAS deploy)
 }
 
 // NewEFIRawImage creates a new RawImage struct
