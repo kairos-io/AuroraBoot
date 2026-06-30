@@ -211,7 +211,7 @@ const KAIROS_VERSION = "v4.1.2";
 // renovate: datasource=docker depName=ubuntu
 const UBUNTU_VERSION = "24.04";
 // renovate: datasource=docker depName=fedora
-const FEDORA_VERSION = "40";
+const FEDORA_VERSION = "44";
 // renovate: datasource=docker depName=opensuse/leap
 const OPENSUSE_LEAP_VERSION = "15.6";
 // renovate: datasource=docker depName=debian
