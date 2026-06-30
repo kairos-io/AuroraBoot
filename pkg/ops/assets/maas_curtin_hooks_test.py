@@ -68,6 +68,7 @@ class TranslateNetworkTest(unittest.TestCase):
         self.assertIn("Address=172.16.0.207/24", f["content"])
         self.assertIn("Gateway=172.16.0.1", f["content"])
         self.assertIn("DNS=172.16.0.1", f["content"])
+        self.assertIn("Domains=maas", f["content"])
         self.assertNotIn("DHCP=yes", f["content"])
 
     def test_v2_dhcp(self):
