@@ -78,3 +78,69 @@ func TestStageCurtinLanding(t *testing.T) {
 	// CreateDirStructure (DeployImage), not by stageCurtinLanding, so they are
 	// validated by the live deploy / in-chroot bind-mount check, not here.
 }
+
+// stageCurtinLanding must surface filesystem errors rather than swallowing them,
+// so a partially-staged partition never silently ships. Each case seeds an
+// obstacle that makes exactly one staging step fail.
+func TestStageCurtinLandingErrors(t *testing.T) {
+	busybox := []byte("fake-busybox-binary")
+
+	t.Run("cannot create payload dir", func(t *testing.T) {
+		dir := t.TempDir()
+		// A regular file where the "bin" directory needs to be makes MkdirAll fail.
+		if err := os.WriteFile(filepath.Join(dir, "bin"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := stageCurtinLanding(dir, busybox); err == nil {
+			t.Fatal("expected error when payload dir cannot be created, got nil")
+		}
+	})
+
+	t.Run("cannot write busybox", func(t *testing.T) {
+		dir := t.TempDir()
+		// A directory where the busybox file needs to be makes WriteFile fail.
+		if err := os.MkdirAll(filepath.Join(dir, "bin", "busybox"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := stageCurtinLanding(dir, busybox); err == nil {
+			t.Fatal("expected error when busybox cannot be written, got nil")
+		}
+	})
+
+	t.Run("cannot create symlink", func(t *testing.T) {
+		dir := t.TempDir()
+		// A pre-existing bin/sh makes the busybox symlink fail with EEXIST.
+		if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(dir, "bin", "sh"), []byte("x"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		if err := stageCurtinLanding(dir, busybox); err == nil {
+			t.Fatal("expected error when symlink cannot be created, got nil")
+		}
+	})
+
+	t.Run("cannot write bash wrapper", func(t *testing.T) {
+		dir := t.TempDir()
+		// A directory where usr/bin/bash needs to be makes WriteFile fail, after
+		// the busybox write and symlinks have succeeded.
+		if err := os.MkdirAll(filepath.Join(dir, "usr", "bin", "bash"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := stageCurtinLanding(dir, busybox); err == nil {
+			t.Fatal("expected error when bash wrapper cannot be written, got nil")
+		}
+	})
+
+	t.Run("cannot write stub", func(t *testing.T) {
+		dir := t.TempDir()
+		// A directory where usr/bin/cloud-init needs to be makes the stub write fail.
+		if err := os.MkdirAll(filepath.Join(dir, "usr", "bin", "cloud-init"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := stageCurtinLanding(dir, busybox); err == nil {
+			t.Fatal("expected error when stub cannot be written, got nil")
+		}
+	})
+}
