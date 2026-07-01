@@ -33,6 +33,7 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
       tar: false,
       gce: false,
       vhd: false,
+      maas: false,
       uki: false,
       fips: false,
       trustedBoot: false,
@@ -74,6 +75,7 @@ function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
     tar: false,
     gce: false,
     vhd: false,
+    maas: false,
     uki: false,
     fips: false,
     trustedBoot: false,
@@ -397,6 +399,11 @@ describe("payloadFromArtifact", () => {
     expect(p.provisioning.targetGroupName).toBe("production");
     // Signing is intentionally empty — the artifact record doesn't carry it.
     expect(p.signing).toEqual({});
+  });
+
+  it("carries the MAAS output flag through the envelope", () => {
+    const p = payloadFromArtifact(makeArtifact({ maas: true }), groups);
+    expect(p.outputs.maas).toBe(true);
   });
 
   it("defaults arch/model/variant when the record has them missing", () => {

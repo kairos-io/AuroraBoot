@@ -56,6 +56,7 @@ type RawImage struct {
 	// skips merging them into a single .raw disk. Used by flashing workflows
 	// such as Nvidia Jetson AGX Orin. Only valid together with an EFI build.
 	SeparatePartitionsImages bool
+	maas                     bool // if true, add the curtin-landing partition (COS_CURTIN) carrying /curtin/curtin-hooks (MAAS deploy)
 }
 
 // NewEFIRawImage creates a new RawImage struct
@@ -226,6 +227,87 @@ stages:
 
 	// return the created image file
 	return OemPartitionImage.File, nil
+}
+
+// createCurtinLandingPartitionImage builds a tiny ext2 partition that curtin
+// will select as its target (it holds /curtin). It carries a static busybox
+// (so the chroot needs no libc), stub cloud-init/netplan (so MAAS's in-target
+// validation passes), and the MAAS curtin-hook. It is never booted.
+func (r *RawImage) createCurtinLandingPartitionImage() (string, error) {
+	staging := filepath.Join(r.TempDir(), "curtin-landing")
+	mountp := filepath.Join(r.TempDir(), "curtin-landing-mount")
+
+	// static busybox from the auroraboot runtime (added to the image via dnf)
+	bb, err := r.config.Fs.ReadFile("/usr/sbin/busybox")
+	if err != nil {
+		return "", fmt.Errorf("reading busybox (is it dnf-installed in the auroraboot image?): %w", err)
+	}
+	if err := stageCurtinLanding(staging, bb); err != nil {
+		return "", fmt.Errorf("staging curtin-landing directory: %w", err)
+	}
+
+	img := sdkImage.Image{
+		File:       filepath.Join(r.TempDir(), "curtin-landing.img"),
+		FS:         sdkConstants.LinuxImgFs,
+		Label:      "COS_CURTIN",
+		Size:       64, // MB; busybox ~1.2MB + stubs, 64 matches OEM and is safe
+		Source:     sdkImage.NewDirSrc(staging),
+		MountPoint: mountp,
+	}
+	// Use DeployImage (not DeployImageNodirs) so CreateDirStructure creates the
+	// /proc /sys /dev /run /tmp mountpoints in the image. curtin's
+	// ChrootableTarget bind-mounts those before the in-target validation; empty
+	// dirs staged by hand do not survive the deploy, so the dir-creating variant
+	// is required here.
+	if _, err := r.elemental.DeployImage(&img, false); err != nil {
+		return "", fmt.Errorf("creating curtin-landing image: %w", err)
+	}
+	return img.File, nil
+}
+
+// stageCurtinLanding populates dir with the curtin-landing partition contents:
+// bin/busybox, bin/sh -> busybox (symlink), usr/bin/cloud-init, usr/bin/netplan,
+// curtin/curtin-hooks. It uses the real OS filesystem and is designed to be
+// tested without a full image build.
+func stageCurtinLanding(dir string, busybox []byte) error {
+	// Payload dirs only. The chroot mountpoints (/proc /sys /dev /run /tmp) are
+	// created at image-build time by CreateDirStructure via DeployImage (see
+	// createCurtinLandingPartitionImage); empty dirs staged here would not
+	// survive the deploy.
+	for _, d := range []string{"bin", "usr/bin", "curtin"} {
+		if err := os.MkdirAll(filepath.Join(dir, d), 0o755); err != nil {
+			return err
+		}
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "busybox"), busybox, 0o755); err != nil {
+		return err
+	}
+	// sh/ash are real busybox applets, so symlinks work. They stay in /bin
+	// because the bash wrapper below references /bin/sh (its shebang) and
+	// /bin/busybox.
+	for _, link := range []string{"sh", "ash"} {
+		if err := os.Symlink("busybox", filepath.Join(dir, "bin", link)); err != nil {
+			return err
+		}
+	}
+	// bash is NOT a busybox applet (busybox errors "applet not found" when
+	// invoked as bash), so it is a wrapper script that forwards to busybox sh.
+	// curtin validates the custom image with `chroot target bash`, resolving
+	// bash via PATH. The MAAS ephemeral env is merged-usr (/bin -> /usr/bin) so
+	// its PATH is /usr/sbin:/usr/bin:/sbin and omits /bin; the wrapper therefore
+	// lives in /usr/bin (where curtin looks), not /bin. Without it, chroot
+	// reports "failed to run command 'bash': No such file or directory".
+	bashWrapper := []byte("#!/bin/sh\nexec /bin/busybox sh \"$@\"\n")
+	if err := os.WriteFile(filepath.Join(dir, "usr/bin", "bash"), bashWrapper, 0o755); err != nil {
+		return err
+	}
+	stub := []byte("#!/bin/sh\nexit 0\n")
+	for _, s := range []string{"cloud-init", "netplan"} {
+		if err := os.WriteFile(filepath.Join(dir, "usr/bin", s), stub, 0o755); err != nil {
+			return err
+		}
+	}
+	return os.WriteFile(filepath.Join(dir, "curtin", "curtin-hooks"), maasCurtinHook, 0o750)
 }
 
 // createRecoveryPartitionImage creates a recovery partition image with the given source
@@ -514,7 +596,17 @@ func (r *RawImage) Build() error {
 
 	// Create the final disk image
 	internal.Log.Logger.Info().Str("target", filepath.Join(r.Output, outputName)).Msg("Assembling final disk image")
-	err = r.createDiskImage(filepath.Join(r.Output, outputName), []string{bootImagePath, oemImagePath, recoveryImagePath})
+	parts := []string{bootImagePath, oemImagePath, recoveryImagePath}
+	if r.maas {
+		landing, err := r.createCurtinLandingPartitionImage()
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Msg("failed to create curtin-landing partition")
+			return err
+		}
+		defer r.config.Fs.Remove(landing)
+		parts = []string{bootImagePath, landing, oemImagePath, recoveryImagePath}
+	}
+	err = r.createDiskImage(filepath.Join(r.Output, outputName), parts)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Msg("failed to create disk image")
 		return err
@@ -678,38 +770,46 @@ func (r *RawImage) createDiskImage(rawDiskFile string, partImgs []string) error 
 		})
 	}
 
-	// OEM
-	stat, err = os.Stat(partImgs[1])
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat oem partition")
-		return err
+	// Build the remaining partitions (OEM, Recovery for 3-part; landing, OEM, Recovery for 4-part)
+	type postBootPart struct {
+		img       string
+		name      string
+		guidLabel string
 	}
-	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
-	parts = append(parts, &gpt.Partition{
-		Index: 2,
-		Start: parts[len(parts)-1].End + 1,
-		End:   getSectorEndFromSize(parts[len(parts)-1].End+1, size, finalDisk.LogicalBlocksize),
-		Type:  gpt.LinuxFilesystem,
-		Size:  size,
-		Name:  sdkConstants.OEMPartName,
-		GUID:  uuid.NewV5(uuid.NamespaceURL, sdkConstants.OEMLabel).String(),
-	})
-	// Recovery
-	stat, err = os.Stat(partImgs[2])
-	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("target", partImgs[0]).Msg("failed to stat recovery partition")
-		return err
+	var pbp []postBootPart
+	if len(partImgs) == 4 {
+		// maas: boot, landing, oem, recovery
+		pbp = []postBootPart{
+			{partImgs[1], "curtin", "COS_CURTIN"},
+			{partImgs[2], sdkConstants.OEMPartName, sdkConstants.OEMLabel},
+			{partImgs[3], agentConstants.RecoveryImgName, sdkConstants.RecoveryLabel},
+		}
+	} else {
+		pbp = []postBootPart{
+			{partImgs[1], sdkConstants.OEMPartName, sdkConstants.OEMLabel},
+			{partImgs[2], agentConstants.RecoveryImgName, sdkConstants.RecoveryLabel},
+		}
 	}
-	size = roundToNearestSector(stat.Size(), finalDisk.LogicalBlocksize)
-	parts = append(parts, &gpt.Partition{
-		Index: 3,
-		Start: parts[len(parts)-1].End + 1,
-		End:   getSectorEndFromSize(parts[len(parts)-1].End+1, size, finalDisk.LogicalBlocksize),
-		Type:  gpt.LinuxFilesystem,
-		Size:  size,
-		Name:  agentConstants.RecoveryImgName,
-		GUID:  uuid.NewV5(uuid.NamespaceURL, sdkConstants.RecoveryLabel).String(),
-	})
+	idx := 2
+	for _, p := range pbp {
+		st, err := os.Stat(p.img)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("target", p.img).Msg("failed to stat partition")
+			return err
+		}
+		psize := roundToNearestSector(st.Size(), finalDisk.LogicalBlocksize)
+		start := parts[len(parts)-1].End + 1
+		parts = append(parts, &gpt.Partition{
+			Index: idx,
+			Start: start,
+			End:   getSectorEndFromSize(start, psize, finalDisk.LogicalBlocksize),
+			Type:  gpt.LinuxFilesystem,
+			Size:  psize,
+			Name:  p.name,
+			GUID:  uuid.NewV5(uuid.NamespaceURL, p.guidLabel).String(),
+		})
+		idx++
+	}
 
 	table = &gpt.Table{
 		ProtectiveMBR:      true,

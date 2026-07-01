@@ -144,10 +144,10 @@ func (d *Deployer) StepExtractNetboot() error {
 func (d *Deployer) StepGenRawDisk() error {
 	return d.Add(constants.OpGenEFIRawDisk,
 		herd.EnableIf(func() bool {
-			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions
+			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 		}),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions)))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS)))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
@@ -169,6 +169,15 @@ func (d *Deployer) StepConvertVHD() error {
 		herd.EnableIf(func() bool { return d.Config.Disk.VHD }),
 		herd.WithDeps(constants.OpGenEFIRawDisk),
 		herd.WithCallback(ops.ConvertRawDiskToVHD(d.rawDiskPath())))
+}
+
+// StepConvertMAAS compresses the raw disk into the ddgz format MAAS expects for
+// a custom uploaded image, so the artifact is directly uploadable.
+func (d *Deployer) StepConvertMAAS() error {
+	return d.Add(constants.OpConvertMAAS,
+		herd.EnableIf(func() bool { return d.Config.Disk.MAAS }),
+		herd.WithDeps(constants.OpGenEFIRawDisk),
+		herd.WithCallback(ops.ConvertRawDiskToMAAS(d.rawDiskPath())))
 }
 
 func (d *Deployer) StepInjectCC() error {
@@ -251,7 +260,7 @@ func (d *Deployer) dstNetboot() string {
 
 // Returns true if any of the options for raw disk is set
 func (d *Deployer) rawDiskIsSet() bool {
-	return d.Config.Disk.VHD || d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.BIOS || d.Config.Disk.Partitions
+	return d.Config.Disk.VHD || d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.BIOS || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 }
 
 func (d *Deployer) netbootReleaseOption() bool {
