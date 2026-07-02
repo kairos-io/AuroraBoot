@@ -324,6 +324,8 @@ github.com/kairos-io/kairos-sdk v0.22.1 h1:h1IuF8LiHo8vHdcQo7MJAWHNbm4nr+q/hIf+Q
 github.com/kairos-io/kairos-sdk v0.22.1/go.mod h1:GuUCzYyKzMkmGYqEL03ni9HKKkQIcahto53YnK2taXA=
 github.com/kairos-io/kairos-sdk v0.23.0 h1:tLFPfXxxAOhtPIZPwmOH01aVbpZ6xiGGcf/synefvtY=
 github.com/kairos-io/kairos-sdk v0.23.0/go.mod h1:zzULzLTNjdsDW82W7HowCygHtruG8rGPGV94FaI+iT8=
+github.com/kairos-io/kairos-sdk v0.23.1 h1:87cSbA7a1a0KvNrtmw0FaYR5hi4TGfOfO/jOH3ojRfA=
+github.com/kairos-io/kairos-sdk v0.23.1/go.mod h1:2ExNXYTMfjv6yOJGxkW3bpy/u7BMC/Op+TExRSNfWjY=
 github.com/kairos-io/netboot v0.0.0-20260608072358-c81b678db427 h1:w/5EjUBERMHfMcI3MZDN6fvhWq2X1o4HSa5rntcMubU=
 github.com/kairos-io/netboot v0.0.0-20260608072358-c81b678db427/go.mod h1:QzalKbvnt0lGbVj6H1MZ5XRpyX/nLKrogh7I6BjmD7g=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872 h1:O9H3QrUNNZJTU+TjM3BPR5lvztYWD57V75WzWhIe1aY=
