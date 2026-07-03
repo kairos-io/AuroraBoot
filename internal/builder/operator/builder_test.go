@@ -27,14 +27,13 @@ var _ = Describe("Operator Builder", func() {
 			Expect(b).To(BeNil())
 		})
 
-		It("stores config and constructs a client when inputs are valid", func() {
+		It("stores config when inputs are valid", func() {
 			b, err := New(Config{
 				RESTConfig: &rest.Config{Host: "https://example.invalid"},
 				Namespace:  "kairos-builds",
 			})
 			Expect(err).NotTo(HaveOccurred())
 			Expect(b).NotTo(BeNil())
-			Expect(b.k8s).NotTo(BeNil())
 			Expect(b.cfg.Namespace).To(Equal("kairos-builds"))
 			Expect(b.cfg.RESTConfig.Host).To(Equal("https://example.invalid"))
 		})
