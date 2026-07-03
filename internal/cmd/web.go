@@ -223,11 +223,12 @@ func runWeb(c *cli.Context) error {
 		b, err := operator.New(operator.Config{
 			RESTConfig: cfg,
 			Namespace:  c.String("builder-namespace"),
+			Store:      artifactStore,
 		})
 		if err != nil {
 			return err
 		}
-		artifactBuilder = b
+		artifactBuilder = b.WithLogBroadcaster(wsHub.UI)
 		systemInfo = handlers.APISystemBuilder{
 			Backend:           "operator",
 			Cluster:           sanitizeClusterURL(cfg.Host),

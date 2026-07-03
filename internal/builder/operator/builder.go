@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 
 	"github.com/google/uuid"
 	buildv1alpha2 "github.com/kairos-io/kairos-operator/api/v1alpha2"
@@ -12,12 +13,14 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
 
 // ErrNotFound is returned when a build ID does not correspond to an OSArtifact
@@ -27,26 +30,44 @@ var ErrNotFound = errors.New("operator builder: build not found")
 type Config struct {
 	RESTConfig *rest.Config
 	Namespace  string
+	// Store is optional; when set, streamed pod log chunks are appended to
+	// the record via AppendLog. Nil is safe (broadcast-only).
+	Store store.ArtifactStore
 }
 
 type Builder struct {
-	cfg Config
-	k8s client.Client
+	cfg            Config
+	k8s            client.Client
+	clientset      kubernetes.Interface
+	logBroadcaster builder.LogBroadcaster
+
+	// active tracks in-flight streaming goroutines so Cancel can stop them
+	// without waiting for the pod-discovery budget to elapse.
+	activeMu sync.Mutex
+	active   map[string]context.CancelFunc
 }
 
 // clientFactory lets tests swap in a fake controller-runtime client; production
 // callers get the default which builds a real one from cfg.RESTConfig.
 type clientFactory func(cfg Config, scheme *runtime.Scheme) (client.Client, error)
 
+// clientsetFactory lets tests swap in a fake typed clientset. Production
+// callers get one built from cfg.RESTConfig.
+type clientsetFactory func(cfg Config) (kubernetes.Interface, error)
+
 var defaultClientFactory clientFactory = func(cfg Config, scheme *runtime.Scheme) (client.Client, error) {
 	return client.New(cfg.RESTConfig, client.Options{Scheme: scheme})
 }
 
-func New(cfg Config) (*Builder, error) {
-	return newWithFactory(cfg, defaultClientFactory)
+var defaultClientsetFactory clientsetFactory = func(cfg Config) (kubernetes.Interface, error) {
+	return kubernetes.NewForConfig(cfg.RESTConfig)
 }
 
-func newWithFactory(cfg Config, factory clientFactory) (*Builder, error) {
+func New(cfg Config) (*Builder, error) {
+	return newWithFactory(cfg, defaultClientFactory, defaultClientsetFactory)
+}
+
+func newWithFactory(cfg Config, factory clientFactory, csFactory clientsetFactory) (*Builder, error) {
 	if cfg.RESTConfig == nil {
 		return nil, errors.New("operator builder: RESTConfig is required")
 	}
@@ -66,7 +87,23 @@ func newWithFactory(cfg Config, factory clientFactory) (*Builder, error) {
 	if err != nil {
 		return nil, fmt.Errorf("build controller-runtime client: %w", err)
 	}
-	return &Builder{cfg: cfg, k8s: k8s}, nil
+	cs, err := csFactory(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("build kubernetes clientset: %w", err)
+	}
+	return &Builder{
+		cfg:       cfg,
+		k8s:       k8s,
+		clientset: cs,
+		active:    make(map[string]context.CancelFunc),
+	}, nil
+}
+
+// WithLogBroadcaster attaches a broadcaster that receives every log line
+// produced by the build Pod. Returns the receiver so callers can chain.
+func (b *Builder) WithLogBroadcaster(lb builder.LogBroadcaster) *Builder {
+	b.logBroadcaster = lb
+	return b
 }
 
 // Build submits an OSArtifact CR plus any inline-Secret inputs it references.
@@ -114,7 +151,56 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 		}
 	}
 
+	// Detach from the request context: the HTTP handler's ctx is cancelled
+	// once the response returns, but the build (and its log stream) outlives
+	// that. Cancel is wired via b.active so the streaming goroutine still
+	// stops promptly when the user cancels the build.
+	streamCtx, cancel := context.WithCancel(context.Background())
+	b.activeMu.Lock()
+	b.active[id] = cancel
+	b.activeMu.Unlock()
+	go b.streamPodLogs(streamCtx, id)
+
 	return &builder.BuildStatus{ID: id, Phase: builder.BuildPending}, nil
+}
+
+// streamPodLogs waits for the operator to create the build Pod and then
+// streams every container's log into the persistent store and any attached
+// LogBroadcaster. It exits when the pod completes, ctx is cancelled, or the
+// pod-discovery budget expires.
+func (b *Builder) streamPodLogs(ctx context.Context, id string) {
+	defer func() {
+		b.activeMu.Lock()
+		delete(b.active, id)
+		b.activeMu.Unlock()
+	}()
+	if b.clientset == nil {
+		return
+	}
+
+	sink := &broadcastingSink{
+		ctx:         context.Background(),
+		buildID:     id,
+		store:       b.cfg.Store,
+		broadcaster: b.logBroadcaster,
+	}
+	src := newClientsetPodSource(b.clientset, b.cfg.Namespace)
+
+	pod, err := waitForPod(ctx, src, id, podDiscoveryBudget, podDiscoveryPollInterval)
+	if err != nil {
+		if errors.Is(err, context.Canceled) {
+			return
+		}
+		_ = sink.WriteLine("auroraboot", fmt.Sprintf("warning: log streaming disabled: %v", err))
+		return
+	}
+
+	if err := streamAll(ctx, src, pod, sink, containerStartRetryInterval, containerStartMaxRetries); err != nil {
+		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+			return
+		}
+		_ = sink.WriteLine("auroraboot", fmt.Sprintf("warning: log streaming ended: %v", err))
+	}
 }
 
 func (b *Builder) Status(ctx context.Context, id string) (*builder.BuildStatus, error) {
@@ -149,6 +235,15 @@ func (b *Builder) List(ctx context.Context) ([]*builder.BuildStatus, error) {
 }
 
 func (b *Builder) Cancel(ctx context.Context, id string) error {
+	// Cancel the streaming goroutine before deleting the CR so it stops
+	// polling / streaming instead of racing against the operator's own GC.
+	b.activeMu.Lock()
+	if cancel, ok := b.active[id]; ok {
+		cancel()
+		delete(b.active, id)
+	}
+	b.activeMu.Unlock()
+
 	art := &buildv1alpha2.OSArtifact{
 		ObjectMeta: metav1.ObjectMeta{Name: id, Namespace: b.cfg.Namespace},
 	}
