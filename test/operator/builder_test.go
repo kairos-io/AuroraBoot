@@ -5,6 +5,7 @@ package operator
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -18,7 +19,69 @@ import (
 
 	opbuilder "github.com/kairos-io/AuroraBoot/internal/builder/operator"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
+
+// memArtifactStore is the minimum ArtifactStore surface the phase-watch
+// goroutine needs. It lets the cluster spec assert store writeback without
+// standing up gorm / SQLite for the e2e run.
+type memArtifactStore struct {
+	mu      sync.Mutex
+	records map[string]*store.ArtifactRecord
+}
+
+func newMemArtifactStore() *memArtifactStore {
+	return &memArtifactStore{records: map[string]*store.ArtifactRecord{}}
+}
+
+func (m *memArtifactStore) Create(_ context.Context, rec *store.ArtifactRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.records[rec.ID] = rec
+	return nil
+}
+
+func (m *memArtifactStore) GetByID(_ context.Context, id string) (*store.ArtifactRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	r, ok := m.records[id]
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	cp := *r
+	return &cp, nil
+}
+
+func (m *memArtifactStore) List(_ context.Context) ([]*store.ArtifactRecord, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := make([]*store.ArtifactRecord, 0, len(m.records))
+	for _, r := range m.records {
+		out = append(out, r)
+	}
+	return out, nil
+}
+
+func (m *memArtifactStore) Update(_ context.Context, rec *store.ArtifactRecord) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.records[rec.ID]; !ok {
+		return fmt.Errorf("not found")
+	}
+	m.records[rec.ID] = rec
+	return nil
+}
+
+func (m *memArtifactStore) Delete(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.records, id)
+	return nil
+}
+
+func (m *memArtifactStore) DeleteByPhase(_ context.Context, _ string) error       { return nil }
+func (m *memArtifactStore) GetLogs(_ context.Context, _ string) (string, error)   { return "", nil }
+func (m *memArtifactStore) AppendLog(_ context.Context, _, _ string) error        { return nil }
 
 // testLogSink implements builder.LogBroadcaster by collecting every chunk
 // into a mutex-guarded slice so specs can Eventually-assert log arrival.
@@ -53,9 +116,19 @@ var _ = Describe("Operator builder against a real cluster", func() {
 		).ClientConfig()
 		Expect(err).NotTo(HaveOccurred(), "load REST config from KUBECONFIG")
 
+		// Attach an ArtifactStore so the operator builder's phase-watch
+		// goroutine has somewhere to write transitions. We pre-Create the
+		// row (as the HTTP handler does in production) and then assert the
+		// watcher advances it Pending -> Building within the reconcile
+		// window; without this, operator-backed builds sit at Pending in
+		// the DB forever and the UI never leaves the "queued" state.
+		artStore := newMemArtifactStore()
+		Expect(artStore.Create(ctx, &store.ArtifactRecord{ID: buildID, Phase: builder.BuildPending})).To(Succeed())
+
 		b, err := opbuilder.New(opbuilder.Config{
 			RESTConfig: cfg,
 			Namespace:  testNamespace,
+			Store:      artStore,
 		})
 		Expect(err).NotTo(HaveOccurred(), "construct operator.Builder")
 
@@ -87,6 +160,19 @@ var _ = Describe("Operator builder against a real cluster", func() {
 			}
 			return s.Phase, nil
 		}, 2*time.Minute, 2*time.Second).Should(Equal(builder.BuildBuilding), "Status reports Building")
+
+		// The phase-watch goroutine must mirror the operator-reported phase
+		// into the store. Give it up to 90s past the operator reaching
+		// Building; the watcher polls every 2s so the writeback lag is a
+		// small fixed number of intervals on top of the reconcile itself.
+		Eventually(func() string {
+			rec, err := artStore.GetByID(ctx, buildID)
+			if err != nil {
+				return ""
+			}
+			return rec.Phase
+		}, 90*time.Second, 2*time.Second).Should(Equal(builder.BuildBuilding),
+			"store row observes phase transition from Pending to Building")
 
 		builds, err := b.List(ctx)
 		Expect(err).NotTo(HaveOccurred())
