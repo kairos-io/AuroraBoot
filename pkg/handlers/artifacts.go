@@ -462,6 +462,13 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 		if errors.Is(err, builder.ErrNotSupported) {
 			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
 		}
+		// The store already proved the record exists, so a plain cancel
+		// failure is a genuine 500 (the row is still there and needs a retry
+		// or manual intervention). Without a store we cannot tell "not mine"
+		// from "cannot cancel", so we keep the 404 fallback there.
+		if h.store != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cancel failed"})
+		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
 	}
 
