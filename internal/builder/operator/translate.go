@@ -25,14 +25,24 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 		return buildv1alpha2.OSArtifactSpec{}, fmt.Errorf("%w: source.arch must be 'amd64' or 'arm64', got %q", builder.ErrInvalidBuildOptions, arch)
 	}
 
+	// A caller may pass the pre-built base image via the legacy flat field
+	// (opts.BaseImage) or the grouped shape (opts.Source.BaseImage). Both are
+	// valid pre-built refs when no Dockerfile is supplied; treat them as one
+	// so validation and translation cannot disagree.
+	baseRef := firstNonEmpty(opts.BaseImage, opts.Source.BaseImage)
+	preBuilt := baseRef != "" && opts.Dockerfile == ""
+
 	// FIPS and TrustedBoot are build-time flags passed to kairos-init; they
-	// only make sense when we actually build the Stage-1 image. Rejecting them
-	// on a pre-built ref makes the misconfiguration loud instead of silent.
-	preBuilt := opts.BaseImage != "" && opts.Dockerfile == ""
-	if preBuilt && opts.Outputs.FIPS {
+	// only make sense when we actually build the Stage-1 image. The legacy
+	// flat and grouped fields are OR'd so a caller setting either shape gets
+	// the same validation and the flag can never be silently dropped by the
+	// pre-built branch, which carries no kairos-init BuildOptions.
+	fips := opts.Outputs.FIPS || opts.FIPS
+	trustedBoot := opts.Outputs.TrustedBoot || opts.TrustedBoot
+	if preBuilt && fips {
 		return buildv1alpha2.OSArtifactSpec{}, fmt.Errorf("%w: outputs.fips requires a from-scratch build, not a pre-built base image", builder.ErrInvalidBuildOptions)
 	}
-	if preBuilt && opts.Outputs.TrustedBoot {
+	if preBuilt && trustedBoot {
 		return buildv1alpha2.OSArtifactSpec{}, fmt.Errorf("%w: outputs.trustedBoot requires a from-scratch build, not a pre-built base image", builder.ErrInvalidBuildOptions)
 	}
 
@@ -40,7 +50,7 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 
 	switch {
 	case preBuilt:
-		spec.Image = buildv1alpha2.ImageSpec{Ref: opts.BaseImage}
+		spec.Image = buildv1alpha2.ImageSpec{Ref: baseRef}
 	case opts.Dockerfile != "":
 		spec.Image = buildv1alpha2.ImageSpec{
 			OCISpec: &buildv1alpha2.OCISpec{
@@ -56,10 +66,10 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 				Version:           firstNonEmpty(opts.Source.KairosVersion, opts.KairosVersion),
 				BaseImage:         opts.Source.BaseImage,
 				Model:             firstNonEmpty(opts.Source.Model, opts.Model),
-				TrustedBoot:       opts.Outputs.TrustedBoot || opts.TrustedBoot,
+				TrustedBoot:       trustedBoot,
 				KubernetesDistro:  firstNonEmpty(opts.Source.KubernetesDistro, opts.KubernetesDistro),
 				KubernetesVersion: firstNonEmpty(opts.Source.KubernetesVersion, opts.KubernetesVersion),
-				FIPS:              opts.Outputs.FIPS || opts.FIPS,
+				FIPS:              fips,
 			},
 		}
 	}
