@@ -31,7 +31,7 @@ var _ = Describe("SystemHandler", func() {
 
 	Describe("GetBuilder", func() {
 		It("reports the local backend without cluster or namespace", func() {
-			handler := handlers.NewSystemHandler(handlers.SystemInfo{
+			handler := handlers.NewSystemHandler(handlers.APISystemBuilder{
 				Backend:           "local",
 				DownloadSupported: true,
 			})
@@ -49,7 +49,7 @@ var _ = Describe("SystemHandler", func() {
 		})
 
 		It("reports the operator backend with cluster and namespace", func() {
-			handler := handlers.NewSystemHandler(handlers.SystemInfo{
+			handler := handlers.NewSystemHandler(handlers.APISystemBuilder{
 				Backend:           "operator",
 				Cluster:           "https://kind.example",
 				Namespace:         "kairos-builds",

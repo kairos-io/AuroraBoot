@@ -206,12 +206,12 @@ func runWeb(c *cli.Context) error {
 	wsHub := ws.NewHub()
 
 	var artifactBuilder builder.ArtifactBuilder
-	var systemInfo handlers.SystemInfo
+	var systemInfo handlers.APISystemBuilder
 	switch builderKind {
 	case "local":
 		artifactBuilder = auroraboot.New(artifactsDir, nil, artifactStore).
 			WithLogBroadcaster(wsHub.UI)
-		systemInfo = handlers.SystemInfo{
+		systemInfo = handlers.APISystemBuilder{
 			Backend:           "local",
 			DownloadSupported: true,
 		}
@@ -228,7 +228,7 @@ func runWeb(c *cli.Context) error {
 			return err
 		}
 		artifactBuilder = b
-		systemInfo = handlers.SystemInfo{
+		systemInfo = handlers.APISystemBuilder{
 			Backend:           "operator",
 			Cluster:           sanitizeClusterURL(cfg.Host),
 			Namespace:         c.String("builder-namespace"),
