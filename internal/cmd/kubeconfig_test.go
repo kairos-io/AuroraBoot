@@ -1,9 +1,9 @@
 package cmd
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 )
 
@@ -28,7 +28,7 @@ current-context: %[1]s
 func writeKubeconfig(t *testing.T, dir, ctx, server string) string {
 	t.Helper()
 	path := filepath.Join(dir, ctx+".kubeconfig")
-	body := strings.NewReplacer("%[1]s", ctx, "%[2]s", server).Replace(minimalKubeconfig)
+	body := fmt.Sprintf(minimalKubeconfig, ctx, server)
 	if err := os.WriteFile(path, []byte(body), 0600); err != nil {
 		t.Fatalf("write kubeconfig: %v", err)
 	}
@@ -113,5 +113,24 @@ func TestLoadKubeConfigEmptyPathNoConfigErrors(t *testing.T) {
 
 	if _, err := loadKubeConfig(""); err == nil {
 		t.Fatalf("loadKubeConfig(\"\") succeeded with no KUBECONFIG / no ~/.kube/config / not in-cluster, want error")
+	}
+}
+
+func TestSanitizeClusterURL(t *testing.T) {
+	cases := []struct {
+		name, in, want string
+	}{
+		{"plain https URL passes through", "https://kind.example:6443", "https://kind.example:6443"},
+		{"userinfo is stripped", "https://alice:secret@kind.example:6443", "https://kind.example:6443"},
+		{"user-only is stripped", "https://alice@kind.example:6443", "https://kind.example:6443"},
+		{"host-only passes through", "kind.example:6443", "kind.example:6443"},
+		{"empty passes through", "", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := sanitizeClusterURL(tc.in); got != tc.want {
+				t.Fatalf("sanitizeClusterURL(%q) = %q, want %q", tc.in, got, tc.want)
+			}
+		})
 	}
 }

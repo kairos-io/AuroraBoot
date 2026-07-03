@@ -206,10 +206,15 @@ func runWeb(c *cli.Context) error {
 	wsHub := ws.NewHub()
 
 	var artifactBuilder builder.ArtifactBuilder
+	var systemInfo handlers.SystemInfo
 	switch builderKind {
 	case "local":
 		artifactBuilder = auroraboot.New(artifactsDir, nil, artifactStore).
 			WithLogBroadcaster(wsHub.UI)
+		systemInfo = handlers.SystemInfo{
+			Backend:           "local",
+			DownloadSupported: true,
+		}
 	case "operator":
 		cfg, err := loadKubeConfig(c.String("kubeconfig"))
 		if err != nil {
@@ -223,6 +228,14 @@ func runWeb(c *cli.Context) error {
 			return err
 		}
 		artifactBuilder = b
+		systemInfo = handlers.SystemInfo{
+			Backend:           "operator",
+			Cluster:           sanitizeClusterURL(cfg.Host),
+			Namespace:         c.String("builder-namespace"),
+			DownloadSupported: false,
+		}
+	default:
+		return fmt.Errorf("unreachable: --builder=%q survived validation", builderKind)
 	}
 
 	nodeStore := &gormstore.NodeStoreAdapter{S: store}
@@ -293,6 +306,7 @@ func runWeb(c *cli.Context) error {
 		BMCTargetStore:        bmcTargetStore,
 		SettingsStore:         settingsStore,
 		Builder:               artifactBuilder,
+		SystemInfo:            systemInfo,
 		AdminPassword:         adminPassword,
 		RegToken:              regToken,
 		RegTokenFile:          regTokenFile,
