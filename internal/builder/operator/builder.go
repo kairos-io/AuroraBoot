@@ -6,10 +6,7 @@ import (
 	"fmt"
 
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
-	buildv1alpha2 "github.com/kairos-io/kairos-operator/api/v1alpha2"
-	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/rest"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
 type Config struct {
@@ -19,7 +16,6 @@ type Config struct {
 
 type Builder struct {
 	cfg Config
-	k8s client.Client
 }
 
 func New(cfg Config) (*Builder, error) {
@@ -29,15 +25,7 @@ func New(cfg Config) (*Builder, error) {
 	if cfg.Namespace == "" {
 		return nil, errors.New("operator builder: Namespace is required")
 	}
-	scheme := runtime.NewScheme()
-	if err := buildv1alpha2.AddToScheme(scheme); err != nil {
-		return nil, err
-	}
-	k8s, err := client.New(cfg.RESTConfig, client.Options{Scheme: scheme})
-	if err != nil {
-		return nil, err
-	}
-	return &Builder{cfg: cfg, k8s: k8s}, nil
+	return &Builder{cfg: cfg}, nil
 }
 
 var errNotImplemented = fmt.Errorf("%w: operator builder is a scaffold", builder.ErrNotSupported)
