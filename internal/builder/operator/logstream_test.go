@@ -153,6 +153,52 @@ func TestWaitForPod_TimesOut(t *testing.T) {
 	}
 }
 
+// flakyPodSource returns transient errors for the first N Find calls, then
+// yields the configured pod. It lets the tests pin waitForPod's tolerance
+// behaviour without smuggling in a kube-apiserver fixture.
+type flakyPodSource struct {
+	mu          sync.Mutex
+	calls       int
+	errorsFirst int
+	pod         *corev1.Pod
+}
+
+func (f *flakyPodSource) Find(_ context.Context, _ string) (*corev1.Pod, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.calls++
+	if f.calls <= f.errorsFirst {
+		return nil, errors.New("etcdserver: leader changed")
+	}
+	return f.pod, nil
+}
+func (f *flakyPodSource) Get(_ context.Context, _ string) (*corev1.Pod, error) { return f.pod, nil }
+func (f *flakyPodSource) Open(_ context.Context, _, _ string) (io.ReadCloser, error) {
+	return io.NopCloser(strings.NewReader("")), nil
+}
+
+// waitForPod must tolerate transient (non-NotFound) API errors so that a
+// single kube-apiserver hiccup does not permanently disable log streaming
+// for a build. Symmetry with waitContainerLeftWaiting is the contract:
+// only exhausting the entire discovery budget is fatal.
+func TestWaitForPod_ToleratesTransientErrors(t *testing.T) {
+	pod := buildPodFixture("b-flaky", nil, []string{"main"})
+	src := &flakyPodSource{pod: pod, errorsFirst: 2}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	got, err := waitForPod(ctx, src, "b-flaky", 1*time.Second, 20*time.Millisecond)
+	if err != nil {
+		t.Fatalf("waitForPod returned error despite transient blip: %v", err)
+	}
+	if got == nil || got.Name != pod.Name {
+		t.Fatalf("waitForPod returned %+v, want %s", got, pod.Name)
+	}
+	if src.calls < 3 {
+		t.Fatalf("expected at least 3 Find calls (2 errors + 1 success), got %d", src.calls)
+	}
+}
+
 func TestStreamContainer_RetriesWhenWaiting(t *testing.T) {
 	pod := buildPodFixture("b2", nil, []string{"main-a"})
 	cs := fake.NewSimpleClientset(pod)

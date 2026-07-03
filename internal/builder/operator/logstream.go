@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -96,18 +97,34 @@ func (c *clientsetPodSource) Open(ctx context.Context, podName, container string
 const podBuildLabel = "build.kairos.io/artifact"
 
 // waitForPod polls src.Find every pollInterval until a pod is returned or the
-// budget expires. It respects ctx cancellation as an immediate exit.
+// budget expires. It respects ctx cancellation as an immediate exit. Transient
+// non-NotFound API errors (a single kube-apiserver hiccup) are tolerated and
+// logged to stderr so the caller can still catch a persistent failure via
+// the overall discovery budget; a fatal error is only surfaced once the entire
+// budget elapses. This mirrors waitContainerLeftWaiting's asymmetric behaviour:
+// a transient blip must not permanently disable log streaming for a build.
 func waitForPod(ctx context.Context, src podSource, buildID string, budget, pollInterval time.Duration) (*corev1.Pod, error) {
 	deadline := time.Now().Add(budget)
+	var lastErr error
 	for {
 		pod, err := src.Find(ctx, buildID)
-		if err != nil && !apierrors.IsNotFound(err) {
-			return nil, err
+		switch {
+		case err == nil:
+			// no-op; fall through to pod nil-check.
+		case apierrors.IsNotFound(err):
+			// Pod is not created yet; keep waiting.
+		default:
+			// Transient API error; remember it, log for visibility, keep polling.
+			lastErr = err
+			fmt.Fprintf(os.Stderr, "waitForPod: transient discovery error for build %q: %v\n", buildID, err)
 		}
 		if pod != nil {
 			return pod, nil
 		}
 		if time.Now().After(deadline) {
+			if lastErr != nil {
+				return nil, fmt.Errorf("build pod for %q did not appear within %s (last error: %w)", buildID, budget, lastErr)
+			}
 			return nil, fmt.Errorf("build pod for %q did not appear within %s", buildID, budget)
 		}
 		select {
