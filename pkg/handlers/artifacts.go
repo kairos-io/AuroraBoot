@@ -283,6 +283,11 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		if errors.Is(err, builder.ErrInvalidBuildOptions) {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
+		// A builder that cannot service this request (e.g. a scaffolded backend
+		// or one that does not produce a requested output) is 501, not 500.
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
 	}
 
@@ -437,6 +442,12 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
 
 	if err := h.builder.Cancel(c.Request().Context(), id); err != nil {
+		// A builder that cannot cancel (e.g. a scaffolded backend) is 501, not
+		// 404. Only genuine "no such artifact" errors deserve 404, and today's
+		// builders return those undifferentiated, so we keep the 404 fallback.
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
 	}
 
