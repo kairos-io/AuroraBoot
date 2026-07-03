@@ -312,11 +312,19 @@ func (f *fakeCommandStore) DeleteTerminal(_ context.Context, nodeID string) erro
 type fakeArtifactStore struct {
 	mu      sync.Mutex
 	records []*store.ArtifactRecord
+	// getErr, when set, overrides the natural GetByID result so tests can
+	// exercise handler paths that must survive a transient store failure
+	// (e.g. Cancel must not silently 404 on a DB blip).
+	getErr    error
+	createErr error
 }
 
 func (f *fakeArtifactStore) Create(_ context.Context, rec *store.ArtifactRecord) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return f.createErr
+	}
 	f.records = append(f.records, rec)
 	return nil
 }
@@ -324,6 +332,9 @@ func (f *fakeArtifactStore) Create(_ context.Context, rec *store.ArtifactRecord)
 func (f *fakeArtifactStore) GetByID(_ context.Context, id string) (*store.ArtifactRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	for _, r := range f.records {
 		if r.ID == id {
 			return r, nil
@@ -461,6 +472,10 @@ type fakeBuilder struct {
 	statusErr error
 	listErr   error
 	cancelErr error
+	// cancelledIDs records every id Cancel was called with so tests can
+	// assert the handler forwards cancellations to the backend, including
+	// for terminal-phase artifacts where cleanup used to be skipped.
+	cancelledIDs []string
 }
 
 func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
@@ -506,6 +521,7 @@ func (f *fakeBuilder) List(_ context.Context) ([]*builder.BuildStatus, error) {
 func (f *fakeBuilder) Cancel(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.cancelledIDs = append(f.cancelledIDs, id)
 	return f.cancelErr
 }
 

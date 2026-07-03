@@ -720,14 +720,17 @@ func (b *Builder) List(ctx context.Context) ([]*builder.BuildStatus, error) {
 	return result, nil
 }
 
-// Cancel cancels a running build.
+// Cancel cancels a running build. Cancel is idempotent: an unknown id (e.g.
+// a store row that survived a restart while the in-memory builds map did not)
+// is not an error. The builder has nothing to cancel and reports success so
+// the caller does not have to distinguish "already gone" from "cannot cancel".
 func (b *Builder) Cancel(_ context.Context, id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	bs, ok := b.builds[id]
 	if !ok {
-		return fmt.Errorf("build %q not found", id)
+		return nil
 	}
 
 	bs.cancel()
