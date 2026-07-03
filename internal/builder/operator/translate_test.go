@@ -40,10 +40,14 @@ var _ = Describe("translateBuildOptions", func() {
 			},
 		},
 		{
+			// From-scratch build: any base image ref (flat or grouped) signals
+			// a pre-built ref, so a genuine from-scratch case leaves the base
+			// image empty and lets the operator/kairos-init pick their default
+			// OS base. KairosVersion + Model + Kubernetes fields carry the
+			// Stage-1 knobs.
 			name: "from-scratch Kairos build with all knobs",
 			opts: builder.BuildOptions{
 				Source: builder.ImageSource{
-					BaseImage:         "ubuntu:24.04",
 					KairosVersion:     "v3.6.0",
 					Model:             "generic",
 					Arch:              "arm64",
@@ -60,7 +64,6 @@ var _ = Describe("translateBuildOptions", func() {
 				Image: buildv1alpha2.ImageSpec{
 					BuildOptions: &buildv1alpha2.BuildOptions{
 						Version:           "v3.6.0",
-						BaseImage:         "ubuntu:24.04",
 						Model:             "generic",
 						TrustedBoot:       true,
 						KubernetesDistro:  "k3s",
@@ -214,6 +217,53 @@ var _ = Describe("translateBuildOptions", func() {
 				BaseImage: "quay.io/kairos/ubuntu:v3.6.0",
 				Source:    builder.ImageSource{Arch: "amd64"},
 				Outputs:   builder.OutputOptions{ISO: true, TrustedBoot: true},
+			},
+			wantErr: builder.ErrInvalidBuildOptions,
+		},
+		{
+			// A caller that populates only opts.Source.BaseImage (the grouped
+			// shape preferred for new code) with no Dockerfile is still asking
+			// for a pre-built ref; the emitted spec must consume it as
+			// Image.Ref, not fall through to a from-scratch build.
+			name: "pre-built ref via Source.BaseImage lands in Image.Ref",
+			opts: builder.BuildOptions{
+				Source: builder.ImageSource{
+					BaseImage: "quay.io/kairos/opensuse:leap-15.6-core-amd64-generic-v3.6.0",
+					Arch:      "amd64",
+				},
+				Outputs: builder.OutputOptions{ISO: true},
+			},
+			want: buildv1alpha2.OSArtifactSpec{
+				Image: buildv1alpha2.ImageSpec{
+					Ref: "quay.io/kairos/opensuse:leap-15.6-core-amd64-generic-v3.6.0",
+				},
+				Artifacts: &buildv1alpha2.ArtifactSpec{
+					Arch: "amd64",
+					ISO:  true,
+				},
+			},
+		},
+		{
+			// The legacy flat FIPS field must be validated against pre-built
+			// refs identically to the grouped Outputs.FIPS field. Otherwise a
+			// caller that sets BuildOptions{BaseImage, FIPS: true} silently
+			// drops the flag and ends up with a non-FIPS image.
+			name: "FIPS via flat field on pre-built ref is invalid",
+			opts: builder.BuildOptions{
+				BaseImage: "quay.io/kairos/ubuntu:v3.6.0",
+				Source:    builder.ImageSource{Arch: "amd64"},
+				Outputs:   builder.OutputOptions{ISO: true},
+				FIPS:      true,
+			},
+			wantErr: builder.ErrInvalidBuildOptions,
+		},
+		{
+			name: "TrustedBoot via flat field on pre-built ref is invalid",
+			opts: builder.BuildOptions{
+				BaseImage:   "quay.io/kairos/ubuntu:v3.6.0",
+				Source:      builder.ImageSource{Arch: "amd64"},
+				Outputs:     builder.OutputOptions{ISO: true},
+				TrustedBoot: true,
 			},
 			wantErr: builder.ErrInvalidBuildOptions,
 		},
