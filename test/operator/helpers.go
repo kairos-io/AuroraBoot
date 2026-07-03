@@ -22,9 +22,15 @@ import (
 
 const testNamespace = "default"
 
-// setupTestClient builds a controller-runtime client against KUBECONFIG with
-// the kairos-operator v1alpha2 scheme registered.
-func setupTestClient(_ context.Context) client.Client {
+// testClient is populated once by BeforeSuite via buildTestClient(). All
+// helper functions reuse it; each spec pays for a single client construction
+// per suite, not per helper call.
+var testClient client.Client
+
+// buildTestClient builds a controller-runtime client against KUBECONFIG with
+// the kairos-operator v1alpha2 scheme registered. Called exactly once from
+// BeforeSuite.
+func buildTestClient() client.Client {
 	loadingRules := clientcmd.NewDefaultClientConfigLoadingRules()
 	cfg, err := clientcmd.NewNonInteractiveDeferredLoadingClientConfig(
 		loadingRules, &clientcmd.ConfigOverrides{},
@@ -42,7 +48,6 @@ func setupTestClient(_ context.Context) client.Client {
 // createOSArtifact applies the given spec as a new OSArtifact in the test
 // namespace and returns the persisted CR.
 func createOSArtifact(ctx context.Context, name string, spec buildv1alpha2.OSArtifactSpec) *buildv1alpha2.OSArtifact {
-	c := setupTestClient(ctx)
 	art := &buildv1alpha2.OSArtifact{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
@@ -50,19 +55,18 @@ func createOSArtifact(ctx context.Context, name string, spec buildv1alpha2.OSArt
 		},
 		Spec: spec,
 	}
-	Expect(c.Create(ctx, art)).To(Succeed(), "create OSArtifact %s", name)
+	Expect(testClient.Create(ctx, art)).To(Succeed(), "create OSArtifact %s", name)
 	return art
 }
 
 // waitForPhase polls the OSArtifact's .status.phase every 2s until it matches
 // the requested phase or the timeout expires.
 func waitForPhase(ctx context.Context, name string, phase buildv1alpha2.ArtifactPhase, timeout time.Duration) {
-	c := setupTestClient(ctx)
 	key := types.NamespacedName{Name: name, Namespace: testNamespace}
 
 	Eventually(func() (buildv1alpha2.ArtifactPhase, error) {
 		got := &buildv1alpha2.OSArtifact{}
-		if err := c.Get(ctx, key, got); err != nil {
+		if err := testClient.Get(ctx, key, got); err != nil {
 			return "", err
 		}
 		return got.Status.Phase, nil
@@ -72,11 +76,10 @@ func waitForPhase(ctx context.Context, name string, phase buildv1alpha2.Artifact
 // cleanupArtifact deletes the OSArtifact and tolerates NotFound. Owned Pods
 // are garbage-collected by the operator via owner references.
 func cleanupArtifact(ctx context.Context, name string) {
-	c := setupTestClient(ctx)
 	art := &buildv1alpha2.OSArtifact{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: testNamespace},
 	}
-	if err := c.Delete(ctx, art); err != nil && !apierrors.IsNotFound(err) {
+	if err := testClient.Delete(ctx, art); err != nil && !apierrors.IsNotFound(err) {
 		fmt.Fprintf(GinkgoWriter, "cleanupArtifact: delete %s failed: %v\n", name, err)
 	}
 }

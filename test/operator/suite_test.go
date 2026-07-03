@@ -8,6 +8,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -50,7 +51,12 @@ var _ = BeforeSuite(func() {
 		Skip("docker daemon not reachable, skipping operator e2e suite")
 	}
 
-	keepCluster = os.Getenv("KEEP_CLUSTER") == "1"
+	// KEEP_CLUSTER is a bool-ish env var: accept anything strconv.ParseBool
+	// takes (1/0, t/f, true/false, TRUE/FALSE, ...). Empty or unparseable
+	// values leave the flag false, which means "tear the cluster down".
+	if v, err := strconv.ParseBool(os.Getenv("KEEP_CLUSTER")); err == nil {
+		keepCluster = v
+	}
 
 	var err error
 	kubeconfigDir, err = os.MkdirTemp("", "auroraboot-op-e2e-")
@@ -61,14 +67,19 @@ var _ = BeforeSuite(func() {
 	Expect(os.Setenv("KUBECONFIG", kubeconfigPath)).To(Succeed())
 
 	installOperator()
+	testClient = buildTestClient()
 })
 
 var _ = AfterSuite(func() {
 	if keepCluster {
-		fmt.Fprintf(GinkgoWriter, "KEEP_CLUSTER=1 set, leaving cluster %q and kubeconfig %s in place\n", clusterName, kubeconfigPath)
+		fmt.Fprintf(GinkgoWriter, "KEEP_CLUSTER set, leaving cluster %q and kubeconfig %s in place\n", clusterName, kubeconfigPath)
 		return
 	}
-	if kubeconfigPath != "" {
+	// Only tear down clusters this suite created. If we reused an existing
+	// one, deletion would clobber whatever the developer was iterating on.
+	if clusterReused {
+		fmt.Fprintf(GinkgoWriter, "cluster %q was reused, not deleting it\n", clusterName)
+	} else if kubeconfigPath != "" {
 		cmd := exec.Command("kind", "delete", "cluster", "--name", clusterName)
 		cmd.Stdout = GinkgoWriter
 		cmd.Stderr = GinkgoWriter
