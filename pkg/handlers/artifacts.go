@@ -366,6 +366,9 @@ func (h *ArtifactHandler) List(c echo.Context) error {
 	// Fall back to builder if no store.
 	statuses, err := h.builder.List(c.Request().Context())
 	if err != nil {
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list artifacts"})
 	}
 	if statuses == nil {
@@ -399,6 +402,9 @@ func (h *ArtifactHandler) Get(c echo.Context) error {
 	// Fall back to builder if no store.
 	status, err := h.builder.Status(c.Request().Context(), id)
 	if err != nil {
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 	return c.JSON(http.StatusOK, status)
@@ -547,9 +553,13 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 
-	// Cancel if running.
+	// Cancel if running. Bail out on ErrNotSupported so we do not silently
+	// wipe the DB row for a build the backend has no way to stop; other cancel
+	// errors are best-effort and the local cleanup below still runs.
 	if rec.Phase == store.ArtifactPending || rec.Phase == store.ArtifactBuilding {
-		_ = h.builder.Cancel(ctx, id)
+		if err := h.builder.Cancel(ctx, id); errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": "backend cannot cancel a running build; refusing to delete"})
+		}
 	}
 
 	// Remove build output directory.
