@@ -236,10 +236,15 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(status.Message).To(ContainSubstring("cancel"))
 		})
 
-		It("should return error for unknown build ID", func() {
+		// After a restart, the in-memory builds map is empty but the store
+		// still holds rows in Phase=Building. Cancel must not surface a
+		// spurious "not found" for those orphaned rows: from the builder's
+		// perspective there is genuinely nothing to cancel, so the correct
+		// answer is nil. This matches the operator backend's NotFound
+		// short-circuit and lets the HTTP handler treat Cancel as idempotent.
+		It("returns nil for an unknown build ID (idempotent)", func() {
 			err := b.Cancel(context.Background(), "no-such-build")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 

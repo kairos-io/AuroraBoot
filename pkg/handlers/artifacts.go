@@ -336,7 +336,26 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			TargetGroupID:           req.Provisioning.TargetGroupId,
 			OverlayRootfs:           req.OverlayRootfs,
 		}
-		_ = h.store.Create(ctx, rec)
+		// A builder that persists on its own (the local backend) will have
+		// already written the row before Build returned; a builder that does
+		// not (the operator backend, and the mock builder used in tests)
+		// relies on this Create being the one that writes it. Check first
+		// so a legitimate Create failure for the operator path is not
+		// masked as a benign duplicate-primary-key error.
+		if _, err := h.store.GetByID(ctx, status.ID); err != nil {
+			if err := h.store.Create(ctx, rec); err != nil {
+				// The operator backend has already Created an OSArtifact
+				// CR at this point. Failing to persist the row would leave
+				// the cluster with a live CR the DB knows nothing about;
+				// the UI cannot List/Get/Cancel/Delete it. Reap it
+				// best-effort so a retry lands in a clean state, then
+				// surface the failure.
+				if cancelErr := h.builder.Cancel(ctx, status.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
+					fmt.Fprintf(os.Stderr, "create: reap phantom CR %q after store.Create failed: %v\n", status.ID, cancelErr)
+				}
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist build"})
+			}
+		}
 	}
 
 	return c.JSON(http.StatusCreated, status)
@@ -448,43 +467,42 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
 
-	// Look up the record first so a missing id always reads as 404, even for
-	// a backend whose Cancel returns ErrNotSupported unconditionally (which
-	// would otherwise mask "not mine" as "cannot cancel"). Without a store we
-	// have to trust the builder's error taxonomy and fall through.
-	if h.store != nil {
-		if _, err := h.store.GetByID(ctx, id); err != nil {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
-		}
+	// Always drive builder.Cancel first so backend state gets reclaimed even
+	// when the store lookup is racing a restart or a transient DB failure.
+	// Cancel is idempotent on both backends (local: unknown id -> nil;
+	// operator: NotFound -> nil), so a stale invocation is safe.
+	cancelErr := h.builder.Cancel(ctx, id)
+	if errors.Is(cancelErr, builder.ErrNotSupported) {
+		return c.JSON(http.StatusNotImplemented, map[string]string{"error": cancelErr.Error()})
 	}
 
-	if err := h.builder.Cancel(ctx, id); err != nil {
-		if errors.Is(err, builder.ErrNotSupported) {
-			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+	// Consult the store for the response body. Response matrix:
+	//   cancel OK + record   -> 200 with record
+	//   cancel OK + no store -> 200 {"status":"cancelled"}
+	//   cancel FAIL + record -> 500 (record still there; backend refused)
+	//   cancel FAIL + no rec -> 404 (unknown id and backend refused too)
+	if h.store == nil {
+		if cancelErr != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
 		}
-		// The store already proved the record exists, so a plain cancel
-		// failure is a genuine 500 (the row is still there and needs a retry
-		// or manual intervention). Without a store we cannot tell "not mine"
-		// from "cannot cancel", so we keep the 404 fallback there.
-		if h.store != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cancel failed"})
-		}
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
-	}
-
-	// Return updated status.
-	if h.store != nil {
-		rec, err := h.store.GetByID(c.Request().Context(), id)
-		if err == nil {
-			return c.JSON(http.StatusOK, rec)
-		}
-	}
-
-	status, err := h.builder.Status(c.Request().Context(), id)
-	if err != nil {
 		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
 	}
-	return c.JSON(http.StatusOK, status)
+
+	rec, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		// The store lookup failed (missing row or transient DB error). If
+		// the builder also refused, treat this as a 404 to match the old
+		// UX for orphaned rows; a hard 500 for a DB blip would train the
+		// UI to retry cancels indefinitely.
+		if cancelErr != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
+	}
+	if cancelErr != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cancel failed"})
+	}
+	return c.JSON(http.StatusOK, rec)
 }
 
 // Download handles GET /api/v1/artifacts/:id/download/*.
@@ -532,10 +550,18 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 func (h *ArtifactHandler) ClearFailed(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Clean up output and overlay dirs for failed artifacts before deleting records.
+	// Clean up output and overlay dirs for failed artifacts before deleting
+	// records. Forward a Cancel to the builder for each so terminal-phase
+	// OSArtifact CRs (operator backend) and their owned PVCs leave the
+	// cluster alongside the DB row. Cancel is best-effort: a backend error
+	// here should not block DB cleanup, since the row is what the UI keys
+	// off, and Cancel is idempotent on both backends.
 	if records, err := h.store.List(ctx); err == nil {
 		for _, r := range records {
 			if r.Phase == store.ArtifactError {
+				if cancelErr := h.builder.Cancel(ctx, r.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
+					fmt.Fprintf(os.Stderr, "clear-failed: builder.Cancel(%q) failed: %v\n", r.ID, cancelErr)
+				}
 				os.RemoveAll(filepath.Join(h.artifactsDir, r.ID))
 				if r.OverlayRootfs != "" && strings.HasPrefix(r.OverlayRootfs, h.artifactsDir) {
 					os.RemoveAll(r.OverlayRootfs)
@@ -568,14 +594,17 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 
-	// Cancel is best-effort. Delete's job is to reclaim state, and refusing
-	// here would strand the row and its on-disk files whenever the backend
-	// cannot cancel (a scaffold that returns ErrNotSupported for every id
-	// cannot tell "not mine" from "cannot cancel", so refusing would trap
-	// orphaned rows forever). The subsequent os.RemoveAll and store.Delete
-	// complete the cleanup regardless.
-	if rec.Phase == store.ArtifactPending || rec.Phase == store.ArtifactBuilding {
-		_ = h.builder.Cancel(ctx, id)
+	// Cancel is best-effort AND unconditional. Delete's job is to reclaim
+	// state, and refusing here would strand the row and its on-disk files
+	// whenever the backend cannot cancel (a scaffold that returns
+	// ErrNotSupported for every id cannot tell "not mine" from "cannot
+	// cancel", so refusing would trap orphaned rows forever). We forward the
+	// call for every phase, not just Pending/Building, because the operator
+	// backend also owns state for terminal-phase records (the OSArtifact CR
+	// and its PVC); those need reaping too. The subsequent os.RemoveAll and
+	// store.Delete complete the cleanup regardless.
+	if cancelErr := h.builder.Cancel(ctx, id); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
+		fmt.Fprintf(os.Stderr, "delete: builder.Cancel(%q) failed: %v\n", id, cancelErr)
 	}
 
 	// Remove build output directory.

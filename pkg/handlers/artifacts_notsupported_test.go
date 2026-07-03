@@ -92,7 +92,13 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
-		It("returns 404 for a missing id even when Cancel would wrap ErrNotSupported", func() {
+		// Backends that structurally do not implement Cancel surface as 501
+		// regardless of whether the id happens to match a store row. The old
+		// scaffold-era short-circuit ("missing + ErrNotSupported -> 404")
+		// went away when Cancel became idempotent: a real backend now
+		// distinguishes "not mine" from "cannot cancel" itself, so we no
+		// longer have to override the builder's error taxonomy.
+		It("returns 501 when Cancel wraps ErrNotSupported, missing id included", func() {
 			fb.cancelErr = wrappedNotSupported()
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/does-not-exist/cancel", nil)
@@ -102,7 +108,7 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 			c.SetParamValues("does-not-exist")
 
 			Expect(handlerWithStore.Cancel(c)).To(Succeed())
-			Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(rec.Code).To(Equal(http.StatusNotImplemented))
 		})
 
 		It("returns 501 when the artifact exists and Cancel wraps ErrNotSupported", func() {
@@ -129,6 +135,46 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 
 			Expect(handlerWithStore.Cancel(c)).To(Succeed())
 			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		})
+
+		// Idempotent Cancel: the local backend now returns nil when its
+		// in-memory map has no record of the id. That's the "post-restart
+		// orphan" case where a store row survives but the builder does not.
+		// The handler must still hand back the store row and a 200 so the
+		// UI reads the cancelled state.
+		It("returns 200 and the store record when Cancel succeeds against an idempotent backend", func() {
+			fb.cancelErr = nil
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/art-1/cancel", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("art-1")
+
+			Expect(handlerWithStore.Cancel(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(fb.cancelledIDs).To(ContainElement("art-1"))
+		})
+
+		It("still calls builder.Cancel when the store lookup returns an error", func() {
+			// A transient store failure must not skip the side-effect of
+			// reclaiming backend state; the handler drops back to the
+			// builder's error taxonomy for the response.
+			as := &fakeArtifactStore{getErr: errors.New("db temporarily unavailable")}
+			handlerFlaky := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			fb.cancelErr = nil
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/orphaned/cancel", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("orphaned")
+
+			Expect(handlerFlaky.Cancel(c)).To(Succeed())
+			Expect(fb.cancelledIDs).To(ContainElement("orphaned"))
+			// Cancel succeeded but the store cannot show a record; the
+			// handler falls back to a generic cancelled envelope.
+			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
 	})
 
