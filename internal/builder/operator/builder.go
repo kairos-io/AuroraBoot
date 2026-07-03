@@ -4,7 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 	buildv1alpha2 "github.com/kairos-io/kairos-operator/api/v1alpha2"
@@ -22,6 +24,12 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
+
+// phaseWatchInterval is how often watchCRPhase re-reads the CR. Two seconds
+// is fast enough that the UI notices a Pending -> Building transition without
+// waiting on a page reload, but slow enough that we do not hammer the
+// apiserver over the ten-plus-minute lifetime of a real build.
+const phaseWatchInterval = 2 * time.Second
 
 // ErrNotFound is returned when a build ID does not correspond to an OSArtifact
 // in the target namespace. Wraps a sentinel so handlers can errors.Is-map it.
@@ -140,15 +148,15 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 
 	// Owner refs bind Secret lifetime to the CR so kubectl delete on the
 	// OSArtifact cleans the Secrets up. That requires the CR to already have
-	// a UID, which is why we Create it first.
-	for _, secret := range materializeSecrets(id, b.cfg.Namespace, opts) {
-		secret := secret
-		if err := controllerutil.SetOwnerReference(art, &secret, b.k8s.Scheme()); err != nil {
-			return nil, fmt.Errorf("set owner on secret %q: %w", secret.Name, err)
+	// a UID, which is why we Create it first. If any Secret Create fails,
+	// the CR is left orphaned and the operator will try to reconcile it
+	// against a dangling SecretKeySelector; reap the CR best-effort so the
+	// caller can safely retry.
+	if err := b.createSecrets(ctx, art, id, opts); err != nil {
+		if delErr := b.k8s.Delete(context.Background(), art); delErr != nil && !apierrors.IsNotFound(delErr) {
+			fmt.Fprintf(os.Stderr, "operator builder: orphan-CR cleanup for %q failed: %v\n", id, delErr)
 		}
-		if err := b.k8s.Create(ctx, &secret); err != nil {
-			return nil, fmt.Errorf("create secret %q: %w", secret.Name, err)
-		}
+		return nil, err
 	}
 
 	// Detach from the request context: the HTTP handler's ctx is cancelled
@@ -160,8 +168,25 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	b.active[id] = cancel
 	b.activeMu.Unlock()
 	go b.streamPodLogs(streamCtx, id)
+	go b.watchCRPhase(streamCtx, id, phaseWatchInterval)
 
 	return &builder.BuildStatus{ID: id, Phase: builder.BuildPending}, nil
+}
+
+// createSecrets materializes and Creates every inline Secret the CR references,
+// setting the owner reference to the (already-Created) OSArtifact so the
+// operator's GC reclaims them when the CR is deleted.
+func (b *Builder) createSecrets(ctx context.Context, art *buildv1alpha2.OSArtifact, id string, opts builder.BuildOptions) error {
+	for _, secret := range materializeSecrets(id, b.cfg.Namespace, opts) {
+		secret := secret
+		if err := controllerutil.SetOwnerReference(art, &secret, b.k8s.Scheme()); err != nil {
+			return fmt.Errorf("set owner on secret %q: %w", secret.Name, err)
+		}
+		if err := b.k8s.Create(ctx, &secret); err != nil {
+			return fmt.Errorf("create secret %q: %w", secret.Name, err)
+		}
+	}
+	return nil
 }
 
 // streamPodLogs waits for the operator to create the build Pod and then
@@ -253,7 +278,69 @@ func (b *Builder) Cancel(ctx context.Context, id string) error {
 		}
 		return fmt.Errorf("delete OSArtifact %q: %w", id, err)
 	}
+
+	// The CR is gone; the phase-watch goroutine will exit on its next poll,
+	// but until it does the store row still shows the last observed phase
+	// (typically Building). Mark it BuildError/cancelled proactively so the
+	// UI never returns a stale "still running" record after Cancel resolves.
+	// Match the local backend's exact wording so the two are indistinguishable
+	// from the operator's perspective.
+	if b.cfg.Store != nil {
+		if rec, getErr := b.cfg.Store.GetByID(ctx, id); getErr == nil {
+			rec.Phase = builder.BuildError
+			rec.Message = "cancelled"
+			if upErr := b.cfg.Store.Update(ctx, rec); upErr != nil {
+				fmt.Fprintf(os.Stderr, "operator builder: cancel store update for %q failed: %v\n", id, upErr)
+			}
+		}
+	}
 	return nil
+}
+
+// watchCRPhase polls the OSArtifact CR at pollInterval and writes every
+// observed phase transition (and message change) into the ArtifactStore so
+// the HTTP layer, which reads from the store, can surface progress to the
+// UI. It exits when the CR reaches a terminal phase (Ready or Error), when
+// the CR is deleted, or when ctx is cancelled. A nil Store short-circuits
+// so unit tests that omit the store still work.
+func (b *Builder) watchCRPhase(ctx context.Context, id string, pollInterval time.Duration) {
+	if b.cfg.Store == nil {
+		return
+	}
+	key := types.NamespacedName{Name: id, Namespace: b.cfg.Namespace}
+	var lastPhase, lastMessage string
+	for {
+		if err := ctx.Err(); err != nil {
+			return
+		}
+		art := &buildv1alpha2.OSArtifact{}
+		err := b.k8s.Get(ctx, key, art)
+		if apierrors.IsNotFound(err) {
+			return
+		}
+		if err == nil {
+			st := statusFromArtifact(art)
+			if st.Phase != lastPhase || st.Message != lastMessage {
+				if rec, getErr := b.cfg.Store.GetByID(ctx, id); getErr == nil {
+					rec.Phase = st.Phase
+					rec.Message = st.Message
+					if upErr := b.cfg.Store.Update(ctx, rec); upErr != nil {
+						fmt.Fprintf(os.Stderr, "operator builder: phase-watch update for %q failed: %v\n", id, upErr)
+					}
+				}
+				lastPhase = st.Phase
+				lastMessage = st.Message
+			}
+			if st.Phase == builder.BuildReady || st.Phase == builder.BuildError {
+				return
+			}
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 // statusFromArtifact folds the operator's five-phase model into AuroraBoot's
