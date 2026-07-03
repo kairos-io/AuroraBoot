@@ -30,16 +30,18 @@ func loadKubeConfig(path string) (*rest.Config, error) {
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{}).ClientConfig()
 }
 
-// sanitizeClusterURL strips any userinfo (user:password@) from a kubeconfig
+// sanitizeClusterURL strips credential-bearing components from a kubeconfig
 // server URL before it is echoed back over the admin API. A kubeconfig can
-// legally embed credentials in the server URL; a naive echo would leak them
-// to any admin caller of GET /api/v1/system/builder. A malformed URL or one
-// without userinfo is returned untouched.
+// legally embed credentials in the userinfo, or (through unusual setups) in
+// query or fragment components (e.g. bearer tokens smuggled as ?token=...).
+// A naive echo would leak any of those to admin callers of GET
+// /api/v1/system/builder. We keep scheme+host+path and drop everything else.
+// A URL we cannot fully parse or that has no scheme+host is passed through
+// unchanged; the alternative is to over-mutilate a bare host:port value.
 func sanitizeClusterURL(host string) string {
 	u, err := url.Parse(host)
-	if err != nil || u.User == nil {
+	if err != nil || u.Scheme == "" || u.Host == "" {
 		return host
 	}
-	u.User = nil
-	return u.String()
+	return (&url.URL{Scheme: u.Scheme, Host: u.Host, Path: u.Path}).String()
 }

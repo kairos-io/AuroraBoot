@@ -123,6 +123,10 @@ func TestSanitizeClusterURL(t *testing.T) {
 		{"plain https URL passes through", "https://kind.example:6443", "https://kind.example:6443"},
 		{"userinfo is stripped", "https://alice:secret@kind.example:6443", "https://kind.example:6443"},
 		{"user-only is stripped", "https://alice@kind.example:6443", "https://kind.example:6443"},
+		{"query string is stripped", "https://kind.example:6443?token=SECRET", "https://kind.example:6443"},
+		{"fragment is stripped", "https://kind.example:6443#anchor", "https://kind.example:6443"},
+		{"userinfo and query both stripped", "https://alice:secret@kind.example:6443?token=SECRET", "https://kind.example:6443"},
+		{"path is preserved", "https://rancher.example/k8s/clusters/c-abc", "https://rancher.example/k8s/clusters/c-abc"},
 		{"host-only passes through", "kind.example:6443", "kind.example:6443"},
 		{"empty passes through", "", ""},
 	}
