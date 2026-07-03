@@ -453,10 +453,14 @@ type fakeBuilder struct {
 	mu       sync.Mutex
 	builds   []*builder.BuildStatus
 	lastOpts builder.BuildOptions // lets tests assert on the generated cloud-config
-	// buildErr, when set, is returned from Build instead of starting a build.
-	// Tests use it to exercise the handler's error-to-status mapping without a
-	// real builder.
-	buildErr error
+	// buildErr, statusErr, listErr, cancelErr — when set, are returned from
+	// the matching method instead of the default success behaviour. Tests use
+	// them to exercise the handler's error-to-status mapping (including the
+	// ErrNotSupported → 501 route) without a real builder.
+	buildErr  error
+	statusErr error
+	listErr   error
+	cancelErr error
 }
 
 func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
@@ -479,6 +483,9 @@ func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*buil
 func (f *fakeBuilder) Status(_ context.Context, id string) (*builder.BuildStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.statusErr != nil {
+		return nil, f.statusErr
+	}
 	for _, b := range f.builds {
 		if b.ID == id {
 			return b, nil
@@ -490,11 +497,16 @@ func (f *fakeBuilder) Status(_ context.Context, id string) (*builder.BuildStatus
 func (f *fakeBuilder) List(_ context.Context) ([]*builder.BuildStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return f.builds, nil
 }
 
 func (f *fakeBuilder) Cancel(_ context.Context, id string) error {
-	return nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.cancelErr
 }
 
 // fakeSettingsStore implements store.SettingsStore for testing.
