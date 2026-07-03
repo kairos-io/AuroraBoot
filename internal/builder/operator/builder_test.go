@@ -13,6 +13,8 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/kubernetes"
+	k8sfake "k8s.io/client-go/kubernetes/fake"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,19 +24,24 @@ import (
 )
 
 // newFakeBuilder builds a Builder wired to controller-runtime's fake client so
-// unit tests can drive Create/Get/List/Delete without a real apiserver.
+// unit tests can drive Create/Get/List/Delete without a real apiserver. It
+// also injects a typed-client fake so Build's spawned log-streaming goroutine
+// has something to talk to without reaching the network.
 func newFakeBuilder(namespace string, objs ...client.Object) (*Builder, client.Client) {
 	scheme := runtime.NewScheme()
 	Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
 	Expect(buildv1alpha2.AddToScheme(scheme)).To(Succeed())
 
 	fc := fake.NewClientBuilder().WithScheme(scheme).WithObjects(objs...).Build()
+	cs := k8sfake.NewSimpleClientset()
 
 	b, err := newWithFactory(Config{
 		RESTConfig: &rest.Config{Host: "https://fake.invalid"},
 		Namespace:  namespace,
 	}, func(_ Config, _ *runtime.Scheme) (client.Client, error) {
 		return fc, nil
+	}, func(_ Config) (kubernetes.Interface, error) {
+		return cs, nil
 	})
 	Expect(err).NotTo(HaveOccurred())
 	return b, fc
