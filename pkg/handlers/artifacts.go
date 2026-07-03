@@ -446,11 +446,19 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 //	@Router		/api/v1/artifacts/{id}/cancel [post]
 func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
+	ctx := c.Request().Context()
 
-	if err := h.builder.Cancel(c.Request().Context(), id); err != nil {
-		// A builder that cannot cancel (e.g. a scaffolded backend) is 501, not
-		// 404. Only genuine "no such artifact" errors deserve 404, and today's
-		// builders return those undifferentiated, so we keep the 404 fallback.
+	// Look up the record first so a missing id always reads as 404, even for
+	// a backend whose Cancel returns ErrNotSupported unconditionally (which
+	// would otherwise mask "not mine" as "cannot cancel"). Without a store we
+	// have to trust the builder's error taxonomy and fall through.
+	if h.store != nil {
+		if _, err := h.store.GetByID(ctx, id); err != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+		}
+	}
+
+	if err := h.builder.Cancel(ctx, id); err != nil {
 		if errors.Is(err, builder.ErrNotSupported) {
 			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
 		}
@@ -553,13 +561,14 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 
-	// Cancel if running. Bail out on ErrNotSupported so we do not silently
-	// wipe the DB row for a build the backend has no way to stop; other cancel
-	// errors are best-effort and the local cleanup below still runs.
+	// Cancel is best-effort. Delete's job is to reclaim state, and refusing
+	// here would strand the row and its on-disk files whenever the backend
+	// cannot cancel (a scaffold that returns ErrNotSupported for every id
+	// cannot tell "not mine" from "cannot cancel", so refusing would trap
+	// orphaned rows forever). The subsequent os.RemoveAll and store.Delete
+	// complete the cleanup regardless.
 	if rec.Phase == store.ArtifactPending || rec.Phase == store.ArtifactBuilding {
-		if err := h.builder.Cancel(ctx, id); errors.Is(err, builder.ErrNotSupported) {
-			return c.JSON(http.StatusNotImplemented, map[string]string{"error": "backend cannot cancel a running build; refusing to delete"})
-		}
+		_ = h.builder.Cancel(ctx, id)
 	}
 
 	// Remove build output directory.
