@@ -11,6 +11,13 @@ import (
 // map such failures to a 400 Bad Request instead of a 500.
 var ErrInvalidBuildOptions = errors.New("invalid build options")
 
+// ErrNotSupported marks a builder-backend refusal because the caller asked for
+// something the backend cannot do (e.g. an unimplemented operation on a stub,
+// or an output format a specific backend does not produce). Handlers map this
+// to 501 Not Implemented rather than 500 or 404, so the UI can distinguish
+// "your request is fine, this backend just cannot serve it" from real faults.
+var ErrNotSupported = errors.New("operation not supported by builder")
+
 // ImageSource describes the base image and its properties.
 type ImageSource struct {
 	BaseImage         string
