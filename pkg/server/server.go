@@ -37,7 +37,7 @@ type Config struct {
 	// SystemInfo describes the active builder backend for the
 	// /api/v1/system/builder introspection endpoint. Populated at wire time in
 	// runWeb from the flags plus the resolved kube REST config.
-	SystemInfo    handlers.SystemInfo
+	SystemInfo    handlers.APISystemBuilder
 	AdminPassword string
 	RegToken      string
 	RegTokenFile  string // path where reg token is persisted (for rotation)

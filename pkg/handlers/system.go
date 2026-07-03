@@ -6,22 +6,15 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// SystemInfo carries the values the /api/v1/system endpoints expose. Populated
-// at wire time in runWeb from the flags plus the resolved kube REST config.
-type SystemInfo struct {
-	Backend           string // "local" or "operator"
-	Cluster           string // REST config Host when Backend=="operator"; empty otherwise
-	Namespace         string // OSArtifact namespace when Backend=="operator"; empty otherwise
-	DownloadSupported bool
-}
-
-// SystemHandler serves the /api/v1/system/* introspection endpoints.
+// SystemHandler serves the /api/v1/system/* introspection endpoints. Its info
+// value is populated at wire time in runWeb from the flags plus the resolved
+// kube REST config, and is returned verbatim to callers.
 type SystemHandler struct {
-	info SystemInfo
+	info APISystemBuilder
 }
 
 // NewSystemHandler creates a SystemHandler that reports the given wire-time info.
-func NewSystemHandler(info SystemInfo) *SystemHandler {
+func NewSystemHandler(info APISystemBuilder) *SystemHandler {
 	return &SystemHandler{info: info}
 }
 
@@ -34,5 +27,5 @@ func NewSystemHandler(info SystemInfo) *SystemHandler {
 //	@Success	200	{object}	APISystemBuilder
 //	@Router		/api/v1/system/builder [get]
 func (h *SystemHandler) GetBuilder(c echo.Context) error {
-	return c.JSON(http.StatusOK, APISystemBuilder(h.info))
+	return c.JSON(http.StatusOK, h.info)
 }
