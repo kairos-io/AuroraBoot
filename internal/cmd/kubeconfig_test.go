@@ -109,6 +109,16 @@ func TestLoadKubeConfigEmptyPathHandlesMultiFileKubeconfig(t *testing.T) {
 }
 
 func TestLoadKubeConfigEmptyPathNoConfigErrors(t *testing.T) {
+	// clientcmd memoizes the recommended kubeconfig path (~/.kube/config)
+	// from HOME at package init, so t.Setenv("HOME", tempdir) does not
+	// hide a real kubeconfig on the developer's box. Skip this assertion
+	// when the host has one - the other tests still cover the meaningful
+	// cases (explicit path, KUBECONFIG env, multi-file KUBECONFIG).
+	if home, err := os.UserHomeDir(); err == nil {
+		if _, statErr := os.Stat(filepath.Join(home, ".kube", "config")); statErr == nil {
+			t.Skip("host has ~/.kube/config; loader cannot be isolated from it in-process")
+		}
+	}
 	isolateKubeEnv(t)
 
 	if _, err := loadKubeConfig(""); err == nil {
