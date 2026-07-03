@@ -1,6 +1,7 @@
 package handlers_test
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -115,6 +116,19 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 
 			Expect(handlerWithStore.Cancel(c)).To(Succeed())
 			Expect(rec.Code).To(Equal(http.StatusNotImplemented))
+		})
+
+		It("returns 500 when the artifact exists and Cancel fails for a non-ErrNotSupported reason", func() {
+			fb.cancelErr = errors.New("cancel exploded")
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/art-1/cancel", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("art-1")
+
+			Expect(handlerWithStore.Cancel(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		})
 	})
 
