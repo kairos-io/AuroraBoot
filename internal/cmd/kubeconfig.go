@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"errors"
+	"net/url"
 
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
@@ -27,4 +28,18 @@ func loadKubeConfig(path string) (*rest.Config, error) {
 	}
 	rules := clientcmd.NewDefaultClientConfigLoadingRules()
 	return clientcmd.NewNonInteractiveDeferredLoadingClientConfig(rules, &clientcmd.ConfigOverrides{}).ClientConfig()
+}
+
+// sanitizeClusterURL strips any userinfo (user:password@) from a kubeconfig
+// server URL before it is echoed back over the admin API. A kubeconfig can
+// legally embed credentials in the server URL; a naive echo would leak them
+// to any admin caller of GET /api/v1/system/builder. A malformed URL or one
+// without userinfo is returned untouched.
+func sanitizeClusterURL(host string) string {
+	u, err := url.Parse(host)
+	if err != nil || u.User == nil {
+		return host
+	}
+	u.User = nil
+	return u.String()
 }

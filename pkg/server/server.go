@@ -34,13 +34,17 @@ type Config struct {
 	BMCTargetStore        store.BMCTargetStore
 	SettingsStore         store.SettingsStore
 	Builder               builder.ArtifactBuilder
-	AdminPassword         string
-	RegToken              string
-	RegTokenFile          string // path where reg token is persisted (for rotation)
-	AuroraBootURL         string
-	ArtifactsDir          string
-	KeysDir               string  // base directory for SecureBoot key sets
-	Hub                   *ws.Hub // optional, created if nil
+	// SystemInfo describes the active builder backend for the
+	// /api/v1/system/builder introspection endpoint. Populated at wire time in
+	// runWeb from the flags plus the resolved kube REST config.
+	SystemInfo    handlers.SystemInfo
+	AdminPassword string
+	RegToken      string
+	RegTokenFile  string // path where reg token is persisted (for rotation)
+	AuroraBootURL string
+	ArtifactsDir  string
+	KeysDir       string  // base directory for SecureBoot key sets
+	Hub           *ws.Hub // optional, created if nil
 	// ISOServe serves a local artifact ISO over a tokenized, BMC-reachable URL
 	// for Redfish virtual-media deployments. Optional; when nil the Redfish
 	// deploy path requires an explicit imageUrl.
@@ -261,6 +265,10 @@ func New(cfg Config) *echo.Echo {
 
 	// UI WebSocket (admin auth)
 	adminGroup.GET("/ws/ui", uiWSHandler.HandleUIWS)
+
+	// System introspection
+	systemHandler := handlers.NewSystemHandler(cfg.SystemInfo)
+	adminGroup.GET("/system/builder", systemHandler.GetBuilder)
 
 	// Settings
 	adminGroup.GET("/settings/registration-token", settingsHandler.GetRegistrationToken)
