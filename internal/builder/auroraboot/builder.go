@@ -56,16 +56,7 @@ type Builder struct {
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
 	store          store.ArtifactStore
-	logBroadcaster LogBroadcaster
-}
-
-// LogBroadcaster is the hook dbLogWriter calls on every flush. The
-// production implementation is a thin wrapper around ws.UIHub — the
-// builder package declares this minimal interface so it doesn't have to
-// import ws and risk an import cycle. Tests pass a nil broadcaster and
-// the flush path falls back to DB-only.
-type LogBroadcaster interface {
-	BroadcastLogChunk(buildID string, chunk string)
+	logBroadcaster builder.LogBroadcaster
 }
 
 type buildState struct {
@@ -82,7 +73,7 @@ type dbLogWriter struct {
 	buf         bytes.Buffer
 	mu          sync.Mutex
 	ctx         context.Context
-	broadcaster LogBroadcaster
+	broadcaster builder.LogBroadcaster
 }
 
 func (w *dbLogWriter) Write(p []byte) (int, error) {
@@ -139,7 +130,7 @@ func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 // WithLogBroadcaster attaches a broadcaster that receives every log chunk
 // flushed by a build. Usually a *ws.UIHub — but kept as an interface so
 // the builder package doesn't have to import ws.
-func (b *Builder) WithLogBroadcaster(lb LogBroadcaster) *Builder {
+func (b *Builder) WithLogBroadcaster(lb builder.LogBroadcaster) *Builder {
 	b.logBroadcaster = lb
 	return b
 }
