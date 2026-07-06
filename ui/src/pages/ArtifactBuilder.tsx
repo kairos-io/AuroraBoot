@@ -215,7 +215,7 @@ const FEDORA_VERSION = "44";
 // renovate: datasource=docker depName=opensuse/leap
 const OPENSUSE_LEAP_VERSION = "15.6";
 // renovate: datasource=docker depName=debian
-const DEBIAN_VERSION = "12";
+const DEBIAN_VERSION = "13";
 // renovate: datasource=docker depName=alpine
 const ALPINE_VERSION = "3.24";
 // renovate: datasource=docker depName=rockylinux
