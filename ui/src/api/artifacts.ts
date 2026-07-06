@@ -29,6 +29,7 @@ export interface Artifact {
   cloudConfig?: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
+  kubernetesEnabled?: boolean;
   targetGroupId?: string;
   containerImage?: string;
   artifacts: string[];
@@ -83,6 +84,7 @@ export interface CreateArtifactInput {
   variant: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
+  kubernetesEnabled?: boolean;
   /**
    * Allow pulling the base image from a registry served over plain HTTP or
    * presenting an untrusted/self-signed TLS certificate.
