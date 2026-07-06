@@ -39,3 +39,28 @@ reason = "No patched github.com/docker/docker release available; client-only Doc
 id = "GHSA-w5hq-g745-h8pq"
 ignoreUntil = 2026-07-08
 reason = "uuid is a dev-only transitive dep pinned by @cypress/request (^8.3.2); fix requires a breaking major bump. Test tooling only, not shipped. Re-evaluate before expiry."
+
+# Transitive github.com/containerd/containerd v1.7.33 (via kairos-sdk archive utils).
+# AuroraBoot uses github.com/containerd/containerd/v2 v2.3.2 directly (patched).
+# These CRI checkpoint CVEs have no fixed release on the legacy v1 module path.
+[[IgnoredVulns]]
+id = "GO-2026-5064"
+ignoreUntil = 2026-08-16
+reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in N/A). Direct dep is containerd/v2 v2.3.2. CRI checkpoint restore; not used by AuroraBoot."
+
+[[IgnoredVulns]]
+id = "GO-2026-5338"
+ignoreUntil = 2026-08-16
+reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in N/A). Direct dep is containerd/v2 v2.3.2. CRI checkpoint import; not used by AuroraBoot."
+
+[[IgnoredVulns]]
+id = "GO-2026-5622"
+ignoreUntil = 2026-08-16
+reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in N/A). Direct dep is containerd/v2 v2.3.2. CRI checkpoint restore; not used by AuroraBoot."
+
+# Transitive via kairos-agent/sdk and sbctl (TPM attestation). Bumped to v0.6.1;
+# govulncheck/OSV still report Fixed in N/A. AuroraBoot does not expose attestation parsing.
+[[IgnoredVulns]]
+id = "GO-2026-5298"
+ignoreUntil = 2026-08-16
+reason = "Transitive go-attestation (v0.6.1); no patched release listed yet (Fixed in N/A). TPM attestation parsing in upstream deps only. Re-evaluate before expiry."
