@@ -13,6 +13,7 @@ import {
   PHONEHOME_SAFE_DEFAULTS,
   PHONEHOME_DESTRUCTIVE_COMMANDS,
 } from "@/lib/buildConfig";
+import { buildCloudConfigPreview } from "@/lib/cloudConfigPreview";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -230,8 +231,9 @@ const TEMPLATES: BuildTemplate[] = [
       kairosVersion: KAIROS_VERSION,
       model: "generic",
       arch: "amd64",
-      variant: "core",
+      variant: "standard",
       kubernetesDistro: "k3s",
+      kubernetesEnabled: true,
       outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
     },
   },
@@ -361,6 +363,7 @@ const EMPTY_FORM: CreateArtifactInput = {
   variant: "core",
   kubernetesDistro: "",
   kubernetesVersion: "",
+  kubernetesEnabled: true,
   "allow-insecure-registries": false,
   dockerfile: "",
   overlayRootfs: "",
@@ -612,6 +615,7 @@ export function ArtifactBuilder() {
       variant: src.variant || "core",
       kubernetesDistro: src.kubernetesDistro || "",
       kubernetesVersion: src.kubernetesVersion || "",
+      kubernetesEnabled: src.kubernetesEnabled ?? true,
       "allow-insecure-registries": src["allow-insecure-registries"] ?? false,
       dockerfile: parsed.dockerfile || "",
       overlayRootfs: parsed.overlayRootfs || "",
@@ -679,6 +683,7 @@ export function ArtifactBuilder() {
           variant: a.variant || "core",
           kubernetesDistro: a.kubernetesDistro || "",
           kubernetesVersion: a.kubernetesVersion || "",
+          kubernetesEnabled: a.variant === "standard" ? a.kubernetesEnabled ?? true : true,
           "allow-insecure-registries": a["allow-insecure-registries"] ?? false,
           dockerfile: a.dockerfile || "",
           kairosInitImage: a.kairosInitImage || "",
@@ -744,69 +749,26 @@ export function ArtifactBuilder() {
     }
   }
 
-  // Frontend cloud-config preview — must match the backend's buildCloudConfig
-  // in internal/handlers/artifacts.go. The backend is the source of truth at
-  // build time; this function only powers the Review-step preview.
+  // Frontend cloud-config preview — must match buildCloudConfig in
+  // pkg/handlers/artifacts.go. The backend is the source of truth at build
+  // time; this function only powers the Review-step preview.
   function buildCloudConfig(): string {
-    const lines: string[] = ["#cloud-config"];
-
-    if (form.provisioning.autoInstall) {
-      lines.push("install:");
-      lines.push("  auto: true");
-      lines.push("  device: auto");
-      lines.push("  reboot: true");
-    }
-
-    if (form.provisioning.registerAuroraBoot) {
-      const groupName = groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || "";
-      lines.push("phonehome:");
-      lines.push(`  url: "<server-url>"`);
-      lines.push(`  registration_token: "<token>"`);
-      lines.push(`  group: "${groupName}"`);
-      const allowed = form.provisioning.allowedCommands ?? [];
-      if (allowed.length === 0) {
-        lines.push("  allowed_commands: []");
-      } else {
-        lines.push("  allowed_commands:");
-        for (const cmd of allowed) {
-          lines.push(`    - ${cmd}`);
-        }
-      }
-    }
-
-    if (userMode !== "none") {
-      const u = userMode === "default" || !username ? "kairos" : username;
-      const p = userMode === "default" || !password ? "kairos" : password;
-      const sshList = sshKeys.split("\n").map((s) => s.trim()).filter(Boolean);
-      const stage = sshList.length > 0 ? "network" : "initramfs";
-
-      lines.push("stages:");
-      lines.push(`  ${stage}:`);
-      lines.push("    - users:");
-      lines.push(`        ${u}:`);
-      lines.push(`          passwd: ${p}`);
-      lines.push("          groups:");
-      lines.push("            - admin");
-
-      if (sshList.length > 0) {
-        lines.push("          ssh_authorized_keys:");
-        sshList.forEach((key) => {
-          lines.push(`            - "${key}"`);
-        });
-      }
-    }
-
-    let cc = lines.join("\n") + "\n";
-
-    if (advancedConfig.trim()) {
-      let extra = advancedConfig.trim();
-      if (extra.startsWith("#cloud-config")) {
-        extra = extra.replace(/^#cloud-config\s*\n?/, "");
-      }
-      cc += "\n" + extra + "\n";
-    }
-
-    return cc;
+    const groupName =
+      groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || "";
+    return buildCloudConfigPreview({
+      autoInstall: form.provisioning.autoInstall,
+      registerAuroraBoot: form.provisioning.registerAuroraBoot,
+      groupName,
+      allowedCommands: form.provisioning.allowedCommands ?? [],
+      variant: form.variant,
+      kubernetesDistro: form.kubernetesDistro || "",
+      kubernetesEnabled: form.kubernetesEnabled ?? true,
+      userMode,
+      username,
+      password,
+      sshKeys,
+      extraYAML: advancedConfig,
+    });
   }
 
   // computeErrors produces a structured list: each error knows which wizard
@@ -922,6 +884,7 @@ export function ArtifactBuilder() {
       variant: form.variant,
       kubernetesDistro: form.variant === "standard" ? form.kubernetesDistro : undefined,
       kubernetesVersion: form.variant === "standard" ? form.kubernetesVersion : undefined,
+      kubernetesEnabled: form.variant === "standard" ? form.kubernetesEnabled ?? true : undefined,
       // Only meaningful when pulling a base image from a registry.
       "allow-insecure-registries":
         buildMode === "image" ? form["allow-insecure-registries"] : undefined,
@@ -1315,7 +1278,24 @@ export function ArtifactBuilder() {
                     <button
                       key={v.value}
                       type="button"
-                      onClick={() => update("variant", v.value)}
+                      onClick={() => {
+                        if (v.value === "standard") {
+                          setForm((prev) => ({
+                            ...prev,
+                            variant: "standard",
+                            kubernetesDistro: prev.kubernetesDistro || "k3s",
+                            kubernetesEnabled: prev.kubernetesEnabled ?? true,
+                          }));
+                        } else {
+                          setForm((prev) => ({
+                            ...prev,
+                            variant: "core",
+                            kubernetesDistro: "",
+                            kubernetesVersion: "",
+                            kubernetesEnabled: true,
+                          }));
+                        }
+                      }}
                       className={`text-left rounded-lg border p-4 transition-colors ${
                         selected
                           ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
@@ -1345,6 +1325,20 @@ export function ArtifactBuilder() {
                   <CardTitle className="text-sm">Kubernetes</CardTitle>
                 </CardHeader>
                 <CardContent className="grid gap-4">
+                  <label className="flex items-center gap-2 text-sm font-medium">
+                    <input
+                      type="checkbox"
+                      checked={form.kubernetesEnabled ?? true}
+                      onChange={(e) => update("kubernetesEnabled", e.target.checked)}
+                      className="rounded border-input"
+                    />
+                    Enable Kubernetes on first boot
+                    <InfoTooltip>
+                      Baked into cloud-config as <code className="font-mono">k3s.enabled</code> or{" "}
+                      <code className="font-mono">k0s.enabled</code>. The distribution is still bundled
+                      into the image for offline installs; disable this to defer starting the cluster.
+                    </InfoTooltip>
+                  </label>
                   <div className="grid gap-2">
                     <Label>
                       Distribution
@@ -2069,6 +2063,10 @@ export function ArtifactBuilder() {
                     </div>
                     {form.variant === "standard" && (
                       <>
+                        <div className="flex gap-2">
+                          <span className="text-muted-foreground w-28 shrink-0">K8s Enabled:</span>
+                          <span>{form.kubernetesEnabled ?? true ? "Yes" : "No"}</span>
+                        </div>
                         <div className="flex gap-2">
                           <span className="text-muted-foreground w-28 shrink-0">K8s Distro:</span>
                           <span>{form.kubernetesDistro || "\u2014"}</span>

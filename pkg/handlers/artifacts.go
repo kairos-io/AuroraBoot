@@ -53,6 +53,7 @@ type createArtifactRequest struct {
 	Variant                 string `json:"variant"`
 	KubernetesDistro        string `json:"kubernetesDistro"`
 	KubernetesVersion       string `json:"kubernetesVersion"`
+	KubernetesEnabled       *bool  `json:"kubernetesEnabled"`
 	AllowInsecureRegistries bool   `json:"allow-insecure-registries"`
 	Dockerfile              string `json:"dockerfile"`
 	BuildContextDir         string `json:"buildContextDir"`
@@ -223,6 +224,11 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		allowedCommands = append([]string(nil), phonehomeSafeDefaults...)
 	}
 
+	kubernetesEnabled := true
+	if req.KubernetesEnabled != nil {
+		kubernetesEnabled = *req.KubernetesEnabled
+	}
+
 	opts.Provisioning = builder.ProvisioningOptions{
 		AutoInstall:        autoInstall,
 		RegisterAuroraBoot: registerAuroraBoot,
@@ -249,6 +255,9 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		regToken:           h.regToken,
 		groupName:          groupName,
 		allowedCommands:    allowedCommands,
+		variant:            req.Variant,
+		kubernetesDistro:   req.KubernetesDistro,
+		kubernetesEnabled:  kubernetesEnabled,
 		userMode:           req.Provisioning.UserMode,
 		username:           req.Provisioning.Username,
 		password:           req.Provisioning.Password,
@@ -304,6 +313,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			CloudConfig:             opts.CloudConfig,
 			KubernetesDistro:        req.KubernetesDistro,
 			KubernetesVersion:       req.KubernetesVersion,
+			KubernetesEnabled:       boolPtr(kubernetesEnabled),
 			TargetGroupID:           req.Provisioning.TargetGroupId,
 			OverlayRootfs:           req.OverlayRootfs,
 		}
@@ -791,7 +801,10 @@ type cloudConfigParams struct {
 	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
 	// Callers substitute phonehomeSafeDefaults for nil input before calling.
 	allowedCommands []string
-	userMode        string // "default", "custom", "none"
+	variant           string // "core" or "standard"
+	kubernetesDistro  string // "k3s" or "k0s" when variant=standard
+	kubernetesEnabled bool   // cloud-config k3s/k0s.enabled (standard variant only)
+	userMode          string // "default", "custom", "none"
 	username        string
 	password        string
 	sshKeys         string // newline-separated public keys
@@ -815,6 +828,15 @@ func buildCloudConfig(p cloudConfigParams) string {
 			"auto":   true,
 			"device": "auto",
 			"reboot": true,
+		}
+	}
+
+	if p.variant == "standard" && p.kubernetesDistro != "" {
+		switch p.kubernetesDistro {
+		case "k3s":
+			doc["k3s"] = map[string]interface{}{"enabled": p.kubernetesEnabled}
+		case "k0s":
+			doc["k0s"] = map[string]interface{}{"enabled": p.kubernetesEnabled}
 		}
 	}
 
@@ -939,3 +961,5 @@ func mergeYAML(dst, src map[string]interface{}) {
 		dst[k] = sv
 	}
 }
+
+func boolPtr(v bool) *bool { return &v }
