@@ -301,8 +301,12 @@ github.com/kairos-io/go-ukify v0.5.0 h1:cmEauHZ6RdPk/2xkfG2EPxjEYqfSZGuCYIHpnYRL
 github.com/kairos-io/go-ukify v0.5.0/go.mod h1:vUmdBgpj4AyW/0an0ZDfeGE1f6NRDpbQ2MILJtAvy+4=
 github.com/kairos-io/kairos-agent/v2 v2.30.0 h1:qegZuccR8DzHFoOK0KPVRl/aH5G0bQc9e1Rchc2JTDI=
 github.com/kairos-io/kairos-agent/v2 v2.30.0/go.mod h1:tJfroV6v6ePyUhuZOuDMI3FSzouI/nzOypUVvWqcQOE=
+github.com/kairos-io/kairos-agent/v2 v2.30.1 h1:H/urMnUAdXUj5kbCozJRtviArTQWPWx3VCA1mnEy83A=
+github.com/kairos-io/kairos-agent/v2 v2.30.1/go.mod h1:8iRDghaHQFU4sZ0PFfQ9bv0a3iZQcQFNscwGgJIAFMI=
 github.com/kairos-io/kairos-sdk v0.23.1 h1:87cSbA7a1a0KvNrtmw0FaYR5hi4TGfOfO/jOH3ojRfA=
 github.com/kairos-io/kairos-sdk v0.23.1/go.mod h1:2ExNXYTMfjv6yOJGxkW3bpy/u7BMC/Op+TExRSNfWjY=
+github.com/kairos-io/kairos-sdk v0.23.2 h1:5dZzdzYn+sGoeOoaFBwYMukdO02WdDeWLzTZ4NsqQk0=
+github.com/kairos-io/kairos-sdk v0.23.2/go.mod h1:DnDXUdqr55o/yQQYtX0blKeukEEeYGJwCOBhFJuIJ90=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872 h1:O9H3QrUNNZJTU+TjM3BPR5lvztYWD57V75WzWhIe1aY=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
@@ -378,6 +382,8 @@ github.com/mudler/go-processmanager v0.1.1 h1:c/1NRZOZpW8HuFv9RhBG57nQu1oDMRomEH
 github.com/mudler/go-processmanager v0.1.1/go.mod h1:h6kmHUZeafr+k5hRYpGLMzJFH4hItHffgpRo2QIkP+o=
 github.com/mudler/yip v1.24.0 h1:2iyKnlg4o24Pm9OWMfvIZFdxyTcaYEarZTkIw0L9WTA=
 github.com/mudler/yip v1.24.0/go.mod h1:0rI7t0eBj6ys1mJuwzh5LIu8Ry4zo5A6O28AW95BqB8=
+github.com/mudler/yip v1.24.2 h1:cryRBw7HRmKha9wF9ObhuNiuIHiMrRDAU3xRyotzLBE=
+github.com/mudler/yip v1.24.2/go.mod h1:I6EA3+52+ZZcfM6UwFt5K9W6YBg12zhEJfRmHiU8rPM=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 h1:zYyBkD/k9seD2A7fsi6Oo2LfFZAehjjQMERAvZLEDnQ=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646/go.mod h1:jpp1/29i3P1S/RLdc7JQKbRpFeM1dOBd8T9ki5s+AY8=
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
@@ -773,6 +779,8 @@ gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c/go.mod h1:JHkPIbrfpd72SG/EV
 gopkg.in/errgo.v2 v2.1.0/go.mod h1:hNsd1EY+bozCKY1Ytp96fpM3vjJbqLJn88ws8XvfDNI=
 gopkg.in/ini.v1 v1.67.2 h1:JtOSMb9OuaCZKr7h5D/h6iii14sK0hLbplTc6frx4Ss=
 gopkg.in/ini.v1 v1.67.2/go.mod h1:x/cyOwCgZqOkJoDIJ3c1KNHMo10+nLGAhh+kn3Zizss=
+gopkg.in/ini.v1 v1.67.3 h1:iM9Lhz5MRSGhHVGGwCuzG9KO8PoirCXj/m/qTmOJJQw=
+gopkg.in/ini.v1 v1.67.3/go.mod h1:x/cyOwCgZqOkJoDIJ3c1KNHMo10+nLGAhh+kn3Zizss=
 gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7 h1:uRGJdciOHaEIrze2W8Q3AKkepLTh2hOroT7a+7czfdQ=
 gopkg.in/tomb.v1 v1.0.0-20141024135613-dd632973f1e7/go.mod h1:dt/ZhP58zS4L8KSrWDmTeBkI65Dw0HsyUHuEVlX15mw=
 gopkg.in/warnings.v0 v0.1.2 h1:wFXVbFY8DY5/xOe1ECiWdKCzZlxgshcYVNkBHstARME=
