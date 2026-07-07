@@ -17,8 +17,13 @@ var _ = Describe("Install Script", func() {
 		Expect(body).To(ContainSubstring("#!/bin/sh"))
 		Expect(body).To(ContainSubstring("AURORABOOT_URL"))
 		Expect(body).To(ContainSubstring("/oem/phonehome.yaml"))
+		Expect(body).To(ContainSubstring("kairos-agent start"))
+		Expect(body).To(ContainSubstring("agent_needs_phonehome_execstart_fix"))
+		Expect(body).To(ContainSubstring("agent_version_lt"))
+		Expect(body).To(ContainSubstring("2.30.1"))
+		Expect(body).NotTo(ContainSubstring("sort -V"))
 		Expect(body).To(ContainSubstring("sed -i"))
-		Expect(body).To(ContainSubstring("systemctl restart kairos-agent-phonehome"))
+		Expect(body).To(ContainSubstring("systemctl is-active --quiet kairos-agent-phonehome"))
 	})
 
 	// The install script bakes allowed_commands into the node's cloud-config

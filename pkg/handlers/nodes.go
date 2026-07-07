@@ -534,15 +534,46 @@ fi
 echo "Starting kairos-agent..."
 kairos-agent start
 
-# kairos-agent writes the phone-home unit with a hardcoded /usr/sbin/kairos-agent
-# path, but some images install the binary elsewhere (e.g. /usr/bin). systemd
-# then fails with status=203/EXEC and the node never registers.
-AGENT_BIN="$(command -v kairos-agent)"
-UNIT=/etc/systemd/system/kairos-agent-phonehome.service
-if [ -n "$AGENT_BIN" ] && [ -f "$UNIT" ]; then
-    sed -i "s|^ExecStart=.*|ExecStart=${AGENT_BIN} phone-home|" "$UNIT"
-    systemctl daemon-reload
-    systemctl restart kairos-agent-phonehome
+# Agent < v2.30.1 may write ExecStart=/usr/sbin/kairos-agent while kairos-init
+# installs to /usr/bin (kairos-io/kairos#4189). Patch only when needed.
+agent_version_lt() {
+    ver="$1"
+    min="$2"
+    _old_ifs="$IFS"
+    IFS=.
+    set -- $ver
+    v_major=${1:-0}; v_minor=${2:-0}; v_patch=${3:-0}
+    set -- $min
+    m_major=${1:-0}; m_minor=${2:-0}; m_patch=${3:-0}
+    IFS="$_old_ifs"
+    if [ "$v_major" -lt "$m_major" ]; then return 0; fi
+    if [ "$v_major" -gt "$m_major" ]; then return 1; fi
+    if [ "$v_minor" -lt "$m_minor" ]; then return 0; fi
+    if [ "$v_minor" -gt "$m_minor" ]; then return 1; fi
+    if [ "$v_patch" -lt "$m_patch" ]; then return 0; fi
+    return 1
+}
+agent_needs_phonehome_execstart_fix() {
+    ver="$(kairos-agent version 2>/dev/null | sed 's/^v//' | cut -d- -f1)"
+    if [ -z "$ver" ]; then
+        return 0
+    fi
+    case "$ver" in
+        *[!0-9.]*|.*|*.|*..*) return 0 ;;
+    esac
+    if agent_version_lt "$ver" "2.30.1"; then
+        return 0
+    fi
+    return 1
+}
+if agent_needs_phonehome_execstart_fix; then
+    AGENT_BIN="$(command -v kairos-agent)"
+    UNIT=/etc/systemd/system/kairos-agent-phonehome.service
+    if [ -n "$AGENT_BIN" ] && [ -f "$UNIT" ]; then
+        sed -i "s|^ExecStart=.*|ExecStart=${AGENT_BIN} phone-home|" "$UNIT"
+        systemctl daemon-reload
+        systemctl restart kairos-agent-phonehome
+    fi
 fi
 
 if systemctl is-active --quiet kairos-agent-phonehome; then
