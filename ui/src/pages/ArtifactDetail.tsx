@@ -618,14 +618,20 @@ export function ArtifactDetail() {
                 {artifact.message}
               </p>
               <div className="mt-4 flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
-                  onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
-                >
-                  <Copy className="h-4 w-4 mr-2" />
-                  Clone &amp; retry
-                </Button>
+                {/* Clone & retry is kairos-only — hadron artifacts get the
+                    dedicated Retry button in the header, which reruns the
+                    exact same spec instead of routing through the wrong
+                    (kairos) wizard. */}
+                {artifact.kind !== "hadron" && (
+                  <Button
+                    size="sm"
+                    className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                    onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
+                  >
+                    <Copy className="h-4 w-4 mr-2" />
+                    Clone &amp; retry
+                  </Button>
+                )}
                 <a
                   href="#build-logs"
                   className="inline-flex items-center text-sm text-red-700 dark:text-red-400 hover:underline"
