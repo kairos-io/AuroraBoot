@@ -11,6 +11,11 @@ services:
       - AURORABOOT_URL=${AURORABOOT_URL:-}
       - AURORABOOT_ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - AURORABOOT_REG_TOKEN=${REGISTRATION_TOKEN:-}
+    # mkfs.erofs (used by `systemd-repart --make-ddi=sysext`) is TSAN-instrumented in
+    # the Fedora 42 image; its runtime calls personality(ADDR_NO_RANDOMIZE) which the
+    # default Docker seccomp profile blocks. Relax seccomp so erofs builds succeed.
+    security_opt:
+      - seccomp=unconfined
 
 volumes:
   auroraboot-data:
