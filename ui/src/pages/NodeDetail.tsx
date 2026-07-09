@@ -3,6 +3,8 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getNode, sendCommand, setLabels, setGroup, type Node } from "@/api/nodes";
 import { DecommissionDialog } from "@/components/DecommissionDialog";
 import { listNodeCommands, deleteCommand, clearCommandHistory, type Command } from "@/api/commands";
+import { listExtensionsForNode, type NodeExtensionRow } from "@/api/extensions";
+import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 import { listGroups, type Group } from "@/api/groups";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -49,6 +51,7 @@ export function NodeDetail() {
   const [expandedCmds, setExpandedCmds] = useState<Set<string>>(new Set());
   const [groups, setGroups] = useState<Group[]>([]);
   const [confirmState, setConfirmState] = useState<{ open: boolean; action: () => void; title: string; description: string }>({ open: false, action: () => {}, title: "", description: "" });
+  const [nodeExtensions, setNodeExtensions] = useState<NodeExtensionRow[]>([]);
 
   const fetchCommands = useCallback(() => {
     if (!id) return;
@@ -82,7 +85,10 @@ export function NodeDetail() {
     fetchNode();
     fetchCommands();
     listGroups().then(setGroups).catch(() => {});
-  }, [fetchNode, fetchCommands]);
+    if (id) {
+      listExtensionsForNode(id).then(setNodeExtensions).catch(() => {});
+    }
+  }, [fetchNode, fetchCommands, id]);
 
   // Fallback polling every 10s
   useEffect(() => {
@@ -340,6 +346,35 @@ export function NodeDetail() {
                   <p className="mt-0.5">{node.osRelease.MEM_TOTAL}</p>
                 </div>
               )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Installed extensions — populated by the status callback when the
+          agent reports a successful install/upgrade. */}
+      {nodeExtensions.length > 0 && (
+        <Card className="mt-6">
+          <CardHeader>
+            <CardTitle className="text-sm font-medium">Installed extensions</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-1.5">
+              {nodeExtensions.map((row) => (
+                <div
+                  key={`${row.type}:${row.name}:${row.bootState}`}
+                  className="flex items-center justify-between gap-2 text-sm px-2.5 py-1.5 rounded-md border bg-background"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ExtensionTypeChip type={row.type} />
+                    <span className="font-medium truncate">{row.name}</span>
+                    <code className="text-[11px] opacity-60">{row.version}</code>
+                  </div>
+                  <span className="text-[11px] px-2 py-0.5 rounded-full border bg-muted">
+                    {row.bootState}
+                  </span>
+                </div>
+              ))}
             </div>
           </CardContent>
         </Card>

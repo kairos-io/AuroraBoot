@@ -9,6 +9,9 @@ import {
   type SecureBootKeySet,
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
+import { listExtensions, type Extension } from "@/api/extensions";
+import { HierarchyChipInput } from "@/components/HierarchyChipInput";
+import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 import {
   PHONEHOME_SAFE_DEFAULTS,
   PHONEHOME_DESTRUCTIVE_COMMANDS,
@@ -493,6 +496,8 @@ const EMPTY_FORM: CreateArtifactInput = {
   signing: { ...EMPTY_SIGNING },
   provisioning: { ...EMPTY_PROVISIONING },
   cloudConfig: "",
+  extensionHierarchies: { sysext: [], confext: [] },
+  bundledExtensions: [],
 };
 
 type UserMode = "default" | "custom" | "none";
@@ -2207,8 +2212,57 @@ export function ArtifactBuilder() {
                     <p className="text-xs text-muted-foreground">One key per line.</p>
                   </div>
                 )}
+
+                {/* Pre-configure for system extensions: bakes a systemd drop-in
+                    so the OS image accepts overlays on the listed paths
+                    without manual setup at upgrade time. */}
+                <details className="mt-4 pt-3 border-t border-border/60">
+                  <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
+                    Pre-configure for system extensions
+                    <span className="text-xs font-normal opacity-60">Optional · advanced</span>
+                  </summary>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Bakes a systemd drop-in so the node accepts sysext overlays on the listed paths without manual setup.
+                  </p>
+                  <div className="mt-3">
+                    <div className="text-xs text-muted-foreground mb-1.5">Additional sysext hierarchies</div>
+                    <HierarchyChipInput
+                      value={form.extensionHierarchies?.sysext ?? []}
+                      onChange={(next) =>
+                        update("extensionHierarchies", {
+                          sysext: next,
+                          confext: form.extensionHierarchies?.confext ?? [],
+                        })
+                      }
+                      implicitRoot="/usr"
+                      quickAdds={["/opt", "/srv", "/var/lib"]}
+                    />
+                  </div>
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs opacity-80">Confext hierarchies (optional)</summary>
+                    <div className="mt-2">
+                      <HierarchyChipInput
+                        value={form.extensionHierarchies?.confext ?? []}
+                        onChange={(next) =>
+                          update("extensionHierarchies", {
+                            sysext: form.extensionHierarchies?.sysext ?? [],
+                            confext: next,
+                          })
+                        }
+                        implicitRoot="/etc"
+                      />
+                    </div>
+                  </details>
+                </details>
               </CardContent>
             </Card>
+
+            {/* Bundled extensions: ride along with every upgrade to this artifact. */}
+            <BundledExtensionsCard
+              arch={form.arch}
+              bundled={form.bundledExtensions ?? []}
+              onChange={(next) => update("bundledExtensions", next)}
+            />
           </div>
         )}
 
@@ -2857,5 +2911,129 @@ export function ArtifactBuilder() {
         </div>
       </form>
     </div>
+  );
+}
+
+interface BundledExtensionEntry {
+  name: string;
+  type: "sysext" | "confext";
+  pinnedVersion?: string;
+  order?: number;
+}
+
+function BundledExtensionsCard({
+  arch,
+  bundled,
+  onChange,
+}: {
+  arch: string;
+  bundled: BundledExtensionEntry[];
+  onChange: (next: BundledExtensionEntry[]) => void;
+}) {
+  const [available, setAvailable] = useState<Extension[]>([]);
+
+  useEffect(() => {
+    listExtensions()
+      .then((rows) =>
+        setAvailable(
+          rows.filter((e) => e.phase === "Ready" && e.arch === arch),
+        ),
+      )
+      .catch(() => {});
+  }, [arch]);
+
+  const bundledKeys = new Set(bundled.map((b) => `${b.type}:${b.name}`));
+
+  function addToBundle(ext: Extension) {
+    onChange([
+      ...bundled,
+      { name: ext.name, type: ext.type, order: bundled.length },
+    ]);
+  }
+
+  function removeFromBundle(idx: number) {
+    onChange(bundled.filter((_, i) => i !== idx));
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-sm">Bundled extensions</CardTitle>
+      </CardHeader>
+      <CardContent>
+        <p className="text-xs text-muted-foreground mb-3">
+          Extensions selected here ride along with every upgrade to this
+          artifact. Only <code>Ready</code> extensions matching arch{" "}
+          <code>{arch}</code> are listed.
+        </p>
+
+        {bundled.length > 0 && (
+          <div className="mb-3">
+            <div className="text-xs text-muted-foreground mb-1.5">
+              {bundled.length} extension{bundled.length === 1 ? "" : "s"} bundled
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {bundled.map((b, i) => (
+                <span
+                  key={`${b.type}:${b.name}`}
+                  className="inline-flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-full border bg-muted"
+                >
+                  <ExtensionTypeChip type={b.type} />
+                  <code className="font-mono">{b.name}</code>
+                  {b.pinnedVersion && (
+                    <code className="text-[10px] opacity-60">
+                      @{b.pinnedVersion}
+                    </code>
+                  )}
+                  <button
+                    type="button"
+                    aria-label={`Remove ${b.name} from bundle`}
+                    className="opacity-60 hover:opacity-100"
+                    onClick={() => removeFromBundle(i)}
+                  >
+                    ×
+                  </button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {available.length === 0 ? (
+          <p className="text-xs text-muted-foreground">
+            No Ready extensions match arch <code>{arch}</code>. Build extensions
+            from the Extensions page first.
+          </p>
+        ) : (
+          <div className="grid gap-1.5 max-h-64 overflow-auto">
+            {available.map((e) => {
+              const inBundle = bundledKeys.has(`${e.type}:${e.name}`);
+              return (
+                <div
+                  key={e.id}
+                  className="flex items-center justify-between gap-2 text-sm px-2.5 py-1.5 rounded-md border bg-background"
+                >
+                  <div className="flex items-center gap-2 min-w-0">
+                    <ExtensionTypeChip type={e.type} />
+                    <span className="font-medium truncate">{e.name}</span>
+                    <code className="text-[11px] opacity-60">{e.version}</code>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    aria-label={`Add ${e.name} to bundle`}
+                    disabled={inBundle}
+                    onClick={() => addToBundle(e)}
+                  >
+                    {inBundle ? "Added" : "Add"}
+                  </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
