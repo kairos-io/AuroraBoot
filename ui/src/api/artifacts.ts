@@ -1,8 +1,26 @@
 import { apiFetch, apiFetchText } from "./client";
 
+/** Discriminates the build pipeline. Empty and "kairos" are the classic path;
+ *  "hadron" is the docker-buildx composition of hadron base + firmware + layers. */
+export type ArtifactKind = "" | "kairos" | "hadron";
+
+/** Wire shape of the persisted hadron spec — mirrors pkg/hadron.Spec. */
+export interface HadronSpec {
+  baseImage: string;
+  firmware?: string[];
+  layers?: string[];
+  extraDockerfile?: string;
+  platforms?: string[];
+  outputRef: string;
+  push?: boolean;
+  produceTarball?: boolean;
+}
+
 export interface Artifact {
   id: string;
   name?: string;
+  kind?: ArtifactKind;
+  hadronSpec?: string;
   saved?: boolean;
   phase: string;
   message: string;

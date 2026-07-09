@@ -67,6 +67,7 @@ import (
 	netbootmgr "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/internal/secrets"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/hadron"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/kairos-io/AuroraBoot/pkg/server"
@@ -189,6 +190,14 @@ func runWeb(c *cli.Context) error {
 	artifactBuilder := auroraboot.New(artifactsDir, nil, artifactStore).
 		WithLogBroadcaster(wsHub.UI)
 
+	// Hadron catalog + registry-credentials handler. The catalog runs in-process
+	// with a memoized upstream client (default TTL) — one instance per server so
+	// its cache is shared across requests. The handler owns credential encryption
+	// (via the same DEK we use for BMC passwords) and exposes an AuthProvider
+	// that pkg/hadron.Build invokes at push time.
+	hadronHandler := handlers.NewHadronHandler(hadron.NewCatalog(), &gormstore.SettingsStoreAdapter{S: store}, bmcCipher)
+	artifactBuilder = artifactBuilder.WithHadronAuthProvider(hadronHandler.AuthProvider())
+
 	nodeStore := &gormstore.NodeStoreAdapter{S: store}
 	commandStore := &gormstore.CommandStoreAdapter{S: store}
 	groupStore := &gormstore.GroupStoreAdapter{S: store}
@@ -266,6 +275,7 @@ func runWeb(c *cli.Context) error {
 		Hub:                   wsHub,
 		ISOServe:              isoServe,
 		RedfishServeURL:       redfishServeURLSeed(isoServe, serveURL),
+		HadronHandler:         hadronHandler,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)

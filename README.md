@@ -67,6 +67,33 @@ Open **http://localhost:9099**, sign in, and the welcome wizard walks you throug
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
 
+### Hadron builds
+
+The Artifact Builder ships a dedicated **Hadron image** flow that composes a
+Hadron base with per-vendor firmware layers and pre-built software layers via
+`docker buildx build`. Prereqs on the host running AuroraBoot:
+
+- `docker` with the `buildx` plugin enabled (bundled by default on modern
+  Docker Desktop and Docker CE ≥ 23).
+- **Cross-arch builds (e.g. `linux/amd64` + `linux/arm64` on an amd64 host)
+  need qemu-user emulation** registered via `binfmt_misc`. AuroraBoot
+  auto-registers it before every cross-arch build by running
+  `tonistiigi/binfmt` — which requires privileged Docker on the host.
+
+  If your Docker refuses privileged containers (rootless, restricted CI
+  runner, ...) register binfmt once manually and the auto-install becomes a
+  no-op:
+
+  ```bash
+  docker run --privileged --rm tonistiigi/binfmt --install all
+  ```
+
+  Symptom of missing binfmt: a build fails mid-`RUN` with `exec format error`.
+
+- Registry credentials for push-mode builds live under **Settings → Hadron
+  Registry Credentials**; passwords are stored encrypted with the same DEK
+  AuroraBoot uses for BMC secrets.
+
 ---
 
 ## Using the CLI

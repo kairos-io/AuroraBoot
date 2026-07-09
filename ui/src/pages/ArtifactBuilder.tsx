@@ -9,6 +9,7 @@ import {
   type SecureBootKeySet,
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
+import { apiFetchText } from "@/api/client";
 import {
   PHONEHOME_SAFE_DEFAULTS,
   PHONEHOME_DESTRUCTIVE_COMMANDS,
@@ -666,6 +667,74 @@ export function ArtifactBuilder() {
       toast("Config imported", "success");
     }
   }
+
+  // Hadron-base pre-fill: navigating here from a Ready hadron artifact
+  // bridges hadron output into a Kairos build.
+  //
+  // Two modes depending on how the hadron artifact was produced:
+  //   - push=true → the image is in a registry, use it as `baseImage`; kairos
+  //                 pulls it in the normal path.
+  //   - push=false (tarball only) → the image is NOT reachable by docker pull,
+  //                 so we fetch the generated Dockerfile.hadron and plant it
+  //                 in the Dockerfile field. Kairos runs `docker build` on it
+  //                 as the first stage; no push/tarball round-trip required.
+  useEffect(() => {
+    const hadronBaseId = searchParams.get("hadronBase");
+    if (!hadronBaseId) return;
+    getArtifact(hadronBaseId)
+      .then(async (a) => {
+        if (a.kind !== "hadron") return;
+        setCloneSource(`hadron: ${a.name || a.id.slice(0, 8)}`);
+        // Parse hadronSpec to know whether the artifact was pushed.
+        let pushed = false;
+        try {
+          const spec = a.hadronSpec ? JSON.parse(a.hadronSpec) : {};
+          pushed = !!spec.push;
+        } catch { /* malformed spec — treat as not pushed, safer default */ }
+
+        if (pushed && a.containerImage) {
+          setForm((prev) => ({
+            ...prev,
+            name: a.name ? `${a.name} → kairos` : "",
+            baseImage: a.containerImage!,
+          }));
+          setBuildMode("image");
+          setStep(2);
+          return;
+        }
+
+        // Tarball-only path: pull the Dockerfile text and hand it to the
+        // Kairos Dockerfile mode. apiFetchText already carries the bearer
+        // token so this works without a special-cased URL.
+        try {
+          const dockerfile = await apiFetchText(
+            `/api/v1/artifacts/${a.id}/download/Dockerfile.hadron`
+          );
+          setForm((prev) => ({
+            ...prev,
+            name: a.name ? `${a.name} → kairos` : "",
+            baseImage: "",
+            dockerfile,
+          }));
+          setBuildMode("dockerfile");
+          setStep(2);
+        } catch {
+          // Couldn't fetch the Dockerfile — fall back to the ref anyway so
+          // the user at least sees a clear "pull failed" message on submit
+          // instead of a silently empty wizard.
+          if (a.containerImage) {
+            setForm((prev) => ({
+              ...prev,
+              name: a.name ? `${a.name} → kairos` : "",
+              baseImage: a.containerImage!,
+            }));
+            setBuildMode("image");
+            setStep(2);
+          }
+        }
+      })
+      .catch(() => {});
+  }, [searchParams]);
 
   // Clone pre-fill
   useEffect(() => {

@@ -22,7 +22,14 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Package, Bookmark, Copy } from "lucide-react";
+import { Plus, Trash2, Package, Bookmark, Copy, ChevronDown } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Badge } from "@/components/ui/badge";
 
 // Valid values for each URL-driven axis. Any other value falls back to the
 // first option so a malformed share link (or a stale schema from a rename)
@@ -158,10 +165,23 @@ export function Artifacts() {
             Clear Failed
           </Button>
         )}
-        <Button className="bg-[#EE5007] hover:bg-[#FF7442] text-white" onClick={() => navigate("/artifacts/new")}>
-          <Plus className="h-4 w-4 mr-2" />
-          Build New
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button className="bg-[#EE5007] hover:bg-[#FF7442] text-white">
+              <Plus className="h-4 w-4 mr-2" />
+              Build New
+              <ChevronDown className="h-4 w-4 ml-1" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => navigate("/artifacts/new")}>
+              Kairos image
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => navigate("/artifacts/new-hadron")}>
+              Hadron image
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -203,6 +223,7 @@ export function Artifacts() {
           <TableRow>
             <TableHead className="w-10"></TableHead>
             <TableHead>Name</TableHead>
+            <TableHead>Kind</TableHead>
             <TableHead>Base Image</TableHead>
             <TableHead>Phase</TableHead>
             <TableHead>Created</TableHead>
@@ -213,7 +234,7 @@ export function Artifacts() {
         <TableBody>
           {filtered.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={7} className="text-center py-12">
+              <TableCell colSpan={8} className="text-center py-12">
                 {hasAnyFilter ? (
                   <div className="flex flex-col items-center gap-3 py-10">
                     <Package className="h-10 w-10 text-muted-foreground/40" />
@@ -251,12 +272,22 @@ export function Artifacts() {
                         Build your first OS image to deploy across your fleet.
                       </p>
                     </div>
-                    <Button
-                      className="mt-2 bg-[#EE5007] hover:bg-[#FF7442] text-white"
-                      onClick={() => navigate("/artifacts/new")}
-                    >
-                      <Plus className="h-4 w-4 mr-2" /> Build First Artifact
-                    </Button>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button className="mt-2 bg-[#EE5007] hover:bg-[#FF7442] text-white">
+                          <Plus className="h-4 w-4 mr-2" /> Build First Artifact
+                          <ChevronDown className="h-4 w-4 ml-1" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="center">
+                        <DropdownMenuItem onClick={() => navigate("/artifacts/new")}>
+                          Kairos image
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => navigate("/artifacts/new-hadron")}>
+                          Hadron image
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   </div>
                 )}
               </TableCell>
@@ -304,8 +335,69 @@ export function Artifacts() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm max-w-xs truncate">
-                  {artifact.baseImage || "-"}
+                <TableCell>
+                  {artifact.kind === "hadron" ? (
+                    <Badge variant="secondary" className="text-[10px]">hadron</Badge>
+                  ) : (
+                    <Badge variant="outline" className="text-[10px]">kairos</Badge>
+                  )}
+                </TableCell>
+                <TableCell className="text-sm max-w-xs">
+                  {artifact.kind === "hadron" ? (
+                    (() => {
+                      // Surface the hadron composition inline: base ref plus
+                      // small counters for firmware and layers so operators
+                      // can spot "this row bundles 3 firmware / 2 layers"
+                      // without opening the artifact detail. Falls back to
+                      // baseImage when the spec blob is malformed.
+                      let base = artifact.baseImage || "";
+                      let fw = 0;
+                      let ly = 0;
+                      let platforms: string[] = [];
+                      try {
+                        const spec = artifact.hadronSpec ? JSON.parse(artifact.hadronSpec) : {};
+                        if (spec.baseImage) base = spec.baseImage;
+                        fw = Array.isArray(spec.firmware) ? spec.firmware.length : 0;
+                        ly = Array.isArray(spec.layers) ? spec.layers.length : 0;
+                        if (Array.isArray(spec.platforms)) platforms = spec.platforms;
+                      } catch { /* ignore */ }
+                      if (platforms.length === 0) platforms = ["linux/amd64"];
+                      return (
+                        <div className="flex flex-col gap-1 min-w-0">
+                          <span className="truncate">{base || "—"}</span>
+                          <div className="flex gap-1 flex-wrap">
+                            <Badge variant="outline" className="text-[10px]" title="Firmware layers">
+                              {fw} {fw > 1 ? "firmwares" : "firmware"}
+                            </Badge>
+                            <Badge variant="outline" className="text-[10px]" title="Software layers">
+                              {ly} {ly > 1 ? "layers" : "layer"}
+                            </Badge>
+                            {platforms.map((p) => (
+                              <Badge
+                                key={p}
+                                variant="secondary"
+                                className="text-[10px] font-mono"
+                                title={p}
+                              >
+                                {p.replace(/^linux\//, "")}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    <div className="flex flex-col gap-1 min-w-0">
+                      <span className="truncate">{artifact.baseImage || "-"}</span>
+                      {artifact.arch && (
+                        <div>
+                          <Badge variant="secondary" className="text-[10px] font-mono" title="Architecture">
+                            {artifact.arch}
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
@@ -329,7 +421,11 @@ export function Artifacts() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    {artifact.phase === "Ready" && (
+                    {/* Clone is kairos-only: it pre-fills the Kairos wizard
+                        from an artifact record. Hadron rows carry a different
+                        spec shape; forcing them through this button would
+                        produce a mostly-empty wizard, so we hide it. */}
+                    {artifact.phase === "Ready" && artifact.kind !== "hadron" && (
                       <Button
                         variant="ghost"
                         size="icon"

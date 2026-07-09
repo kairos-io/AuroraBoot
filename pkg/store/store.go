@@ -139,11 +139,22 @@ type CommandStore interface {
 
 // ArtifactRecord stores a build artifact and its metadata.
 type ArtifactRecord struct {
-	ID                      string    `json:"id" gorm:"primaryKey"`
-	Name                    string    `json:"name,omitempty"`
-	Saved                   bool      `json:"saved,omitempty"`
-	Phase                   string    `json:"phase"`
-	Message                 string    `json:"message"`
+	ID   string `json:"id" gorm:"primaryKey"`
+	Name string `json:"name,omitempty"`
+	// Kind discriminates the build pipeline. Empty and "kairos" (the historical
+	// default) go through the deployer/UKI/raw-disk flow; "hadron" produces a
+	// plain OCI image composed via docker buildx from hadron-firmware and
+	// hadron-layers. Empty is preserved on legacy rows so unmigrated data
+	// keeps working; readers should treat "" as "kairos".
+	Kind    string `json:"kind,omitempty"`
+	Saved   bool   `json:"saved,omitempty"`
+	Phase   string `json:"phase"`
+	Message string `json:"message"`
+	// HadronSpecJSON is the persisted Spec for kind=hadron builds (JSON blob).
+	// It's stored verbatim so the UI can re-render the exact inputs the user
+	// picked (base image, firmware refs, layers, platforms, output settings).
+	// Empty for non-hadron artifacts.
+	HadronSpecJSON          string    `json:"hadronSpec,omitempty" gorm:"type:text"`
 	BaseImage               string    `json:"baseImage"`
 	KairosVersion           string    `json:"kairosVersion"`
 	Model                   string    `json:"model"`
@@ -183,6 +194,12 @@ const (
 	ArtifactBuilding = "Building"
 	ArtifactReady    = "Ready"
 	ArtifactError    = "Error"
+)
+
+// Artifact kinds — see ArtifactRecord.Kind.
+const (
+	ArtifactKindKairos = "kairos"
+	ArtifactKindHadron = "hadron"
 )
 
 // ArtifactStore manages build artifact records.

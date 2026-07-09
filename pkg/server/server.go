@@ -54,6 +54,12 @@ type Config struct {
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
 	BaseContext context.Context
+	// HadronHandler serves the hadron catalog endpoints and the encrypted
+	// registry-credentials CRUD. Optional; nil disables the hadron routes and
+	// the registry-credentials picker (kind=hadron builds still work without
+	// registered credentials as long as the target registry allows anonymous
+	// push).
+	HadronHandler *handlers.HadronHandler
 }
 
 // redactToken returns requestURI with the value of any "token" query parameter
@@ -267,6 +273,15 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
 	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
 	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
+
+	// Hadron catalog + registry credentials (optional).
+	if cfg.HadronHandler != nil {
+		adminGroup.GET("/hadron/base-versions", cfg.HadronHandler.GetBaseVersions)
+		adminGroup.GET("/hadron/firmware", cfg.HadronHandler.GetFirmware)
+		adminGroup.GET("/hadron/layers", cfg.HadronHandler.GetLayers)
+		adminGroup.GET("/hadron/registry-credentials", cfg.HadronHandler.ListRegistryCredentials)
+		adminGroup.PUT("/hadron/registry-credentials", cfg.HadronHandler.PutRegistryCredentials)
+	}
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)

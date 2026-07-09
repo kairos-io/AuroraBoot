@@ -45,8 +45,11 @@ import {
   ArrowDown,
   WrapText,
   Loader2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { DeployDialog } from "@/components/DeployDialog";
+import { HadronPushDialog } from "@/components/HadronPushDialog";
 import { ansiToHtml } from "@/lib/ansi";
 import { listGroups, type Group } from "@/api/groups";
 import { downloadBuildConfig, payloadFromArtifact } from "@/lib/buildConfig";
@@ -82,12 +85,20 @@ export function ArtifactDetail() {
   const [deleting, setDeleting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
+  const [showHadronPush, setShowHadronPush] = useState(false);
   const [nameInput, setNameInput] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const [followLogs, setFollowLogs] = useState(true);
   const [wrapLogs, setWrapLogs] = useState(true);
   const [now, setNow] = useState(() => Date.now());
+  // Collapse state for the two big-ish cards on this page. Both start
+  // collapsed so the landing view highlights status + downloads; users click
+  // the header/chevron to peek at config or the log body. Toolbar buttons on
+  // the log card (live indicator, copy, download) stay visible even when the
+  // body is collapsed.
+  const [configOpen, setConfigOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   const fetchArtifact = useCallback(() => {
     if (!id) return;
@@ -427,25 +438,45 @@ export function ArtifactDetail() {
           <Bookmark className={`h-4 w-4 mr-2 ${artifact.saved ? "fill-current" : ""}`} />
           {artifact.saved ? "Saved" : "Save"}
         </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
-        >
-          <Copy className="h-4 w-4 mr-2" />
-          Clone Build
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleExportConfig}>
-          <FileDown className="h-4 w-4 mr-2" />
-          Export Config
-        </Button>
-        {!isActive && artifact.phase === "Ready" && (
+        {/* Clone Build is kairos-only. For hadron artifacts we route users
+            to the meaningful action ("Build Kairos from this") instead. */}
+        {artifact.kind !== "hadron" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
+          >
+            <Copy className="h-4 w-4 mr-2" />
+            Clone Build
+          </Button>
+        )}
+        {/* Export Config only makes sense for kairos builds — the
+            build-config JSON schema has no hadron fields. */}
+        {artifact.kind !== "hadron" && (
+          <Button variant="outline" size="sm" onClick={handleExportConfig}>
+            <FileDown className="h-4 w-4 mr-2" />
+            Export Config
+          </Button>
+        )}
+        {/* Kairos Deploy dispatches ISO/UKI/raw installs via Redfish/netboot.
+            Hadron produces plain OCI — nothing to install. Offer the bridge
+            into a Kairos build instead. */}
+        {!isActive && artifact.phase === "Ready" && artifact.kind !== "hadron" && (
           <Button
             size="sm"
             className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
             onClick={() => setShowDeploy(true)}
           >
             <Rocket className="h-4 w-4 mr-2" /> Deploy
+          </Button>
+        )}
+        {!isActive && artifact.phase === "Ready" && artifact.kind === "hadron" && artifact.containerImage && (
+          <Button
+            size="sm"
+            className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+            onClick={() => navigate(`/artifacts/new?hadronBase=${artifact.id}`)}
+          >
+            <Rocket className="h-4 w-4 mr-2" /> Build Kairos from this
           </Button>
         )}
         {isActive && (
@@ -475,6 +506,37 @@ export function ArtifactDetail() {
       {/* Status band */}
       <div className="flex items-center gap-4 flex-wrap">
         <StatusBadge status={artifact.phase} />
+        {(() => {
+          // Arch chips next to the status so the page carries "what did I
+          // build this for?" upfront, without scrolling into Configuration.
+          // Kairos artifacts carry a single arch string; hadron artifacts
+          // carry a list of buildx platforms in the persisted spec.
+          let arches: string[] = [];
+          if (artifact.kind === "hadron") {
+            try {
+              const spec = artifact.hadronSpec ? JSON.parse(artifact.hadronSpec) : {};
+              if (Array.isArray(spec.platforms)) arches = spec.platforms;
+            } catch { /* ignore */ }
+            if (arches.length === 0) arches = ["linux/amd64"];
+          } else if (artifact.arch) {
+            arches = [artifact.arch];
+          }
+          if (arches.length === 0) return null;
+          return (
+            <div className="flex gap-1 flex-wrap">
+              {arches.map((a) => (
+                <span
+                  key={a}
+                  className="inline-flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded border bg-muted/50"
+                  title={artifact.kind === "hadron" ? "buildx platform" : "Architecture"}
+                >
+                  <Cpu className="h-3 w-3 text-muted-foreground" />
+                  {a.replace(/^linux\//, "")}
+                </span>
+              ))}
+            </div>
+          );
+        })()}
         {isActive && (
           <span className="inline-flex items-center gap-1.5 text-sm text-[#EE5007]">
             <span className="relative flex h-2 w-2">
@@ -586,7 +648,14 @@ export function ArtifactDetail() {
                 );
               })}
             </ul>
-            {artifact.containerImage && (
+            {/* Container-image (docker save) only makes sense for kairos
+                builds where the image is loaded into the local daemon. Hadron
+                artifacts either only exist as an OCI tarball on disk (already
+                in the file list) or live in a remote registry after --push;
+                in neither case does `docker save` from AuroraBoot's daemon
+                produce anything useful, so we suppress the link for hadron
+                and offer the "consume as Kairos base" bridge instead. */}
+            {artifact.kind !== "hadron" && artifact.containerImage && (
               <div className="border-t px-5 py-3 bg-muted/20">
                 <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
                   Container image (for upgrades)
@@ -602,15 +671,205 @@ export function ArtifactDetail() {
                 </a>
               </div>
             )}
+            {artifact.kind === "hadron" && artifact.containerImage && (() => {
+              // Decide which secondary actions apply to this hadron artifact
+              // by inspecting the persisted spec. push=true means we already
+              // pushed to a registry (no re-push button); push=false means we
+              // only produced a local OCI tarball (offer the push flow).
+              let spec: {
+                baseImage?: string;
+                firmware?: string[];
+                layers?: string[];
+                extraDockerfile?: string;
+                platforms?: string[];
+                outputRef?: string;
+                push?: boolean;
+                produceTarball?: boolean;
+              } = {};
+              try {
+                spec = artifact.hadronSpec ? JSON.parse(artifact.hadronSpec) : {};
+              } catch { /* leave spec empty; the buttons fall back gracefully */ }
+              const wasPushed = !!spec.push;
+              return (
+                <div className="border-t px-5 py-3 bg-muted/20 flex flex-col gap-3">
+                  <div>
+                    <p className="text-[11px] uppercase tracking-wide text-muted-foreground mb-1.5">
+                      Output ref{wasPushed ? " (pushed)" : " (local tarball)"}
+                    </p>
+                    <p className="font-mono text-xs break-all">{artifact.containerImage}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => navigate(`/artifacts/new?hadronBase=${id}`)}
+                    >
+                      <Rocket className="h-4 w-4 mr-2" />
+                      Use as base for Kairos image
+                    </Button>
+                    {!wasPushed && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => setShowHadronPush(true)}
+                      >
+                        <Download className="h-4 w-4 mr-2 rotate-180" />
+                        Push to registry
+                      </Button>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-muted-foreground">
+                    {wasPushed
+                      ? "Kairos will pull this ref directly."
+                      : "Kairos will re-use the generated Dockerfile — no push required. Or push to a registry now via the button above."}
+                  </p>
+                  {!wasPushed && (
+                    <HadronPushDialog
+                      open={showHadronPush}
+                      onOpenChange={setShowHadronPush}
+                      sourceName={artifact.name || ""}
+                      sourceSpec={{
+                        baseImage: spec.baseImage || "",
+                        firmware: spec.firmware ?? [],
+                        layers: spec.layers ?? [],
+                        extraDockerfile: spec.extraDockerfile,
+                        platforms: spec.platforms ?? ["linux/amd64"],
+                        outputRef: spec.outputRef || "",
+                        push: false,
+                        produceTarball: false,
+                      }}
+                      onPushed={(newId) => navigate(`/artifacts/${newId}`)}
+                    />
+                  )}
+                </div>
+              );
+            })()}
           </CardContent>
         </Card>
       )}
 
+      {/* Hadron summary — replaces the classic Source/Outputs/Provisioning
+          card entirely for kind=hadron builds. Kairos-only fields like
+          version/model/arch/UKI don't apply here; showing them would be
+          misleading. */}
+      {artifact.kind === "hadron" && (() => {
+        let spec: {
+          baseImage?: string;
+          firmware?: string[];
+          layers?: string[];
+          platforms?: string[];
+          outputRef?: string;
+          push?: boolean;
+          produceTarball?: boolean;
+          extraDockerfile?: string;
+        } = {};
+        try {
+          spec = artifact.hadronSpec ? JSON.parse(artifact.hadronSpec) : {};
+        } catch {
+          spec = {};
+        }
+        return (
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-sm flex items-center justify-between gap-2">
+                <span>Hadron build</span>
+                {/* Dockerfile.hadron is written to the artifact's output
+                    directory even on failure — expose a direct download so
+                    operators can reproduce a broken build with `docker
+                    buildx build -f Dockerfile.hadron .` outside AuroraBoot. */}
+                <a
+                  href={artifactDownloadUrl(id!, "Dockerfile.hadron")}
+                  download
+                  className="text-xs text-[#EE5007] hover:underline inline-flex items-center gap-1"
+                >
+                  <FileDown className="h-3.5 w-3.5" />
+                  Dockerfile
+                </a>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-6 pt-0 space-y-4 text-sm">
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Base image</dt>
+                <dd className="font-mono text-xs break-all">{spec.baseImage || "—"}</dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Output ref</dt>
+                <dd className="font-mono text-xs break-all">
+                  {spec.outputRef || "—"}{" "}
+                  <span className="text-muted-foreground">
+                    ({spec.push ? "push" : ""}{spec.push && spec.produceTarball ? " + " : ""}{spec.produceTarball ? "tarball" : ""})
+                  </span>
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Platforms</dt>
+                <dd className="font-mono text-xs">{(spec.platforms || ["linux/amd64"]).join(", ")}</dd>
+              </div>
+              {(spec.firmware?.length ?? 0) > 0 && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Firmware ({spec.firmware?.length})</dt>
+                  <dd>
+                    <ul className="font-mono text-[11px] space-y-0.5">
+                      {spec.firmware!.map((ref) => <li key={ref} className="break-all">{ref}</li>)}
+                    </ul>
+                  </dd>
+                </div>
+              )}
+              {(spec.layers?.length ?? 0) > 0 && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Layers ({spec.layers?.length})</dt>
+                  <dd>
+                    <ol className="font-mono text-[11px] space-y-0.5 list-decimal list-inside">
+                      {spec.layers!.map((ref) => <li key={ref} className="break-all">{ref}</li>)}
+                    </ol>
+                  </dd>
+                </div>
+              )}
+              {spec.extraDockerfile && spec.extraDockerfile.trim() && (
+                <div>
+                  <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Extra Dockerfile</dt>
+                  <dd>
+                    <pre className="font-mono text-xs bg-muted/40 border rounded-md p-3 overflow-x-auto max-h-40">
+                      {spec.extraDockerfile}
+                    </pre>
+                  </dd>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        );
+      })()}
+
       {/* Configuration — split into Source / Outputs / Provisioning sections
           so readers can scan each concern independently instead of hunting
-          through a dense 6-column grid. */}
+          through a dense 6-column grid. Suppressed for hadron builds where
+          the Hadron card above already carries the meaningful metadata.
+          Collapsed by default — the outputs at the top usually answer
+          "what came out of this build?"; the config is secondary. */}
+      {artifact.kind !== "hadron" && (
       <Card>
-        <CardContent className="p-6 space-y-6">
+        <button
+          type="button"
+          onClick={() => setConfigOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-6 py-3 hover:bg-muted/40 transition-colors"
+        >
+          <span className="text-sm font-semibold flex items-center gap-2">
+            <Box className="h-4 w-4 text-muted-foreground" />
+            Configuration
+            {!configOpen && (
+              <span className="text-xs font-normal text-muted-foreground">
+                — click to expand
+              </span>
+            )}
+          </span>
+          {configOpen ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+        {configOpen && (
+        <CardContent className="p-6 pt-0 space-y-6 border-t">
           {/* Source */}
           <section>
             <div className="flex items-center gap-2 mb-3">
@@ -761,15 +1020,42 @@ export function ArtifactDetail() {
             </div>
           </section>
         </CardContent>
+        )}
       </Card>
+      )}
 
       {/* Build Logs — terminal with a toolbar, follow-tail, wrap toggle,
           copy + download, live indicator, and line numbers. */}
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-2.5">
           <div className="flex items-center gap-2 min-w-0">
+            {/* Chevron collapses just the log body (toolbar stays visible so
+                the live/reconnect indicator remains reachable at a glance). */}
+            <button
+              type="button"
+              onClick={() => setLogsOpen((o) => !o)}
+              className="p-0.5 rounded hover:bg-muted/60"
+              title={logsOpen ? "Collapse logs" : "Expand logs"}
+            >
+              {logsOpen ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
             <TerminalIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-            <h3 className="text-sm font-semibold">Build logs</h3>
+            <h3
+              className="text-sm font-semibold cursor-pointer hover:underline"
+              onClick={() => setLogsOpen((o) => !o)}
+              title={logsOpen ? "Collapse logs" : "Expand logs"}
+            >
+              Build logs
+              {!logsOpen && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  — click to expand
+                </span>
+              )}
+            </h3>
             {isActive && wsConnected && (
               <span className="inline-flex items-center gap-1.5 text-[11px] text-[#EE5007]">
                 <span className="relative flex h-1.5 w-1.5">
@@ -847,7 +1133,7 @@ export function ArtifactDetail() {
         </div>
         <div
           ref={logsContainerRef}
-          className="terminal-output font-mono text-[12.5px] leading-5 overflow-auto max-h-[32rem] min-h-[20rem]"
+          className={`terminal-output font-mono text-[12.5px] leading-5 overflow-auto max-h-[32rem] min-h-[20rem] ${logsOpen ? "" : "hidden"}`}
         >
           {logLines.length > 0 ? (
             // Line-numbered log rendering. We pre-split the string once and
@@ -887,8 +1173,10 @@ export function ArtifactDetail() {
       {/* Non-Ready downloads fallback: if a non-terminal build somehow
           has files attached (partial products, aborted mid-stream, etc.)
           still expose them, but in a plain card — the success hero above
-          is reserved for Ready builds. */}
-      {artifact.phase !== "Ready" && artifactFiles.length > 0 && (
+          is reserved for Ready builds. Hadron builds already surface the
+          Dockerfile in their own summary card, so we suppress this fallback
+          there to avoid a duplicate download entry. */}
+      {artifact.kind !== "hadron" && artifact.phase !== "Ready" && artifactFiles.length > 0 && (
         <Card>
           <CardHeader>
             <CardTitle className="text-sm">Partial outputs</CardTitle>

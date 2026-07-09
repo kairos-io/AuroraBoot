@@ -3,6 +3,8 @@ package builder
 import (
 	"context"
 	"errors"
+
+	"github.com/kairos-io/AuroraBoot/pkg/hadron"
 )
 
 // ErrInvalidBuildOptions marks a build failure caused by invalid admin-supplied
@@ -65,6 +67,14 @@ type ProvisioningOptions struct {
 type BuildOptions struct {
 	ID   string // unique build ID
 	Name string // optional friendly name
+
+	// Kind selects the build pipeline. "" and "kairos" run the deployer/UKI/raw
+	// path; "hadron" produces an OCI image from a base + firmware + layers
+	// and skips every kairos-only field on this struct.
+	Kind string
+
+	// Hadron carries the spec for kind=hadron builds. Ignored otherwise.
+	Hadron hadron.Spec
 
 	// Grouped options (preferred for new code).
 	Source       ImageSource
