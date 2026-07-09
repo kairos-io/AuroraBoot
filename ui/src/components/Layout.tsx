@@ -5,6 +5,7 @@ import {
   FolderTree,
   Server,
   Package,
+  Puzzle,
   Rocket,
   ServerCog,
   KeyRound,
@@ -51,6 +52,7 @@ const navSections: NavSection[] = [
     label: "Build",
     items: [
       { to: "/artifacts", icon: Package, label: "Artifacts" },
+      { to: "/extensions", icon: Puzzle, label: "Extensions" },
     ],
   },
   {
