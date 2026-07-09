@@ -80,7 +80,7 @@ var _ = Describe("ArtifactHandler UploadOverlay extraction", func() {
 		var err error
 		artifactsDir, err = os.MkdirTemp("", "overlay-test-")
 		Expect(err).NotTo(HaveOccurred())
-		handler = handlers.NewArtifactHandler(&fakeBuilder{}, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
+		handler = handlers.NewArtifactHandler(&fakeBuilder{}, nil, nil, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
 	})
 
 	AfterEach(func() {
