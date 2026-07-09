@@ -180,6 +180,7 @@ func runWeb(c *cli.Context) error {
 	}
 
 	artifactStore := &gormstore.ArtifactStoreAdapter{S: store}
+	extensionStore := &gormstore.ExtensionStoreAdapter{S: store}
 
 	// Reconcile artifacts left Pending or Building by a previous process: a
 	// restart orphans their build goroutine, so they can never reach Ready on
@@ -196,6 +197,15 @@ func runWeb(c *cli.Context) error {
 	artifactBuilder := auroraboot.New(artifactsDir, nil, artifactStore).
 		WithLogBroadcaster(wsHub.UI)
 
+	// Extension builds drop their .raw outputs under artifactsDir/extensions/<id>/.
+	extensionsDir := filepath.Join(artifactsDir, "extensions")
+	if err := os.MkdirAll(extensionsDir, 0755); err != nil {
+		return fmt.Errorf("create extensions directory: %w", err)
+	}
+	extensionBuilder := auroraboot.NewExtensionBuilder(extensionsDir, extensionStore).
+		WithArtifactStore(artifactStore).
+		WithLogBroadcaster(wsHub.UI)
+
 	nodeStore := &gormstore.NodeStoreAdapter{S: store}
 	commandStore := &gormstore.CommandStoreAdapter{S: store}
 	groupStore := &gormstore.GroupStoreAdapter{S: store}
@@ -203,6 +213,12 @@ func runWeb(c *cli.Context) error {
 	deploymentStore := &gormstore.DeploymentStoreAdapter{S: store}
 	bmcTargetStore := &gormstore.BMCTargetStoreAdapter{S: store}
 	settingsStore := &gormstore.SettingsStoreAdapter{S: store}
+
+	// The bundle and node-extension stores are method sets on *Store; we wrap
+	// them as adapters that satisfy the store.ArtifactExtensionBundleStore and
+	// store.NodeExtensionStore interfaces.
+	bundleStore := &gormstore.ArtifactExtensionBundleStoreAdapter{S: store}
+	nodeExtensionStore := &gormstore.NodeExtensionStoreAdapter{S: store}
 
 	netbootManager := netbootmgr.NewManager()
 
@@ -253,26 +269,30 @@ func runWeb(c *cli.Context) error {
 	defer baseCancel()
 
 	e := server.New(server.Config{
-		BaseContext:           baseCtx,
-		NodeStore:             nodeStore,
-		CommandStore:          commandStore,
-		GroupStore:            groupStore,
-		ArtifactStore:         artifactStore,
-		SecureBootKeySetStore: secureBootKeySetStore,
-		NetbootManager:        netbootManager,
-		DeploymentStore:       deploymentStore,
-		BMCTargetStore:        bmcTargetStore,
-		SettingsStore:         settingsStore,
-		Builder:               artifactBuilder,
-		AdminPassword:         adminPassword,
-		RegToken:              regToken,
-		RegTokenFile:          regTokenFile,
-		AuroraBootURL:         externalURL,
-		ArtifactsDir:          artifactsDir,
-		KeysDir:               keysDir,
-		Hub:                   wsHub,
-		ISOServe:              isoServe,
-		RedfishServeURL:       redfishServeURLSeed(isoServe, serveURL),
+		BaseContext:                  baseCtx,
+		NodeStore:                    nodeStore,
+		CommandStore:                 commandStore,
+		GroupStore:                   groupStore,
+		ArtifactStore:                artifactStore,
+		SecureBootKeySetStore:        secureBootKeySetStore,
+		ExtensionStore:               extensionStore,
+		ArtifactExtensionBundleStore: bundleStore,
+		NodeExtensionStore:           nodeExtensionStore,
+		ExtensionBuilder:             extensionBuilder,
+		NetbootManager:               netbootManager,
+		DeploymentStore:              deploymentStore,
+		BMCTargetStore:               bmcTargetStore,
+		SettingsStore:                settingsStore,
+		Builder:                      artifactBuilder,
+		AdminPassword:                adminPassword,
+		RegToken:                     regToken,
+		RegTokenFile:                 regTokenFile,
+		AuroraBootURL:                externalURL,
+		ArtifactsDir:                 artifactsDir,
+		KeysDir:                      keysDir,
+		Hub:                          wsHub,
+		ISOServe:                     isoServe,
+		RedfishServeURL:              redfishServeURLSeed(isoServe, serveURL),
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
