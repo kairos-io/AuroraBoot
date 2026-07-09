@@ -180,15 +180,21 @@ func (h *HadronHandler) PutRegistryCredentials(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	// Basic hygiene: registry+username required per row, no duplicates.
+	// Basic hygiene: registry+username required per row, trim surrounding
+	// whitespace before validating so " ghcr.io " and "ghcr.io" collapse to
+	// the same canonical key (both for duplicate detection here and for the
+	// keepPassword lookup below — otherwise a stray space silently invalidates
+	// a match against the persisted row).
 	seen := map[string]bool{}
-	for i, r := range req {
-		if strings.TrimSpace(r.Registry) == "" || strings.TrimSpace(r.Username) == "" {
+	for i := range req {
+		req[i].Registry = strings.TrimSpace(req[i].Registry)
+		req[i].Username = strings.TrimSpace(req[i].Username)
+		if req[i].Registry == "" || req[i].Username == "" {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("entry %d: registry and username are required", i)})
 		}
-		key := r.Registry + "\x00" + r.Username
+		key := req[i].Registry + "\x00" + req[i].Username
 		if seen[key] {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("duplicate entry for %s / %s", r.Registry, r.Username)})
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("duplicate entry for %s / %s", req[i].Registry, req[i].Username)})
 		}
 		seen[key] = true
 	}
@@ -203,7 +209,7 @@ func (h *HadronHandler) PutRegistryCredentials(c echo.Context) error {
 	}
 	prevIndex := map[string]settingsCredential{}
 	for _, p := range previous {
-		prevIndex[p.Registry+"\x00"+p.Username] = p
+		prevIndex[strings.TrimSpace(p.Registry)+"\x00"+strings.TrimSpace(p.Username)] = p
 	}
 
 	if req == nil {

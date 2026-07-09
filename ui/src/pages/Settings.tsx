@@ -12,16 +12,21 @@ import { PageHeader } from "@/components/PageHeader";
 import { Eye, EyeOff, RefreshCw, Plus, Trash2, Save, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/useToast";
 
-// Local row shape mirrors RegistryCredential but adds a `dirty` marker so we
-// know when to send a plaintext password vs preserving the encrypted value
-// server-side (keepPassword). Existing rows load with dirty=false; freshly
-// added rows start dirty.
+// Local row shape mirrors RegistryCredential but tracks the initial
+// (registry, username) tuple so we can tell when a row was renamed. The
+// backend keys keepPassword lookups on the current tuple, so if we sent
+// keepPassword=true on a renamed row the old ciphertext would be missed and
+// the password would silently drop. Instead the save flow refuses to submit
+// a renamed row that still carries a stored password until the user re-types
+// it (dirty=true).
 type CredentialRow = {
   registry: string;
   username: string;
   password: string;
   hasPassword: boolean;
   dirty: boolean;
+  initialRegistry: string;
+  initialUsername: string;
 };
 
 export function Settings() {
@@ -51,6 +56,8 @@ export function Settings() {
             password: "",
             hasPassword: !!c.hasPassword,
             dirty: false,
+            initialRegistry: c.registry,
+            initialUsername: c.username,
           }))
         );
       })
@@ -76,7 +83,15 @@ export function Settings() {
   function addRow() {
     setCreds((cur) => [
       ...cur,
-      { registry: "", username: "", password: "", hasPassword: false, dirty: true },
+      {
+        registry: "",
+        username: "",
+        password: "",
+        hasPassword: false,
+        dirty: true,
+        initialRegistry: "",
+        initialUsername: "",
+      },
     ]);
   }
 
@@ -84,18 +99,34 @@ export function Settings() {
     setCreds((cur) => cur.filter((_, i) => i !== idx));
   }
 
+  // renamedWithoutPassword flags rows whose registry or username was edited
+  // from the loaded value but still rely on a stored password — the backend
+  // keys keepPassword on the current (registry, username) tuple, so a rename
+  // without a fresh password would silently drop the stored value. The Save
+  // button is disabled while any such row exists; the row-level hint tells
+  // the user to re-enter the password.
+  function isRenamedWithoutPassword(r: CredentialRow) {
+    if (!r.hasPassword) return false;
+    if (r.dirty && r.password.trim()) return false;
+    return r.registry.trim() !== r.initialRegistry || r.username.trim() !== r.initialUsername;
+  }
+
   async function saveCreds() {
     // Payload rules:
     //  - registry + username always sent verbatim.
     //  - When the user typed a new password, send it (plaintext → backend encrypts).
-    //  - When the row already has a stored password and the user didn't touch it,
-    //    send keepPassword=true so the backend preserves the ciphertext byte-for-byte.
+    //  - When the row already has a stored password AND the tuple is
+    //    unchanged AND the user didn't touch the password field, send
+    //    keepPassword=true so the backend preserves the ciphertext.
     //  - Otherwise omit password entirely (clears the stored value).
     const payload: RegistryCredential[] = creds.map((r) => {
       const base: RegistryCredential = { registry: r.registry.trim(), username: r.username.trim() };
+      const tupleUnchanged =
+        r.registry.trim() === r.initialRegistry &&
+        r.username.trim() === r.initialUsername;
       if (r.password.trim()) {
         base.password = r.password;
-      } else if (r.hasPassword && !r.dirty) {
+      } else if (r.hasPassword && !r.dirty && tupleUnchanged) {
         base.keepPassword = true;
       }
       return base;
@@ -116,7 +147,8 @@ export function Settings() {
   const maskedToken = token ? token.slice(0, 8) + "..." + token.slice(-4) : "";
   const canSaveCreds =
     !credsSaving &&
-    creds.every((r) => r.registry.trim() !== "" && r.username.trim() !== "");
+    creds.every((r) => r.registry.trim() !== "" && r.username.trim() !== "") &&
+    !creds.some(isRenamedWithoutPassword);
 
   return (
     <div>
@@ -167,32 +199,42 @@ export function Settings() {
               <p className="text-xs italic text-muted-foreground">Loading…</p>
             ) : (
               <div className="space-y-2">
-                {creds.map((row, idx) => (
-                  <div key={idx} className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
-                    <Input
-                      placeholder="registry.example.com"
-                      value={row.registry}
-                      onChange={(e) => updateRow(idx, { registry: e.target.value })}
-                      className="font-mono text-xs"
-                    />
-                    <Input
-                      placeholder="username"
-                      value={row.username}
-                      onChange={(e) => updateRow(idx, { username: e.target.value })}
-                      className="font-mono text-xs"
-                    />
-                    <Input
-                      type="password"
-                      placeholder={row.hasPassword ? "•••••••• (unchanged)" : "password"}
-                      value={row.password}
-                      onChange={(e) => updateRow(idx, { password: e.target.value, dirty: true })}
-                      className="font-mono text-xs"
-                    />
-                    <Button variant="ghost" size="icon" onClick={() => removeRow(idx)}>
-                      <Trash2 className="h-4 w-4" />
-                    </Button>
-                  </div>
-                ))}
+                {creds.map((row, idx) => {
+                  const renameNeedsPassword = isRenamedWithoutPassword(row);
+                  return (
+                    <div key={idx} className="space-y-1">
+                      <div className="grid grid-cols-[1fr_1fr_1fr_auto] gap-2 items-center">
+                        <Input
+                          placeholder="registry.example.com"
+                          value={row.registry}
+                          onChange={(e) => updateRow(idx, { registry: e.target.value })}
+                          className="font-mono text-xs"
+                        />
+                        <Input
+                          placeholder="username"
+                          value={row.username}
+                          onChange={(e) => updateRow(idx, { username: e.target.value })}
+                          className="font-mono text-xs"
+                        />
+                        <Input
+                          type="password"
+                          placeholder={row.hasPassword ? "•••••••• (unchanged)" : "password"}
+                          value={row.password}
+                          onChange={(e) => updateRow(idx, { password: e.target.value, dirty: true })}
+                          className={`font-mono text-xs ${renameNeedsPassword ? "border-amber-500 focus-visible:ring-amber-500" : ""}`}
+                        />
+                        <Button variant="ghost" size="icon" onClick={() => removeRow(idx)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                      {renameNeedsPassword && (
+                        <p className="text-[11px] text-amber-600 dark:text-amber-400 pl-1">
+                          Registry/username changed on a row with a stored password — re-enter the password to save (the stored ciphertext can't be preserved across a tuple rename).
+                        </p>
+                      )}
+                    </div>
+                  );
+                })}
                 <div className="flex gap-2 pt-1">
                   <Button variant="outline" size="sm" onClick={addRow}>
                     <Plus className="h-4 w-4 mr-1" /> Add credential

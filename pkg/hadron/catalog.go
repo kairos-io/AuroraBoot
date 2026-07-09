@@ -103,9 +103,11 @@ func (c *Catalog) ttl() time.Duration {
 }
 
 // BaseVersions returns the tag list published under ghcr.io/kairos-io/hadron.
-// Tags are returned in the order upstream reports them (registry v2 emits them
-// oldest-first, which lets the UI show the head as "latest" and the tail as
-// version history).
+// Registry v2 emits tags in ascending (oldest-first) order; we reverse-sort
+// them here so the UI can show the newest release at the head of the list
+// without another pass on the client. Reverse alphabetic sort is good enough
+// for the semver-ish tag scheme kairos uses (v0.5.0 > v0.4.0 > v0.3.5 ...);
+// tags like "main"/"latest" naturally sink to the tail.
 func (c *Catalog) BaseVersions(ctx context.Context) ([]string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

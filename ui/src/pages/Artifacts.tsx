@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { listArtifacts, deleteArtifact, clearFailedArtifacts, updateArtifact, type Artifact } from "@/api/artifacts";
 import { Button } from "@/components/ui/button";
@@ -107,6 +107,28 @@ export function Artifacts() {
   const fetchArtifacts = useCallback(() => {
     listArtifacts().then(setArtifacts).catch(() => {});
   }, []);
+
+  // Parse hadron specs once per fetch and index by artifact id. Doing this
+  // in render (previously inline in the table cell) meant JSON.parse ran on
+  // every keystroke into the search box for every hadron row; caching keyed
+  // by id makes the cell a plain O(1) lookup and only re-runs when the row
+  // set actually changes.
+  type ParsedHadronSpec = {
+    baseImage?: string;
+    firmware?: string[];
+    layers?: string[];
+    platforms?: string[];
+  };
+  const hadronSpecs = useMemo(() => {
+    const map = new Map<string, ParsedHadronSpec>();
+    for (const a of artifacts) {
+      if (a.kind !== "hadron" || !a.hadronSpec) continue;
+      try {
+        map.set(a.id, JSON.parse(a.hadronSpec) as ParsedHadronSpec);
+      } catch { /* leave unset — cell will render "—" fallbacks */ }
+    }
+    return map;
+  }, [artifacts]);
 
   useEffect(() => {
     fetchArtifacts();
@@ -348,20 +370,16 @@ export function Artifacts() {
                       // Surface the hadron composition inline: base ref plus
                       // small counters for firmware and layers so operators
                       // can spot "this row bundles 3 firmware / 2 layers"
-                      // without opening the artifact detail. Falls back to
-                      // baseImage when the spec blob is malformed.
-                      let base = artifact.baseImage || "";
-                      let fw = 0;
-                      let ly = 0;
-                      let platforms: string[] = [];
-                      try {
-                        const spec = artifact.hadronSpec ? JSON.parse(artifact.hadronSpec) : {};
-                        if (spec.baseImage) base = spec.baseImage;
-                        fw = Array.isArray(spec.firmware) ? spec.firmware.length : 0;
-                        ly = Array.isArray(spec.layers) ? spec.layers.length : 0;
-                        if (Array.isArray(spec.platforms)) platforms = spec.platforms;
-                      } catch { /* ignore */ }
-                      if (platforms.length === 0) platforms = ["linux/amd64"];
+                      // without opening the artifact detail. Parsed once
+                      // per fetch via the hadronSpecs memo (see above), so
+                      // the render path is a plain map lookup.
+                      const spec = hadronSpecs.get(artifact.id) ?? {};
+                      const base = spec.baseImage || artifact.baseImage || "";
+                      const fw = Array.isArray(spec.firmware) ? spec.firmware.length : 0;
+                      const ly = Array.isArray(spec.layers) ? spec.layers.length : 0;
+                      const platforms = Array.isArray(spec.platforms) && spec.platforms.length > 0
+                        ? spec.platforms
+                        : ["linux/amd64"];
                       return (
                         <div className="flex flex-col gap-1 min-w-0">
                           <span className="truncate">{base || "—"}</span>

@@ -201,11 +201,19 @@ func writeDockerConfig(workDir string, authProvider RegistryAuthProvider, ctx co
 	}
 	auths := map[string]authEntry{}
 	for _, c := range creds {
-		if c.Registry == "" || c.Username == "" {
+		// Skip entries lacking any of the three required parts. In particular
+		// an empty password would base64-encode to "user:" and buildx would
+		// then try basic-auth with an empty secret — worse than sending no
+		// auth material at all (public pushes fail with 401 instead of a
+		// clean anonymous attempt).
+		if c.Registry == "" || c.Username == "" || c.Password == "" {
 			continue
 		}
 		token := base64.StdEncoding.EncodeToString([]byte(c.Username + ":" + c.Password))
 		auths[c.Registry] = authEntry{Auth: token}
+	}
+	if len(auths) == 0 {
+		return "", nil
 	}
 	body, err := json.Marshal(map[string]any{"auths": auths})
 	if err != nil {

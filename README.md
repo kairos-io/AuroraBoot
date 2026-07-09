@@ -147,8 +147,12 @@ as two different users, that's two rows.
   boolean `hasPassword` per row so the UI can show whether a row is fully
   populated, but the ciphertext itself never leaves the server.
 - `PUT` on a row accepts either `password` (rotate to a new value) or
-  `keepPassword: true` (leave the stored ciphertext untouched — used when
-  editing only the username or registry host).
+  `keepPassword: true` (leave the stored ciphertext untouched). The
+  server keys the keepPassword lookup on the `(registry, username)` tuple,
+  so renaming either field on the same row invalidates the match — the
+  UI blocks Save in that case and asks the operator to re-enter the
+  password. To rename without re-typing you'd have to send `password`
+  yourself.
 
 ---
 

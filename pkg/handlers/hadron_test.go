@@ -105,7 +105,9 @@ var _ = Describe("HadronHandler", func() {
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			before, _, _ := settings.Get(context.Background(), handlers.SettingHadronRegistryCreds)
 
-			// Rename username, keep password.
+			// Same (registry, username) tuple, keepPassword set — server must
+			// carry over the previously-encrypted ciphertext byte-identically
+			// (no re-encrypt on a no-password edit).
 			body := `[{"registry":"registry.example.com","username":"alice","keepPassword":true}]`
 			rec = do(http.MethodPut, "/api/v1/hadron/registry-credentials", body)
 			Expect(rec.Code).To(Equal(http.StatusOK))
