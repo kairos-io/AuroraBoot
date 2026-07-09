@@ -209,7 +209,7 @@ export function cancelArtifact(id: string): Promise<void> {
 
 export function artifactDownloadUrl(id: string, filename: string): string {
   const token = localStorage.getItem("auroraboot_token") || "";
-  return `/api/v1/artifacts/${id}/download/${filename}?token=${token}`;
+  return `/api/v1/artifacts/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 }
 
 export function updateArtifact(

@@ -711,7 +711,7 @@ export function ArtifactDetail() {
                   Container image (for upgrades)
                 </p>
                 <a
-                  href={`/api/v1/artifacts/${id}/image?token=${localStorage.getItem("auroraboot_token") || ""}`}
+                  href={`/api/v1/artifacts/${encodeURIComponent(id!)}/image?token=${encodeURIComponent(localStorage.getItem("auroraboot_token") || "")}`}
                   download
                   className="inline-flex items-center gap-2 text-xs font-mono text-[#EE5007] hover:underline break-all"
                 >
