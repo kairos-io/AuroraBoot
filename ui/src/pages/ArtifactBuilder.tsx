@@ -685,11 +685,28 @@ export function ArtifactBuilder() {
       .then(async (a) => {
         if (a.kind !== "hadron") return;
         setCloneSource(`hadron: ${a.name || a.id.slice(0, 8)}`);
-        // Parse hadronSpec to know whether the artifact was pushed.
+        // Parse hadronSpec to know whether the artifact was pushed and
+        // which platforms it targeted. Hadron builds are multi-arch but
+        // Kairos is single-arch, so we pick one platform for the derived
+        // build and warn the user if we had to drop the rest.
         let pushed = false;
+        let targetArch: string | undefined;
         try {
           const spec = a.hadronSpec ? JSON.parse(a.hadronSpec) : {};
           pushed = !!spec.push;
+          const platforms: string[] = Array.isArray(spec.platforms)
+            ? spec.platforms.filter((p: unknown): p is string => typeof p === "string")
+            : [];
+          if (platforms.length >= 1) {
+            const first = platforms[0];
+            targetArch = first.startsWith("linux/") ? first.slice("linux/".length) : first;
+            if (platforms.length > 1) {
+              toast(
+                `Source hadron was built for ${platforms.length} platforms; Kairos will build only ${targetArch}. Change in Configure step if needed.`,
+                "info",
+              );
+            }
+          }
         } catch { /* malformed spec — treat as not pushed, safer default */ }
 
         if (pushed && a.containerImage) {
@@ -697,6 +714,7 @@ export function ArtifactBuilder() {
             ...prev,
             name: a.name ? `${a.name} → kairos` : "",
             baseImage: a.containerImage!,
+            ...(targetArch ? { arch: targetArch } : {}),
           }));
           setBuildMode("image");
           setStep(2);
@@ -715,6 +733,7 @@ export function ArtifactBuilder() {
             name: a.name ? `${a.name} → kairos` : "",
             baseImage: "",
             dockerfile,
+            ...(targetArch ? { arch: targetArch } : {}),
           }));
           setBuildMode("dockerfile");
           setStep(2);
@@ -727,6 +746,7 @@ export function ArtifactBuilder() {
               ...prev,
               name: a.name ? `${a.name} → kairos` : "",
               baseImage: a.containerImage!,
+              ...(targetArch ? { arch: targetArch } : {}),
             }));
             setBuildMode("image");
             setStep(2);

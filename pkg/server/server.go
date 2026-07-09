@@ -256,6 +256,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.GET("/artifacts/:id", artifactHandler.Get)
 	adminGroup.GET("/artifacts/:id/logs", artifactHandler.GetLogs)
 	adminGroup.POST("/artifacts/:id/cancel", artifactHandler.Cancel)
+	adminGroup.POST("/artifacts/:id/retry", artifactHandler.Retry)
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
 

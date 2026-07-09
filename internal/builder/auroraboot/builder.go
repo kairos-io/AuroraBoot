@@ -301,8 +301,16 @@ func (b *Builder) runHadron(ctx context.Context, bs *buildState, opts builder.Bu
 		logWriter.Flush()
 	}
 
-	var writer io.Writer = logWriter
-	if writer == nil {
+	// Wrap the log writer with the buildkit progress sniffer so the UI can
+	// render a real percentage while the build runs. The wrapper forwards
+	// every byte through to the log stream unchanged; only progress markers
+	// are extracted and (throttled) written to the artifact record.
+	var writer io.Writer
+	var progress *hadronProgressWriter
+	if logWriter != nil {
+		progress = newHadronProgressWriter(logWriter, b.store, bs.status.ID)
+		writer = progress
+	} else {
 		writer = io.Discard
 	}
 	res, err := b.hadronBuildFn(ctx, opts.Hadron, outputDir, b.hadronAuthProvider, writer)
@@ -356,6 +364,9 @@ func (b *Builder) runHadron(ctx context.Context, bs *buildState, opts builder.Bu
 			fmt.Fprintf(logWriter, "Tarball: %s\n", res.TarballPath)
 		}
 		logWriter.Flush()
+	}
+	if progress != nil {
+		progress.FinalizeProgress()
 	}
 
 	b.mu.Lock()

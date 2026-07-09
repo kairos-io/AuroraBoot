@@ -57,6 +57,14 @@ type Spec struct {
 	// ProduceTarball, when true, exports the built image to an OCI tarball on
 	// disk (written into the build's working directory as `hadron.oci.tar`).
 	ProduceTarball bool `json:"produceTarball,omitempty"`
+
+	// NoCache, when true, passes `--no-cache` to buildx so every layer is
+	// rebuilt from scratch. Use this when re-running a build with the same
+	// OutputRef but different firmware/layers: buildx keys its layer cache on
+	// the Dockerfile plus the referenced image digests, and mutable tags
+	// (e.g. `:latest`) can otherwise resolve to stale cached layers even when
+	// the upstream image has changed.
+	NoCache bool `json:"noCache,omitempty"`
 }
 
 // imageRefRe matches an image reference we're willing to embed in a Dockerfile.

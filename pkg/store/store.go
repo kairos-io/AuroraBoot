@@ -184,8 +184,12 @@ type ArtifactRecord struct {
 	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
 	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
 	Logs                    string    `json:"-" gorm:"type:text"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	// Progress tracks 0-100 for a running build (hadron only, populated by the
+	// buildkit progress sniffer). 0 or missing when the build has not started
+	// or the phase already reflects the final state.
+	Progress  int       `json:"progress,omitempty"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Artifact phases.

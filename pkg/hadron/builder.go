@@ -130,6 +130,13 @@ func Build(ctx context.Context, spec Spec, workDir string, authProvider Registry
 		"--platform", strings.Join(platforms, ","),
 		"--tag", spec.OutputRef,
 	}
+	// --no-cache is opt-in because forcing a full rebuild on every run wastes
+	// registry pulls and CPU. It's the escape hatch for the case where mutable
+	// tags in Firmware/Layers have moved but buildx still resolves to a cached
+	// layer keyed on the old digest.
+	if spec.NoCache {
+		baseArgs = append(baseArgs, "--no-cache")
+	}
 
 	// Push first when both modes are requested: it's the interactive-facing
 	// side effect, and any auth failure is surfaced before we spend cycles

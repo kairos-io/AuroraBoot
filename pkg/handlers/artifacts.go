@@ -3,6 +3,8 @@ package handlers
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -11,8 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
-
-	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
@@ -89,6 +90,7 @@ type hadronSpec struct {
 	OutputRef       string   `json:"outputRef"`
 	Push            bool     `json:"push,omitempty"`
 	ProduceTarball  bool     `json:"produceTarball,omitempty"`
+	NoCache         bool     `json:"noCache,omitempty"`
 }
 
 func (h *hadronSpec) toSpec() hadron.Spec {
@@ -104,6 +106,7 @@ func (h *hadronSpec) toSpec() hadron.Spec {
 		OutputRef:       h.OutputRef,
 		Push:            h.Push,
 		ProduceTarball:  h.ProduceTarball,
+		NoCache:         h.NoCache,
 	}
 }
 
@@ -534,6 +537,84 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
 	}
 	return c.JSON(http.StatusOK, status)
+}
+
+// Retry handles POST /api/v1/artifacts/:id/retry.
+//
+// Spawns a fresh build using the source artifact's persisted spec, returning
+// 201 with the new BuildStatus. Only kind=hadron artifacts are supported for
+// now — a kairos retry would need to unpack the full cloud-config /
+// provisioning shape from ArtifactRecord and is left as a follow-up. Requests
+// for anything else (unknown id, non-hadron source) fail with 4xx before any
+// build is started.
+//
+//	@Summary	Retry a failed build
+//	@Tags		Artifacts
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id	path		string	true	"Source artifact ID"
+//	@Success	201	{object}	builder.BuildStatus
+//	@Failure	400	{object}	APIError
+//	@Failure	404	{object}	APIError
+//	@Router		/api/v1/artifacts/{id}/retry [post]
+func (h *ArtifactHandler) Retry(c echo.Context) error {
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	if h.store == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "artifact store is not configured"})
+	}
+	src, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+	if src.Kind != store.ArtifactKindHadron {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "retry is only supported for hadron artifacts"})
+	}
+	if src.HadronSpecJSON == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source artifact has no persisted hadron spec"})
+	}
+
+	var spec hadron.Spec
+	if err := json.Unmarshal([]byte(src.HadronSpecJSON), &spec); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source hadron spec is unreadable"})
+	}
+	if err := spec.Validate(); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	opts := builder.BuildOptions{
+		ID:     uuid.New().String(),
+		Name:   src.Name,
+		Kind:   store.ArtifactKindHadron,
+		Hadron: spec,
+	}
+
+	status, err := h.builder.Build(ctx, opts)
+	if err != nil {
+		if errors.Is(err, builder.ErrInvalidBuildOptions) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
+	}
+
+	// Fallback persistence path — matches createHadron. The production builder
+	// writes an identical row from Build(); the duplicate-key clash is expected
+	// and silently ignored, so builders that don't persist (test mocks) still
+	// get a stored record.
+	specJSON, _ := json.Marshal(spec)
+	rec := &store.ArtifactRecord{
+		ID:             status.ID,
+		Name:           src.Name,
+		Kind:           store.ArtifactKindHadron,
+		Phase:          status.Phase,
+		Message:        status.Message,
+		BaseImage:      spec.BaseImage,
+		HadronSpecJSON: string(specJSON),
+	}
+	_ = h.store.Create(ctx, rec)
+
+	return c.JSON(http.StatusCreated, status)
 }
 
 // Download handles GET /api/v1/artifacts/:id/download/*.
@@ -1058,3 +1139,31 @@ func mergeYAML(dst, src map[string]interface{}) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+// ReconcileOrphanedArtifacts fails every ArtifactRecord still marked Pending or
+// Building. A process restart orphans the goroutine driving an in-flight build,
+// so on startup those rows can never reach a terminal state on their own; flip
+// them to Error with an explanatory message. Safe to call once during bootstrap.
+// Per-row Update failures are logged and skipped so a single bad row does not
+// block the rest of the sweep; only a failure listing artifacts is fatal.
+func ReconcileOrphanedArtifacts(ctx context.Context, artifacts store.ArtifactStore) error {
+	recs, err := artifacts.List(ctx)
+	if err != nil {
+		return fmt.Errorf("listing artifacts: %w", err)
+	}
+	for _, rec := range recs {
+		if rec.Phase != store.ArtifactPending && rec.Phase != store.ArtifactBuilding {
+			continue
+		}
+		prevPhase := rec.Phase
+		rec.Phase = store.ArtifactError
+		rec.Message = "interrupted by server restart"
+		rec.UpdatedAt = time.Now()
+		if err := artifacts.Update(ctx, rec); err != nil {
+			fmt.Fprintf(os.Stderr, "reconcile: failed to mark artifact %s (was %s) as Error: %v\n", rec.ID, prevPhase, err)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "reconcile: marked orphaned artifact %s (was %s) as Error\n", rec.ID, prevPhase)
+	}
+	return nil
+}

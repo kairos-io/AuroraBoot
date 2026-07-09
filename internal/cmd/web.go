@@ -182,6 +182,13 @@ func runWeb(c *cli.Context) error {
 
 	artifactStore := &gormstore.ArtifactStoreAdapter{S: store}
 
+	// Reconcile artifacts left Pending or Building by a previous process: a
+	// restart orphans their build goroutine, so they can never reach Ready on
+	// their own. Mark them Error so the UI reflects a terminal state.
+	if err := handlers.ReconcileOrphanedArtifacts(context.Background(), artifactStore); err != nil {
+		fmt.Fprintf(os.Stderr, "Warning: reconciling orphaned artifacts: %v\n", err)
+	}
+
 	// Create the WebSocket hub up front so the builder can broadcast log
 	// chunks to subscribed UI clients as they arrive. The same hub is
 	// handed to server.New below so the HTTP routes share it.

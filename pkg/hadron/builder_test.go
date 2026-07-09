@@ -238,6 +238,52 @@ func TestBuild_WritesDockerConfigForPush(t *testing.T) {
 	}
 }
 
+// TestBuild_NoCacheFlag pins the --no-cache plumbing: the flag reaches buildx
+// exactly when the spec asks for it, and never sneaks in on default builds
+// (which would wreck cache hits for the common re-run case).
+func TestBuild_NoCacheFlag(t *testing.T) {
+	cases := []struct {
+		name    string
+		noCache bool
+		want    bool
+	}{
+		{name: "NoCache=true adds --no-cache", noCache: true, want: true},
+		{name: "NoCache=false omits --no-cache", noCache: false, want: false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			got, execFn := newRecorder(nil, nil)
+			spec := Spec{
+				BaseImage:      "ghcr.io/kairos-io/hadron:main",
+				Platforms:      []string{"linux/amd64"},
+				OutputRef:      "example.com/team/os:v1",
+				Push:           true,
+				ProduceTarball: true,
+				NoCache:        tc.noCache,
+			}
+			if _, err := Build(context.Background(), spec, tmp, nil, execFn, io.Discard); err != nil {
+				t.Fatalf("Build failed: %v", err)
+			}
+			if len(*got) != 2 {
+				t.Fatalf("expected push+tarball calls, got %d", len(*got))
+			}
+			for i, call := range *got {
+				has := false
+				for _, a := range call.args {
+					if a == "--no-cache" {
+						has = true
+						break
+					}
+				}
+				if has != tc.want {
+					t.Fatalf("call %d: --no-cache present=%v want=%v (args: %s)", i, has, tc.want, strings.Join(call.args, " "))
+				}
+			}
+		})
+	}
+}
+
 func TestBuild_InvalidSpec(t *testing.T) {
 	_, err := Build(context.Background(), Spec{}, t.TempDir(), nil, nil, io.Discard)
 	if err == nil || !errors.Is(err, ErrInvalidSpec) {

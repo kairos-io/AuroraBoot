@@ -57,6 +57,7 @@ export function HadronBuilder() {
   const [outputRef, setOutputRef] = useState("local/hadron:latest");
   const [push, setPush] = useState(false);
   const [produceTarball, setProduceTarball] = useState(true);
+  const [noCache, setNoCache] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [freeFirmwareRef, setFreeFirmwareRef] = useState("");
   const [freeLayerRef, setFreeLayerRef] = useState("");
@@ -82,6 +83,7 @@ export function HadronBuilder() {
             outputRef?: string;
             push?: boolean;
             produceTarball?: boolean;
+            noCache?: boolean;
           };
           setName(a.name ? `Copy of ${a.name}` : "");
           if (spec.baseImage) setBaseCustom(spec.baseImage);
@@ -92,6 +94,7 @@ export function HadronBuilder() {
           setOutputRef(spec.outputRef ?? "local/hadron:latest");
           setPush(!!spec.push);
           setProduceTarball(spec.produceTarball !== false);
+          setNoCache(!!spec.noCache);
         } catch {
           // Malformed spec on the source row — leave the wizard in its
           // default state so the user can rebuild from scratch.
@@ -198,6 +201,7 @@ export function HadronBuilder() {
         outputRef: outputRef.trim(),
         push,
         produceTarball,
+        noCache,
       });
       toast("Hadron build started", "success");
       navigate(`/artifacts/${artifact.id}`);
@@ -563,6 +567,18 @@ export function HadronBuilder() {
                 />
                 Download as OCI tarball (hadron.oci.tar)
               </label>
+              <label className="flex items-center gap-2 text-xs">
+                <input
+                  type="checkbox"
+                  checked={noCache}
+                  onChange={(e) => setNoCache(e.target.checked)}
+                />
+                Skip cache (force rebuild all layers)
+              </label>
+              <p className="text-[11px] text-muted-foreground -mt-1 ml-6">
+                Use when re-running with the same output ref but different firmware/layers,
+                otherwise buildx may return stale cached layers.
+              </p>
               {!push && !produceTarball && (
                 <p className="text-xs text-red-600">At least one output destination is required.</p>
               )}

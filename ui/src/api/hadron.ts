@@ -37,6 +37,7 @@ export interface CreateHadronArtifactInput {
   outputRef: string;
   push?: boolean;
   produceTarball?: boolean;
+  noCache?: boolean;
 }
 
 export function listHadronBaseVersions(): Promise<string[]> {
@@ -71,5 +72,14 @@ export function createHadronArtifact(
   return apiFetch<Artifact>("/api/v1/artifacts", {
     method: "POST",
     body: JSON.stringify({ kind: "hadron", name, hadron: spec }),
+  });
+}
+
+// retryHadronArtifact spawns a new build from a failed hadron artifact's
+// persisted spec. Returns the fresh Artifact (Pending phase) — the caller
+// typically navigates to its detail page to watch the retry progress.
+export function retryHadronArtifact(id: string): Promise<Artifact> {
+  return apiFetch<Artifact>(`/api/v1/artifacts/${id}/retry`, {
+    method: "POST",
   });
 }

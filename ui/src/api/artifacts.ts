@@ -50,6 +50,8 @@ export interface Artifact {
   kubernetesEnabled?: boolean;
   targetGroupId?: string;
   containerImage?: string;
+  /** 0-100 progress for a running hadron build (buildkit sniffer). */
+  progress?: number;
   artifacts: string[];
   createdAt: string;
   updatedAt: string;

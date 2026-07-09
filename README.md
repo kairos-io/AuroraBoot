@@ -94,6 +94,62 @@ Hadron base with per-vendor firmware layers and pre-built software layers via
   Registry Credentials**; passwords are stored encrypted with the same DEK
   AuroraBoot uses for BMC secrets.
 
+### Hadron → Kairos bridge
+
+Every ready Hadron artifact grows a **Build Kairos from this** button on its
+detail page. It opens the Kairos Artifact Builder with the fields already
+filled in from the Hadron output:
+
+- **Pushed hadron artifact** — the Kairos build receives the pushed ref as
+  `baseImage` and pulls it during the Kairos build.
+- **Tarball-only hadron** (no registry push) — AuroraBoot fetches the
+  generated `Dockerfile.hadron` from the hadron artifact and plants it into
+  the Kairos build's Dockerfile field, so no push/pull round-trip is needed.
+  The tarball itself stays local.
+- **Multi-arch tarball sources** — the Kairos builder picks a single arch
+  from the tarball and toasts a warning; re-open the bridge from a different
+  arch tab if you want the other one.
+
+The bridge is one-way (hadron → kairos). Editing the Hadron artifact after
+pressing the button does not retro-fill anything into the Kairos build; it
+snapshots the state at click time.
+
+### Push vs tarball
+
+Two output modes on the Hadron builder — pick per build:
+
+- **Tarball**: no credentials required. Output is a `hadron.oci.tar` file
+  downloadable from the artifact detail page. Good for air-gapped transfers
+  or when you want to inspect the composed image before pushing it anywhere.
+  A multi-arch tarball is a **fat OCI archive** (all requested platforms in
+  one file).
+- **Push**: uploads to the registry ref you supplied. Requires a matching
+  row under **Settings → Hadron Registry Credentials** for the target
+  registry host. A multi-arch push produces a **fat manifest list** on the
+  registry (one tag, one manifest per platform beneath it).
+
+A tarball built earlier can be pushed later via the **Push to registry**
+button on the artifact detail page — this re-runs `docker buildx` with the
+same spec, reusing the existing build cache, so it's mostly bytes over the
+wire rather than a full rebuild.
+
+### Registry credentials
+
+Managed under **Settings → Hadron Registry Credentials**. One row per
+`(registry, username, password)` tuple — if you push to the same registry
+as two different users, that's two rows.
+
+- Passwords are encrypted at rest with the same DEK AuroraBoot uses for BMC
+  credentials: `internal/secrets.Cipher` (AES-256-GCM), key at
+  `data/secrets/bmc-key`. Losing that key means the ciphertexts can no
+  longer be decrypted.
+- The API never returns password material. The list endpoint reports a
+  boolean `hasPassword` per row so the UI can show whether a row is fully
+  populated, but the ciphertext itself never leaves the server.
+- `PUT` on a row accepts either `password` (rotate to a new value) or
+  `keepPassword: true` (leave the stored ciphertext untouched — used when
+  editing only the username or registry host).
+
 ---
 
 ## Using the CLI

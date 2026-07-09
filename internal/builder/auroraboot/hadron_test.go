@@ -105,4 +105,43 @@ var _ = Describe("AuroraBoot Builder — Hadron kind", func() {
 			return s.Phase
 		}, 5*time.Second, 50*time.Millisecond).Should(Equal(builder.BuildError))
 	})
+
+	It("propagates Cancel into the running hadron build ctx and marks the artifact Error", func() {
+		started := make(chan struct{}, 1)
+		b.WithHadronBuildFunc(func(ctx context.Context, _ hadron.Spec, _ string, _ hadron.RegistryAuthProvider, _ io.Writer) (*hadron.Result, error) {
+			started <- struct{}{}
+			// Block until the builder's Cancel propagates ctx cancellation.
+			// If Cancel ever stops threading its cancelFunc through to the
+			// hadron ctx, this select never returns and the surrounding
+			// Eventually times out — that's the regression signal.
+			<-ctx.Done()
+			return nil, ctx.Err()
+		})
+
+		status, err := b.Build(context.Background(), builder.BuildOptions{
+			ID:   "hadron-cancel",
+			Kind: "hadron",
+			Hadron: hadron.Spec{
+				BaseImage:      "ghcr.io/kairos-io/hadron:main",
+				OutputRef:      "example.com/team/os:v1",
+				Platforms:      []string{"linux/amd64"},
+				ProduceTarball: true,
+			},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(started, 2*time.Second).Should(Receive())
+
+		Expect(b.Cancel(context.Background(), status.ID)).To(Succeed())
+
+		Eventually(func(g Gomega) {
+			s, sErr := b.Status(context.Background(), status.ID)
+			g.Expect(sErr).NotTo(HaveOccurred())
+			g.Expect(s.Phase).To(Equal(builder.BuildError))
+			// Cancel writes "cancelled"; the runHadron error path may race
+			// in with "hadron build failed: context canceled". Either
+			// spelling satisfies the "reached Error via cancellation" claim.
+			g.Expect(s.Message).To(MatchRegexp(`(?i)cancel`))
+		}, 2*time.Second, 20*time.Millisecond).Should(Succeed())
+	})
 })

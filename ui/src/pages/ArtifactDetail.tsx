@@ -47,9 +47,11 @@ import {
   Loader2,
   ChevronDown,
   ChevronRight,
+  RotateCcw,
 } from "lucide-react";
 import { DeployDialog } from "@/components/DeployDialog";
 import { HadronPushDialog } from "@/components/HadronPushDialog";
+import { retryHadronArtifact } from "@/api/hadron";
 import { ansiToHtml } from "@/lib/ansi";
 import { listGroups, type Group } from "@/api/groups";
 import { downloadBuildConfig, payloadFromArtifact } from "@/lib/buildConfig";
@@ -83,6 +85,7 @@ export function ArtifactDetail() {
   const [logs, setLogs] = useState<string>("");
   const [cancelling, setCancelling] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
   const [showHadronPush, setShowHadronPush] = useState(false);
@@ -231,6 +234,22 @@ export function ArtifactDetail() {
       navigate("/artifacts");
     } finally {
       setDeleting(false);
+    }
+  }
+
+  // handleRetry spawns a fresh hadron build from the current artifact's spec
+  // and navigates to the new artifact's detail page. Only offered on
+  // Error-phase hadron artifacts; the button is hidden otherwise.
+  async function handleRetry() {
+    if (!id) return;
+    setRetrying(true);
+    try {
+      const next = await retryHadronArtifact(id);
+      navigate(`/artifacts/${next.id}`);
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Retry failed", "error");
+    } finally {
+      setRetrying(false);
     }
   }
 
@@ -479,6 +498,20 @@ export function ArtifactDetail() {
             <Rocket className="h-4 w-4 mr-2" /> Build Kairos from this
           </Button>
         )}
+        {/* Retry re-spawns a failed hadron build with the identical persisted
+            spec — kairos retry is a follow-up. Only offered on Error-phase
+            hadron artifacts; the new build gets a fresh id and phase Pending. */}
+        {artifact.kind === "hadron" && artifact.phase === "Error" && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={handleRetry}
+            disabled={retrying}
+          >
+            <RotateCcw className="h-4 w-4 mr-2" />
+            {retrying ? "Retrying..." : "Retry"}
+          </Button>
+        )}
         {isActive && (
           <Button
             variant="destructive"
@@ -545,6 +578,17 @@ export function ArtifactDetail() {
             </span>
             Building · {durationText}
           </span>
+        )}
+        {artifact.phase === "Building" && (artifact.progress ?? 0) > 0 && (
+          <>
+            <div className="h-1 w-24 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full bg-[#EE5007]"
+                style={{ width: `${artifact.progress}%` }}
+              />
+            </div>
+            <span className="text-xs text-muted-foreground">{artifact.progress}%</span>
+          </>
         )}
         {!isActive && durationSec > 0 && (
           <span className="inline-flex items-center gap-1.5 text-sm text-muted-foreground">
