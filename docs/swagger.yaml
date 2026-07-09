@@ -1,5 +1,18 @@
 basePath: /
 definitions:
+  builder.ExtensionBuildStatus:
+    properties:
+      containerImage:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      phase:
+        type: string
+      rawFile:
+        type: string
+    type: object
   handlers.APIArtifactOutputs:
     properties:
       cloudImage:
@@ -99,6 +112,8 @@ definitions:
         - k3s
         - k0s
         type: string
+      kubernetesEnabled:
+        type: boolean
       kubernetesVersion:
         type: string
       model:
@@ -237,12 +252,59 @@ definitions:
       name:
         type: string
     type: object
+  handlers.ResolvedBundleEntry:
+    properties:
+      name:
+        type: string
+      source:
+        type: string
+      type:
+        type: string
+      version:
+        type: string
+    type: object
+  handlers.createExtensionRequest:
+    properties:
+      arch:
+        type: string
+      hierarchies:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      serviceReload:
+        type: boolean
+      signingKeySetId:
+        type: string
+      source:
+        $ref: '#/definitions/handlers.extensionSourceReq'
+      type:
+        type: string
+      version:
+        type: string
+    type: object
   handlers.decommissionResponse:
     properties:
       commandID:
         type: string
       nodeOnline:
         type: boolean
+    type: object
+  handlers.extensionSourceReq:
+    properties:
+      artifactId:
+        type: string
+      baseImage:
+        type: string
+      buildContextDir:
+        type: string
+      dockerfile:
+        type: string
+      extraSteps:
+        type: string
+      mode:
+        type: string
     type: object
   handlers.imageSourceLocalServe:
     properties:
@@ -269,6 +331,35 @@ definitions:
       localServe:
         $ref: '#/definitions/handlers.imageSourceLocalServe'
     type: object
+  handlers.setBundleEntry:
+    properties:
+      extensionName:
+        type: string
+      extensionType:
+        type: string
+      order:
+        type: integer
+      pinnedVersion:
+        type: string
+    type: object
+  store.ArtifactExtensionBundle:
+    properties:
+      artifactId:
+        type: string
+      createdAt:
+        type: string
+      extensionName:
+        type: string
+      extensionType:
+        description: sysext | confext
+        type: string
+      order:
+        type: integer
+      pinnedVersion:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   store.ArtifactRecord:
     properties:
       allow-insecure-registries:
@@ -293,6 +384,8 @@ definitions:
         type: string
       dockerfile:
         type: string
+      extensionHierarchies:
+        $ref: '#/definitions/store.ExtensionHierarchies'
       fips:
         type: boolean
       gce:
@@ -307,6 +400,8 @@ definitions:
         type: string
       kubernetesDistro:
         type: string
+      kubernetesEnabled:
+        type: boolean
       kubernetesVersion:
         type: string
       message:
@@ -341,6 +436,17 @@ definitions:
         type: string
       vhd:
         type: boolean
+    type: object
+  store.ExtensionHierarchies:
+    properties:
+      confext:
+        items:
+          type: string
+        type: array
+      sysext:
+        items:
+          type: string
+        type: array
     type: object
   store.ManagedNode:
     properties:
@@ -396,6 +502,27 @@ definitions:
       phase:
         type: string
       result:
+        type: string
+    type: object
+  store.NodeExtensionRow:
+    properties:
+      bootState:
+        description: active | passive | recovery | common
+        type: string
+      extensionId:
+        type: string
+      installedAt:
+        type: string
+      name:
+        type: string
+      nodeId:
+        type: string
+      type:
+        description: sysext | confext
+        type: string
+      updatedAt:
+        type: string
+      version:
         type: string
     type: object
   store.NodeGroup:
@@ -560,6 +687,100 @@ paths:
       summary: Update artifact metadata (name / saved flag)
       tags:
       - Artifacts
+  /api/v1/artifacts/{id}/bundle-extensions:
+    get:
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactExtensionBundle'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List bundled extensions for an artifact
+      tags:
+      - Artifacts
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement set
+        in: body
+        name: body
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/handlers.setBundleEntry'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactExtensionBundle'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Replace bundled extensions for an artifact
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/bundle-resolve:
+    post:
+      description: Returns the bundle entries with concrete download URLs and resolved
+        versions, ready to be passed as the `extensions` arg of an `upgrade` phonehome
+        command.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.ResolvedBundleEntry'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Resolve bundled extensions for upgrade dispatch
+      tags:
+      - Artifacts
   /api/v1/artifacts/{id}/cancel:
     post:
       parameters:
@@ -598,6 +819,57 @@ paths:
       summary: Get build log snapshot
       tags:
       - Artifacts
+  /api/v1/extensions:
+    post:
+      consumes:
+      - application/json
+      description: Kicks off an async sysext/confext build. Subscribe to /api/v1/ws/ui
+        or poll GET /api/v1/extensions/{id}.
+      parameters:
+      - description: Build specification
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.createExtensionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/builder.ExtensionBuildStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Start an extension build
+      tags:
+      - Extensions
+  /api/v1/extensions/{id}/nodes:
+    get:
+      parameters:
+      - description: Extension ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.NodeExtensionRow'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List nodes that have a given extension installed
+      tags:
+      - Extensions
   /api/v1/groups:
     get:
       produces:
@@ -841,6 +1113,28 @@ paths:
       summary: Dispatch remote teardown before deleting a node
       tags:
       - Nodes
+  /api/v1/nodes/{nodeID}/extensions:
+    get:
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.NodeExtensionRow'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List extensions installed on a node
+      tags:
+      - Extensions
   /api/v1/nodes/{nodeID}/group:
     put:
       consumes:
