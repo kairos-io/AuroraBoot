@@ -139,22 +139,11 @@ type CommandStore interface {
 
 // ArtifactRecord stores a build artifact and its metadata.
 type ArtifactRecord struct {
-	ID   string `json:"id" gorm:"primaryKey"`
-	Name string `json:"name,omitempty"`
-	// Kind discriminates the build pipeline. Empty and "kairos" (the historical
-	// default) go through the deployer/UKI/raw-disk flow; "hadron" produces a
-	// plain OCI image composed via docker buildx from hadron-firmware and
-	// hadron-layers. Empty is preserved on legacy rows so unmigrated data
-	// keeps working; readers should treat "" as "kairos".
-	Kind    string `json:"kind,omitempty"`
-	Saved   bool   `json:"saved,omitempty"`
-	Phase   string `json:"phase"`
-	Message string `json:"message"`
-	// HadronSpecJSON is the persisted Spec for kind=hadron builds (JSON blob).
-	// It's stored verbatim so the UI can re-render the exact inputs the user
-	// picked (base image, firmware refs, layers, platforms, output settings).
-	// Empty for non-hadron artifacts.
-	HadronSpecJSON          string    `json:"hadronSpec,omitempty" gorm:"type:text"`
+	ID                      string    `json:"id" gorm:"primaryKey"`
+	Name                    string    `json:"name,omitempty"`
+	Saved                   bool      `json:"saved,omitempty"`
+	Phase                   string    `json:"phase"`
+	Message                 string    `json:"message"`
 	BaseImage               string    `json:"baseImage"`
 	KairosVersion           string    `json:"kairosVersion"`
 	Model                   string    `json:"model"`
@@ -184,12 +173,8 @@ type ArtifactRecord struct {
 	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
 	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
 	Logs                    string    `json:"-" gorm:"type:text"`
-	// Progress tracks 0-100 for a running build (hadron only, populated by the
-	// buildkit progress sniffer). 0 or missing when the build has not started
-	// or the phase already reflects the final state.
-	Progress  int       `json:"progress,omitempty"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	CreatedAt               time.Time `json:"createdAt"`
+	UpdatedAt               time.Time `json:"updatedAt"`
 }
 
 // Artifact phases.
@@ -198,12 +183,6 @@ const (
 	ArtifactBuilding = "Building"
 	ArtifactReady    = "Ready"
 	ArtifactError    = "Error"
-)
-
-// Artifact kinds — see ArtifactRecord.Kind.
-const (
-	ArtifactKindKairos = "kairos"
-	ArtifactKindHadron = "hadron"
 )
 
 // ArtifactStore manages build artifact records.

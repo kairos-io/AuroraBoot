@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef, useMemo } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { listArtifacts, deleteArtifact, clearFailedArtifacts, updateArtifact, type Artifact } from "@/api/artifacts";
 import { Button } from "@/components/ui/button";
@@ -22,13 +22,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Plus, Trash2, Package, Bookmark, Copy, ChevronDown } from "lucide-react";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
+import { Plus, Trash2, Package, Bookmark, Copy } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 // Valid values for each URL-driven axis. Any other value falls back to the
@@ -108,28 +102,6 @@ export function Artifacts() {
     listArtifacts().then(setArtifacts).catch(() => {});
   }, []);
 
-  // Parse hadron specs once per fetch and index by artifact id. Doing this
-  // in render (previously inline in the table cell) meant JSON.parse ran on
-  // every keystroke into the search box for every hadron row; caching keyed
-  // by id makes the cell a plain O(1) lookup and only re-runs when the row
-  // set actually changes.
-  type ParsedHadronSpec = {
-    baseImage?: string;
-    firmware?: string[];
-    layers?: string[];
-    platforms?: string[];
-  };
-  const hadronSpecs = useMemo(() => {
-    const map = new Map<string, ParsedHadronSpec>();
-    for (const a of artifacts) {
-      if (a.kind !== "hadron" || !a.hadronSpec) continue;
-      try {
-        map.set(a.id, JSON.parse(a.hadronSpec) as ParsedHadronSpec);
-      } catch { /* leave unset — cell will render "—" fallbacks */ }
-    }
-    return map;
-  }, [artifacts]);
-
   useEffect(() => {
     fetchArtifacts();
   }, [fetchArtifacts]);
@@ -187,23 +159,13 @@ export function Artifacts() {
             Clear Failed
           </Button>
         )}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button className="bg-[#EE5007] hover:bg-[#FF7442] text-white">
-              <Plus className="h-4 w-4 mr-2" />
-              Build New
-              <ChevronDown className="h-4 w-4 ml-1" />
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end">
-            <DropdownMenuItem onClick={() => navigate("/artifacts/new")}>
-              Kairos image
-            </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => navigate("/artifacts/new-hadron")}>
-              Hadron image
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+        <Button
+          className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+          onClick={() => navigate("/artifacts/new")}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Build New
+        </Button>
       </PageHeader>
 
       <div className="flex flex-wrap items-center gap-3 mb-4">
@@ -245,7 +207,6 @@ export function Artifacts() {
           <TableRow>
             <TableHead className="w-10"></TableHead>
             <TableHead>Name</TableHead>
-            <TableHead>Kind</TableHead>
             <TableHead>Base Image</TableHead>
             <TableHead>Phase</TableHead>
             <TableHead>Created</TableHead>
@@ -256,7 +217,7 @@ export function Artifacts() {
         <TableBody>
           {filtered.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={8} className="text-center py-12">
+              <TableCell colSpan={7} className="text-center py-12">
                 {hasAnyFilter ? (
                   <div className="flex flex-col items-center gap-3 py-10">
                     <Package className="h-10 w-10 text-muted-foreground/40" />
@@ -294,22 +255,12 @@ export function Artifacts() {
                         Build your first OS image to deploy across your fleet.
                       </p>
                     </div>
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button className="mt-2 bg-[#EE5007] hover:bg-[#FF7442] text-white">
-                          <Plus className="h-4 w-4 mr-2" /> Build First Artifact
-                          <ChevronDown className="h-4 w-4 ml-1" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="center">
-                        <DropdownMenuItem onClick={() => navigate("/artifacts/new")}>
-                          Kairos image
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => navigate("/artifacts/new-hadron")}>
-                          Hadron image
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    <Button
+                      className="mt-2 bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                      onClick={() => navigate("/artifacts/new")}
+                    >
+                      <Plus className="h-4 w-4 mr-2" /> Build First Artifact
+                    </Button>
                   </div>
                 )}
               </TableCell>
@@ -357,65 +308,17 @@ export function Artifacts() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell>
-                  {artifact.kind === "hadron" ? (
-                    <Badge variant="secondary" className="text-[10px]">hadron</Badge>
-                  ) : (
-                    <Badge variant="outline" className="text-[10px]">kairos</Badge>
-                  )}
-                </TableCell>
                 <TableCell className="text-sm max-w-xs">
-                  {artifact.kind === "hadron" ? (
-                    (() => {
-                      // Surface the hadron composition inline: base ref plus
-                      // small counters for firmware and layers so operators
-                      // can spot "this row bundles 3 firmware / 2 layers"
-                      // without opening the artifact detail. Parsed once
-                      // per fetch via the hadronSpecs memo (see above), so
-                      // the render path is a plain map lookup.
-                      const spec = hadronSpecs.get(artifact.id) ?? {};
-                      const base = spec.baseImage || artifact.baseImage || "";
-                      const fw = Array.isArray(spec.firmware) ? spec.firmware.length : 0;
-                      const ly = Array.isArray(spec.layers) ? spec.layers.length : 0;
-                      const platforms = Array.isArray(spec.platforms) && spec.platforms.length > 0
-                        ? spec.platforms
-                        : ["linux/amd64"];
-                      return (
-                        <div className="flex flex-col gap-1 min-w-0">
-                          <span className="truncate">{base || "—"}</span>
-                          <div className="flex gap-1 flex-wrap">
-                            <Badge variant="outline" className="text-[10px]" title="Firmware layers">
-                              {fw} {fw > 1 ? "firmwares" : "firmware"}
-                            </Badge>
-                            <Badge variant="outline" className="text-[10px]" title="Software layers">
-                              {ly} {ly > 1 ? "layers" : "layer"}
-                            </Badge>
-                            {platforms.map((p) => (
-                              <Badge
-                                key={p}
-                                variant="secondary"
-                                className="text-[10px] font-mono"
-                                title={p}
-                              >
-                                {p.replace(/^linux\//, "")}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      );
-                    })()
-                  ) : (
-                    <div className="flex flex-col gap-1 min-w-0">
-                      <span className="truncate">{artifact.baseImage || "-"}</span>
-                      {artifact.arch && (
-                        <div>
-                          <Badge variant="secondary" className="text-[10px] font-mono" title="Architecture">
-                            {artifact.arch}
-                          </Badge>
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="truncate">{artifact.baseImage || "-"}</span>
+                    {artifact.arch && (
+                      <div>
+                        <Badge variant="secondary" className="text-[10px] font-mono" title="Architecture">
+                          {artifact.arch}
+                        </Badge>
+                      </div>
+                    )}
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
@@ -439,11 +342,7 @@ export function Artifacts() {
                 </TableCell>
                 <TableCell>
                   <div className="flex gap-1">
-                    {/* Clone is kairos-only: it pre-fills the Kairos wizard
-                        from an artifact record. Hadron rows carry a different
-                        spec shape; forcing them through this button would
-                        produce a mostly-empty wizard, so we hide it. */}
-                    {artifact.phase === "Ready" && artifact.kind !== "hadron" && (
+                    {artifact.phase === "Ready" && (
                       <Button
                         variant="ghost"
                         size="icon"

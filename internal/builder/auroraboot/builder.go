@@ -3,9 +3,7 @@ package auroraboot
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -18,7 +16,6 @@ import (
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	"github.com/kairos-io/AuroraBoot/pkg/hadron"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
@@ -53,25 +50,13 @@ func DefaultUKIBuildFunc(opts uki.Options) error { return uki.Build(opts) }
 
 // Builder implements builder.ArtifactBuilder using AuroraBoot.
 type Builder struct {
-	builds             map[string]*buildState
-	mu                 sync.RWMutex
-	baseDir            string
-	deployFunc         DeployerFunc
-	ukiBuildFn         UKIBuildFunc
-	hadronBuildFn      HadronBuildFunc
-	hadronAuthProvider hadron.RegistryAuthProvider
-	store              store.ArtifactStore
-	logBroadcaster     LogBroadcaster
-}
-
-// HadronBuildFunc is the seam we use to invoke pkg/hadron.Build. Kept as a
-// field so tests can capture the spec without shelling out to docker.
-type HadronBuildFunc func(ctx context.Context, spec hadron.Spec, workDir string, authProvider hadron.RegistryAuthProvider, logWriter io.Writer) (*hadron.Result, error)
-
-// DefaultHadronBuildFunc runs pkg/hadron.Build with a nil ExecFunc, which
-// resolves to the real `docker buildx build` invocation.
-func DefaultHadronBuildFunc(ctx context.Context, spec hadron.Spec, workDir string, authProvider hadron.RegistryAuthProvider, logWriter io.Writer) (*hadron.Result, error) {
-	return hadron.Build(ctx, spec, workDir, authProvider, nil, logWriter)
+	builds         map[string]*buildState
+	mu             sync.RWMutex
+	baseDir        string
+	deployFunc     DeployerFunc
+	ukiBuildFn     UKIBuildFunc
+	store          store.ArtifactStore
+	logBroadcaster LogBroadcaster
 }
 
 // LogBroadcaster is the hook dbLogWriter calls on every flush. The
@@ -136,28 +121,12 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 		deployFunc = DefaultDeployerFunc
 	}
 	return &Builder{
-		builds:        make(map[string]*buildState),
-		baseDir:       baseDir,
-		deployFunc:    deployFunc,
-		ukiBuildFn:    DefaultUKIBuildFunc,
-		hadronBuildFn: DefaultHadronBuildFunc,
-		store:         artifactStore,
+		builds:     make(map[string]*buildState),
+		baseDir:    baseDir,
+		deployFunc: deployFunc,
+		ukiBuildFn: DefaultUKIBuildFunc,
+		store:      artifactStore,
 	}
-}
-
-// WithHadronBuildFunc swaps the pkg/hadron.Build implementation used by
-// runHadron. Tests use this to capture the spec we pass through.
-func (b *Builder) WithHadronBuildFunc(fn HadronBuildFunc) *Builder {
-	b.hadronBuildFn = fn
-	return b
-}
-
-// WithHadronAuthProvider registers the source of registry credentials used
-// when a hadron build has Push=true. The provider is invoked once per build,
-// inside pkg/hadron.Build, so credentials never live on the builder itself.
-func (b *Builder) WithHadronAuthProvider(p hadron.RegistryAuthProvider) *Builder {
-	b.hadronAuthProvider = p
-	return b
 }
 
 // WithUKIBuildFunc swaps the pkg/uki.Build implementation used by buildUKI.
@@ -177,18 +146,10 @@ func (b *Builder) WithLogBroadcaster(lb LogBroadcaster) *Builder {
 
 // Build starts an asynchronous artifact build and returns immediately with a Pending status.
 func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
-	// Reject unsafe admin-supplied values before any work starts. For kairos
-	// builds this covers kairos-init flag interpolation; for hadron builds it
-	// covers everything that would end up as an argument to buildx.
-	switch opts.Kind {
-	case store.ArtifactKindHadron:
-		if err := opts.Hadron.Validate(); err != nil {
-			return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
-		}
-	default:
-		if err := validateKairosInitOptions(opts); err != nil {
-			return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
-		}
+	// Reject unsafe admin-supplied values before any work starts. Covers
+	// kairos-init flag interpolation in the Dockerfile RUN line.
+	if err := validateKairosInitOptions(opts); err != nil {
+		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
 	}
 
 	id := opts.ID
@@ -222,7 +183,6 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 		rec := &store.ArtifactRecord{
 			ID:                      id,
 			Name:                    opts.Name,
-			Kind:                    opts.Kind,
 			Phase:                   store.ArtifactPending,
 			BaseImage:               opts.BaseImage,
 			KairosVersion:           opts.KairosVersion,
@@ -248,143 +208,18 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			CreatedAt:               time.Now(),
 			UpdatedAt:               time.Now(),
 		}
-		if opts.Kind == store.ArtifactKindHadron {
-			if body, err := json.Marshal(opts.Hadron); err == nil {
-				rec.HadronSpecJSON = string(body)
-			}
-		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()
 			return nil, fmt.Errorf("persisting artifact record: %w", err)
 		}
 	}
 
-	if opts.Kind == store.ArtifactKindHadron {
-		go b.runHadron(buildCtx, bs, opts, outputDir)
-	} else {
-		go b.run(buildCtx, bs, opts, outputDir)
-	}
+	go b.run(buildCtx, bs, opts, outputDir)
 
 	return &builder.BuildStatus{
 		ID:    id,
 		Phase: builder.BuildPending,
 	}, nil
-}
-
-// runHadron is the kind=hadron counterpart to run: no deployer, no UKI, no
-// cloud-config assembly — just Dockerfile generation + buildx invocation via
-// pkg/hadron. Errors set the artifact to Error with a human-readable message;
-// on success the tarball path (if any) becomes the sole artifact file and the
-// output ref is persisted as ContainerImage.
-func (b *Builder) runHadron(ctx context.Context, bs *buildState, opts builder.BuildOptions, outputDir string) {
-	b.setPhase(bs, builder.BuildBuilding, "")
-	if b.store != nil {
-		_ = b.updateDBPhase(ctx, bs.status.ID, store.ArtifactBuilding, "")
-	}
-
-	var logWriter *dbLogWriter
-	if b.store != nil {
-		logWriter = &dbLogWriter{
-			store:       b.store,
-			id:          bs.status.ID,
-			ctx:         context.Background(),
-			broadcaster: b.logBroadcaster,
-		}
-	}
-	if logWriter != nil {
-		fmt.Fprintf(logWriter, "=== Building Hadron image ===\n")
-		fmt.Fprintf(logWriter, "Base:      %s\n", opts.Hadron.BaseImage)
-		fmt.Fprintf(logWriter, "Firmware:  %d layer(s)\n", len(opts.Hadron.Firmware))
-		fmt.Fprintf(logWriter, "Layers:    %d layer(s)\n", len(opts.Hadron.Layers))
-		fmt.Fprintf(logWriter, "Platforms: %s\n", strings.Join(opts.Hadron.PlatformsOrDefault(), ","))
-		fmt.Fprintf(logWriter, "Output ref: %s (push=%v tarball=%v)\n\n", opts.Hadron.OutputRef, opts.Hadron.Push, opts.Hadron.ProduceTarball)
-		logWriter.Flush()
-	}
-
-	// Wrap the log writer with the buildkit progress sniffer so the UI can
-	// render a real percentage while the build runs. The wrapper forwards
-	// every byte through to the log stream unchanged; only progress markers
-	// are extracted and (throttled) written to the artifact record.
-	var writer io.Writer
-	var progress *hadronProgressWriter
-	if logWriter != nil {
-		progress = newHadronProgressWriter(logWriter, b.store, bs.status.ID)
-		writer = progress
-	} else {
-		writer = io.Discard
-	}
-	res, err := b.hadronBuildFn(ctx, opts.Hadron, outputDir, b.hadronAuthProvider, writer)
-	if err != nil {
-		msg := fmt.Sprintf("hadron build failed: %v", err)
-		if logWriter != nil {
-			fmt.Fprintf(logWriter, "\n%s\n", msg)
-			logWriter.Flush()
-		}
-		b.setPhase(bs, builder.BuildError, msg)
-		if b.store != nil {
-			// On failure, still expose the generated Dockerfile (and any
-			// partial tarball) so the operator can reproduce the build
-			// outside AuroraBoot. hadron.Build returns a non-nil Result
-			// whenever the Dockerfile was rendered.
-			if rec, gerr := b.store.GetByID(context.Background(), bs.status.ID); gerr == nil {
-				rec.Phase = store.ArtifactError
-				rec.Message = msg
-				if res != nil {
-					var files []string
-					if res.DockerfilePath != "" {
-						files = append(files, res.DockerfilePath)
-					}
-					if res.TarballPath != "" {
-						files = append(files, res.TarballPath)
-					}
-					rec.ArtifactFiles = files
-					if res.ImageRef != "" {
-						rec.ContainerImage = res.ImageRef
-					}
-				}
-				rec.UpdatedAt = time.Now()
-				_ = b.store.Update(context.Background(), rec)
-			} else {
-				_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
-			}
-		}
-		return
-	}
-
-	var artifacts []string
-	if res.DockerfilePath != "" {
-		artifacts = append(artifacts, res.DockerfilePath)
-	}
-	if res.TarballPath != "" {
-		artifacts = append(artifacts, res.TarballPath)
-	}
-	if logWriter != nil {
-		fmt.Fprintf(logWriter, "\n=== Hadron build completed ===\nImage: %s\n", res.ImageRef)
-		if res.TarballPath != "" {
-			fmt.Fprintf(logWriter, "Tarball: %s\n", res.TarballPath)
-		}
-		logWriter.Flush()
-	}
-	if progress != nil {
-		progress.FinalizeProgress()
-	}
-
-	b.mu.Lock()
-	bs.status.Phase = builder.BuildReady
-	bs.status.Message = ""
-	bs.status.Artifacts = artifacts
-	b.mu.Unlock()
-
-	if b.store != nil {
-		if rec, err := b.store.GetByID(context.Background(), bs.status.ID); err == nil {
-			rec.Phase = store.ArtifactReady
-			rec.Message = ""
-			rec.ArtifactFiles = artifacts
-			rec.ContainerImage = res.ImageRef
-			rec.UpdatedAt = time.Now()
-			_ = b.store.Update(context.Background(), rec)
-		}
-	}
 }
 
 func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOptions, outputDir string) {

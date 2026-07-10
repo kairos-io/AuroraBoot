@@ -4,7 +4,6 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
-	"github.com/kairos-io/AuroraBoot/pkg/hadron"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
@@ -49,14 +47,8 @@ func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactS
 
 // createArtifactRequest is the expected body for creating an artifact build.
 type createArtifactRequest struct {
-	Name string `json:"name"`
-	// Kind selects the pipeline: "" or "kairos" for the classic deployer/UKI
-	// flow, "hadron" for docker-buildx composition of hadron base + firmware +
-	// layers. Kind=hadron ignores every kairos-specific field on this struct
-	// and uses the Hadron block instead.
-	Kind      string      `json:"kind,omitempty"`
-	Hadron    *hadronSpec `json:"hadron,omitempty"`
-	BaseImage string      `json:"baseImage"`
+	Name                    string `json:"name"`
+	BaseImage               string `json:"baseImage"`
 	KairosVersion           string `json:"kairosVersion"`
 	Model                   string `json:"model"`
 	Arch                    string `json:"arch"`
@@ -76,38 +68,6 @@ type createArtifactRequest struct {
 
 	CloudConfig string `json:"cloudConfig"`
 	OutputDir   string `json:"outputDir"`
-}
-
-// hadronSpec mirrors pkg/hadron.Spec on the wire. Kept as a separate type so
-// the handler owns JSON tag naming (idiomatic camelCase) and the request DTO
-// stays independent from the internal build library.
-type hadronSpec struct {
-	BaseImage       string   `json:"baseImage"`
-	Firmware        []string `json:"firmware,omitempty"`
-	Layers          []string `json:"layers,omitempty"`
-	ExtraDockerfile string   `json:"extraDockerfile,omitempty"`
-	Platforms       []string `json:"platforms,omitempty"`
-	OutputRef       string   `json:"outputRef"`
-	Push            bool     `json:"push,omitempty"`
-	ProduceTarball  bool     `json:"produceTarball,omitempty"`
-	NoCache         bool     `json:"noCache,omitempty"`
-}
-
-func (h *hadronSpec) toSpec() hadron.Spec {
-	if h == nil {
-		return hadron.Spec{}
-	}
-	return hadron.Spec{
-		BaseImage:       h.BaseImage,
-		Firmware:        append([]string(nil), h.Firmware...),
-		Layers:          append([]string(nil), h.Layers...),
-		ExtraDockerfile: h.ExtraDockerfile,
-		Platforms:       append([]string(nil), h.Platforms...),
-		OutputRef:       h.OutputRef,
-		Push:            h.Push,
-		ProduceTarball:  h.ProduceTarball,
-		NoCache:         h.NoCache,
-	}
 }
 
 type artifactOutputs struct {
@@ -175,13 +135,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
-
-	// Hadron kind takes the pure OCI-composition path: no cloud-config, no
-	// secureboot, no deployer. Everything hadron needs lives in req.Hadron;
-	// the rest of the request struct is ignored.
-	if req.Kind == store.ArtifactKindHadron {
-		return h.createHadron(c, req)
-	}
 
 	// Provisioning defaults: nil means default true.
 	autoInstall := true
@@ -372,55 +325,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	return c.JSON(http.StatusCreated, status)
 }
 
-// createHadron handles the kind=hadron branch of POST /api/v1/artifacts.
-// Kept separate from Create so the classic kairos path is not diluted with
-// hadron-only concerns. Validation errors are 400s; persistence failures 500.
-func (h *ArtifactHandler) createHadron(c echo.Context, req createArtifactRequest) error {
-	if req.Hadron == nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "hadron spec is required for kind=hadron"})
-	}
-	ctx := c.Request().Context()
-
-	spec := req.Hadron.toSpec()
-	if err := spec.Validate(); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	opts := builder.BuildOptions{
-		ID:     uuid.New().String(),
-		Name:   req.Name,
-		Kind:   store.ArtifactKindHadron,
-		Hadron: spec,
-	}
-
-	status, err := h.builder.Build(ctx, opts)
-	if err != nil {
-		if errors.Is(err, builder.ErrInvalidBuildOptions) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
-	}
-
-	// Fallback persistence path — for builders that don't persist internally
-	// (e.g. mock builders in tests). The production builder writes an
-	// identical record from Build(); the primary-key clash is expected and
-	// silently ignored, matching the classic Create behavior.
-	if h.store != nil {
-		specJSON, _ := json.Marshal(spec)
-		rec := &store.ArtifactRecord{
-			ID:             status.ID,
-			Name:           req.Name,
-			Kind:           store.ArtifactKindHadron,
-			Phase:          status.Phase,
-			Message:        status.Message,
-			BaseImage:      spec.BaseImage,
-			HadronSpecJSON: string(specJSON),
-		}
-		_ = h.store.Create(ctx, rec)
-	}
-	return c.JSON(http.StatusCreated, status)
-}
-
 // List handles GET /api/v1/artifacts.
 // List handles GET /api/v1/artifacts.
 //
@@ -537,84 +441,6 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
 	}
 	return c.JSON(http.StatusOK, status)
-}
-
-// Retry handles POST /api/v1/artifacts/:id/retry.
-//
-// Spawns a fresh build using the source artifact's persisted spec, returning
-// 201 with the new BuildStatus. Only kind=hadron artifacts are supported for
-// now — a kairos retry would need to unpack the full cloud-config /
-// provisioning shape from ArtifactRecord and is left as a follow-up. Requests
-// for anything else (unknown id, non-hadron source) fail with 4xx before any
-// build is started.
-//
-//	@Summary	Retry a failed build
-//	@Tags		Artifacts
-//	@Produce	json
-//	@Security	AdminBearer
-//	@Param		id	path		string	true	"Source artifact ID"
-//	@Success	201	{object}	builder.BuildStatus
-//	@Failure	400	{object}	APIError
-//	@Failure	404	{object}	APIError
-//	@Router		/api/v1/artifacts/{id}/retry [post]
-func (h *ArtifactHandler) Retry(c echo.Context) error {
-	id := c.Param("id")
-	ctx := c.Request().Context()
-
-	if h.store == nil {
-		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "artifact store is not configured"})
-	}
-	src, err := h.store.GetByID(ctx, id)
-	if err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
-	}
-	if src.Kind != store.ArtifactKindHadron {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "retry is only supported for hadron artifacts"})
-	}
-	if src.HadronSpecJSON == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source artifact has no persisted hadron spec"})
-	}
-
-	var spec hadron.Spec
-	if err := json.Unmarshal([]byte(src.HadronSpecJSON), &spec); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source hadron spec is unreadable"})
-	}
-	if err := spec.Validate(); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-	}
-
-	opts := builder.BuildOptions{
-		ID:     uuid.New().String(),
-		Name:   src.Name,
-		Kind:   store.ArtifactKindHadron,
-		Hadron: spec,
-	}
-
-	status, err := h.builder.Build(ctx, opts)
-	if err != nil {
-		if errors.Is(err, builder.ErrInvalidBuildOptions) {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
-		}
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
-	}
-
-	// Fallback persistence path — matches createHadron. The production builder
-	// writes an identical row from Build(); the duplicate-key clash is expected
-	// and silently ignored, so builders that don't persist (test mocks) still
-	// get a stored record.
-	specJSON, _ := json.Marshal(spec)
-	rec := &store.ArtifactRecord{
-		ID:             status.ID,
-		Name:           src.Name,
-		Kind:           store.ArtifactKindHadron,
-		Phase:          status.Phase,
-		Message:        status.Message,
-		BaseImage:      spec.BaseImage,
-		HadronSpecJSON: string(specJSON),
-	}
-	_ = h.store.Create(ctx, rec)
-
-	return c.JSON(http.StatusCreated, status)
 }
 
 // Download handles GET /api/v1/artifacts/:id/download/*.
