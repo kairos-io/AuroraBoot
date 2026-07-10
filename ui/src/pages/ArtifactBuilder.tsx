@@ -237,58 +237,41 @@ const DEFAULT_HADRON_BASE = `ghcr.io/kairos-io/hadron:${HADRON_VERSION}`;
 type HadronFirmwareItem = { name: string; image: string; version: string; releaseTag: string };
 type HadronLayerItem = { name: string; title?: string; description?: string; image: string; latest?: string };
 
-const HADRON_FIRMWARE_URL = "https://api.github.com/repos/kairos-io/hadron-firmware/releases";
+const HADRON_FIRMWARE_URL = "https://kairos-io.github.io/hadron-firmware/data.json";
 const HADRON_LAYERS_URL = "https://kairos-io.github.io/hadron-layers/releases.json";
 
-// parseFirmwareAsset mirrors the deleted Go parser. Asset names look like
-// `linux-firmware-<target>_<version>.sysext.raw`; when the `_version` suffix
-// is absent we fall back to the release tag so tree-tagged releases still
-// surface something usable.
-function parseFirmwareAsset(assetName: string, releaseTag: string): { name: string; version: string } | null {
-  const suffix = ".sysext.raw";
-  if (!assetName.endsWith(suffix)) return null;
-  const stem = assetName.slice(0, -suffix.length);
-  const idx = stem.lastIndexOf("_");
-  if (idx < 0) {
-    if (!stem || !releaseTag) return null;
-    return { name: stem, version: releaseTag };
-  }
-  const name = stem.slice(0, idx);
-  const version = stem.slice(idx + 1);
-  if (!name || !version) return null;
-  return { name, version };
-}
-
+// fetchHadronFirmware reads the pages-published data.json that hadron-firmware
+// keeps in sync with each release. Payload shape:
+//   { releases: [ { tag, images: { <name>: "<ref>", ... } }, ... ] }
+// Every image already carries the tag baked into the ref string so we don't
+// have to reassemble ghcr paths ourselves. We keep the newest release only
+// (releases[0]) — older tags are still selectable via the custom-ref input.
 async function fetchHadronFirmware(): Promise<HadronFirmwareItem[]> {
-  const resp = await fetch(HADRON_FIRMWARE_URL, {
-    headers: { Accept: "application/vnd.github+json" },
-  });
-  if (!resp.ok) throw new Error(`firmware releases: ${resp.status}`);
-  const releases = (await resp.json()) as Array<{
-    tag_name: string;
-    assets?: Array<{ name: string }>;
-  }>;
-  const seen = new Set<string>();
+  const resp = await fetch(HADRON_FIRMWARE_URL);
+  if (!resp.ok) throw new Error(`firmware data: ${resp.status}`);
+  const payload = (await resp.json()) as {
+    releases?: Array<{
+      tag: string;
+      prerelease?: boolean;
+      images?: Record<string, string>;
+    }>;
+  };
+  const releases = (payload.releases ?? []).filter((r) => !r.prerelease);
+  if (releases.length === 0) return [];
+  // data.json emits releases newest-first, but sort defensively so we don't
+  // depend on the publisher's ordering.
+  releases.sort((a, b) => (a.tag > b.tag ? -1 : a.tag < b.tag ? 1 : 0));
+  const latest = releases[0];
   const items: HadronFirmwareItem[] = [];
-  for (const r of releases) {
-    for (const a of r.assets ?? []) {
-      const parsed = parseFirmwareAsset(a.name, r.tag_name);
-      if (!parsed) continue;
-      const key = `${parsed.name}:${parsed.version}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      items.push({
-        name: parsed.name,
-        image: `ghcr.io/kairos-io/hadron-firmware/${parsed.name}`,
-        version: parsed.version,
-        releaseTag: r.tag_name,
-      });
-    }
+  for (const [name, ref] of Object.entries(latest.images ?? {})) {
+    // Ref shape is `<image>:<version>` — split on the LAST `:` so registry
+    // ports (host:5000/...) don't confuse the parser.
+    const colon = ref.lastIndexOf(":");
+    const image = colon > 0 ? ref.slice(0, colon) : ref;
+    const version = colon > 0 ? ref.slice(colon + 1) : latest.tag;
+    items.push({ name, image, version, releaseTag: latest.tag });
   }
-  items.sort((a, b) => {
-    if (a.releaseTag !== b.releaseTag) return a.releaseTag > b.releaseTag ? -1 : 1;
-    return a.name < b.name ? -1 : 1;
-  });
+  items.sort((a, b) => (a.name < b.name ? -1 : 1));
   return items;
 }
 
