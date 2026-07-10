@@ -1,6 +1,7 @@
 package ops
 
 import (
+	sdkutils "github.com/kairos-io/kairos-sdk/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -26,5 +27,19 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 		result := applyGrubTemplate([]byte(templateWithPlaceholders), "", " rd.debug")
 		Expect(string(result)).ToNot(ContainSubstring("{{NOMODESET}}"))
 		Expect(string(result)).To(ContainSubstring(" rd.debug"))
+	})
+})
+
+var _ = Describe("getEfiGrubFilesForArch", Label("iso"), func() {
+	It("prepends the openSUSE riscv64 path before SDK paths", func() {
+		paths := getEfiGrubFilesForArch("riscv64")
+		sdkPaths := sdkutils.GetEfiGrubFiles("riscv64")
+
+		Expect(paths[0]).To(Equal("/usr/share/efi/riscv64/grub.efi"))
+		Expect(paths).To(Equal(append([]string{"/usr/share/efi/riscv64/grub.efi"}, sdkPaths...)))
+	})
+
+	It("returns the SDK path list for non-riscv64 arches", func() {
+		Expect(getEfiGrubFilesForArch("arm64")).To(Equal(sdkutils.GetEfiGrubFiles("arm64")))
 	})
 })
