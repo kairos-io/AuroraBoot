@@ -631,16 +631,14 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	return err
 }
 
-// getEfiGrubFilesForArch returns the possible grub EFI file paths for the given architecture
-// This extends the SDK's GetEfiGrubFiles with riscv64 support
+// getEfiGrubFilesForArch returns the possible grub EFI file paths for the given architecture.
+// For riscv64, prepend the openSUSE layout then delegate to the SDK (Debian/Ubuntu monolithic paths, ESP fallbacks, etc.).
 func getEfiGrubFilesForArch(arch string) []string {
 	if utils.IsRiscv64(arch) {
-		return []string{
-			"/usr/share/efi/riscv64/grub.efi",
-			"/usr/lib/grub/riscv64-efi/grubriscv64.efi",
-			"/boot/efi/EFI/BOOT/BOOTRISCV64.EFI",
-			"/boot/efi/EFI/fedora/grubriscv64.efi",
-		}
+		return append(
+			[]string{"/usr/share/efi/riscv64/grub.efi"},
+			sdkutils.GetEfiGrubFiles(arch)...,
+		)
 	}
 	return sdkutils.GetEfiGrubFiles(arch)
 }
