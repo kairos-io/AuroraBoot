@@ -229,41 +229,91 @@ const HADRON_TEMPLATE_NAME = "Hadron custom";
 
 const DEFAULT_HADRON_BASE = `ghcr.io/kairos-io/hadron:${HADRON_VERSION}`;
 
-// Curated shortcuts for the Hadron compose panel. Refs point at the
-// upstream kairos-io/hadron-firmware and kairos-io/hadron-layers OCI
-// packages using :latest so a newly-released version is picked up on the
-// next build. If you need reproducibility, edit the ref after adding it
-// (the picker plants the string, from there it's just a text list) or use
-// the custom-ref input to add a pinned tag.
-type HadronCatalogItem = { name: string; description: string; image: string };
+// Hadron compose panel catalogs are fetched live from upstream (same sources
+// the deleted backend catalog talked to): GitHub releases for hadron-firmware,
+// the pages releases.json for hadron-layers. Both endpoints send permissive
+// CORS headers, so the browser can hit them directly and we don't need a
+// server-side proxy.
+type HadronFirmwareItem = { name: string; image: string; version: string; releaseTag: string };
+type HadronLayerItem = { name: string; title?: string; description?: string; image: string; latest?: string };
 
-const HADRON_FIRMWARE_CATALOG: HadronCatalogItem[] = [
-  { name: "amdgpu",   description: "AMD GPUs (Radeon, RDNA, integrated APUs)",         image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-amdgpu:latest" },
-  { name: "amdcpu",   description: "AMD CPU microcode updates",                        image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-amdcpu:latest" },
-  { name: "i915",     description: "Intel integrated GPUs",                            image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-i915:latest" },
-  { name: "iwlwifi",  description: "Intel WiFi (7260 / 8265 / AX2xx)",                 image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-iwlwifi:latest" },
-  { name: "nvidia",   description: "Nvidia GPUs (open GSP firmware)",                  image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-nvidia:latest" },
-  { name: "brcm",     description: "Broadcom WiFi / Bluetooth (RPi3/4, Mac)",          image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-brcm:latest" },
-  { name: "rtw",      description: "Realtek WiFi (rtw88, rtw89)",                      image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-rtw:latest" },
-  { name: "ath",      description: "Atheros / Qualcomm WiFi (ath9k, ath10k, ath11k)",  image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-ath:latest" },
-  { name: "mediatek", description: "MediaTek WiFi & modem chipsets",                   image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-mediatek:latest" },
-  { name: "realtek",  description: "Realtek Ethernet & USB WiFi",                      image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-realtek:latest" },
-  { name: "mellanox", description: "Mellanox / Nvidia ConnectX NICs",                  image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-mellanox:latest" },
-  { name: "marvell",  description: "Marvell WiFi & NICs",                              image: "ghcr.io/kairos-io/hadron-firmware/linux-firmware-marvell:latest" },
-];
+const HADRON_FIRMWARE_URL = "https://api.github.com/repos/kairos-io/hadron-firmware/releases";
+const HADRON_LAYERS_URL = "https://kairos-io.github.io/hadron-layers/releases.json";
 
-const HADRON_LAYERS_CATALOG: HadronCatalogItem[] = [
-  { name: "git",      description: "Distributed version control",   image: "ghcr.io/kairos-io/hadron-layers/git:latest" },
-  { name: "gpg",      description: "GnuPG signing & encryption",    image: "ghcr.io/kairos-io/hadron-layers/gpg:latest" },
-  { name: "curl",     description: "HTTP client",                    image: "ghcr.io/kairos-io/hadron-layers/curl:latest" },
-  { name: "fwupd",    description: "Firmware update daemon",         image: "ghcr.io/kairos-io/hadron-layers/fwupd:latest" },
-  { name: "htop",     description: "Interactive process viewer",     image: "ghcr.io/kairos-io/hadron-layers/htop:latest" },
-  { name: "tmux",     description: "Terminal multiplexer",           image: "ghcr.io/kairos-io/hadron-layers/tmux:latest" },
-  { name: "vim",      description: "Vim editor",                     image: "ghcr.io/kairos-io/hadron-layers/vim:latest" },
-  { name: "nano",     description: "Nano editor",                    image: "ghcr.io/kairos-io/hadron-layers/nano:latest" },
-  { name: "jq",       description: "JSON processor",                 image: "ghcr.io/kairos-io/hadron-layers/jq:latest" },
-  { name: "iproute2", description: "IP / routing utilities (ip, ss)", image: "ghcr.io/kairos-io/hadron-layers/iproute2:latest" },
-];
+// parseFirmwareAsset mirrors the deleted Go parser. Asset names look like
+// `linux-firmware-<target>_<version>.sysext.raw`; when the `_version` suffix
+// is absent we fall back to the release tag so tree-tagged releases still
+// surface something usable.
+function parseFirmwareAsset(assetName: string, releaseTag: string): { name: string; version: string } | null {
+  const suffix = ".sysext.raw";
+  if (!assetName.endsWith(suffix)) return null;
+  const stem = assetName.slice(0, -suffix.length);
+  const idx = stem.lastIndexOf("_");
+  if (idx < 0) {
+    if (!stem || !releaseTag) return null;
+    return { name: stem, version: releaseTag };
+  }
+  const name = stem.slice(0, idx);
+  const version = stem.slice(idx + 1);
+  if (!name || !version) return null;
+  return { name, version };
+}
+
+async function fetchHadronFirmware(): Promise<HadronFirmwareItem[]> {
+  const resp = await fetch(HADRON_FIRMWARE_URL, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!resp.ok) throw new Error(`firmware releases: ${resp.status}`);
+  const releases = (await resp.json()) as Array<{
+    tag_name: string;
+    assets?: Array<{ name: string }>;
+  }>;
+  const seen = new Set<string>();
+  const items: HadronFirmwareItem[] = [];
+  for (const r of releases) {
+    for (const a of r.assets ?? []) {
+      const parsed = parseFirmwareAsset(a.name, r.tag_name);
+      if (!parsed) continue;
+      const key = `${parsed.name}:${parsed.version}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      items.push({
+        name: parsed.name,
+        image: `ghcr.io/kairos-io/hadron-firmware/${parsed.name}`,
+        version: parsed.version,
+        releaseTag: r.tag_name,
+      });
+    }
+  }
+  items.sort((a, b) => {
+    if (a.releaseTag !== b.releaseTag) return a.releaseTag > b.releaseTag ? -1 : 1;
+    return a.name < b.name ? -1 : 1;
+  });
+  return items;
+}
+
+async function fetchHadronLayers(): Promise<HadronLayerItem[]> {
+  const resp = await fetch(HADRON_LAYERS_URL);
+  if (!resp.ok) throw new Error(`layers releases: ${resp.status}`);
+  const payload = (await resp.json()) as {
+    layers?: Array<{
+      name: string;
+      title?: string;
+      description?: string;
+      image: string;
+      latest?: string;
+    }>;
+  };
+  const items = (payload.layers ?? []).map((l) => ({
+    name: l.name,
+    title: l.title,
+    description: l.description,
+    image: l.image,
+    latest: l.latest,
+  }));
+  items.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return items;
+}
 
 // renderHadronDockerfile mirrors pkg/hadron.RenderDockerfile (deleted with
 // the standalone hadron flow). Same layout: FROM base, layout-normalizing
@@ -574,6 +624,35 @@ export function ArtifactBuilder() {
   const [firmwareQuery, setFirmwareQuery] = useState("");
   const [layerQuery, setLayerQuery] = useState("");
   const [hadronPreviewOpen, setHadronPreviewOpen] = useState(false);
+  const [firmwareCatalog, setFirmwareCatalog] = useState<HadronFirmwareItem[]>([]);
+  const [layersCatalog, setLayersCatalog] = useState<HadronLayerItem[]>([]);
+  const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+
+  // Lazy-load the upstream catalogs the first time the Hadron panel opens.
+  // Both live on public endpoints with permissive CORS, so no backend proxy
+  // needed. Kept lazy so the wizard's other paths don't pay the network cost.
+  useEffect(() => {
+    if (selectedTemplate !== HADRON_TEMPLATE_NAME) return;
+    if (firmwareCatalogState === "idle") {
+      setFirmwareCatalogState("loading");
+      fetchHadronFirmware()
+        .then((items) => {
+          setFirmwareCatalog(items);
+          setFirmwareCatalogState("ready");
+        })
+        .catch(() => setFirmwareCatalogState("error"));
+    }
+    if (layersCatalogState === "idle") {
+      setLayersCatalogState("loading");
+      fetchHadronLayers()
+        .then((items) => {
+          setLayersCatalog(items);
+          setLayersCatalogState("ready");
+        })
+        .catch(() => setLayersCatalogState("error"));
+    }
+  }, [selectedTemplate, firmwareCatalogState, layersCatalogState]);
 
   // Refs to the fields validation can complain about. Populated via
   // bindRef(key). Non-focusable entries (e.g. the outputs container) are
@@ -1198,57 +1277,67 @@ export function ArtifactBuilder() {
                         ))}
                       </div>
                     )}
-                    <Input
-                      placeholder="Filter firmware… (e.g. amdgpu, iwlwifi)"
-                      value={firmwareQuery}
-                      onChange={(e) => setFirmwareQuery(e.target.value)}
-                      className="text-xs"
-                    />
-                    {(() => {
-                      const q = firmwareQuery.trim().toLowerCase();
-                      const visible = q
-                        ? HADRON_FIRMWARE_CATALOG.filter(
-                            (f) =>
-                              f.name.toLowerCase().includes(q) ||
-                              f.description.toLowerCase().includes(q),
-                          )
-                        : HADRON_FIRMWARE_CATALOG;
-                      return (
-                        <div className="max-h-56 overflow-y-auto border rounded-md p-2 space-y-1">
-                          {visible.length === 0 ? (
-                            <p className="text-xs italic text-muted-foreground text-center py-2">
-                              No firmware matches "{firmwareQuery}"
-                            </p>
-                          ) : (
-                            visible.map((f) => {
-                              const selected = hadronFirmware.includes(f.image);
-                              return (
-                                <label
-                                  key={f.name}
-                                  className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selected}
-                                    onChange={() =>
-                                      setHadronFirmware(
-                                        selected
-                                          ? hadronFirmware.filter((r) => r !== f.image)
-                                          : [...hadronFirmware, f.image],
-                                      )
-                                    }
-                                  />
-                                  <span className="font-mono min-w-[7ch]">{f.name}</span>
-                                  <span className="flex-1 text-muted-foreground truncate">
-                                    {f.description}
-                                  </span>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {firmwareCatalogState === "loading" && (
+                      <p className="text-xs italic text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading firmware catalog from upstream…
+                      </p>
+                    )}
+                    {firmwareCatalogState === "error" && (
+                      <p className="text-xs italic text-muted-foreground">
+                        Firmware catalog unavailable — add refs manually below.
+                      </p>
+                    )}
+                    {firmwareCatalogState === "ready" && firmwareCatalog.length > 0 && (
+                      <>
+                        <Input
+                          placeholder="Filter firmware… (e.g. amdgpu, iwlwifi)"
+                          value={firmwareQuery}
+                          onChange={(e) => setFirmwareQuery(e.target.value)}
+                          className="text-xs"
+                        />
+                        {(() => {
+                          const q = firmwareQuery.trim().toLowerCase();
+                          const visible = q
+                            ? firmwareCatalog.filter((f) => f.name.toLowerCase().includes(q))
+                            : firmwareCatalog;
+                          return (
+                            <div className="max-h-56 overflow-y-auto border rounded-md p-2 space-y-1">
+                              {visible.length === 0 ? (
+                                <p className="text-xs italic text-muted-foreground text-center py-2">
+                                  No firmware matches "{firmwareQuery}"
+                                </p>
+                              ) : (
+                                visible.map((f) => {
+                                  const ref = `${f.image}:${f.version}`;
+                                  const selected = hadronFirmware.includes(ref);
+                                  return (
+                                    <label
+                                      key={ref}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          setHadronFirmware(
+                                            selected
+                                              ? hadronFirmware.filter((r) => r !== ref)
+                                              : [...hadronFirmware, ref],
+                                          )
+                                        }
+                                      />
+                                      <span className="font-mono flex-1 truncate">{f.name}</span>
+                                      <span className="text-muted-foreground text-[10px]">{f.version}</span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
                     <div className="flex gap-2">
                       <Input
                         className="font-mono text-xs"
@@ -1339,57 +1428,75 @@ export function ArtifactBuilder() {
                         ))}
                       </ol>
                     )}
-                    <Input
-                      placeholder="Filter layers… (e.g. git, gpg)"
-                      value={layerQuery}
-                      onChange={(e) => setLayerQuery(e.target.value)}
-                      className="text-xs"
-                    />
-                    {(() => {
-                      const q = layerQuery.trim().toLowerCase();
-                      const visible = q
-                        ? HADRON_LAYERS_CATALOG.filter(
-                            (l) =>
-                              l.name.toLowerCase().includes(q) ||
-                              l.description.toLowerCase().includes(q),
-                          )
-                        : HADRON_LAYERS_CATALOG;
-                      return (
-                        <div className="max-h-56 overflow-y-auto border rounded-md p-2 space-y-1">
-                          {visible.length === 0 ? (
-                            <p className="text-xs italic text-muted-foreground text-center py-2">
-                              No layer matches "{layerQuery}"
-                            </p>
-                          ) : (
-                            visible.map((l) => {
-                              const selected = hadronLayers.includes(l.image);
-                              return (
-                                <label
-                                  key={l.name}
-                                  className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
-                                >
-                                  <input
-                                    type="checkbox"
-                                    checked={selected}
-                                    onChange={() =>
-                                      setHadronLayers(
-                                        selected
-                                          ? hadronLayers.filter((r) => r !== l.image)
-                                          : [...hadronLayers, l.image],
-                                      )
-                                    }
-                                  />
-                                  <span className="font-mono min-w-[8ch]">{l.name}</span>
-                                  <span className="flex-1 text-muted-foreground truncate">
-                                    {l.description}
-                                  </span>
-                                </label>
-                              );
-                            })
-                          )}
-                        </div>
-                      );
-                    })()}
+                    {layersCatalogState === "loading" && (
+                      <p className="text-xs italic text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading layers catalog from upstream…
+                      </p>
+                    )}
+                    {layersCatalogState === "error" && (
+                      <p className="text-xs italic text-muted-foreground">
+                        Layers catalog unavailable — add refs manually below.
+                      </p>
+                    )}
+                    {layersCatalogState === "ready" && layersCatalog.length > 0 && (
+                      <>
+                        <Input
+                          placeholder="Filter layers… (e.g. git, gpg)"
+                          value={layerQuery}
+                          onChange={(e) => setLayerQuery(e.target.value)}
+                          className="text-xs"
+                        />
+                        {(() => {
+                          const q = layerQuery.trim().toLowerCase();
+                          const visible = q
+                            ? layersCatalog.filter(
+                                (l) =>
+                                  l.name.toLowerCase().includes(q) ||
+                                  (l.title || "").toLowerCase().includes(q) ||
+                                  (l.description || "").toLowerCase().includes(q),
+                              )
+                            : layersCatalog;
+                          return (
+                            <div className="max-h-56 overflow-y-auto border rounded-md p-2 space-y-1">
+                              {visible.length === 0 ? (
+                                <p className="text-xs italic text-muted-foreground text-center py-2">
+                                  No layer matches "{layerQuery}"
+                                </p>
+                              ) : (
+                                visible.map((l) => {
+                                  const ref = `${l.image}:${l.latest || "latest"}`;
+                                  const selected = hadronLayers.includes(ref);
+                                  return (
+                                    <label
+                                      key={l.name}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          setHadronLayers(
+                                            selected
+                                              ? hadronLayers.filter((r) => r !== ref)
+                                              : [...hadronLayers, ref],
+                                          )
+                                        }
+                                      />
+                                      <span className="font-mono min-w-[8ch]">{l.name}</span>
+                                      <span className="flex-1 text-muted-foreground truncate">
+                                        {l.description || l.title}
+                                      </span>
+                                      <span className="text-muted-foreground text-[10px]">{l.latest}</span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
                     <div className="flex gap-2">
                       <Input
                         className="font-mono text-xs"
