@@ -25,4 +25,12 @@ var _ = Describe("LoadByte", func() {
 		Expect(err).ToNot(HaveOccurred())
 		Expect(cfg.AllowInsecureRegistriesBool()).To(BeFalse())
 	})
+
+	It("reads raw disk size overrides", func() {
+		cfg, _, err := deployer.LoadByte([]byte("disk:\n  size: \"65000\"\n  state_size: \"30000\"\n  system_size: \"12000\"\n"))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cfg.Disk.Size).To(Equal("65000"))
+		Expect(cfg.Disk.StateSize).To(Equal("30000"))
+		Expect(cfg.Disk.SystemSize).To(Equal("12000"))
+	})
 })
