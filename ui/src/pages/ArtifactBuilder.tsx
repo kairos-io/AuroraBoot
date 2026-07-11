@@ -239,6 +239,30 @@ type HadronLayerItem = { name: string; title?: string; description?: string; ima
 
 const HADRON_FIRMWARE_URL = "https://kairos-io.github.io/hadron-firmware/data.json";
 const HADRON_LAYERS_URL = "https://kairos-io.github.io/hadron-layers/releases.json";
+const HADRON_RELEASES_URL = "https://api.github.com/repos/kairos-io/hadron/releases?per_page=30";
+const HADRON_CUSTOM_TAG_SENTINEL = "__custom__";
+
+// fetchHadronBaseTags returns the ghcr.io/kairos-io/hadron tags an operator
+// can pick from. We call the GitHub Releases API (CORS-open) rather than
+// ghcr.io's v2 tag list (which requires an anon-token dance and is not
+// CORS-friendly). Draft / prerelease tags are filtered so the dropdown only
+// shows shipped versions; `main` is prepended so a fresh-tree build is still
+// one click away.
+async function fetchHadronBaseTags(): Promise<string[]> {
+  const resp = await fetch(HADRON_RELEASES_URL, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!resp.ok) throw new Error(`hadron releases: ${resp.status}`);
+  const releases = (await resp.json()) as Array<{
+    tag_name: string;
+    draft?: boolean;
+    prerelease?: boolean;
+  }>;
+  const tags = releases
+    .filter((r) => !r.draft && !r.prerelease)
+    .map((r) => r.tag_name);
+  return ["main", ...tags];
+}
 
 // fetchHadronFirmware reads the pages-published data.json that hadron-firmware
 // keeps in sync with each release. Payload shape:
@@ -598,7 +622,6 @@ export function ArtifactBuilder() {
   // Hadron compose panel state. The "Hadron custom" template opens an inline
   // sub-wizard that composes a base image + firmware + software layers into a
   // Dockerfile which is then handed to the regular Kairos build flow.
-  const [hadronBase, setHadronBase] = useState<string>(DEFAULT_HADRON_BASE);
   const [hadronFirmware, setHadronFirmware] = useState<string[]>([]);
   const [hadronLayers, setHadronLayers] = useState<string[]>([]);
   const [hadronExtra, setHadronExtra] = useState("");
@@ -611,6 +634,13 @@ export function ArtifactBuilder() {
   const [layersCatalog, setLayersCatalog] = useState<HadronLayerItem[]>([]);
   const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // Hadron base image: either an official release tag (picked from a dropdown
+  // populated by the GH releases API) or a fully custom ref string typed by
+  // the operator. hadronBaseTag holds the dropdown value; hadronBaseCustom
+  // holds the free-form string. The effective ref is derived at render time.
+  const [hadronBaseTags, setHadronBaseTags] = useState<string[]>(["main"]);
+  const [hadronBaseTag, setHadronBaseTag] = useState<string>("main");
+  const [hadronBaseCustom, setHadronBaseCustom] = useState<string>("");
 
   // Lazy-load the upstream catalogs the first time the Hadron panel opens.
   // Both live on public endpoints with permissive CORS, so no backend proxy
@@ -636,6 +666,31 @@ export function ArtifactBuilder() {
         .catch(() => setLayersCatalogState("error"));
     }
   }, [selectedTemplate, firmwareCatalogState, layersCatalogState]);
+
+  // Fetch the hadron release tag list once the panel is open. Silent-fallback
+  // to the bundled `main` entry so a rate-limited GH API doesn't blank the
+  // dropdown — the user can still pick a tag by switching to Custom…
+  useEffect(() => {
+    if (selectedTemplate !== HADRON_TEMPLATE_NAME) return;
+    fetchHadronBaseTags()
+      .then((tags) => {
+        if (tags.length > 0) setHadronBaseTags(tags);
+        // Default to the newest tagged release when we haven't been given a
+        // preference yet — the fetch just resolved so "main" is still selected.
+        if (hadronBaseTag === "main" && tags.length > 1) setHadronBaseTag(tags[1]);
+      })
+      .catch(() => {});
+    // Intentionally scoped to selectedTemplate — refires only when panel opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplate]);
+
+  // Effective base image ref resolved from the dropdown + custom fields.
+  // Custom ref wins when the sentinel is selected; otherwise the dropdown
+  // value maps onto the well-known ghcr.io path.
+  const hadronBase =
+    hadronBaseTag === HADRON_CUSTOM_TAG_SENTINEL
+      ? hadronBaseCustom.trim() || DEFAULT_HADRON_BASE
+      : `ghcr.io/kairos-io/hadron:${hadronBaseTag}`;
 
   // Refs to the fields validation can complain about. Populated via
   // bindRef(key). Non-focusable entries (e.g. the outputs container) are
@@ -1218,16 +1273,36 @@ export function ArtifactBuilder() {
                     <Label className="text-xs">
                       Base image
                       <InfoTooltip>
-                        Any Hadron base tag or custom OCI ref works. Default
-                        points at the pinned Hadron release.
+                        Pick an official Hadron release or switch to Custom…
+                        to point at a mirror, digest-pin, or private build.
                       </InfoTooltip>
                     </Label>
-                    <Input
-                      className="font-mono text-xs"
-                      value={hadronBase}
-                      onChange={(e) => setHadronBase(e.target.value)}
-                      placeholder={DEFAULT_HADRON_BASE}
-                    />
+                    <Select value={hadronBaseTag} onValueChange={setHadronBaseTag}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Hadron version" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {hadronBaseTags.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t === "main" ? "main (tip of tree)" : t}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={HADRON_CUSTOM_TAG_SENTINEL}>
+                          Custom…
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {hadronBaseTag === HADRON_CUSTOM_TAG_SENTINEL && (
+                      <Input
+                        className="font-mono text-xs"
+                        placeholder={DEFAULT_HADRON_BASE}
+                        value={hadronBaseCustom}
+                        onChange={(e) => setHadronBaseCustom(e.target.value)}
+                      />
+                    )}
+                    <p className="text-xs text-muted-foreground font-mono break-all">
+                      {hadronBase}
+                    </p>
                   </div>
 
                   <div className="grid gap-2">
