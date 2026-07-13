@@ -69,90 +69,40 @@ See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/
 
 ### Hadron builds
 
-The Artifact Builder ships a dedicated **Hadron image** flow that composes a
-Hadron base with per-vendor firmware layers and pre-built software layers via
-`docker buildx build`. Prereqs on the host running AuroraBoot:
+The Artifact Builder includes a **"Hadron custom"** template that composes a
+Hadron OS image from a base release, per-vendor firmware layers and pre-built
+software layers. Selecting that template opens an inline composer panel inside
+the normal Kairos wizard:
 
-- `docker` with the `buildx` plugin enabled (bundled by default on modern
-  Docker Desktop and Docker CE ≥ 23).
-- **Cross-arch builds (e.g. `linux/amd64` + `linux/arm64` on an amd64 host)
-  need qemu-user emulation** registered via `binfmt_misc`. AuroraBoot
-  auto-registers it before every cross-arch build by running
-  `tonistiigi/binfmt` — which requires privileged Docker on the host.
+1. **Base image** — pick a Hadron release tag from a live dropdown (fetched
+   from GitHub Releases) or enter a fully-qualified custom image ref.
+2. **Firmware** — browse and select from the published
+   [hadron-firmware](https://kairos-io.github.io/hadron-firmware/data.json)
+   catalog. Items can be reordered and removed.
+3. **Software layers** — browse and select from the published
+   [hadron-layers](https://kairos-io.github.io/hadron-layers/releases.json)
+   catalog. Same drag-to-reorder, searchable list.
+4. **Extra Dockerfile** — free-form lines appended after the generated
+   `COPY` instructions, for site-specific customisations.
+5. **Compose & continue** — renders a Dockerfile from the selection
+   (layout-normalising `RUN`, one `COPY --from=` per firmware, one per layer,
+   extras appended) and advances to the Configure step of the normal Kairos
+   builder. From there the Dockerfile drives the standard Kairos build
+   pipeline, producing ISOs, UKIs and raw disks exactly like any other
+   artifact.
 
-  If your Docker refuses privileged containers (rootless, restricted CI
-  runner, ...) register binfmt once manually and the auto-install becomes a
-  no-op:
+A live Dockerfile preview is always visible in the panel so you can verify the
+rendered output before committing to a build.
 
-  ```bash
-  docker run --privileged --rm tonistiigi/binfmt --install all
-  ```
+### Cloning Hadron artifacts as templates
 
-  Symptom of missing binfmt: a build fails mid-`RUN` with `exec format error`.
-
-- Registry credentials for push-mode builds live under **Settings → Hadron
-  Registry Credentials**; passwords are stored encrypted with the same DEK
-  AuroraBoot uses for BMC secrets.
-
-### Hadron → Kairos bridge
-
-Every ready Hadron artifact grows a **Build Kairos from this** button on its
-detail page. It opens the Kairos Artifact Builder with the fields already
-filled in from the Hadron output:
-
-- **Pushed hadron artifact** — the Kairos build receives the pushed ref as
-  `baseImage` and pulls it during the Kairos build.
-- **Tarball-only hadron** (no registry push) — AuroraBoot fetches the
-  generated `Dockerfile.hadron` from the hadron artifact and plants it into
-  the Kairos build's Dockerfile field, so no push/pull round-trip is needed.
-  The tarball itself stays local.
-- **Multi-arch tarball sources** — the Kairos builder picks a single arch
-  from the tarball and toasts a warning; re-open the bridge from a different
-  arch tab if you want the other one.
-
-The bridge is one-way (hadron → kairos). Editing the Hadron artifact after
-pressing the button does not retro-fill anything into the Kairos build; it
-snapshots the state at click time.
-
-### Push vs tarball
-
-Two output modes on the Hadron builder — pick per build:
-
-- **Tarball**: no credentials required. Output is a `hadron.oci.tar` file
-  downloadable from the artifact detail page. Good for air-gapped transfers
-  or when you want to inspect the composed image before pushing it anywhere.
-  A multi-arch tarball is a **fat OCI archive** (all requested platforms in
-  one file).
-- **Push**: uploads to the registry ref you supplied. Requires a matching
-  row under **Settings → Hadron Registry Credentials** for the target
-  registry host. A multi-arch push produces a **fat manifest list** on the
-  registry (one tag, one manifest per platform beneath it).
-
-A tarball built earlier can be pushed later via the **Push to registry**
-button on the artifact detail page — this re-runs `docker buildx` with the
-same spec, reusing the existing build cache, so it's mostly bytes over the
-wire rather than a full rebuild.
-
-### Registry credentials
-
-Managed under **Settings → Hadron Registry Credentials**. One row per
-`(registry, username, password)` tuple — if you push to the same registry
-as two different users, that's two rows.
-
-- Passwords are encrypted at rest with the same DEK AuroraBoot uses for BMC
-  credentials: `internal/secrets.Cipher` (AES-256-GCM), key at
-  `data/secrets/bmc-key`. Losing that key means the ciphertexts can no
-  longer be decrypted.
-- The API never returns password material. The list endpoint reports a
-  boolean `hasPassword` per row so the UI can show whether a row is fully
-  populated, but the ciphertext itself never leaves the server.
-- `PUT` on a row accepts either `password` (rotate to a new value) or
-  `keepPassword: true` (leave the stored ciphertext untouched). The
-  server keys the keepPassword lookup on the `(registry, username)` tuple,
-  so renaming either field on the same row invalidates the match — the
-  UI blocks Save in that case and asks the operator to re-enter the
-  password. To rename without re-typing you'd have to send `password`
-  yourself.
+Every artifact built from the Hadron composer stores the source composition
+(`hadronBase`, `hadronFirmware`, `hadronLayers`, `hadronExtra`) alongside the
+rendered Dockerfile. Clicking **Clone as Hadron** on such an artifact row
+reopens the composer pre-filled with that composition so you can make targeted
+changes — bump the Hadron version, swap a firmware, add a layer — and then
+compose a new artifact without rebuilding the recipe from scratch. Non-Hadron
+artifacts continue to clone through the standard path.
 
 ---
 
