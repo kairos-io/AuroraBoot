@@ -57,9 +57,13 @@ type createArtifactRequest struct {
 	KubernetesVersion       string `json:"kubernetesVersion"`
 	KubernetesEnabled       *bool  `json:"kubernetesEnabled"`
 	AllowInsecureRegistries bool   `json:"allow-insecure-registries"`
-	Dockerfile              string `json:"dockerfile"`
-	BuildContextDir         string `json:"buildContextDir"`
-	OverlayRootfs           string `json:"overlayRootfs"`
+	Dockerfile              string   `json:"dockerfile"`
+	HadronBase              string   `json:"hadronBase"`
+	HadronFirmware          []string `json:"hadronFirmware"`
+	HadronLayers            []string `json:"hadronLayers"`
+	HadronExtra             string   `json:"hadronExtra"`
+	BuildContextDir         string   `json:"buildContextDir"`
+	OverlayRootfs           string   `json:"overlayRootfs"`
 	KairosInitImage         string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
@@ -185,6 +189,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		Dockerfile:        req.Dockerfile,
 		BuildContextDir:   req.BuildContextDir,
 		KairosInitImage:   req.KairosInitImage,
+		HadronBase:        req.HadronBase,
+		HadronFirmware:    req.HadronFirmware,
+		HadronLayers:      req.HadronLayers,
+		HadronExtra:       req.HadronExtra,
 	}
 	// Set grouped fields.
 	opts.Source = builder.ImageSource{
@@ -312,6 +320,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			AutoInstall:             autoInstall,
 			RegisterAuroraBoot:      registerAuroraBoot,
 			Dockerfile:              req.Dockerfile,
+			HadronBase:              req.HadronBase,
+			HadronFirmware:          req.HadronFirmware,
+			HadronLayers:            req.HadronLayers,
+			HadronExtra:             req.HadronExtra,
 			CloudConfig:             opts.CloudConfig,
 			KubernetesDistro:        req.KubernetesDistro,
 			KubernetesVersion:       req.KubernetesVersion,

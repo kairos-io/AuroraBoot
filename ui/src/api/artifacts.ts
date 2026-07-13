@@ -30,6 +30,10 @@ export interface Artifact {
   autoInstall: boolean;
   registerAuroraBoot: boolean;
   dockerfile?: string;
+  hadronBase?: string;
+  hadronFirmware?: string[];
+  hadronLayers?: string[];
+  hadronExtra?: string;
   cloudConfig?: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
@@ -95,6 +99,10 @@ export interface CreateArtifactInput {
    */
   "allow-insecure-registries"?: boolean;
   dockerfile?: string;
+  hadronBase?: string;
+  hadronFirmware?: string[];
+  hadronLayers?: string[];
+  hadronExtra?: string;
   overlayRootfs?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;

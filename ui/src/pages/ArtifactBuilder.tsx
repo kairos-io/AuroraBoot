@@ -689,8 +689,12 @@ export function ArtifactBuilder() {
   // value maps onto the well-known ghcr.io path.
   const hadronBase =
     hadronBaseTag === HADRON_CUSTOM_TAG_SENTINEL
-      ? hadronBaseCustom.trim() || DEFAULT_HADRON_BASE
-      : `ghcr.io/kairos-io/hadron:${hadronBaseTag}`;
+      ? hadronBaseCustom.trim()
+      : hadronBaseTag
+        ? `ghcr.io/kairos-io/hadron:${hadronBaseTag}`
+        : "";
+  const hadronBaseMissing =
+    selectedTemplate === HADRON_TEMPLATE_NAME && !hadronBase;
 
   // Refs to the fields validation can complain about. Populated via
   // bindRef(key). Non-focusable entries (e.g. the outputs container) are
@@ -867,6 +871,59 @@ export function ArtifactBuilder() {
     if (cloneId) {
       getArtifact(cloneId).then((a) => {
         setCloneSource(a.name || a.id.slice(0, 8));
+
+        // Hadron branch: restore composition wizard state and land on Source
+        // so the operator can edit firmware / layers / base before rebuilding.
+        if (a.hadronBase) {
+          const HADRON_PREFIX = "ghcr.io/kairos-io/hadron:";
+          setSelectedTemplate(HADRON_TEMPLATE_NAME);
+          if (a.hadronBase.startsWith(HADRON_PREFIX)) {
+            setHadronBaseTag(a.hadronBase.slice(HADRON_PREFIX.length));
+            setHadronBaseCustom("");
+          } else {
+            setHadronBaseTag(HADRON_CUSTOM_TAG_SENTINEL);
+            setHadronBaseCustom(a.hadronBase);
+          }
+          setHadronFirmware(a.hadronFirmware || []);
+          setHadronLayers(a.hadronLayers || []);
+          setHadronExtra(a.hadronExtra || "");
+          setForm({
+            ...EMPTY_FORM,
+            name: `Copy of ${a.name || a.id.slice(0, 8)}`,
+            baseImage: "",
+            kairosVersion: a.kairosVersion,
+            model: a.model,
+            arch: a.arch || "amd64",
+            variant: a.variant || "core",
+            outputs: {
+              iso: a.iso,
+              cloudImage: a.cloudImage,
+              netboot: a.netboot,
+              rawDisk: a.rawDisk ?? false,
+              tar: a.tar ?? false,
+              gce: a.gce ?? false,
+              vhd: a.vhd ?? false,
+              uki: a.uki ?? false,
+              fips: a.fips,
+              trustedBoot: a.trustedBoot,
+            },
+            signing: { ...EMPTY_SIGNING },
+            provisioning: {
+              autoInstall: a.autoInstall ?? true,
+              registerAuroraBoot: a.registerAuroraBoot ?? true,
+              targetGroupId: a.targetGroupId || "",
+              allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
+            },
+          });
+          if (a.cloudConfig) {
+            setAdvancedConfig(a.cloudConfig);
+            setShowAdvanced(true);
+            setUserMode("none");
+          }
+          setStep(0);
+          return;
+        }
+
         setForm({
           ...EMPTY_FORM,
           name: `Copy of ${a.name || a.id.slice(0, 8)}`,
@@ -1083,6 +1140,18 @@ export function ArtifactBuilder() {
       "allow-insecure-registries":
         buildMode === "image" ? form["allow-insecure-registries"] : undefined,
       dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
+      hadronBase:
+        selectedTemplate === HADRON_TEMPLATE_NAME
+          ? hadronBase || undefined
+          : undefined,
+      hadronFirmware:
+        selectedTemplate === HADRON_TEMPLATE_NAME ? hadronFirmware : undefined,
+      hadronLayers:
+        selectedTemplate === HADRON_TEMPLATE_NAME ? hadronLayers : undefined,
+      hadronExtra:
+        selectedTemplate === HADRON_TEMPLATE_NAME
+          ? hadronExtra || undefined
+          : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
       outputs: { ...form.outputs },
@@ -1256,7 +1325,7 @@ export function ArtifactBuilder() {
               </div>
             )}
 
-            {selectedTemplate === HADRON_TEMPLATE_NAME && !cloneSource && (
+            {selectedTemplate === HADRON_TEMPLATE_NAME && (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm">Hadron composition</CardTitle>
@@ -1300,9 +1369,15 @@ export function ArtifactBuilder() {
                         onChange={(e) => setHadronBaseCustom(e.target.value)}
                       />
                     )}
-                    <p className="text-xs text-muted-foreground font-mono break-all">
-                      {hadronBase}
-                    </p>
+                    {hadronBaseMissing ? (
+                      <p className="text-xs text-red-600 font-medium">
+                        Pick a Hadron base image or type a custom reference.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground font-mono break-all">
+                        {hadronBase}
+                      </p>
+                    )}
                   </div>
 
                   <div className="grid gap-2">
@@ -1615,25 +1690,32 @@ export function ArtifactBuilder() {
                       )}
                       Dockerfile preview
                     </button>
-                    {hadronPreviewOpen && (
-                      <pre className="mt-2 font-mono text-xs bg-muted/40 border rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre">
-                        {renderHadronDockerfile(
-                          hadronBase.trim() || DEFAULT_HADRON_BASE,
-                          hadronFirmware,
-                          hadronLayers,
-                          hadronExtra,
-                        )}
-                      </pre>
-                    )}
+                    {hadronPreviewOpen &&
+                      (hadronBaseMissing ? (
+                        <p className="mt-2 text-xs text-muted-foreground italic">
+                          Preview available once a base image is selected.
+                        </p>
+                      ) : (
+                        <pre className="mt-2 font-mono text-xs bg-muted/40 border rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre">
+                          {renderHadronDockerfile(
+                            hadronBase,
+                            hadronFirmware,
+                            hadronLayers,
+                            hadronExtra,
+                          )}
+                        </pre>
+                      ))}
                   </div>
 
                   <div className="flex justify-end">
                     <Button
                       type="button"
                       className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                      disabled={hadronBaseMissing}
                       onClick={() => {
+                        if (hadronBaseMissing) return;
                         const dockerfile = renderHadronDockerfile(
-                          hadronBase.trim() || DEFAULT_HADRON_BASE,
+                          hadronBase,
                           hadronFirmware,
                           hadronLayers,
                           hadronExtra,
@@ -1650,7 +1732,8 @@ export function ArtifactBuilder() {
               </Card>
             )}
 
-            {(selectedTemplate === "Custom" || cloneSource) && (
+            {(selectedTemplate === "Custom" ||
+              (cloneSource && selectedTemplate !== HADRON_TEMPLATE_NAME)) && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Image Source</CardTitle>

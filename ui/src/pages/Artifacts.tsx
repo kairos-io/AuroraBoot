@@ -310,14 +310,25 @@ export function Artifacts() {
                 </TableCell>
                 <TableCell className="text-sm max-w-xs">
                   <div className="flex flex-col gap-1 min-w-0">
-                    <span className="truncate">{artifact.baseImage || "-"}</span>
-                    {artifact.arch && (
-                      <div>
+                    <span className="truncate">
+                      {artifact.hadronBase || artifact.baseImage || "-"}
+                    </span>
+                    <div className="flex gap-1 flex-wrap">
+                      {artifact.arch && (
                         <Badge variant="secondary" className="text-[10px] font-mono" title="Architecture">
                           {artifact.arch}
                         </Badge>
-                      </div>
-                    )}
+                      )}
+                      {artifact.hadronBase && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] font-mono border-[#EE5007] text-[#EE5007]"
+                          title="Hadron composite (firmware + layers)"
+                        >
+                          Hadron
+                        </Badge>
+                      )}
+                    </div>
                   </div>
                 </TableCell>
                 <TableCell>
@@ -347,6 +358,7 @@ export function Artifacts() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
+                        title={artifact.hadronBase ? "Clone as Hadron" : "Clone"}
                         onClick={(e) => {
                           e.stopPropagation();
                           navigate(`/artifacts/new?clone=${artifact.id}`);
