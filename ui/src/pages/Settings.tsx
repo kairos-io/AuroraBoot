@@ -18,8 +18,7 @@ export function Settings() {
   }, []);
 
   async function handleRotate() {
-    if (!confirm("Are you sure? This will invalidate the current token."))
-      return;
+    if (!confirm("Are you sure? This will invalidate the current token.")) return;
     setRotating(true);
     try {
       const result = await rotateRegistrationToken();
@@ -38,14 +37,11 @@ export function Settings() {
       <div className="grid gap-6 max-w-2xl">
         <Card>
           <CardHeader>
-            <CardTitle className="text-sm font-medium">
-              Registration Token
-            </CardTitle>
+            <CardTitle className="text-sm font-medium">Registration Token</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <p className="text-sm text-muted-foreground">
-              This token is used by nodes to register with the server. Keep it
-              secret.
+              This token is used by nodes to register with the server. Keep it secret.
             </p>
             <div className="flex gap-2">
               <div className="relative flex-1">
@@ -60,27 +56,16 @@ export function Settings() {
                   className="absolute right-0 top-0 h-full"
                   onClick={() => setRevealed(!revealed)}
                 >
-                  {revealed ? (
-                    <EyeOff className="h-4 w-4" />
-                  ) : (
-                    <Eye className="h-4 w-4" />
-                  )}
+                  {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              <Button
-                variant="outline"
-                onClick={handleRotate}
-                disabled={rotating}
-              >
-                <RefreshCw
-                  className={`h-4 w-4 mr-2 ${rotating ? "animate-spin" : ""}`}
-                />
+              <Button variant="outline" onClick={handleRotate} disabled={rotating}>
+                <RefreshCw className={`h-4 w-4 mr-2 ${rotating ? "animate-spin" : ""}`} />
                 Rotate
               </Button>
             </div>
           </CardContent>
         </Card>
-
       </div>
     </div>
   );

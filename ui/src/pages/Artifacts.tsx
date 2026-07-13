@@ -23,6 +23,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Plus, Trash2, Package, Bookmark, Copy } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 // Valid values for each URL-driven axis. Any other value falls back to the
 // first option so a malformed share link (or a stale schema from a rename)
@@ -158,7 +159,10 @@ export function Artifacts() {
             Clear Failed
           </Button>
         )}
-        <Button className="bg-[#EE5007] hover:bg-[#FF7442] text-white" onClick={() => navigate("/artifacts/new")}>
+        <Button
+          className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+          onClick={() => navigate("/artifacts/new")}
+        >
           <Plus className="h-4 w-4 mr-2" />
           Build New
         </Button>
@@ -304,8 +308,28 @@ export function Artifacts() {
                     )}
                   </div>
                 </TableCell>
-                <TableCell className="text-sm max-w-xs truncate">
-                  {artifact.baseImage || "-"}
+                <TableCell className="text-sm max-w-xs">
+                  <div className="flex flex-col gap-1 min-w-0">
+                    <span className="truncate">
+                      {artifact.hadronBase || artifact.baseImage || "-"}
+                    </span>
+                    <div className="flex gap-1 flex-wrap">
+                      {artifact.arch && (
+                        <Badge variant="secondary" className="text-[10px] font-mono" title="Architecture">
+                          {artifact.arch}
+                        </Badge>
+                      )}
+                      {artifact.hadronBase && (
+                        <Badge
+                          variant="outline"
+                          className="text-[10px] font-mono border-[#EE5007] text-[#EE5007]"
+                          title="Hadron composite (firmware + layers)"
+                        >
+                          Hadron
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
                 </TableCell>
                 <TableCell>
                   <div className="flex flex-col gap-1">
@@ -334,6 +358,7 @@ export function Artifacts() {
                         variant="ghost"
                         size="icon"
                         className="h-7 w-7"
+                        title={artifact.hadronBase ? "Clone as Hadron" : "Clone"}
                         onClick={(e) => {
                           e.stopPropagation();
                           navigate(`/artifacts/new?clone=${artifact.id}`);

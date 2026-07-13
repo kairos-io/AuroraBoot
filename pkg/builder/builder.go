@@ -93,6 +93,14 @@ type BuildOptions struct {
 	Dockerfile      string // optional Dockerfile content (builds image via docker before ISO)
 	BuildContextDir string // directory with files available to COPY in Dockerfile
 	KairosInitImage string
+
+	// Hadron composition (metadata only — not consumed by the build; the
+	// rendered Dockerfile is what actually runs). Persisted on the artifact
+	// record so the frontend can rehydrate the composer when cloning.
+	HadronBase     string
+	HadronFirmware []string
+	HadronLayers   []string
+	HadronExtra    string
 }
 
 // BuildStatus tracks the state of a build.

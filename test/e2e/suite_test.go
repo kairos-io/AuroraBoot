@@ -62,7 +62,6 @@ var (
 	agentRepo        string
 	agentBranch      string
 	prebuiltISO      string // optional: skip build, use this ISO directly
-	hadronRepo       string // path to hadron repo for building from scratch
 )
 
 var _ = BeforeSuite(func() {
@@ -73,22 +72,9 @@ var _ = BeforeSuite(func() {
 	agentRepo = os.Getenv("KAIROS_AGENT_REPO")
 	agentBranch = os.Getenv("KAIROS_AGENT_BRANCH")
 	prebuiltISO = os.Getenv("ISO")
-	hadronRepo = os.Getenv("HADRON_REPO")
-	if hadronRepo == "" {
-		// Default to well-known path
-		if _, err := os.Stat("/home/mudler/_git/hadron"); err == nil {
-			hadronRepo = "/home/mudler/_git/hadron"
-		}
-	}
 
-	if kairosBaseImage == "" && prebuiltISO == "" && hadronRepo == "" {
-		Skip("Set KAIROS_BASE_IMAGE, ISO, or HADRON_REPO env var to run e2e tests")
-	}
-
-	// If no base image specified but hadron is available, build one
-	if kairosBaseImage == "" && prebuiltISO == "" && hadronRepo != "" {
-		GinkgoWriter.Printf("Building Kairos image from Hadron at %s\n", hadronRepo)
-		kairosBaseImage = buildKairosFromHadron()
+	if kairosBaseImage == "" && prebuiltISO == "" {
+		Skip("Set KAIROS_BASE_IMAGE or ISO env var to run e2e tests")
 	}
 
 	// Create temp directories
@@ -209,21 +195,6 @@ RUN chmod +x /usr/bin/kairos-agent
 	Expect(err).ToNot(HaveOccurred(), "Failed to build custom Docker image")
 
 	return "docker:" + imageName
-}
-
-// buildKairosFromHadron builds a Kairos image using the hadron repo.
-// Returns the Docker image name (e.g., "hadron-init") that can be passed to auroraboot.
-func buildKairosFromHadron() string {
-	GinkgoWriter.Println("Running: make build-kairos in hadron repo")
-	cmd := exec.Command("make", "build-kairos", "BOOTLOADER=grub", "VERSION=e2e-test")
-	cmd.Dir = hadronRepo
-	cmd.Stdout = GinkgoWriter
-	cmd.Stderr = GinkgoWriter
-	err := cmd.Run()
-	Expect(err).ToNot(HaveOccurred(), "Failed to build Kairos image from Hadron")
-
-	// The image is tagged as "hadron-init" by default
-	return "docker:hadron-init"
 }
 
 // buildISOs builds the call-home and vanilla ISOs using AuroraBoot.

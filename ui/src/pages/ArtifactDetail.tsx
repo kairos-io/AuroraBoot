@@ -45,6 +45,8 @@ import {
   ArrowDown,
   WrapText,
   Loader2,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 import { DeployDialog } from "@/components/DeployDialog";
 import { ansiToHtml } from "@/lib/ansi";
@@ -88,6 +90,13 @@ export function ArtifactDetail() {
   const [followLogs, setFollowLogs] = useState(true);
   const [wrapLogs, setWrapLogs] = useState(true);
   const [now, setNow] = useState(() => Date.now());
+  // Collapse state for the two big-ish cards on this page. Both start
+  // collapsed so the landing view highlights status + downloads; users click
+  // the header/chevron to peek at config or the log body. Toolbar buttons on
+  // the log card (live indicator, copy, download) stay visible even when the
+  // body is collapsed.
+  const [configOpen, setConfigOpen] = useState(false);
+  const [logsOpen, setLogsOpen] = useState(false);
 
   const fetchArtifact = useCallback(() => {
     if (!id) return;
@@ -475,6 +484,17 @@ export function ArtifactDetail() {
       {/* Status band */}
       <div className="flex items-center gap-4 flex-wrap">
         <StatusBadge status={artifact.phase} />
+        {artifact.arch && (
+          <div className="flex gap-1 flex-wrap">
+            <span
+              className="inline-flex items-center gap-1 text-xs font-mono px-2 py-0.5 rounded border bg-muted/50"
+              title="Architecture"
+            >
+              <Cpu className="h-3 w-3 text-muted-foreground" />
+              {artifact.arch.replace(/^linux\//, "")}
+            </span>
+          </div>
+        )}
         {isActive && (
           <span className="inline-flex items-center gap-1.5 text-sm text-[#EE5007]">
             <span className="relative flex h-2 w-2">
@@ -592,7 +612,7 @@ export function ArtifactDetail() {
                   Container image (for upgrades)
                 </p>
                 <a
-                  href={`/api/v1/artifacts/${id}/image?token=${localStorage.getItem("auroraboot_token") || ""}`}
+                  href={`/api/v1/artifacts/${encodeURIComponent(id!)}/image?token=${encodeURIComponent(localStorage.getItem("auroraboot_token") || "")}`}
                   download
                   className="inline-flex items-center gap-2 text-xs font-mono text-[#EE5007] hover:underline break-all"
                 >
@@ -608,9 +628,32 @@ export function ArtifactDetail() {
 
       {/* Configuration — split into Source / Outputs / Provisioning sections
           so readers can scan each concern independently instead of hunting
-          through a dense 6-column grid. */}
+          through a dense 6-column grid.
+          Collapsed by default — the outputs at the top usually answer
+          "what came out of this build?"; the config is secondary. */}
       <Card>
-        <CardContent className="p-6 space-y-6">
+        <button
+          type="button"
+          onClick={() => setConfigOpen((o) => !o)}
+          className="w-full flex items-center justify-between px-6 py-3 hover:bg-muted/40 transition-colors"
+        >
+          <span className="text-sm font-semibold flex items-center gap-2">
+            <Box className="h-4 w-4 text-muted-foreground" />
+            Configuration
+            {!configOpen && (
+              <span className="text-xs font-normal text-muted-foreground">
+                — click to expand
+              </span>
+            )}
+          </span>
+          {configOpen ? (
+            <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="h-4 w-4 text-muted-foreground" />
+          )}
+        </button>
+        {configOpen && (
+        <CardContent className="p-6 pt-0 space-y-6 border-t">
           {/* Source */}
           <section>
             <div className="flex items-center gap-2 mb-3">
@@ -761,6 +804,7 @@ export function ArtifactDetail() {
             </div>
           </section>
         </CardContent>
+        )}
       </Card>
 
       {/* Build Logs — terminal with a toolbar, follow-tail, wrap toggle,
@@ -768,8 +812,33 @@ export function ArtifactDetail() {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-2.5">
           <div className="flex items-center gap-2 min-w-0">
+            {/* Chevron collapses just the log body (toolbar stays visible so
+                the live/reconnect indicator remains reachable at a glance). */}
+            <button
+              type="button"
+              onClick={() => setLogsOpen((o) => !o)}
+              className="p-0.5 rounded hover:bg-muted/60"
+              title={logsOpen ? "Collapse logs" : "Expand logs"}
+            >
+              {logsOpen ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
             <TerminalIcon className="h-4 w-4 text-muted-foreground shrink-0" />
-            <h3 className="text-sm font-semibold">Build logs</h3>
+            <h3
+              className="text-sm font-semibold cursor-pointer hover:underline"
+              onClick={() => setLogsOpen((o) => !o)}
+              title={logsOpen ? "Collapse logs" : "Expand logs"}
+            >
+              Build logs
+              {!logsOpen && (
+                <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  — click to expand
+                </span>
+              )}
+            </h3>
             {isActive && wsConnected && (
               <span className="inline-flex items-center gap-1.5 text-[11px] text-[#EE5007]">
                 <span className="relative flex h-1.5 w-1.5">
@@ -847,7 +916,7 @@ export function ArtifactDetail() {
         </div>
         <div
           ref={logsContainerRef}
-          className="terminal-output font-mono text-[12.5px] leading-5 overflow-auto max-h-[32rem] min-h-[20rem]"
+          className={`terminal-output font-mono text-[12.5px] leading-5 overflow-auto max-h-[32rem] min-h-[20rem] ${logsOpen ? "" : "hidden"}`}
         >
           {logLines.length > 0 ? (
             // Line-numbered log rendering. We pre-split the string once and

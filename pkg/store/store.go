@@ -164,6 +164,10 @@ type ArtifactRecord struct {
 	AutoInstall             bool      `json:"autoInstall"`
 	RegisterAuroraBoot      bool      `json:"registerAuroraBoot"`
 	Dockerfile              string    `json:"dockerfile,omitempty"`
+	HadronBase              string    `json:"hadronBase,omitempty"`
+	HadronFirmware          []string  `json:"hadronFirmware,omitempty" gorm:"serializer:json"`
+	HadronLayers            []string  `json:"hadronLayers,omitempty" gorm:"serializer:json"`
+	HadronExtra             string    `json:"hadronExtra,omitempty" gorm:"type:text"`
 	CloudConfig             string    `json:"cloudConfig,omitempty" gorm:"type:text"`
 	KubernetesDistro        string    `json:"kubernetesDistro,omitempty"`
 	KubernetesVersion       string    `json:"kubernetesVersion,omitempty"`

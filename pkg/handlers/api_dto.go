@@ -112,6 +112,10 @@ type APICreateArtifactRequest struct {
 	KubernetesEnabled       *bool                   `json:"kubernetesEnabled"`
 	AllowInsecureRegistries bool                    `json:"allow-insecure-registries" example:"false"`
 	Dockerfile              string                  `json:"dockerfile"`
+	HadronBase              string                  `json:"hadronBase"`
+	HadronFirmware          []string                `json:"hadronFirmware"`
+	HadronLayers            []string                `json:"hadronLayers"`
+	HadronExtra             string                  `json:"hadronExtra"`
 	OverlayRootfs           string                  `json:"overlayRootfs"`
 	KairosInitImage         string                  `json:"kairosInitImage"`
 	Outputs                 APIArtifactOutputs      `json:"outputs"`
