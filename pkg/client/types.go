@@ -172,6 +172,10 @@ type Artifact struct {
 	AutoInstall             bool          `json:"autoInstall"`
 	RegisterAuroraBoot      bool          `json:"registerAuroraBoot"`
 	Dockerfile              string        `json:"dockerfile,omitempty"`
+	HadronBase              string        `json:"hadronBase,omitempty"`
+	HadronFirmware          []string      `json:"hadronFirmware,omitempty"`
+	HadronLayers            []string      `json:"hadronLayers,omitempty"`
+	HadronExtra             string        `json:"hadronExtra,omitempty"`
 	CloudConfig             string        `json:"cloudConfig,omitempty"`
 	TargetGroupID           string        `json:"targetGroupId,omitempty"`
 	ContainerImage          string        `json:"containerImage,omitempty"`
@@ -195,6 +199,10 @@ type CreateArtifactRequest struct {
 	KubernetesEnabled       *bool                  `json:"kubernetesEnabled,omitempty"`
 	AllowInsecureRegistries bool                   `json:"allow-insecure-registries,omitempty"`
 	Dockerfile              string                 `json:"dockerfile,omitempty"`
+	HadronBase              string                 `json:"hadronBase,omitempty"`
+	HadronFirmware          []string               `json:"hadronFirmware,omitempty"`
+	HadronLayers            []string               `json:"hadronLayers,omitempty"`
+	HadronExtra             string                 `json:"hadronExtra,omitempty"`
 	OverlayRootfs           string                 `json:"overlayRootfs,omitempty"`
 	KairosInitImage         string                 `json:"kairosInitImage,omitempty"`
 	Outputs                 ArtifactOutputs        `json:"outputs"`

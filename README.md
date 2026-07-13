@@ -67,6 +67,43 @@ Open **http://localhost:9099**, sign in, and the welcome wizard walks you throug
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
 
+### Hadron builds
+
+The Artifact Builder includes a **"Hadron custom"** template that composes a
+Hadron OS image from a base release, per-vendor firmware layers and pre-built
+software layers. Selecting that template opens an inline composer panel inside
+the normal Kairos wizard:
+
+1. **Base image** — pick a Hadron release tag from a live dropdown (fetched
+   from GitHub Releases) or enter a fully-qualified custom image ref.
+2. **Firmware** — browse and select from the published
+   [hadron-firmware](https://kairos-io.github.io/hadron-firmware/data.json)
+   catalog. Items can be reordered and removed.
+3. **Software layers** — browse and select from the published
+   [hadron-layers](https://kairos-io.github.io/hadron-layers/releases.json)
+   catalog. Same drag-to-reorder, searchable list.
+4. **Extra Dockerfile** — free-form lines appended after the generated
+   `COPY` instructions, for site-specific customisations.
+5. **Compose & continue** — renders a Dockerfile from the selection
+   (layout-normalising `RUN`, one `COPY --from=` per firmware, one per layer,
+   extras appended) and advances to the Configure step of the normal Kairos
+   builder. From there the Dockerfile drives the standard Kairos build
+   pipeline, producing ISOs, UKIs and raw disks exactly like any other
+   artifact.
+
+A live Dockerfile preview is always visible in the panel so you can verify the
+rendered output before committing to a build.
+
+### Cloning Hadron artifacts as templates
+
+Every artifact built from the Hadron composer stores the source composition
+(`hadronBase`, `hadronFirmware`, `hadronLayers`, `hadronExtra`) alongside the
+rendered Dockerfile. Clicking **Clone as Hadron** on such an artifact row
+reopens the composer pre-filled with that composition so you can make targeted
+changes — bump the Hadron version, swap a firmware, add a layer — and then
+compose a new artifact without rebuilding the recipe from scratch. Non-Hadron
+artifacts continue to clone through the standard path.
+
 ---
 
 ## Using the CLI

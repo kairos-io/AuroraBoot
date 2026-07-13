@@ -1,8 +1,12 @@
 import { apiFetch, apiFetchText } from "./client";
 
+/** Discriminates the build pipeline. Empty and "kairos" are the classic path. */
+export type ArtifactKind = "" | "kairos";
+
 export interface Artifact {
   id: string;
   name?: string;
+  kind?: ArtifactKind;
   saved?: boolean;
   phase: string;
   message: string;
@@ -26,6 +30,10 @@ export interface Artifact {
   autoInstall: boolean;
   registerAuroraBoot: boolean;
   dockerfile?: string;
+  hadronBase?: string;
+  hadronFirmware?: string[];
+  hadronLayers?: string[];
+  hadronExtra?: string;
   cloudConfig?: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
@@ -91,6 +99,10 @@ export interface CreateArtifactInput {
    */
   "allow-insecure-registries"?: boolean;
   dockerfile?: string;
+  hadronBase?: string;
+  hadronFirmware?: string[];
+  hadronLayers?: string[];
+  hadronExtra?: string;
   overlayRootfs?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;
@@ -189,7 +201,7 @@ export function cancelArtifact(id: string): Promise<void> {
 
 export function artifactDownloadUrl(id: string, filename: string): string {
   const token = localStorage.getItem("auroraboot_token") || "";
-  return `/api/v1/artifacts/${id}/download/${filename}?token=${token}`;
+  return `/api/v1/artifacts/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
 }
 
 export function updateArtifact(

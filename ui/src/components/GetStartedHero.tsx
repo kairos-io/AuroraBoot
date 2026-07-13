@@ -39,7 +39,7 @@ export function GetStartedHero() {
       n: 1,
       title: "Build your first artifact",
       description:
-        "Pick a base OS, choose a target architecture and outputs (ISO, UKI, raw disk...), and let AuroraBoot produce a bootable image. Templates for Ubuntu, Fedora, Hadron and more are one click away.",
+        "Pick a base OS, choose a target architecture and outputs (ISO, UKI, raw disk...), and let AuroraBoot produce a bootable image. Templates for Ubuntu, Fedora and more are one click away.",
       icon: Package,
       cta: { label: "Start a build", to: "/artifacts/new" },
       active: true,

@@ -222,21 +222,136 @@ const ALPINE_VERSION = "3.24";
 // renovate: datasource=docker depName=rockylinux
 const ROCKYLINUX_VERSION = "9";
 
+// HADRON_TEMPLATE_NAME is a sentinel template name that opens the Hadron
+// compose panel instead of prefilling the form. Kept as a named const so
+// the special case in the template click handler stays greppable.
+const HADRON_TEMPLATE_NAME = "Hadron custom";
+
+const DEFAULT_HADRON_BASE = `ghcr.io/kairos-io/hadron:${HADRON_VERSION}`;
+
+// Hadron compose panel catalogs are fetched live from upstream (same sources
+// the deleted backend catalog talked to): GitHub releases for hadron-firmware,
+// the pages releases.json for hadron-layers. Both endpoints send permissive
+// CORS headers, so the browser can hit them directly and we don't need a
+// server-side proxy.
+type HadronFirmwareItem = { name: string; image: string; version: string; releaseTag: string };
+type HadronLayerItem = { name: string; title?: string; description?: string; image: string; latest?: string };
+
+const HADRON_FIRMWARE_URL = "https://kairos-io.github.io/hadron-firmware/data.json";
+const HADRON_LAYERS_URL = "https://kairos-io.github.io/hadron-layers/releases.json";
+const HADRON_RELEASES_URL = "https://api.github.com/repos/kairos-io/hadron/releases?per_page=30";
+const HADRON_CUSTOM_TAG_SENTINEL = "__custom__";
+
+// fetchHadronBaseTags returns the ghcr.io/kairos-io/hadron tags an operator
+// can pick from. We call the GitHub Releases API (CORS-open) rather than
+// ghcr.io's v2 tag list (which requires an anon-token dance and is not
+// CORS-friendly). Draft / prerelease tags are filtered so the dropdown only
+// shows shipped versions; `main` is prepended so a fresh-tree build is still
+// one click away.
+async function fetchHadronBaseTags(): Promise<string[]> {
+  const resp = await fetch(HADRON_RELEASES_URL, {
+    headers: { Accept: "application/vnd.github+json" },
+  });
+  if (!resp.ok) throw new Error(`hadron releases: ${resp.status}`);
+  const releases = (await resp.json()) as Array<{
+    tag_name: string;
+    draft?: boolean;
+    prerelease?: boolean;
+  }>;
+  const tags = releases
+    .filter((r) => !r.draft && !r.prerelease)
+    .map((r) => r.tag_name);
+  return ["main", ...tags];
+}
+
+// fetchHadronFirmware reads the pages-published data.json that hadron-firmware
+// keeps in sync with each release. Payload shape:
+//   { releases: [ { tag, images: { <name>: "<ref>", ... } }, ... ] }
+// Every image already carries the tag baked into the ref string so we don't
+// have to reassemble ghcr paths ourselves. We keep the newest release only
+// (releases[0]) — older tags are still selectable via the custom-ref input.
+async function fetchHadronFirmware(): Promise<HadronFirmwareItem[]> {
+  const resp = await fetch(HADRON_FIRMWARE_URL);
+  if (!resp.ok) throw new Error(`firmware data: ${resp.status}`);
+  const payload = (await resp.json()) as {
+    releases?: Array<{
+      tag: string;
+      prerelease?: boolean;
+      images?: Record<string, string>;
+    }>;
+  };
+  const releases = (payload.releases ?? []).filter((r) => !r.prerelease);
+  if (releases.length === 0) return [];
+  // data.json emits releases newest-first, but sort defensively so we don't
+  // depend on the publisher's ordering.
+  releases.sort((a, b) => (a.tag > b.tag ? -1 : a.tag < b.tag ? 1 : 0));
+  const latest = releases[0];
+  const items: HadronFirmwareItem[] = [];
+  for (const [name, ref] of Object.entries(latest.images ?? {})) {
+    // Ref shape is `<image>:<version>` — split on the LAST `:` so registry
+    // ports (host:5000/...) don't confuse the parser.
+    const colon = ref.lastIndexOf(":");
+    const image = colon > 0 ? ref.slice(0, colon) : ref;
+    const version = colon > 0 ? ref.slice(colon + 1) : latest.tag;
+    items.push({ name, image, version, releaseTag: latest.tag });
+  }
+  items.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return items;
+}
+
+async function fetchHadronLayers(): Promise<HadronLayerItem[]> {
+  const resp = await fetch(HADRON_LAYERS_URL);
+  if (!resp.ok) throw new Error(`layers releases: ${resp.status}`);
+  const payload = (await resp.json()) as {
+    layers?: Array<{
+      name: string;
+      title?: string;
+      description?: string;
+      image: string;
+      latest?: string;
+    }>;
+  };
+  const items = (payload.layers ?? []).map((l) => ({
+    name: l.name,
+    title: l.title,
+    description: l.description,
+    image: l.image,
+    latest: l.latest,
+  }));
+  items.sort((a, b) => (a.name < b.name ? -1 : 1));
+  return items;
+}
+
+// renderHadronDockerfile mirrors pkg/hadron.RenderDockerfile (deleted with
+// the standalone hadron flow). Same layout: FROM base, layout-normalizing
+// RUN, one COPY per firmware in spec order, one COPY per layer in spec
+// order, extra dockerfile appended verbatim. Order matters — later COPYs
+// overwrite earlier files, so sorting would silently change the image.
+function renderHadronDockerfile(
+  base: string,
+  firmware: string[],
+  layers: string[],
+  extra: string,
+): string {
+  let out = "# Generated by AuroraBoot Hadron composer — do not edit\n";
+  out += `FROM ${base}\n`;
+  out +=
+    "RUN if [ -L /usr/local/lib/firmware ] || [ ! -d /usr/local/lib/firmware ]; then \\\n" +
+    "        rm -rf /usr/local/lib/firmware /lib/firmware && \\\n" +
+    "        mkdir -p /usr/local/lib/firmware && \\\n" +
+    "        ln -s /usr/local/lib/firmware /lib/firmware; \\\n" +
+    "    fi && \\\n" +
+    "    if [ -L /usr/sbin ]; then \\\n" +
+    "        rm /usr/sbin && mkdir /usr/sbin; \\\n" +
+    "    fi\n";
+  for (const ref of firmware) out += `COPY --from=${ref} / /\n`;
+  for (const ref of layers) out += `COPY --from=${ref} / /\n`;
+  const trimmed = extra.trim();
+  if (trimmed) out += trimmed + (trimmed.endsWith("\n") ? "" : "\n");
+  return out;
+}
+
 const TEMPLATES: BuildTemplate[] = [
-  {
-    name: "Hadron + K3s",
-    description: "Hadron Linux with K3s, generic model, ISO",
-    values: {
-      baseImage: `quay.io/kairos/hadron:${HADRON_VERSION}-core-amd64-generic-${KAIROS_VERSION}`,
-      kairosVersion: KAIROS_VERSION,
-      model: "generic",
-      arch: "amd64",
-      variant: "standard",
-      kubernetesDistro: "k3s",
-      kubernetesEnabled: true,
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
-    },
-  },
   {
     name: "Ubuntu 24.04",
     description: "Ubuntu base, auto-kairosified, ISO",
@@ -310,11 +425,17 @@ const TEMPLATES: BuildTemplate[] = [
     },
   },
   {
+    name: HADRON_TEMPLATE_NAME,
+    description: "Compose Hadron base + firmware + layers into a Dockerfile",
+    values: {},
+  },
+  {
     name: "Custom",
     description: "Start from scratch",
     values: {},
   },
 ];
+
 
 const EMPTY_OUTPUTS = {
   iso: false,
@@ -498,6 +619,83 @@ export function ArtifactBuilder() {
   const overlayInputRef = useRef<HTMLInputElement>(null);
   const [step, setStep] = useState(0);
 
+  // Hadron compose panel state. The "Hadron custom" template opens an inline
+  // sub-wizard that composes a base image + firmware + software layers into a
+  // Dockerfile which is then handed to the regular Kairos build flow.
+  const [hadronFirmware, setHadronFirmware] = useState<string[]>([]);
+  const [hadronLayers, setHadronLayers] = useState<string[]>([]);
+  const [hadronExtra, setHadronExtra] = useState("");
+  const [firmwareDraft, setFirmwareDraft] = useState("");
+  const [layerDraft, setLayerDraft] = useState("");
+  const [firmwareQuery, setFirmwareQuery] = useState("");
+  const [layerQuery, setLayerQuery] = useState("");
+  const [hadronPreviewOpen, setHadronPreviewOpen] = useState(false);
+  const [firmwareCatalog, setFirmwareCatalog] = useState<HadronFirmwareItem[]>([]);
+  const [layersCatalog, setLayersCatalog] = useState<HadronLayerItem[]>([]);
+  const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // Hadron base image: either an official release tag (picked from a dropdown
+  // populated by the GH releases API) or a fully custom ref string typed by
+  // the operator. hadronBaseTag holds the dropdown value; hadronBaseCustom
+  // holds the free-form string. The effective ref is derived at render time.
+  const [hadronBaseTags, setHadronBaseTags] = useState<string[]>(["main"]);
+  const [hadronBaseTag, setHadronBaseTag] = useState<string>("main");
+  const [hadronBaseCustom, setHadronBaseCustom] = useState<string>("");
+
+  // Lazy-load the upstream catalogs the first time the Hadron panel opens.
+  // Both live on public endpoints with permissive CORS, so no backend proxy
+  // needed. Kept lazy so the wizard's other paths don't pay the network cost.
+  useEffect(() => {
+    if (selectedTemplate !== HADRON_TEMPLATE_NAME) return;
+    if (firmwareCatalogState === "idle") {
+      setFirmwareCatalogState("loading");
+      fetchHadronFirmware()
+        .then((items) => {
+          setFirmwareCatalog(items);
+          setFirmwareCatalogState("ready");
+        })
+        .catch(() => setFirmwareCatalogState("error"));
+    }
+    if (layersCatalogState === "idle") {
+      setLayersCatalogState("loading");
+      fetchHadronLayers()
+        .then((items) => {
+          setLayersCatalog(items);
+          setLayersCatalogState("ready");
+        })
+        .catch(() => setLayersCatalogState("error"));
+    }
+  }, [selectedTemplate, firmwareCatalogState, layersCatalogState]);
+
+  // Fetch the hadron release tag list once the panel is open. Silent-fallback
+  // to the bundled `main` entry so a rate-limited GH API doesn't blank the
+  // dropdown — the user can still pick a tag by switching to Custom…
+  useEffect(() => {
+    if (selectedTemplate !== HADRON_TEMPLATE_NAME) return;
+    fetchHadronBaseTags()
+      .then((tags) => {
+        if (tags.length > 0) setHadronBaseTags(tags);
+        // Default to the newest tagged release when we haven't been given a
+        // preference yet — the fetch just resolved so "main" is still selected.
+        if (hadronBaseTag === "main" && tags.length > 1) setHadronBaseTag(tags[1]);
+      })
+      .catch(() => {});
+    // Intentionally scoped to selectedTemplate — refires only when panel opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTemplate]);
+
+  // Effective base image ref resolved from the dropdown + custom fields.
+  // Custom ref wins when the sentinel is selected; otherwise the dropdown
+  // value maps onto the well-known ghcr.io path.
+  const hadronBase =
+    hadronBaseTag === HADRON_CUSTOM_TAG_SENTINEL
+      ? hadronBaseCustom.trim()
+      : hadronBaseTag
+        ? `ghcr.io/kairos-io/hadron:${hadronBaseTag}`
+        : "";
+  const hadronBaseMissing =
+    selectedTemplate === HADRON_TEMPLATE_NAME && !hadronBase;
+
   // Refs to the fields validation can complain about. Populated via
   // bindRef(key). Non-focusable entries (e.g. the outputs container) are
   // scrolled into view but not focused.
@@ -673,6 +871,59 @@ export function ArtifactBuilder() {
     if (cloneId) {
       getArtifact(cloneId).then((a) => {
         setCloneSource(a.name || a.id.slice(0, 8));
+
+        // Hadron branch: restore composition wizard state and land on Source
+        // so the operator can edit firmware / layers / base before rebuilding.
+        if (a.hadronBase) {
+          const HADRON_PREFIX = "ghcr.io/kairos-io/hadron:";
+          setSelectedTemplate(HADRON_TEMPLATE_NAME);
+          if (a.hadronBase.startsWith(HADRON_PREFIX)) {
+            setHadronBaseTag(a.hadronBase.slice(HADRON_PREFIX.length));
+            setHadronBaseCustom("");
+          } else {
+            setHadronBaseTag(HADRON_CUSTOM_TAG_SENTINEL);
+            setHadronBaseCustom(a.hadronBase);
+          }
+          setHadronFirmware(a.hadronFirmware || []);
+          setHadronLayers(a.hadronLayers || []);
+          setHadronExtra(a.hadronExtra || "");
+          setForm({
+            ...EMPTY_FORM,
+            name: `Copy of ${a.name || a.id.slice(0, 8)}`,
+            baseImage: "",
+            kairosVersion: a.kairosVersion,
+            model: a.model,
+            arch: a.arch || "amd64",
+            variant: a.variant || "core",
+            outputs: {
+              iso: a.iso,
+              cloudImage: a.cloudImage,
+              netboot: a.netboot,
+              rawDisk: a.rawDisk ?? false,
+              tar: a.tar ?? false,
+              gce: a.gce ?? false,
+              vhd: a.vhd ?? false,
+              uki: a.uki ?? false,
+              fips: a.fips,
+              trustedBoot: a.trustedBoot,
+            },
+            signing: { ...EMPTY_SIGNING },
+            provisioning: {
+              autoInstall: a.autoInstall ?? true,
+              registerAuroraBoot: a.registerAuroraBoot ?? true,
+              targetGroupId: a.targetGroupId || "",
+              allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
+            },
+          });
+          if (a.cloudConfig) {
+            setAdvancedConfig(a.cloudConfig);
+            setShowAdvanced(true);
+            setUserMode("none");
+          }
+          setStep(0);
+          return;
+        }
+
         setForm({
           ...EMPTY_FORM,
           name: `Copy of ${a.name || a.id.slice(0, 8)}`,
@@ -889,6 +1140,18 @@ export function ArtifactBuilder() {
       "allow-insecure-registries":
         buildMode === "image" ? form["allow-insecure-registries"] : undefined,
       dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
+      hadronBase:
+        selectedTemplate === HADRON_TEMPLATE_NAME
+          ? hadronBase || undefined
+          : undefined,
+      hadronFirmware:
+        selectedTemplate === HADRON_TEMPLATE_NAME ? hadronFirmware : undefined,
+      hadronLayers:
+        selectedTemplate === HADRON_TEMPLATE_NAME ? hadronLayers : undefined,
+      hadronExtra:
+        selectedTemplate === HADRON_TEMPLATE_NAME
+          ? hadronExtra || undefined
+          : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
       outputs: { ...form.outputs },
@@ -1045,8 +1308,11 @@ export function ArtifactBuilder() {
                           provisioning: { ...EMPTY_PROVISIONING, ...t.values.provisioning },
                         }));
                         setCustomModel(false);
-                        // Custom stays on Source step; real templates advance to Configure
-                        if (t.name !== "Custom") setStep(1);
+                        // Custom + Hadron custom stay on Source step so the
+                        // user can reveal an inline sub-form (Image Source
+                        // card for Custom, compose panel for Hadron custom);
+                        // real templates advance straight to Configure.
+                        if (t.name !== "Custom" && t.name !== HADRON_TEMPLATE_NAME) setStep(1);
                       }}
                     >
                       <CardContent className="p-3">
@@ -1059,7 +1325,415 @@ export function ArtifactBuilder() {
               </div>
             )}
 
-            {(selectedTemplate === "Custom" || cloneSource) && (
+            {selectedTemplate === HADRON_TEMPLATE_NAME && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm">Hadron composition</CardTitle>
+                </CardHeader>
+                <CardContent className="grid gap-4">
+                  <p className="text-xs text-muted-foreground">
+                    Compose a Hadron base image with firmware and software layers.
+                    On continue, the composed Dockerfile is handed to the regular
+                    Kairos build flow — same outputs (ISO, UKI, raw disk, ...) as
+                    any other Dockerfile-based build.
+                  </p>
+
+                  <div className="grid gap-2">
+                    <Label className="text-xs">
+                      Base image
+                      <InfoTooltip>
+                        Pick an official Hadron release or switch to Custom…
+                        to point at a mirror, digest-pin, or private build.
+                      </InfoTooltip>
+                    </Label>
+                    <Select value={hadronBaseTag} onValueChange={setHadronBaseTag}>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Select Hadron version" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {hadronBaseTags.map((t) => (
+                          <SelectItem key={t} value={t}>
+                            {t === "main" ? "main (tip of tree)" : t}
+                          </SelectItem>
+                        ))}
+                        <SelectItem value={HADRON_CUSTOM_TAG_SENTINEL}>
+                          Custom…
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                    {hadronBaseTag === HADRON_CUSTOM_TAG_SENTINEL && (
+                      <Input
+                        className="font-mono text-xs"
+                        placeholder={DEFAULT_HADRON_BASE}
+                        value={hadronBaseCustom}
+                        onChange={(e) => setHadronBaseCustom(e.target.value)}
+                      />
+                    )}
+                    {hadronBaseMissing ? (
+                      <p className="text-xs text-red-600 font-medium">
+                        Pick a Hadron base image or type a custom reference.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground font-mono break-all">
+                        {hadronBase}
+                      </p>
+                    )}
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label className="text-xs">
+                      Firmware images
+                      <InfoTooltip>
+                        Each firmware image is COPY'd verbatim into the base.
+                        Pick only what your hardware needs — the full
+                        linux-firmware tree is large.
+                      </InfoTooltip>
+                    </Label>
+                    {hadronFirmware.length > 0 && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {hadronFirmware.map((ref) => (
+                          <span
+                            key={ref}
+                            className="inline-flex items-center gap-1 text-[11px] font-mono bg-secondary px-2 py-0.5 rounded"
+                          >
+                            {ref}
+                            <button
+                              type="button"
+                              className="text-muted-foreground hover:text-foreground"
+                              onClick={() =>
+                                setHadronFirmware(hadronFirmware.filter((r) => r !== ref))
+                              }
+                            >
+                              ×
+                            </button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    {firmwareCatalogState === "loading" && (
+                      <p className="text-xs italic text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading firmware catalog from upstream…
+                      </p>
+                    )}
+                    {firmwareCatalogState === "error" && (
+                      <p className="text-xs italic text-muted-foreground">
+                        Firmware catalog unavailable — add refs manually below.
+                      </p>
+                    )}
+                    {firmwareCatalogState === "ready" && firmwareCatalog.length > 0 && (
+                      <>
+                        <Input
+                          placeholder="Filter firmware… (e.g. amdgpu, iwlwifi)"
+                          value={firmwareQuery}
+                          onChange={(e) => setFirmwareQuery(e.target.value)}
+                          className="text-xs"
+                        />
+                        {(() => {
+                          const q = firmwareQuery.trim().toLowerCase();
+                          const visible = q
+                            ? firmwareCatalog.filter((f) => f.name.toLowerCase().includes(q))
+                            : firmwareCatalog;
+                          return (
+                            <div className="max-h-56 overflow-y-auto border rounded-md p-2 space-y-1">
+                              {visible.length === 0 ? (
+                                <p className="text-xs italic text-muted-foreground text-center py-2">
+                                  No firmware matches "{firmwareQuery}"
+                                </p>
+                              ) : (
+                                visible.map((f) => {
+                                  const ref = `${f.image}:${f.version}`;
+                                  const selected = hadronFirmware.includes(ref);
+                                  return (
+                                    <label
+                                      key={ref}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          setHadronFirmware(
+                                            selected
+                                              ? hadronFirmware.filter((r) => r !== ref)
+                                              : [...hadronFirmware, ref],
+                                          )
+                                        }
+                                      />
+                                      <span className="font-mono flex-1 truncate">{f.name}</span>
+                                      <span className="text-muted-foreground text-[10px]">{f.version}</span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        className="font-mono text-xs"
+                        placeholder="Custom firmware ref e.g. ghcr.io/kairos-io/hadron-firmware/linux-firmware-amdgpu:20260622"
+                        value={firmwareDraft}
+                        onChange={(e) => setFirmwareDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          const ref = firmwareDraft.trim();
+                          if (!ref || hadronFirmware.includes(ref)) return;
+                          setHadronFirmware([...hadronFirmware, ref]);
+                          setFirmwareDraft("");
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const ref = firmwareDraft.trim();
+                          if (!ref || hadronFirmware.includes(ref)) return;
+                          setHadronFirmware([...hadronFirmware, ref]);
+                          setFirmwareDraft("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label className="text-xs">
+                      Software layers
+                      <InfoTooltip>
+                        Applied in order — later layers overwrite files from
+                        earlier ones. Use the arrows to reorder.
+                      </InfoTooltip>
+                    </Label>
+                    {hadronLayers.length > 0 && (
+                      <ol className="border rounded-md p-2 space-y-1">
+                        {hadronLayers.map((ref, idx) => (
+                          <li key={ref} className="flex items-center gap-2 text-xs">
+                            <span className="w-6 text-center text-muted-foreground font-mono">
+                              {idx + 1}
+                            </span>
+                            <span className="font-mono flex-1 truncate">{ref}</span>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              disabled={idx === 0}
+                              onClick={() => {
+                                const next = hadronLayers.slice();
+                                [next[idx - 1], next[idx]] = [next[idx], next[idx - 1]];
+                                setHadronLayers(next);
+                              }}
+                            >
+                              ↑
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              disabled={idx === hadronLayers.length - 1}
+                              onClick={() => {
+                                const next = hadronLayers.slice();
+                                [next[idx + 1], next[idx]] = [next[idx], next[idx + 1]];
+                                setHadronLayers(next);
+                              }}
+                            >
+                              ↓
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() =>
+                                setHadronLayers(hadronLayers.filter((_, i) => i !== idx))
+                              }
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </Button>
+                          </li>
+                        ))}
+                      </ol>
+                    )}
+                    {layersCatalogState === "loading" && (
+                      <p className="text-xs italic text-muted-foreground flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                        Loading layers catalog from upstream…
+                      </p>
+                    )}
+                    {layersCatalogState === "error" && (
+                      <p className="text-xs italic text-muted-foreground">
+                        Layers catalog unavailable — add refs manually below.
+                      </p>
+                    )}
+                    {layersCatalogState === "ready" && layersCatalog.length > 0 && (
+                      <>
+                        <Input
+                          placeholder="Filter layers… (e.g. git, gpg)"
+                          value={layerQuery}
+                          onChange={(e) => setLayerQuery(e.target.value)}
+                          className="text-xs"
+                        />
+                        {(() => {
+                          const q = layerQuery.trim().toLowerCase();
+                          const visible = q
+                            ? layersCatalog.filter(
+                                (l) =>
+                                  l.name.toLowerCase().includes(q) ||
+                                  (l.title || "").toLowerCase().includes(q) ||
+                                  (l.description || "").toLowerCase().includes(q),
+                              )
+                            : layersCatalog;
+                          return (
+                            <div className="max-h-56 overflow-y-auto border rounded-md p-2 space-y-1">
+                              {visible.length === 0 ? (
+                                <p className="text-xs italic text-muted-foreground text-center py-2">
+                                  No layer matches "{layerQuery}"
+                                </p>
+                              ) : (
+                                visible.map((l) => {
+                                  const ref = `${l.image}:${l.latest || "latest"}`;
+                                  const selected = hadronLayers.includes(ref);
+                                  return (
+                                    <label
+                                      key={l.name}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                    >
+                                      <input
+                                        type="checkbox"
+                                        checked={selected}
+                                        onChange={() =>
+                                          setHadronLayers(
+                                            selected
+                                              ? hadronLayers.filter((r) => r !== ref)
+                                              : [...hadronLayers, ref],
+                                          )
+                                        }
+                                      />
+                                      <span className="font-mono min-w-[8ch]">{l.name}</span>
+                                      <span className="flex-1 text-muted-foreground truncate">
+                                        {l.description || l.title}
+                                      </span>
+                                      <span className="text-muted-foreground text-[10px]">{l.latest}</span>
+                                    </label>
+                                  );
+                                })
+                              )}
+                            </div>
+                          );
+                        })()}
+                      </>
+                    )}
+                    <div className="flex gap-2">
+                      <Input
+                        className="font-mono text-xs"
+                        placeholder="Custom layer ref e.g. ghcr.io/kairos-io/hadron-layers/git:2.55.0"
+                        value={layerDraft}
+                        onChange={(e) => setLayerDraft(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key !== "Enter") return;
+                          e.preventDefault();
+                          const ref = layerDraft.trim();
+                          if (!ref || hadronLayers.includes(ref)) return;
+                          setHadronLayers([...hadronLayers, ref]);
+                          setLayerDraft("");
+                        }}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          const ref = layerDraft.trim();
+                          if (!ref || hadronLayers.includes(ref)) return;
+                          setHadronLayers([...hadronLayers, ref]);
+                          setLayerDraft("");
+                        }}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-2">
+                    <Label className="text-xs">
+                      Extra Dockerfile (appended)
+                      <InfoTooltip>
+                        Appended verbatim after all COPY layers. Useful for
+                        ad-hoc RUN steps that don't warrant a layer image.
+                      </InfoTooltip>
+                    </Label>
+                    <Textarea
+                      className="font-mono text-xs min-h-[5rem]"
+                      placeholder="RUN echo 'hello' > /etc/motd"
+                      value={hadronExtra}
+                      onChange={(e) => setHadronExtra(e.target.value)}
+                    />
+                  </div>
+
+                  <div>
+                    <button
+                      type="button"
+                      onClick={() => setHadronPreviewOpen((v) => !v)}
+                      className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                    >
+                      {hadronPreviewOpen ? (
+                        <ChevronDown className="h-3.5 w-3.5" />
+                      ) : (
+                        <ChevronRight className="h-3.5 w-3.5" />
+                      )}
+                      Dockerfile preview
+                    </button>
+                    {hadronPreviewOpen &&
+                      (hadronBaseMissing ? (
+                        <p className="mt-2 text-xs text-muted-foreground italic">
+                          Preview available once a base image is selected.
+                        </p>
+                      ) : (
+                        <pre className="mt-2 font-mono text-xs bg-muted/40 border rounded-md p-3 overflow-x-auto max-h-48 whitespace-pre">
+                          {renderHadronDockerfile(
+                            hadronBase,
+                            hadronFirmware,
+                            hadronLayers,
+                            hadronExtra,
+                          )}
+                        </pre>
+                      ))}
+                  </div>
+
+                  <div className="flex justify-end">
+                    <Button
+                      type="button"
+                      className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                      disabled={hadronBaseMissing}
+                      onClick={() => {
+                        if (hadronBaseMissing) return;
+                        const dockerfile = renderHadronDockerfile(
+                          hadronBase,
+                          hadronFirmware,
+                          hadronLayers,
+                          hadronExtra,
+                        );
+                        setForm((prev) => ({ ...prev, dockerfile, baseImage: "" }));
+                        setBuildMode("dockerfile");
+                        setStep(1);
+                      }}
+                    >
+                      Compose &amp; continue
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+
+            {(selectedTemplate === "Custom" ||
+              (cloneSource && selectedTemplate !== HADRON_TEMPLATE_NAME)) && (
             <Card>
               <CardHeader>
                 <CardTitle className="text-sm">Image Source</CardTitle>
@@ -2158,13 +2832,19 @@ export function ArtifactBuilder() {
           )}
           <div className="flex-1" />
           {step < 3 ? (
-            <Button
-              type="button"
-              onClick={() => { if (validateStep(step)) setStep(step + 1); }}
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
-            >
-              Next
-            </Button>
+            // Suppress the generic Next while the Hadron compose panel is
+            // open on step 0 — the panel has its own "Compose & continue"
+            // primary CTA and showing both is confusing (two orange buttons,
+            // only one of which builds the Dockerfile).
+            step === 0 && selectedTemplate === HADRON_TEMPLATE_NAME ? null : (
+              <Button
+                type="button"
+                onClick={() => { if (validateStep(step)) setStep(step + 1); }}
+                className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
+              >
+                Next
+              </Button>
+            )
           ) : (
             <Button
               type="button"

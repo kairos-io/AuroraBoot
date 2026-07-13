@@ -3,6 +3,7 @@ package handlers
 import (
 	"archive/tar"
 	"compress/gzip"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
@@ -55,9 +57,13 @@ type createArtifactRequest struct {
 	KubernetesVersion       string `json:"kubernetesVersion"`
 	KubernetesEnabled       *bool  `json:"kubernetesEnabled"`
 	AllowInsecureRegistries bool   `json:"allow-insecure-registries"`
-	Dockerfile              string `json:"dockerfile"`
-	BuildContextDir         string `json:"buildContextDir"`
-	OverlayRootfs           string `json:"overlayRootfs"`
+	Dockerfile              string   `json:"dockerfile"`
+	HadronBase              string   `json:"hadronBase"`
+	HadronFirmware          []string `json:"hadronFirmware"`
+	HadronLayers            []string `json:"hadronLayers"`
+	HadronExtra             string   `json:"hadronExtra"`
+	BuildContextDir         string   `json:"buildContextDir"`
+	OverlayRootfs           string   `json:"overlayRootfs"`
 	KairosInitImage         string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
@@ -183,6 +189,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		Dockerfile:        req.Dockerfile,
 		BuildContextDir:   req.BuildContextDir,
 		KairosInitImage:   req.KairosInitImage,
+		HadronBase:        req.HadronBase,
+		HadronFirmware:    req.HadronFirmware,
+		HadronLayers:      req.HadronLayers,
+		HadronExtra:       req.HadronExtra,
 	}
 	// Set grouped fields.
 	opts.Source = builder.ImageSource{
@@ -310,6 +320,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			AutoInstall:             autoInstall,
 			RegisterAuroraBoot:      registerAuroraBoot,
 			Dockerfile:              req.Dockerfile,
+			HadronBase:              req.HadronBase,
+			HadronFirmware:          req.HadronFirmware,
+			HadronLayers:            req.HadronLayers,
+			HadronExtra:             req.HadronExtra,
 			CloudConfig:             opts.CloudConfig,
 			KubernetesDistro:        req.KubernetesDistro,
 			KubernetesVersion:       req.KubernetesVersion,
@@ -963,3 +977,31 @@ func mergeYAML(dst, src map[string]interface{}) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+// ReconcileOrphanedArtifacts fails every ArtifactRecord still marked Pending or
+// Building. A process restart orphans the goroutine driving an in-flight build,
+// so on startup those rows can never reach a terminal state on their own; flip
+// them to Error with an explanatory message. Safe to call once during bootstrap.
+// Per-row Update failures are logged and skipped so a single bad row does not
+// block the rest of the sweep; only a failure listing artifacts is fatal.
+func ReconcileOrphanedArtifacts(ctx context.Context, artifacts store.ArtifactStore) error {
+	recs, err := artifacts.List(ctx)
+	if err != nil {
+		return fmt.Errorf("listing artifacts: %w", err)
+	}
+	for _, rec := range recs {
+		if rec.Phase != store.ArtifactPending && rec.Phase != store.ArtifactBuilding {
+			continue
+		}
+		prevPhase := rec.Phase
+		rec.Phase = store.ArtifactError
+		rec.Message = "interrupted by server restart"
+		rec.UpdatedAt = time.Now()
+		if err := artifacts.Update(ctx, rec); err != nil {
+			fmt.Fprintf(os.Stderr, "reconcile: failed to mark artifact %s (was %s) as Error: %v\n", rec.ID, prevPhase, err)
+			continue
+		}
+		fmt.Fprintf(os.Stderr, "reconcile: marked orphaned artifact %s (was %s) as Error\n", rec.ID, prevPhase)
+	}
+	return nil
+}

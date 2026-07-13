@@ -146,9 +146,8 @@ func (b *Builder) WithLogBroadcaster(lb LogBroadcaster) *Builder {
 
 // Build starts an asynchronous artifact build and returns immediately with a Pending status.
 func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
-	// Reject unsafe admin-supplied values before any work starts. These fields
-	// are interpolated into the kairos-init Dockerfile RUN line, so they must
-	// not carry shell metacharacters.
+	// Reject unsafe admin-supplied values before any work starts. Covers
+	// kairos-init flag interpolation in the Dockerfile RUN line.
 	if err := validateKairosInitOptions(opts); err != nil {
 		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
 	}
@@ -205,6 +204,10 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			AutoInstall:             opts.Provisioning.AutoInstall,
 			RegisterAuroraBoot:      opts.Provisioning.RegisterAuroraBoot,
 			Dockerfile:              opts.Dockerfile,
+			HadronBase:              opts.HadronBase,
+			HadronFirmware:          opts.HadronFirmware,
+			HadronLayers:            opts.HadronLayers,
+			HadronExtra:             opts.HadronExtra,
 			CloudConfig:             opts.CloudConfig,
 			CreatedAt:               time.Now(),
 			UpdatedAt:               time.Now(),
