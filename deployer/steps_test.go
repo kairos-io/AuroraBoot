@@ -9,6 +9,17 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 )
 
+// isUnder reports whether path is the dir itself or lives inside it, comparing
+// on path-segment boundaries so that "/tmp-rootfs" is not considered under
+// "/tmp".
+func isUnder(path, dir string) bool {
+	rel, err := filepath.Rel(filepath.Clean(dir), filepath.Clean(path))
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(os.PathSeparator))
+}
+
 // TestTmpRootFsNotUnderStateDir is a regression test for
 // https://github.com/kairos-io/kairos/issues/3922.
 //
@@ -24,12 +35,11 @@ func TestTmpRootFsNotUnderStateDir(t *testing.T) {
 
 	tmp := d.tmpRootFs()
 
-	if strings.HasPrefix(filepath.Clean(tmp), filepath.Clean(stateDir)+string(os.PathSeparator)) {
+	if isUnder(tmp, stateDir) {
 		t.Fatalf("tmpRootFs() must not live under state_dir %q, got %q", stateDir, tmp)
 	}
-
-	if want := os.TempDir(); !strings.HasPrefix(filepath.Clean(tmp), filepath.Clean(want)) {
-		t.Fatalf("tmpRootFs() must live under the local temp dir %q, got %q", want, tmp)
+	if !isUnder(tmp, os.TempDir()) {
+		t.Fatalf("tmpRootFs() must live under the local temp dir %q, got %q", os.TempDir(), tmp)
 	}
 }
 
@@ -40,5 +50,18 @@ func TestTmpRootFsStable(t *testing.T) {
 
 	if a, b := d.tmpRootFs(), d.tmpRootFs(); a != b {
 		t.Fatalf("tmpRootFs() must be stable across calls, got %q then %q", a, b)
+	}
+}
+
+// TestTmpRootFsUniquePerStateDir guards the concurrency invariant: the internal
+// builder runs multiple builds in parallel in the same process, each with a
+// distinct state_dir. Their unpack directories must not collide, otherwise one
+// build's PrepDirs RemoveAll would wipe another build's rootfs mid-unpack.
+func TestTmpRootFsUniquePerStateDir(t *testing.T) {
+	a := &Deployer{Config: schema.Config{State: "/builds/aaaa"}}
+	b := &Deployer{Config: schema.Config{State: "/builds/bbbb"}}
+
+	if a.tmpRootFs() == b.tmpRootFs() {
+		t.Fatalf("distinct state_dirs must map to distinct temp rootfs dirs, both got %q", a.tmpRootFs())
 	}
 }

@@ -2,6 +2,7 @@ package deployer
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -220,8 +221,16 @@ func (d *Deployer) fromImage() bool {
 // rootfs on a native filesystem sidesteps the limitation entirely; only the
 // finished artifacts (ISO/raw disk) are written to state_dir. See
 // https://github.com/kairos-io/kairos/issues/3922.
+//
+// The directory name is derived from state_dir so that concurrent in-process
+// builds (the internal builder gives each build a distinct state_dir and runs
+// them in parallel) get distinct unpack directories, exactly as they did when
+// temp-rootfs lived under state_dir. Only the location changes here, not the
+// per-build uniqueness, so PrepDirs' RemoveAll for one build can never clobber
+// another build's rootfs.
 func (d *Deployer) tmpRootFs() string {
-	return filepath.Join(os.TempDir(), "auroraboot-temp-rootfs")
+	sum := sha256.Sum256([]byte(d.Config.State))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("auroraboot-temp-rootfs-%x", sum[:8]))
 }
 
 func (d *Deployer) destination() string {
