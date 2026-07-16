@@ -229,8 +229,11 @@ func (d *Deployer) fromImage() bool {
 // per-build uniqueness, so PrepDirs' RemoveAll for one build can never clobber
 // another build's rootfs.
 func (d *Deployer) tmpRootFs() string {
-	sum := sha256.Sum256([]byte(d.Config.State))
-	return filepath.Join(os.TempDir(), fmt.Sprintf("auroraboot-temp-rootfs-%x", sum[:8]))
+	// Hash the normalized state_dir (StateDir cleans the path, so "/output" and
+	// "/output/" collapse to the same key) and use the full digest so distinct
+	// state_dirs can never collide onto the same unpack directory.
+	sum := sha256.Sum256([]byte(d.Config.StateDir()))
+	return filepath.Join(os.TempDir(), fmt.Sprintf("auroraboot-temp-rootfs-%x", sum[:]))
 }
 
 func (d *Deployer) destination() string {

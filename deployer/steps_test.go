@@ -53,6 +53,20 @@ func TestTmpRootFsStable(t *testing.T) {
 	}
 }
 
+// TestTmpRootFsNormalizesStateDir ensures superficial differences in state_dir
+// (a trailing slash, an unclean path) map to the same unpack directory, so the
+// same logical build always resolves to one temp rootfs.
+func TestTmpRootFsNormalizesStateDir(t *testing.T) {
+	a := &Deployer{Config: schema.Config{State: "/output"}}
+	b := &Deployer{Config: schema.Config{State: "/output/"}}
+	c := &Deployer{Config: schema.Config{State: "/output/../output"}}
+
+	if a.tmpRootFs() != b.tmpRootFs() || a.tmpRootFs() != c.tmpRootFs() {
+		t.Fatalf("equivalent state_dirs must map to the same temp rootfs: %q, %q, %q",
+			a.tmpRootFs(), b.tmpRootFs(), c.tmpRootFs())
+	}
+}
+
 // TestTmpRootFsUniquePerStateDir guards the concurrency invariant: the internal
 // builder runs multiple builds in parallel in the same process, each with a
 // distinct state_dir. Their unpack directories must not collide, otherwise one
