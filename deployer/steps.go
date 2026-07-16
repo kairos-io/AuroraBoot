@@ -206,8 +206,22 @@ func (d *Deployer) fromImage() bool {
 	return d.Artifact.ContainerImage != ""
 }
 
+// tmpRootFs is the directory where the container image is unpacked before it is
+// turned into an ISO or raw disk. It deliberately lives on the local filesystem
+// (os.TempDir(), i.e. /tmp inside the container) rather than under state_dir.
+//
+// state_dir is frequently a host bind mount, and on Docker Desktop for macOS
+// that mount is backed by VirtioFS, which cannot faithfully represent all the
+// Linux metadata (ownership + restrictive modes) that containerd's tar-apply
+// sets while unpacking a rootfs. Since containerd started chmod'ing files
+// through the open descriptor (containerd 61c2733f, first shipped in v1.7.31),
+// unpacking a read-only root-owned file such as /etc/sudoers.d/* onto that mount
+// fails with "failed to Lchown ... permission denied". Keeping the intermediate
+// rootfs on a native filesystem sidesteps the limitation entirely; only the
+// finished artifacts (ISO/raw disk) are written to state_dir. See
+// https://github.com/kairos-io/kairos/issues/3922.
 func (d *Deployer) tmpRootFs() string {
-	return d.Config.StateDir("temp-rootfs")
+	return filepath.Join(os.TempDir(), "auroraboot-temp-rootfs")
 }
 
 func (d *Deployer) destination() string {
