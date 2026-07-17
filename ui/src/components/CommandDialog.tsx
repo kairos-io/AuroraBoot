@@ -389,9 +389,11 @@ export function CommandDialog({
                                   <span className="truncate">
                                     {a.name || a.id.slice(0, 8)}
                                   </span>
-                                  <span className="text-xs text-muted-foreground truncate">
-                                    {a.id.slice(0, 8)}
-                                  </span>
+                                  {a.name && (
+                                    <span className="text-xs text-muted-foreground truncate">
+                                      {a.id.slice(0, 8)}
+                                    </span>
+                                  )}
                                 </div>
                               </SelectItem>
                             ))}
