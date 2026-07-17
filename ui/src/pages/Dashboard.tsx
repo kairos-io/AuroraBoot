@@ -135,7 +135,7 @@ export function Dashboard() {
     ...artifacts.slice(0, 20).map((a) => ({
       id: `artifact-${a.id}`,
       type: "artifact" as const,
-      label: a.name || a.baseImage || "Untitled artifact",
+      label: a.name || a.id.slice(0, 8),
       status: a.phase,
       time: a.createdAt,
       link: `/artifacts/${a.id}`,
@@ -200,7 +200,7 @@ export function Dashboard() {
                     className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
                     onClick={() => navigate(`/artifacts/${readyArtifact.id}`)}
                   >
-                    Deploy "{readyArtifact.name || readyArtifact.baseImage}"
+                    Deploy "{readyArtifact.name || readyArtifact.id.slice(0, 8)}"
                     <ArrowRight className="h-4 w-4 ml-2" />
                   </Button>
                 ) : (
@@ -336,7 +336,7 @@ export function Dashboard() {
                     <Package className="h-4 w-4 shrink-0 text-[#EE5007]" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">
-                        {build.name || build.baseImage || "Untitled"}
+                        {build.name || build.id.slice(0, 8)}
                       </p>
                       <p className="text-xs text-muted-foreground">
                         Started {timeAgo(build.createdAt)}
