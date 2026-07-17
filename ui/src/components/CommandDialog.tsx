@@ -370,7 +370,7 @@ export function CommandDialog({
                                   <SelectItem key={a.id} value={a.id}>
                                     <div className="flex flex-col gap-0.5 min-w-0">
                                       <span className="truncate font-medium">
-                                        {a.name || a.baseImage?.split("/").pop() || "Unnamed"}
+                                        {a.name || a.id.slice(0, 8)}
                                       </span>
                                       <span className="text-xs text-muted-foreground truncate">
                                         {a.id.slice(0, 8)}
@@ -387,7 +387,7 @@ export function CommandDialog({
                               <SelectItem key={a.id} value={a.id}>
                                 <div className="flex flex-col gap-0.5 min-w-0">
                                   <span className="truncate">
-                                    {a.name || a.baseImage?.split("/").pop() || "Unnamed"}
+                                    {a.name || a.id.slice(0, 8)}
                                   </span>
                                   <span className="text-xs text-muted-foreground truncate">
                                     {a.id.slice(0, 8)}
