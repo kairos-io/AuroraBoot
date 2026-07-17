@@ -1,62 +1,4 @@
 # OSV-Scanner configuration (see https://google.github.io/osv-scanner/configuration/)
-#
-# Moby issues below affect github.com/docker/docker; govulncheck reports "Fixed in: N/A"
-# for v28.5.2. AuroraBoot uses the Engine API client against operator-controlled hosts only.
-
-[[IgnoredVulns]]
-id = "GO-2026-4883"
-ignoreUntil = 2026-08-16
-reason = "No patched github.com/docker/docker release yet (Fixed in N/A per govulncheck); client-only Docker Engine API usage."
-
-[[IgnoredVulns]]
-id = "GO-2026-4887"
-ignoreUntil = 2026-08-16
-reason = "No patched github.com/docker/docker release yet (Fixed in N/A per govulncheck); client-only Docker Engine API usage."
-
-# No fixed github.com/docker/docker (Moby) release is available for v28.5.2 yet.
-# AuroraBoot only uses the Docker Engine API client against operator-controlled
-# hosts. Revisit when a patched release ships.
-[[IgnoredVulns]]
-id = "GHSA-rg2x-37c3-w2rh"
-ignoreUntil = 2026-07-08
-reason = "No patched github.com/docker/docker release available; client-only Docker Engine API usage. Re-evaluate before expiry."
-
-[[IgnoredVulns]]
-id = "GHSA-vp62-88p7-qqf5"
-ignoreUntil = 2026-07-08
-reason = "No patched github.com/docker/docker release available; client-only Docker Engine API usage. Re-evaluate before expiry."
-
-[[IgnoredVulns]]
-id = "GHSA-x86f-5xw2-fm2r"
-ignoreUntil = 2026-07-08
-reason = "No patched github.com/docker/docker release available; client-only Docker Engine API usage. Re-evaluate before expiry."
-
-# uuid is a transitive, dev-only dependency pinned by @cypress/request to ^8.3.2
-# (e2e/web Cypress suite). The fix (11.1.1) crosses three majors and breaks
-# Cypress' CommonJS require('uuid') usage, so it cannot be safely bumped here.
-# Dev/test tooling only; not shipped in any AuroraBoot artifact.
-[[IgnoredVulns]]
-id = "GHSA-w5hq-g745-h8pq"
-ignoreUntil = 2026-07-08
-reason = "uuid is a dev-only transitive dep pinned by @cypress/request (^8.3.2); fix requires a breaking major bump. Test tooling only, not shipped. Re-evaluate before expiry."
-
-# Transitive github.com/containerd/containerd v1.7.33 (via kairos-sdk archive utils).
-# AuroraBoot uses github.com/containerd/containerd/v2 v2.3.2 directly (patched).
-# These CRI checkpoint CVEs have no fixed release on the legacy v1 module path.
-[[IgnoredVulns]]
-id = "GO-2026-5064"
-ignoreUntil = 2026-08-16
-reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in N/A). Direct dep is containerd/v2 v2.3.2. CRI checkpoint restore; not used by AuroraBoot."
-
-[[IgnoredVulns]]
-id = "GO-2026-5338"
-ignoreUntil = 2026-08-16
-reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in N/A). Direct dep is containerd/v2 v2.3.2. CRI checkpoint import; not used by AuroraBoot."
-
-[[IgnoredVulns]]
-id = "GO-2026-5622"
-ignoreUntil = 2026-08-16
-reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in N/A). Direct dep is containerd/v2 v2.3.2. CRI checkpoint restore; not used by AuroraBoot."
 
 # Transitive via kairos-agent/sdk and sbctl (TPM attestation). Bumped to v0.6.1;
 # govulncheck/OSV still report Fixed in N/A. AuroraBoot does not expose attestation parsing.
@@ -64,3 +6,10 @@ reason = "Transitive containerd v1.7.33 via kairos-sdk; no v1.x patch (Fixed in 
 id = "GO-2026-5298"
 ignoreUntil = 2026-08-16
 reason = "Transitive go-attestation (v0.6.1); no patched release listed yet (Fixed in N/A). TPM attestation parsing in upstream deps only. Re-evaluate before expiry."
+
+# golang.org/x/crypto vulnerability with no patched release listed in OSV yet.
+# Upgraded to v0.54.0; re-evaluate before expiry when a fix ships.
+[[IgnoredVulns]]
+id = "GO-2026-5932"
+ignoreUntil = 2026-08-17
+reason = "No patched golang.org/x/crypto release listed in OSV yet (Fixed in N/A); upgraded to v0.54.0. Re-evaluate before expiry."

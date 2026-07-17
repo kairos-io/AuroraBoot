@@ -1,6 +1,6 @@
 module github.com/kairos-io/AuroraBoot
 
-go 1.26.4
+go 1.26.5
 
 // https://github.com/golang/go/blob/583d750fa119d504686c737be6a898994b674b69/src/crypto/x509/parser.go#L1014-L1018
 // For keys with negative serial number:
@@ -214,12 +214,12 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.27.0 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
-	golang.org/x/crypto v0.53.0 // indirect
-	golang.org/x/sync v0.21.0 // indirect
-	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/text v0.38.0 // indirect
+	golang.org/x/crypto v0.54.0 // indirect
+	golang.org/x/sync v0.22.0 // indirect
+	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/time v0.15.0 // indirect
-	golang.org/x/tools v0.46.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260406210006-6f92a3bedf2d // indirect
 	google.golang.org/grpc v1.80.0 // indirect
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af // indirect
