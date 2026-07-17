@@ -1034,6 +1034,9 @@ export function ArtifactBuilder() {
 
     // Step 0 — Source
     if (scope === undefined || scope === 0) {
+      if (!form.name?.trim()) {
+        errs.push({ field: "name", step: 0, message: "Name is required." });
+      }
       if (buildMode === "image" && !form.baseImage.trim()) {
         errs.push({ field: "baseImage", step: 0, message: "Base image is required." });
       }
@@ -1124,7 +1127,7 @@ export function ArtifactBuilder() {
     setErrors([]);
 
     const input: CreateArtifactInput = {
-      name: form.name || undefined,
+      name: form.name.trim(),
       baseImage: form.baseImage,
       // Belt and braces: if the user cleared the Version field after we
       // prefilled it, still send the default so the backend never gets a
@@ -1276,6 +1279,8 @@ export function ArtifactBuilder() {
                 </InfoTooltip>
               </Label>
               <Input
+                ref={bindRef("name")}
+                required
                 placeholder="e.g. Production v4.0.3 + custom agent"
                 value={form.name || ""}
                 onChange={(e) => update("name", e.target.value)}

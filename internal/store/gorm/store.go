@@ -71,6 +71,15 @@ func New(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 
+	// Backfill: artifact_records created before name became required may have
+	// an empty name. Give them a deterministic fallback so the UI never has
+	// to render a nameless entry. Idempotent — reruns match nothing.
+	if err := db.Exec(
+		`UPDATE artifact_records SET name = 'artifact-' || substr(id, 1, 8) WHERE name IS NULL OR name = ''`,
+	).Error; err != nil {
+		return nil, fmt.Errorf("backfilling artifact names: %w", err)
+	}
+
 	return &Store{db: db}, nil
 }
 

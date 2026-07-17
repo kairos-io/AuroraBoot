@@ -84,7 +84,7 @@ export interface CreateArtifactProvisioning {
 }
 
 export interface CreateArtifactInput {
-  name?: string;
+  name: string;
   baseImage: string;
   kairosVersion: string;
   model: string;

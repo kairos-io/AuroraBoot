@@ -137,6 +137,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	req.Name = strings.TrimSpace(req.Name)
+	if req.Name == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "name is required"})
+	}
 
 	ctx := c.Request().Context()
 
@@ -591,7 +595,11 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 	if patch.Name != nil {
-		rec.Name = *patch.Name
+		name := strings.TrimSpace(*patch.Name)
+		if name == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "name cannot be empty"})
+		}
+		rec.Name = name
 	}
 	if patch.Saved != nil {
 		rec.Saved = *patch.Saved

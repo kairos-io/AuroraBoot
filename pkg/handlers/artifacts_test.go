@@ -31,7 +31,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 	Describe("Create", func() {
 		It("should create a build", func() {
-			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
+			body := `{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
@@ -53,7 +53,7 @@ var _ = Describe("ArtifactHandler", func() {
 			// error; the handler must surface that as a client error.
 			fb.buildErr = fmt.Errorf("%w: invalid kairos version %q", builder.ErrInvalidBuildOptions, "latest && id")
 
-			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","kairosVersion":"latest && id","outputs":{"iso":true}}`
+			body := `{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","kairosVersion":"latest && id","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
@@ -74,7 +74,7 @@ var _ = Describe("ArtifactHandler", func() {
 		It("returns 500 for a genuine server failure", func() {
 			fb.buildErr = fmt.Errorf("disk full")
 
-			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
+			body := `{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
@@ -83,6 +83,22 @@ var _ = Describe("ArtifactHandler", func() {
 			err := handler.Create(c)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		})
+
+		It("rejects a build with an empty name", func() {
+			body := `{"name":"","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("name is required"))
+			Expect(fb.builds).To(BeEmpty())
 		})
 	})
 
@@ -100,7 +116,7 @@ var _ = Describe("ArtifactHandler", func() {
 		}
 
 		It("substitutes safe defaults when allowedCommands is omitted", func() {
-			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`)
+			post(`{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(ConsistOf("upgrade", "upgrade-recovery", "reboot", "unregister"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("phonehome:"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("allowed_commands:"))
@@ -109,7 +125,7 @@ var _ = Describe("ArtifactHandler", func() {
 		})
 
 		It("passes through a custom allowedCommands list verbatim", func() {
-			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"allowedCommands":["exec","reboot"]}}`)
+			post(`{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"allowedCommands":["exec","reboot"]}}`)
 			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(Equal([]string{"exec", "reboot"}))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- exec"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("- reboot"))
@@ -118,14 +134,14 @@ var _ = Describe("ArtifactHandler", func() {
 		})
 
 		It("emits an empty list when the operator opts into observe-only", func() {
-			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"allowedCommands":[]}}`)
+			post(`{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"allowedCommands":[]}}`)
 			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(HaveLen(0))
 			Expect(fb.lastOpts.Provisioning.AllowedCommands).NotTo(BeNil())
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("allowed_commands: []"))
 		})
 
 		It("omits the phonehome stanza entirely when registerAuroraBoot is false", func() {
-			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":false}}`)
+			post(`{"name":"test-artifact","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":false}}`)
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("phonehome:"))
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("allowed_commands"))
 		})
@@ -142,36 +158,36 @@ var _ = Describe("ArtifactHandler", func() {
 		}
 
 		It("enables k3s in cloud-config for the standard variant", func() {
-			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			post(`{"name":"test-artifact","baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k3s:"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
 		})
 
 		It("enables k0s in cloud-config for the standard variant", func() {
-			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k0s","outputs":{"iso":true}}`)
+			post(`{"name":"test-artifact","baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k0s","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k0s:"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
 		})
 
 		It("disables k3s in cloud-config when kubernetesEnabled is false", func() {
-			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
+			post(`{"name":"test-artifact","baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("k3s:"))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: false"))
 		})
 
 		It("defaults kubernetesEnabled to true when omitted", func() {
-			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			post(`{"name":"test-artifact","baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("enabled: true"))
 		})
 
 		It("omits kubernetes provider stanzas for the core variant", func() {
-			post(`{"baseImage":"ubuntu:24.04","variant":"core","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+			post(`{"name":"test-artifact","baseImage":"ubuntu:24.04","variant":"core","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k3s:"))
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k0s:"))
 		})
 
 		It("merges extra k3s YAML without duplicating the top-level key", func() {
-			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true},"cloudConfig":"k3s:\n  enabled: true\n  cluster-cidr: 10.42.0.0/16"}`)
+			post(`{"name":"test-artifact","baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true},"cloudConfig":"k3s:\n  enabled: true\n  cluster-cidr: 10.42.0.0/16"}`)
 			Expect(strings.Count(fb.lastOpts.CloudConfig, "k3s:")).To(Equal(1))
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("cluster-cidr"))
 		})
