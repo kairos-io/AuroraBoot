@@ -1273,7 +1273,7 @@ export function ArtifactBuilder() {
           <div>
             <div className="mb-6 max-w-md">
               <Label className="mb-2 block text-sm font-medium">
-                Name
+                Name <span className="text-[#EE5007]" aria-hidden="true">*</span>
                 <InfoTooltip>
                   Friendly identifier shown throughout AuroraBoot. Not used in the generated artifact filenames.
                 </InfoTooltip>
@@ -1281,51 +1281,74 @@ export function ArtifactBuilder() {
               <Input
                 ref={bindRef("name")}
                 required
+                aria-required="true"
                 placeholder="e.g. Production v4.0.3 + custom agent"
                 value={form.name || ""}
                 onChange={(e) => update("name", e.target.value)}
               />
               <p className="text-xs text-muted-foreground mt-1">
-                A friendly name to identify this artifact.
+                Required. A friendly name to identify this artifact.
               </p>
             </div>
 
             {!cloneSource && (
               <div className="mb-6">
                 <Label className="mb-2 block text-sm font-medium">Start from a template</Label>
+                {!form.name?.trim() && (
+                  <p className="text-xs text-[#EE5007] mb-2">
+                    Enter a name above to unlock templates.
+                  </p>
+                )}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {TEMPLATES.map((t) => (
-                    <Card
-                      key={t.name}
-                      className={`cursor-pointer transition-colors ${
-                        selectedTemplate === t.name
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]/20"
-                          : "hover:border-[#FF7442]/40"
-                      }`}
-                      onClick={() => {
-                        setSelectedTemplate(t.name);
-                        setForm((prev) => ({
-                          ...EMPTY_FORM,
-                          ...t.values,
-                          name: prev.name, // preserve user-typed name
-                          outputs: { ...EMPTY_OUTPUTS, ...t.values.outputs },
-                          signing: { ...EMPTY_SIGNING, ...t.values.signing },
-                          provisioning: { ...EMPTY_PROVISIONING, ...t.values.provisioning },
-                        }));
-                        setCustomModel(false);
-                        // Custom + Hadron custom stay on Source step so the
-                        // user can reveal an inline sub-form (Image Source
-                        // card for Custom, compose panel for Hadron custom);
-                        // real templates advance straight to Configure.
-                        if (t.name !== "Custom" && t.name !== HADRON_TEMPLATE_NAME) setStep(1);
-                      }}
-                    >
-                      <CardContent className="p-3">
-                        <p className="font-medium text-sm">{t.name}</p>
-                        <p className="text-xs text-muted-foreground mt-1">{t.description}</p>
-                      </CardContent>
-                    </Card>
-                  ))}
+                  {TEMPLATES.map((t) => {
+                    const disabled = !form.name?.trim();
+                    return (
+                      <Card
+                        key={t.name}
+                        aria-disabled={disabled}
+                        className={`transition-colors ${
+                          disabled
+                            ? "cursor-not-allowed opacity-50"
+                            : "cursor-pointer"
+                        } ${
+                          selectedTemplate === t.name
+                            ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]/20"
+                            : !disabled
+                            ? "hover:border-[#FF7442]/40"
+                            : ""
+                        }`}
+                        onClick={() => {
+                          if (disabled) {
+                            focusFirstError([
+                              { field: "name", step: 0, message: "Name is required." },
+                            ]);
+                            setErrors(["Name is required."]);
+                            return;
+                          }
+                          setSelectedTemplate(t.name);
+                          setForm((prev) => ({
+                            ...EMPTY_FORM,
+                            ...t.values,
+                            name: prev.name, // preserve user-typed name
+                            outputs: { ...EMPTY_OUTPUTS, ...t.values.outputs },
+                            signing: { ...EMPTY_SIGNING, ...t.values.signing },
+                            provisioning: { ...EMPTY_PROVISIONING, ...t.values.provisioning },
+                          }));
+                          setCustomModel(false);
+                          // Custom + Hadron custom stay on Source step so the
+                          // user can reveal an inline sub-form (Image Source
+                          // card for Custom, compose panel for Hadron custom);
+                          // real templates advance straight to Configure.
+                          if (t.name !== "Custom" && t.name !== HADRON_TEMPLATE_NAME) setStep(1);
+                        }}
+                      >
+                        <CardContent className="p-3">
+                          <p className="font-medium text-sm">{t.name}</p>
+                          <p className="text-xs text-muted-foreground mt-1">{t.description}</p>
+                        </CardContent>
+                      </Card>
+                    );
+                  })}
                 </div>
               </div>
             )}
@@ -2845,6 +2868,7 @@ export function ArtifactBuilder() {
               <Button
                 type="button"
                 onClick={() => { if (validateStep(step)) setStep(step + 1); }}
+                disabled={computeErrors(step).length > 0}
                 className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
               >
                 Next
