@@ -178,6 +178,18 @@ func generateSysextConfext(ctx *cli.Context) error {
 		return err
 	}
 
+	// Strip any os-release the base image happens to ship: systemd-sysext
+	// refuses to merge an extension that contains /usr/lib/os-release
+	// ("Extension contains '/usr/lib/os-release', which is not allowed,
+	// refusing.") because it would let the extension redefine the host OS
+	// identity. The extension-release.d file we write below is the correct
+	// place to declare compat.
+	for _, p := range []string{"usr/lib/os-release", "etc/os-release"} {
+		if rerr := os.Remove(filepath.Join(dir, p)); rerr != nil && !os.IsNotExist(rerr) {
+			logger.Logger.Warn().Str("path", p).Err(rerr).Msg("could not strip base os-release")
+		}
+	}
+
 	// Now create the file that tells systemd that this is a sysext/confext!
 	err = os.MkdirAll(extensionReleaseDir, os.ModeDir|os.ModePerm)
 	if err != nil {
