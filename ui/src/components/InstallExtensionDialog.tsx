@@ -7,26 +7,35 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { listGroups, type Group } from "@/api/groups";
-import { sendBulkCommand } from "@/api/nodes";
+import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { extensionDownloadUrl, type Extension } from "@/api/extensions";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 
 type Action = "install" | "enable" | "disable" | "remove";
 type Scope = "active" | "passive" | "recovery" | "common";
+type TargetKind = "group" | "node";
 
 interface Props {
   open: boolean;
   onOpenChange: (next: boolean) => void;
   extension: Extension;
+  /** Pre-select a single node target (e.g. when opened from NodeDetail). */
+  presetNodeID?: string;
 }
 
 export function InstallExtensionDialog({
   open,
   onOpenChange,
   extension,
+  presetNodeID,
 }: Props) {
+  const [targetKind, setTargetKind] = useState<TargetKind>(
+    presetNodeID ? "node" : "group",
+  );
   const [groups, setGroups] = useState<Group[]>([]);
   const [groupID, setGroupID] = useState<string>("");
+  const [nodes, setNodes] = useState<Node[]>([]);
+  const [nodeID, setNodeID] = useState<string>(presetNodeID ?? "");
   const [action, setAction] = useState<Action>("install");
   const [bootState, setBootState] = useState<Scope>("common");
   const [now, setNow] = useState(true);
@@ -35,13 +44,21 @@ export function InstallExtensionDialog({
 
   useEffect(() => {
     if (!open) return;
+    // Re-sync tab + selection with the current preset each time the dialog opens.
+    if (presetNodeID) {
+      setTargetKind("node");
+      setNodeID(presetNodeID);
+    }
     listGroups()
       .then((gs) => {
         setGroups(gs);
         if (gs.length === 1) setGroupID(gs[0].id);
       })
       .catch(() => {});
-  }, [open]);
+    listNodes()
+      .then((ns) => setNodes(ns))
+      .catch(() => {});
+  }, [open, presetNodeID]);
 
   const args: Record<string, string> = {
     type: extension.type,
@@ -56,13 +73,21 @@ export function InstallExtensionDialog({
       extensionDownloadUrl(extension.id, extension.rawFilename);
   }
 
-  const canSend = groupID !== "" && !submitting;
+  const canSend =
+    !submitting &&
+    ((targetKind === "group" && groupID !== "") ||
+      (targetKind === "node" && nodeID !== ""));
 
   async function handleSend() {
     setSubmitting(true);
     setErr(null);
     try {
-      await sendBulkCommand({ groupID }, "extension", args);
+      // Both paths use the bulk-command endpoint — {groupID} for the group
+      // fan-out, {nodeIDs:[…]} for a single-node send. Keeps the server contract
+      // uniform and lets tracking write per-node rows either way.
+      const selector =
+        targetKind === "group" ? { groupID } : { nodeIDs: [nodeID] };
+      await sendBulkCommand(selector, "extension", args);
       onOpenChange(false);
     } catch (e) {
       setErr(String(e));
@@ -70,6 +95,12 @@ export function InstallExtensionDialog({
       setSubmitting(false);
     }
   }
+
+  const submitLabel = submitting
+    ? "Sending…"
+    : targetKind === "group"
+      ? "Send to group"
+      : "Send to node";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -91,21 +122,51 @@ export function InstallExtensionDialog({
         </p>
 
         <Section label="Target">
-          <Tab active label="Group" />
-          <select
-            className="border rounded-md px-3 py-2 text-sm bg-background w-full mt-2"
-            value={groupID}
-            onChange={(e) => setGroupID(e.target.value)}
-          >
-            <option value="" disabled>
-              Select a group…
-            </option>
-            {groups.map((g) => (
-              <option key={g.id} value={g.id}>
-                {g.name}
+          <div className="flex gap-1.5">
+            <TargetTab
+              active={targetKind === "group"}
+              label="Group"
+              onClick={() => setTargetKind("group")}
+            />
+            <TargetTab
+              active={targetKind === "node"}
+              label="Node"
+              onClick={() => setTargetKind("node")}
+            />
+          </div>
+          {targetKind === "group" ? (
+            <select
+              className="border rounded-md px-3 py-2 text-sm bg-background w-full mt-2"
+              value={groupID}
+              onChange={(e) => setGroupID(e.target.value)}
+            >
+              <option value="" disabled>
+                Select a group…
               </option>
-            ))}
-          </select>
+              {groups.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <select
+              className="border rounded-md px-3 py-2 text-sm bg-background w-full mt-2"
+              value={nodeID}
+              onChange={(e) => setNodeID(e.target.value)}
+            >
+              <option value="" disabled>
+                Select a node…
+              </option>
+              {nodes.map((n) => (
+                <option key={n.id} value={n.id}>
+                  {n.hostname || n.id.slice(0, 8)}
+                  {n.group?.name ? ` · ${n.group.name}` : ""}
+                  {n.phase ? ` · ${n.phase}` : ""}
+                </option>
+              ))}
+            </select>
+          )}
         </Section>
 
         <Section label="Action">
@@ -199,7 +260,7 @@ export function InstallExtensionDialog({
             Cancel
           </Button>
           <Button disabled={!canSend} onClick={handleSend}>
-            {submitting ? "Sending…" : "Send to group"}
+            {submitLabel}
           </Button>
         </div>
       </DialogContent>
@@ -222,15 +283,25 @@ function Section({
   );
 }
 
-function Tab({ active, label }: { active: boolean; label: string }) {
+function TargetTab({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button
       type="button"
       aria-pressed={active}
-      className={`px-2.5 py-1 text-xs rounded-md ${
-        active ? "bg-[#EE5007] text-white" : "border hover:bg-muted/30"
+      onClick={onClick}
+      className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
+        active
+          ? "bg-[#EE5007] text-white"
+          : "border hover:bg-muted/30"
       }`}
-      disabled={!active}
     >
       {label}
     </button>
