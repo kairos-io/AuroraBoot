@@ -3,8 +3,9 @@ import { useParams, useNavigate } from "react-router-dom";
 import { getNode, sendCommand, setLabels, setGroup, type Node } from "@/api/nodes";
 import { DecommissionDialog } from "@/components/DecommissionDialog";
 import { listNodeCommands, deleteCommand, clearCommandHistory, type Command } from "@/api/commands";
-import { listExtensionsForNode, type NodeExtensionRow } from "@/api/extensions";
+import { listExtensionsForNode, listExtensions, type NodeExtensionRow, type Extension } from "@/api/extensions";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
+import { InstallExtensionDialog } from "@/components/InstallExtensionDialog";
 import { listGroups, type Group } from "@/api/groups";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -52,6 +53,9 @@ export function NodeDetail() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [confirmState, setConfirmState] = useState<{ open: boolean; action: () => void; title: string; description: string }>({ open: false, action: () => {}, title: "", description: "" });
   const [nodeExtensions, setNodeExtensions] = useState<NodeExtensionRow[]>([]);
+  const [readyExtensions, setReadyExtensions] = useState<Extension[]>([]);
+  const [pickedForInstall, setPickedForInstall] = useState<Extension | null>(null);
+  const [extPickerOpen, setExtPickerOpen] = useState(false);
 
   const fetchCommands = useCallback(() => {
     if (!id) return;
@@ -88,6 +92,10 @@ export function NodeDetail() {
     if (id) {
       listExtensionsForNode(id).then(setNodeExtensions).catch(() => {});
     }
+    // Populate the Install-extension picker with everything that's Ready.
+    listExtensions()
+      .then((es) => setReadyExtensions(es.filter((e) => e.phase === "Ready")))
+      .catch(() => {});
   }, [fetchNode, fetchCommands, id]);
 
   // Fallback polling every 10s
@@ -352,13 +360,32 @@ export function NodeDetail() {
       )}
 
       {/* Installed extensions — populated by the status callback when the
-          agent reports a successful install/upgrade. */}
-      {nodeExtensions.length > 0 && (
-        <Card className="mt-6">
-          <CardHeader>
+          agent reports a successful install/upgrade. The card is always shown
+          so the "Install extension…" affordance is discoverable even on a
+          node with no extensions yet. */}
+      <Card className="mt-6">
+        <CardHeader>
+          <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Installed extensions</CardTitle>
-          </CardHeader>
-          <CardContent>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={readyExtensions.length === 0}
+              onClick={() => setExtPickerOpen(true)}
+            >
+              Install extension…
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {nodeExtensions.length === 0 ? (
+            <p className="text-xs text-muted-foreground italic">
+              No extensions installed on this node.{" "}
+              {readyExtensions.length > 0
+                ? "Click Install extension… above to push one."
+                : "Build a sysext or confext first, then install."}
+            </p>
+          ) : (
             <div className="grid gap-1.5">
               {nodeExtensions.map((row) => (
                 <div
@@ -376,8 +403,68 @@ export function NodeDetail() {
                 </div>
               ))}
             </div>
-          </CardContent>
-        </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Simple picker: choose a Ready extension, then hand off to the shared
+          InstallExtensionDialog with this node preset as the target. */}
+      {extPickerOpen && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+          onClick={() => setExtPickerOpen(false)}
+        >
+          <div
+            className="bg-background rounded-lg shadow-xl border max-w-[480px] w-[92%] p-5"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h2 className="text-base font-semibold">
+              Install extension on{" "}
+              <code className="text-sm font-mono">{node.hostname || node.id.slice(0, 8)}</code>
+            </h2>
+            <p className="text-sm text-muted-foreground mt-1">
+              Pick a Ready extension. The next step lets you choose the boot scope.
+            </p>
+            <ul className="mt-3 border rounded-md divide-y max-h-72 overflow-y-auto">
+              {readyExtensions.map((e) => (
+                <li key={e.id}>
+                  <button
+                    type="button"
+                    className="w-full text-left px-3 py-2 text-sm flex items-center justify-between gap-3 hover:bg-muted/60"
+                    onClick={() => {
+                      setPickedForInstall(e);
+                      setExtPickerOpen(false);
+                    }}
+                  >
+                    <span className="flex items-center gap-2 min-w-0">
+                      <ExtensionTypeChip type={e.type} />
+                      <span className="font-medium truncate">{e.name}</span>
+                    </span>
+                    <code className="text-[11px] opacity-60 shrink-0">
+                      {e.version} · {e.arch}
+                    </code>
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-4 flex justify-end">
+              <Button variant="outline" onClick={() => setExtPickerOpen(false)}>
+                Cancel
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pickedForInstall && node && (
+        <InstallExtensionDialog
+          open={pickedForInstall !== null}
+          onOpenChange={(o) => !o && setPickedForInstall(null)}
+          extension={pickedForInstall}
+          presetNodeID={node.id}
+        />
       )}
 
       {/* Command History */}

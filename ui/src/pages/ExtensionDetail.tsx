@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   getExtension,
   getExtensionLogs,
@@ -8,6 +8,8 @@ import {
   extensionDownloadUrl,
   type Extension,
 } from "@/api/extensions";
+import { getArtifact } from "@/api/artifacts";
+import { ApiError } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
@@ -23,6 +25,11 @@ export function ExtensionDetail() {
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
+  // When delete is blocked by a 409, we look up the names of the referencing
+  // artifacts and surface a proper banner instead of the raw error string.
+  const [deleteBlocker, setDeleteBlocker] = useState<
+    { artifacts: { id: string; name: string }[] } | null
+  >(null);
 
   useEffect(() => {
     if (!id) return;
@@ -60,6 +67,30 @@ export function ExtensionDetail() {
       await deleteExtension(id);
       navigate("/extensions");
     } catch (e) {
+      // Server returns 409 with {error, artifacts:[artifactId,...]} when the
+      // extension is still bundled. Look the names up so we can surface a
+      // friendly message + links, instead of dumping the raw JSON on the user.
+      if (
+        e instanceof ApiError &&
+        e.status === 409 &&
+        e.body &&
+        typeof e.body === "object" &&
+        Array.isArray((e.body as any).artifacts)
+      ) {
+        const ids = (e.body as any).artifacts as string[];
+        const named = await Promise.all(
+          ids.map(async (aid) => {
+            try {
+              const a = await getArtifact(aid);
+              return { id: aid, name: a.name || aid };
+            } catch {
+              return { id: aid, name: aid };
+            }
+          }),
+        );
+        setDeleteBlocker({ artifacts: named });
+        return;
+      }
       setErr(String(e));
     }
   }
@@ -163,11 +194,73 @@ export function ExtensionDetail() {
         onConfirm={onDelete}
       />
 
+      <DeleteBlockedDialog
+        open={deleteBlocker !== null}
+        onOpenChange={(o) => !o && setDeleteBlocker(null)}
+        extensionName={ext.name}
+        artifacts={deleteBlocker?.artifacts ?? []}
+      />
+
       <InstallExtensionDialog
         open={installOpen}
         onOpenChange={setInstallOpen}
         extension={ext}
       />
+    </div>
+  );
+}
+
+function DeleteBlockedDialog({
+  open,
+  onOpenChange,
+  extensionName,
+  artifacts,
+}: {
+  open: boolean;
+  onOpenChange: (next: boolean) => void;
+  extensionName: string;
+  artifacts: { id: string; name: string }[];
+}) {
+  if (!open) return null;
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
+      onClick={() => onOpenChange(false)}
+    >
+      <div
+        className="bg-background rounded-lg shadow-xl border max-w-[480px] w-[92%] p-5"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <h2 className="text-base font-semibold flex items-center gap-2">
+          <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+          Can&apos;t delete <code className="text-sm font-mono">{extensionName}</code> yet
+        </h2>
+        <p className="text-sm text-muted-foreground mt-2">
+          It&apos;s currently bundled into
+          {artifacts.length === 1 ? " this OS artifact" : ` these ${artifacts.length} OS artifacts`}.
+          Detach it from each, then try deleting again.
+        </p>
+        <ul className="mt-3 border rounded-md divide-y max-h-56 overflow-y-auto">
+          {artifacts.map((a) => (
+            <li key={a.id} className="px-3 py-2 text-sm flex items-center justify-between gap-3">
+              <span className="truncate font-medium">{a.name}</span>
+              <Link
+                to={`/artifacts/${a.id}`}
+                className="text-xs text-[#EE5007] hover:underline shrink-0"
+              >
+                Open →
+              </Link>
+            </li>
+          ))}
+        </ul>
+        <div className="mt-4 flex justify-end">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Got it
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
