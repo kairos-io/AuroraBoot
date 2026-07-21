@@ -11,6 +11,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gopkg.in/yaml.v3"
 
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
@@ -442,6 +443,92 @@ var _ = Describe("NodeHandler", func() {
 				out, err := cmd.CombinedOutput()
 				Expect(err).NotTo(HaveOccurred(), "%s: %s", shell, out)
 			}
+		})
+
+		// renderPhonehomeYAML runs the script's real allowed_commands builder and
+		// config heredoc under /bin/sh and returns the YAML it would write to
+		// /oem/phonehome.yaml. It executes the served script verbatim (only
+		// redirecting the heredoc to stdout) so the assertions cover the actual
+		// shipped rendering, not a re-implementation of it.
+		renderPhonehomeYAML := func(allowedCommands string) []byte {
+			if _, err := exec.LookPath("sh"); err != nil {
+				Skip("sh not installed")
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/install-agent", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			Expect(handler.InstallScript(c)).To(Succeed())
+			script := rec.Body.String()
+
+			// Take the ALLOWED_RAW builder and the config heredoc as two exact
+			// slices, dropping what sits between them: the script echoes progress
+			// to stdout and mkdir's /oem there, which would pollute the captured
+			// YAML and need root. Everything after the heredoc starts
+			// kairos-agent, which we neither can nor want to run here.
+			const builderEnd = `IFS="$_old_ifs"`
+			const heredocStart = "cat > /oem/phonehome.yaml << EOF"
+
+			builderAt := strings.Index(script, "ALLOWED_RAW=")
+			Expect(builderAt).To(BeNumerically(">=", 0), "install script no longer defines ALLOWED_RAW")
+			builderEndAt := strings.Index(script[builderAt:], builderEnd)
+			Expect(builderEndAt).To(BeNumerically(">=", 0), "install script no longer restores IFS after the loop")
+			builder := script[builderAt : builderAt+builderEndAt+len(builderEnd)]
+
+			heredocAt := strings.Index(script, heredocStart)
+			Expect(heredocAt).To(BeNumerically(">", builderAt), "install script no longer writes the config heredoc")
+			rest := script[heredocAt:]
+			end := strings.Index(rest, "\nEOF\n")
+			Expect(end).To(BeNumerically(">=", 0), "config heredoc is not terminated")
+			heredoc := strings.Replace(rest[:end+len("\nEOF\n")], heredocStart, "cat << EOF", 1)
+
+			fragment := builder + "\n" + heredoc
+
+			cmd := exec.Command("sh", "-c", fragment)
+			cmd.Env = append(os.Environ(), "AURORABOOT_ALLOWED_COMMANDS="+allowedCommands)
+			out, err := cmd.Output()
+			Expect(err).NotTo(HaveOccurred(), "rendering phonehome.yaml: %s", out)
+			return out
+		}
+
+		// parseAllowed unmarshals the rendered config and returns the list. This
+		// is the point of the test: a raw substring check passes even when every
+		// entry is concatenated onto one line, which is how the original bug hid.
+		parseAllowed := func(out []byte) []string {
+			var cfg struct {
+				Phonehome struct {
+					AllowedCommands []string `yaml:"allowed_commands"`
+				} `yaml:"phonehome"`
+			}
+			Expect(yaml.Unmarshal(out, &cfg)).To(Succeed(), "rendered config is not valid YAML:\n%s", out)
+			return cfg.Phonehome.AllowedCommands
+		}
+
+		It("should render allowed_commands as a parseable YAML list, one entry per line", func() {
+			out := renderPhonehomeYAML("upgrade,reboot,apply-cloud-config,unregister")
+
+			// Regression guard for the $(printf '\n') bug: command substitution
+			// strips trailing newlines, so the separator vanished and the list
+			// collapsed to a single scalar ("- upgrade    - reboot    - ...").
+			Expect(parseAllowed(out)).To(Equal([]string{
+				"upgrade", "reboot", "apply-cloud-config", "unregister",
+			}), "allowed_commands did not parse into distinct entries:\n%s", out)
+		})
+
+		It("should render the safe defaults when AURORABOOT_ALLOWED_COMMANDS is unset", func() {
+			out := renderPhonehomeYAML("")
+
+			Expect(parseAllowed(out)).To(Equal([]string{
+				"upgrade", "upgrade-recovery", "reboot", "unregister",
+			}), "default allowed_commands are wrong:\n%s", out)
+		})
+
+		It("should trim whitespace and drop empty entries", func() {
+			out := renderPhonehomeYAML("upgrade, reboot ,,unregister")
+
+			Expect(parseAllowed(out)).To(Equal([]string{
+				"upgrade", "reboot", "unregister",
+			}), "entries were not trimmed/compacted:\n%s", out)
 		})
 	})
 })

@@ -498,12 +498,22 @@ GROUP="${AURORABOOT_GROUP:-}"
 # defaults too — deny-all must be configured from the AuroraBoot UI instead.
 ALLOWED_RAW="${AURORABOOT_ALLOWED_COMMANDS:-upgrade,upgrade-recovery,reboot,unregister}"
 ALLOWED_YAML=""
+# _NL is a literal newline, used to put each list entry on its own line.
+# Do NOT build the list with $(printf '\n'): command substitution strips
+# trailing newlines, so the separator would expand to nothing and every entry
+# would end up concatenated on a single line ("    - a    - b"), which does not
+# parse as a YAML sequence.
+_NL='
+'
 _old_ifs="$IFS"
 IFS=','
 for c in $ALLOWED_RAW; do
     c=$(echo "$c" | xargs)  # trim whitespace
     if [ -n "$c" ]; then
-        ALLOWED_YAML="${ALLOWED_YAML}    - ${c}$(printf '\n')"
+        if [ -n "$ALLOWED_YAML" ]; then
+            ALLOWED_YAML="${ALLOWED_YAML}${_NL}"
+        fi
+        ALLOWED_YAML="${ALLOWED_YAML}    - ${c}"
     fi
 done
 IFS="$_old_ifs"
