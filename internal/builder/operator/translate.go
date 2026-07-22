@@ -72,9 +72,9 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 			},
 		}
 	default:
-		// The local backend defaults an empty KairosVersion to "latest" when
-		// it invokes kairos-init (auroraboot/builder.go:522-526). Mirror that
-		// so callers who signal from-scratch intent (KairosInitImage set,
+		// The local backend defaults an empty KairosVersion to "latest" inside
+		// ensureKairosified before it invokes kairos-init. Mirror that so
+		// callers who signal from-scratch intent (KairosInitImage set,
 		// FIPS/TrustedBoot flag, ...) without naming a version get the same
 		// behaviour on the operator backend instead of a validation error
 		// from the operator's CRD (Version required).
