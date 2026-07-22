@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef, useCallback, useMemo } from "react";
+import { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import {
   getArtifact,
@@ -50,6 +50,25 @@ import {
 } from "lucide-react";
 import { DeployDialog } from "@/components/DeployDialog";
 import { ansiToHtml } from "@/lib/ansi";
+
+// LogLine is a memoized single-row renderer for the build-log pane. Long
+// builds produce thousands of lines; without memo, every WS chunk that
+// appends a new line would re-run ansiToHtml for every existing line and
+// hand React a fresh __html string identity, forcing dangerouslySetInnerHTML
+// to reconcile the whole list. React.memo's shallow prop compare on the
+// `line` string skips unchanged rows entirely, so a live chunk only
+// re-renders the tail.
+const LogLine = memo(function LogLine({ line }: { line: string }) {
+  return (
+    <div dangerouslySetInnerHTML={{ __html: ansiToHtml(line) || "&nbsp;" }} />
+  );
+});
+
+// LogGutterNumber matches LogLine for the same reason: unchanged line
+// numbers should not trigger a DOM update on every incoming chunk.
+const LogGutterNumber = memo(function LogGutterNumber({ n }: { n: number }) {
+  return <div>{n}</div>;
+});
 import { listGroups, type Group } from "@/api/groups";
 import { downloadBuildConfig, payloadFromArtifact } from "@/lib/buildConfig";
 import { toast } from "@/hooks/useToast";
@@ -926,15 +945,12 @@ export function ArtifactDetail() {
             <div className={`flex ${wrapLogs ? "" : "w-max min-w-full"}`}>
               <div className="sticky left-0 select-none text-right pr-3 pl-4 py-3 text-muted-foreground/50 bg-black/20 border-r border-white/5 tabular-nums">
                 {logLines.map((_, i) => (
-                  <div key={i}>{i + 1}</div>
+                  <LogGutterNumber key={i} n={i + 1} />
                 ))}
               </div>
               <div className={`py-3 pr-4 pl-3 flex-1 ${wrapLogs ? "whitespace-pre-wrap break-words" : "whitespace-pre"}`}>
                 {logLines.map((line, i) => (
-                  <div
-                    key={i}
-                    dangerouslySetInnerHTML={{ __html: ansiToHtml(line) || "&nbsp;" }}
-                  />
+                  <LogLine key={i} line={line} />
                 ))}
               </div>
             </div>
