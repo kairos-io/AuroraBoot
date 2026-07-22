@@ -103,6 +103,17 @@ var _ = Describe("ArtifactHandler.Upload", func() {
 		Expect(string(got)).To(Equal("second"))
 	})
 
+	It("appends uploaded filenames to the store record without duplicating on retry", func() {
+		Expect(upload(buildID, "kairos.iso", token, []byte("a")).Code).To(Equal(http.StatusCreated))
+		Expect(upload(buildID, "kairos.raw", token, []byte("b")).Code).To(Equal(http.StatusCreated))
+		// Retry of the same file: exporter Job backoff may re-run.
+		Expect(upload(buildID, "kairos.iso", token, []byte("a")).Code).To(Equal(http.StatusCreated))
+
+		rec, err := as.GetByID(nil, buildID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.ArtifactFiles).To(ConsistOf("kairos.iso", "kairos.raw"))
+	})
+
 	It("uses constant-time comparison so a length-mismatch token cannot short-circuit", func() {
 		// This mostly documents intent; the security property is that both
 		// "wrong" and "too short" fail with the same 401 code and no timing
