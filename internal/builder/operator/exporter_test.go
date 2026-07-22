@@ -1,53 +1,39 @@
 package operator
 
 import (
-	"testing"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 
 	corev1 "k8s.io/api/core/v1"
 )
 
-func TestUploadExporter_HasArtifactsMountAndUploadEnv(t *testing.T) {
-	spec := uploadExporter("build-42")
+var _ = Describe("uploadExporter", func() {
+	It("emits a Job with the artifacts mount, upload env, and retries", func() {
+		spec := uploadExporter("build-42")
 
-	if want, got := corev1.RestartPolicyNever, spec.Template.Spec.RestartPolicy; want != got {
-		t.Fatalf("RestartPolicy = %q, want %q", got, want)
-	}
-	if spec.BackoffLimit == nil {
-		t.Fatalf("BackoffLimit is nil; want retries so a transient network blip does not fail the whole build")
-	}
-	if len(spec.Template.Spec.Containers) != 1 {
-		t.Fatalf("Containers = %d, want 1", len(spec.Template.Spec.Containers))
-	}
-	c := spec.Template.Spec.Containers[0]
+		Expect(spec.Template.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever))
+		Expect(spec.BackoffLimit).NotTo(BeNil(),
+			"BackoffLimit is nil; a transient network blip would fail the whole build")
+		Expect(spec.Template.Spec.Containers).To(HaveLen(1))
 
-	var mountedArtifacts bool
-	for _, vm := range c.VolumeMounts {
-		if vm.Name == "artifacts" && vm.MountPath == "/artifacts" && vm.ReadOnly {
-			mountedArtifacts = true
-			break
-		}
-	}
-	if !mountedArtifacts {
-		t.Fatalf("container is missing the read-only /artifacts VolumeMount; the operator injects the volume but exporters must declare the mount")
-	}
+		c := spec.Template.Spec.Containers[0]
 
-	var buildIDEnv string
-	for _, env := range c.Env {
-		if env.Name == "BUILD_ID" {
-			buildIDEnv = env.Value
-		}
-	}
-	if buildIDEnv != "build-42" {
-		t.Fatalf("BUILD_ID env = %q, want %q", buildIDEnv, "build-42")
-	}
+		// The operator injects the "artifacts" Volume itself; exporters
+		// must declare the read-only mount to see /artifacts.
+		Expect(c.VolumeMounts).To(ContainElement(SatisfyAll(
+			HaveField("Name", "artifacts"),
+			HaveField("MountPath", "/artifacts"),
+			HaveField("ReadOnly", true),
+		)))
 
-	var envFromSecret string
-	for _, ef := range c.EnvFrom {
-		if ef.SecretRef != nil {
-			envFromSecret = ef.SecretRef.Name
-		}
-	}
-	if envFromSecret != uploadSecretName("build-42") {
-		t.Fatalf("envFrom SecretRef = %q, want %q (upload URL and token)", envFromSecret, uploadSecretName("build-42"))
-	}
-}
+		Expect(c.Env).To(ContainElement(SatisfyAll(
+			HaveField("Name", "BUILD_ID"),
+			HaveField("Value", "build-42"),
+		)))
+
+		Expect(c.EnvFrom).To(HaveLen(1))
+		Expect(c.EnvFrom[0].SecretRef).NotTo(BeNil())
+		Expect(c.EnvFrom[0].SecretRef.Name).To(Equal(uploadSecretName("build-42")),
+			"exporter reads AURORABOOT_URL and AURORABOOT_UPLOAD_TOKEN from this Secret")
+	})
+})
