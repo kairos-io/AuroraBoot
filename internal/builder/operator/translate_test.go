@@ -267,6 +267,86 @@ var _ = Describe("translateBuildOptions", func() {
 			},
 			wantErr: builder.ErrInvalidBuildOptions,
 		},
+		{
+			// A caller that supplies both a base image and a KairosVersion is
+			// asking us to kairosify the base (matching the local backend's
+			// ensureKairosified). Route to the operator's BuildOptions path so
+			// kairos-init runs, and thread the base image through as
+			// BuildOptions.BaseImage.
+			name: "BaseImage + KairosVersion routes to BuildOptions, not Ref",
+			opts: builder.BuildOptions{
+				BaseImage: "ubuntu:24.04",
+				Source: builder.ImageSource{
+					KairosVersion: "v3.6.0",
+					Arch:          "amd64",
+				},
+				Outputs: builder.OutputOptions{ISO: true},
+			},
+			want: buildv1alpha2.OSArtifactSpec{
+				Image: buildv1alpha2.ImageSpec{
+					BuildOptions: &buildv1alpha2.BuildOptions{
+						Version:   "v3.6.0",
+						BaseImage: "ubuntu:24.04",
+					},
+				},
+				Artifacts: &buildv1alpha2.ArtifactSpec{
+					Arch: "amd64",
+					ISO:  true,
+				},
+			},
+		},
+		{
+			// KairosInitImage is a build-time knob (only meaningful when
+			// kairos-init runs). Its presence forces from-scratch even if
+			// the caller did not name a KairosVersion; Version falls back to
+			// "latest", matching auroraboot/builder.go:522-526.
+			name: "KairosInitImage forces from-scratch with latest fallback",
+			opts: builder.BuildOptions{
+				BaseImage:       "ubuntu:24.04",
+				KairosInitImage: "mirror.example/kairos/kairos-init:v0.8.0",
+				Source:          builder.ImageSource{Arch: "amd64"},
+				Outputs:         builder.OutputOptions{ISO: true},
+			},
+			want: buildv1alpha2.OSArtifactSpec{
+				Image: buildv1alpha2.ImageSpec{
+					BuildOptions: &buildv1alpha2.BuildOptions{
+						Version:         "latest",
+						BaseImage:       "ubuntu:24.04",
+						KairosInitImage: "mirror.example/kairos/kairos-init:v0.8.0",
+					},
+				},
+				Artifacts: &buildv1alpha2.ArtifactSpec{
+					Arch: "amd64",
+					ISO:  true,
+				},
+			},
+		},
+		{
+			// KairosInitImage combined with an explicit KairosVersion passes
+			// both through; no "latest" substitution.
+			name: "KairosInitImage + KairosVersion pass through as given",
+			opts: builder.BuildOptions{
+				BaseImage:       "ubuntu:24.04",
+				KairosVersion:   "v3.6.0",
+				KairosInitImage: "mirror.example/kairos/kairos-init:v0.8.0",
+				Source:          builder.ImageSource{Arch: "amd64"},
+				Outputs:         builder.OutputOptions{ISO: true, FIPS: true},
+			},
+			want: buildv1alpha2.OSArtifactSpec{
+				Image: buildv1alpha2.ImageSpec{
+					BuildOptions: &buildv1alpha2.BuildOptions{
+						Version:         "v3.6.0",
+						BaseImage:       "ubuntu:24.04",
+						FIPS:            true,
+						KairosInitImage: "mirror.example/kairos/kairos-init:v0.8.0",
+					},
+				},
+				Artifacts: &buildv1alpha2.ArtifactSpec{
+					Arch: "amd64",
+					ISO:  true,
+				},
+			},
+		},
 	}
 
 	for _, tt := range cases {
