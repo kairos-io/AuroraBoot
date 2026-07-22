@@ -4,6 +4,9 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +23,23 @@ import (
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
 )
+
+// uploadTokenBytes is the raw entropy for a per-build UploadToken; 32 random
+// bytes hex-encoded gives a 64-character bearer with 256 bits of entropy.
+const uploadTokenBytes = 32
+
+// maxUploadBytes caps a single exporter upload. 20 GiB covers any single
+// Kairos artifact today (an oversized UKI ISO is a few GiB); the limit exists
+// to keep a runaway exporter from filling the AuroraBoot host's disk.
+const maxUploadBytes = 20 * 1024 * 1024 * 1024
+
+func mintUploadToken() (string, error) {
+	b := make([]byte, uploadTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("mint upload token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
 
 // ArtifactHandler handles artifact-related REST endpoints.
 type ArtifactHandler struct {
@@ -169,10 +189,19 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		}
 	}
 
+	// Mint the per-build upload token before we hand opts to the builder so
+	// the operator backend's exporter Secret carries a fresh token for every
+	// build, and the store record can validate the incoming PUT /upload.
+	uploadToken, err := mintUploadToken()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare build"})
+	}
+
 	// Build opts — set both flat fields and grouped sub-structs.
 	opts := builder.BuildOptions{
 		ID:                uuid.New().String(),
 		Name:              req.Name,
+		UploadToken:       uploadToken,
 		BaseImage:         req.BaseImage,
 		KairosVersion:     req.KairosVersion,
 		Model:             req.Model,
@@ -303,6 +332,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		rec := &store.ArtifactRecord{
 			ID:                      status.ID,
 			Name:                    req.Name,
+			UploadToken:             uploadToken,
 			Phase:                   status.Phase,
 			Message:                 status.Message,
 			BaseImage:               req.BaseImage,
@@ -452,6 +482,91 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 	return c.String(http.StatusOK, logs)
+}
+
+// Upload handles PUT /api/v1/artifacts/:id/upload/*.
+//
+// The operator backend's exporter Job hits this endpoint once per artifact
+// file to ship a finished build back to AuroraBoot's on-disk store, so that
+// Download can serve it the same way whether the build was produced locally
+// or delegated to an in-cluster operator. Authenticated by the per-build
+// bearer minted in Create and stored on the ArtifactRecord.
+//
+//	@Summary	Upload a single artifact file for a build
+//	@Description	Per-build endpoint the operator backend's exporter uses to ship finished artifacts back to AuroraBoot. Bearer is the UploadToken minted at Create time; the admin bearer does not grant access.
+//	@Tags		Artifacts
+//	@Accept		octet-stream
+//	@Param		id			path	string	true	"Artifact ID"
+//	@Param		filename	path	string	true	"Artifact filename (single-segment; no path separators)"
+//	@Success	201
+//	@Failure	400	{object}	APIError
+//	@Failure	401	{object}	APIError
+//	@Failure	404	{object}	APIError
+//	@Failure	413	{object}	APIError
+//	@Router		/api/v1/artifacts/{id}/upload/{filename} [put]
+func (h *ArtifactHandler) Upload(c echo.Context) error {
+	id := c.Param("id")
+	filename := c.Param("*")
+	ctx := c.Request().Context()
+
+	if h.store == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+	rec, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+
+	presented := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+	if presented == "" || rec.UploadToken == "" ||
+		subtle.ConstantTimeCompare([]byte(presented), []byte(rec.UploadToken)) != 1 {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid upload token"})
+	}
+
+	// The filename lands directly under artifactsDir/<id>/, so we must reject
+	// anything that would traverse or escape it. filepath.Clean plus the
+	// separator/`..` checks give us the same guard the Download handler uses.
+	clean := filepath.Clean(filename)
+	if clean == "." || clean == ".." || clean == "" ||
+		strings.HasPrefix(clean, "..") ||
+		strings.ContainsAny(clean, `/\`) ||
+		filepath.IsAbs(clean) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+
+	buildDir := filepath.Join(h.artifactsDir, id)
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare artifact directory"})
+	}
+
+	// Stream to a sibling temp file and rename in place so a partial upload
+	// never appears under the destination path. maxUploadBytes caps the body
+	// so a runaway exporter cannot fill the AuroraBoot host's disk.
+	tmp, err := os.CreateTemp(buildDir, ".upload-*")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to open upload buffer"})
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	limited := http.MaxBytesReader(c.Response().Writer, c.Request().Body, maxUploadBytes)
+	if _, err := io.Copy(tmp, limited); err != nil {
+		_ = tmp.Close()
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "upload exceeds size limit"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload write failed"})
+	}
+	if err := tmp.Close(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload close failed"})
+	}
+
+	dst := filepath.Join(buildDir, clean)
+	if err := os.Rename(tmpPath, dst); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload finalize failed"})
+	}
+	return c.NoContent(http.StatusCreated)
 }
 
 // Cancel handles POST /api/v1/artifacts/:id/cancel.

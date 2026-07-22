@@ -263,6 +263,12 @@ func New(cfg Config) *echo.Echo {
 	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, dlAuth)
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage, dlAuth)
 
+	// Artifact upload — per-build UploadToken bearer (minted at Create time,
+	// stored on the ArtifactRecord). Used by the operator backend's exporter
+	// Job; the admin bearer does not grant access here. Registered outside
+	// adminGroup so the admin middleware does not intercept the request.
+	e.PUT("/api/v1/artifacts/:id/upload/*", artifactHandler.Upload)
+
 	// UI WebSocket (admin auth)
 	adminGroup.GET("/ws/ui", uiWSHandler.HandleUIWS)
 
