@@ -1,0 +1,14 @@
+{
+  "tasks": [
+    {
+      "id": 1,
+      "status": "pending",
+      "attempts": 0,
+      "commit": "",
+      "decisions": [
+        "Use iso.live_console and --live-console because the bug is replacement of the built-in console list, not general cmdline extension.",
+        "Preserve the existing console list when unset and leave the debug entry unchanged to minimize behavioral surface."
+      ]
+    }
+  ]
+}
