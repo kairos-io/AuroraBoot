@@ -21,7 +21,7 @@ const (
 	clusterName        = "auroraboot-op-e2e"
 	operatorNamespace  = "operator-system"
 	operatorDeployment = "operator-kairos-operator"
-	operatorKustomize  = "github.com/kairos-io/kairos-operator/config/default?ref=v0.1.0"
+	operatorKustomize  = "github.com/kairos-io/kairos-operator/config/default?ref=v0.1.1"
 )
 
 var (
