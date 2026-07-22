@@ -566,7 +566,30 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 	if err := os.Rename(tmpPath, dst); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload finalize failed"})
 	}
+
+	// Reflect the newly-uploaded file in the store record so the UI's
+	// existing artifact list (which reads ArtifactFiles verbatim) surfaces
+	// operator-produced artifacts the same way it does local ones. Dedupe
+	// the append so a retried exporter Job (backoffLimit) does not stack
+	// duplicates. Ignore Update failures - the file is on disk, the store
+	// row can be reconciled later, and returning 500 here would mislead the
+	// exporter into retrying an already-durable upload.
+	appendArtifactFile(rec, clean)
+	_ = h.store.Update(ctx, rec)
+
 	return c.NoContent(http.StatusCreated)
+}
+
+// appendArtifactFile adds name to rec.ArtifactFiles if it is not already
+// present. Kept as a small helper so tests can reason about it in isolation
+// from the Upload handler.
+func appendArtifactFile(rec *store.ArtifactRecord, name string) {
+	for _, existing := range rec.ArtifactFiles {
+		if existing == name {
+			return
+		}
+	}
+	rec.ArtifactFiles = append(rec.ArtifactFiles, name)
 }
 
 // Cancel handles POST /api/v1/artifacts/:id/cancel.

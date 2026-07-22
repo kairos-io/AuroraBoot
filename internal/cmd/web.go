@@ -231,10 +231,15 @@ func runWeb(c *cli.Context) error {
 		}
 		artifactBuilder = b.WithLogBroadcaster(wsHub.UI)
 		systemInfo = handlers.APISystemBuilder{
-			Backend:           "operator",
-			Cluster:           sanitizeClusterURL(cfg.Host),
-			Namespace:         c.String("builder-namespace"),
-			DownloadSupported: false,
+			Backend:   "operator",
+			Cluster:   sanitizeClusterURL(cfg.Host),
+			Namespace: c.String("builder-namespace"),
+			// Operator builds ship their finished artifacts back to
+			// AuroraBoot's on-disk store via the exporter Job we inject in
+			// internal/builder/operator, so Download serves them the same
+			// way as local builds. The UI no longer needs to gate its
+			// download link by backend.
+			DownloadSupported: true,
 		}
 	default:
 		return fmt.Errorf("unreachable: --builder=%q survived validation", builderKind)
