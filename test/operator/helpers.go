@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
@@ -38,6 +39,7 @@ func buildTestClient() client.Client {
 	Expect(err).NotTo(HaveOccurred(), "load REST config from KUBECONFIG")
 
 	scheme := runtime.NewScheme()
+	Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed(), "register client-go scheme")
 	Expect(buildv1alpha2.AddToScheme(scheme)).To(Succeed(), "register v1alpha2 scheme")
 
 	c, err := client.New(cfg, client.Options{Scheme: scheme})
