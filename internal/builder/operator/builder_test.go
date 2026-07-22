@@ -223,6 +223,44 @@ var _ = Describe("Operator Builder", func() {
 			Expect(err).To(HaveOccurred())
 			Expect(errors.Is(err, builder.ErrInvalidBuildOptions)).To(BeTrue())
 		})
+
+		It("attaches an upload exporter and Secret when AuroraBootURL and UploadToken are set", func() {
+			ctx := context.Background()
+
+			// Same fake wiring as newFakeBuilder, plus AuroraBootURL on the
+			// Config so Build injects the exporter path.
+			scheme := runtime.NewScheme()
+			Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+			Expect(buildv1alpha2.AddToScheme(scheme)).To(Succeed())
+			fc := fake.NewClientBuilder().WithScheme(scheme).Build()
+			cs := k8sfake.NewSimpleClientset()
+
+			bld, err := newWithFactory(Config{
+				RESTConfig:    &rest.Config{Host: "https://fake.invalid"},
+				Namespace:     "kairos-builds",
+				AuroraBootURL: "https://auroraboot.example",
+			}, func(_ Config, _ *runtime.Scheme) (client.Client, error) { return fc, nil },
+				func(_ Config) (kubernetes.Interface, error) { return cs, nil })
+			Expect(err).NotTo(HaveOccurred())
+
+			_, err = bld.Build(ctx, builder.BuildOptions{
+				ID:          "build-up",
+				UploadToken: "tok-abcdef",
+				BaseImage:   "quay.io/kairos/ubuntu:v3.6.0",
+				Source:      builder.ImageSource{Arch: "amd64"},
+				Outputs:     builder.OutputOptions{ISO: true},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			got := &buildv1alpha2.OSArtifact{}
+			Expect(fc.Get(ctx, types.NamespacedName{Name: "build-up", Namespace: "kairos-builds"}, got)).To(Succeed())
+			Expect(got.Spec.Exporters).To(HaveLen(1))
+
+			sec := &corev1.Secret{}
+			Expect(fc.Get(ctx, types.NamespacedName{Name: "build-up-upload", Namespace: "kairos-builds"}, sec)).To(Succeed())
+			Expect(sec.Data).To(HaveKeyWithValue(uploadURLKey, []byte("https://auroraboot.example")))
+			Expect(sec.Data).To(HaveKeyWithValue(uploadTokenKey, []byte("tok-abcdef")))
+		})
 	})
 
 	Describe("Status", func() {
