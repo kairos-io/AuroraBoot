@@ -298,8 +298,8 @@ var _ = Describe("translateBuildOptions", func() {
 		{
 			// KairosInitImage is a build-time knob (only meaningful when
 			// kairos-init runs). Its presence forces from-scratch even if
-			// the caller did not name a KairosVersion; Version falls back to
-			// "latest", matching auroraboot/builder.go:522-526.
+			// the caller did not name a KairosVersion; Version falls back
+			// to "latest", matching the local backend's ensureKairosified.
 			name: "KairosInitImage forces from-scratch with latest fallback",
 			opts: builder.BuildOptions{
 				BaseImage:       "ubuntu:24.04",
