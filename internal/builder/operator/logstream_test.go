@@ -172,6 +172,16 @@ func (f *flakyPodSource) Find(_ context.Context, _ string) (*corev1.Pod, error) 
 	}
 	return f.pod, nil
 }
+func (f *flakyPodSource) List(ctx context.Context, buildID string) ([]corev1.Pod, error) {
+	pod, err := f.Find(ctx, buildID)
+	if err != nil {
+		return nil, err
+	}
+	if pod == nil {
+		return nil, nil
+	}
+	return []corev1.Pod{*pod}, nil
+}
 func (f *flakyPodSource) Get(_ context.Context, _ string) (*corev1.Pod, error) { return f.pod, nil }
 func (f *flakyPodSource) Open(_ context.Context, _, _ string) (io.ReadCloser, error) {
 	return io.NopCloser(strings.NewReader("")), nil
@@ -319,6 +329,13 @@ func newFakePodSource(pod *corev1.Pod) *fakePodSource {
 
 func (f *fakePodSource) Find(_ context.Context, _ string) (*corev1.Pod, error) {
 	return f.pod, nil
+}
+
+func (f *fakePodSource) List(_ context.Context, _ string) ([]corev1.Pod, error) {
+	if f.pod == nil {
+		return nil, nil
+	}
+	return []corev1.Pod{*f.pod}, nil
 }
 
 func (f *fakePodSource) Get(_ context.Context, _ string) (*corev1.Pod, error) {
