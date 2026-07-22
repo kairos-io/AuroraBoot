@@ -155,6 +155,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	id := opts.ID
 	if id == "" {
 		id = uuid.New().String()
+		opts.ID = id
 	}
 
 	outputDir := filepath.Join(b.baseDir, id)
@@ -487,7 +488,7 @@ func validateKairosInitOptions(opts builder.BuildOptions) error {
 	return nil
 }
 
-// ensureKairosified checks if the image is a Kairos image, and if not, builds one using kairos-init.
+// ensureKairosified builds a per-artifact Kairos image using kairos-init.
 // Skipped when store is nil (test mode without Docker).
 func (b *Builder) ensureKairosified(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if b.store == nil {
@@ -497,10 +498,13 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
 	}
-	if b.isKairosified(ctx, image) {
+	// dockerBuild already creates a per-artifact image. Preserve the existing
+	// shortcut for Dockerfiles that produce a complete Kairos image, but never
+	// return a direct base-image tag because its requested variant and provider
+	// settings have not been applied yet.
+	if opts.Dockerfile != "" && b.isKairosified(ctx, image) {
 		return image, nil
 	}
-
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
 		kairosInitImage = os.Getenv("KAIROS_INIT_IMAGE")
