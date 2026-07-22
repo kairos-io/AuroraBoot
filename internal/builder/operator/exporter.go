@@ -3,6 +3,7 @@ package operator
 import (
 	batchv1 "k8s.io/api/batch/v1"
 	corev1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 const (
@@ -40,6 +41,14 @@ func uploadExporter(id string) batchv1.JobSpec {
 	return batchv1.JobSpec{
 		BackoffLimit: &backoff,
 		Template: corev1.PodTemplateSpec{
+			// Propagate the artifact label to the Pod so log-streaming's
+			// pod-list can find the exporter Pod alongside the builder
+			// Pod (which the operator labels itself). Without this the
+			// Pod carries only the Job-controller's default job-name
+			// label and our streamer misses the upload output entirely.
+			ObjectMeta: metav1.ObjectMeta{
+				Labels: map[string]string{buildIDLabel: id},
+			},
 			Spec: corev1.PodSpec{
 				RestartPolicy: corev1.RestartPolicyNever,
 				Containers: []corev1.Container{
