@@ -228,21 +228,15 @@ func (b *Builder) streamPodLogs(ctx context.Context, id string) {
 	}
 	src := newClientsetPodSource(b.clientset, b.cfg.Namespace)
 
-	pod, err := waitForPod(ctx, src, id, podDiscoveryBudget, podDiscoveryPollInterval)
-	if err != nil {
-		if errors.Is(err, context.Canceled) {
-			return
-		}
-		_ = sink.WriteLine("auroraboot", fmt.Sprintf("warning: log streaming disabled: %v", err))
-		return
-	}
-
-	if err := streamAll(ctx, src, pod, sink, containerStartRetryInterval, containerStartMaxRetries); err != nil {
-		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-			return
-		}
-		_ = sink.WriteLine("auroraboot", fmt.Sprintf("warning: log streaming ended: %v", err))
-	}
+	// streamAllArtifactPods loops until ctx is cancelled. That happens
+	// either when Cancel(id) invalidates the build or when watchCRPhase
+	// sees a terminal CR phase (Ready/Error/NotFound) and calls the shared
+	// cancel func. The loop picks up the exporter Pod created after the
+	// builder Pod terminates, so its curl-uploader logs make it to the
+	// UI's live-log pane alongside the buildah/auroraboot output.
+	streamAllArtifactPods(ctx, src, id, sink,
+		podDiscoveryPollInterval,
+		containerStartRetryInterval, containerStartMaxRetries)
 }
 
 func (b *Builder) Status(ctx context.Context, id string) (*builder.BuildStatus, error) {
@@ -324,6 +318,19 @@ func (b *Builder) watchCRPhase(ctx context.Context, id string, pollInterval time
 	if b.cfg.Store == nil {
 		return
 	}
+	// cancelShared cancels the streamCtx used by both goroutines Build
+	// spawns (this one and streamPodLogs). We call it whenever the CR
+	// reaches a terminal state or disappears, so streamPodLogs unblocks
+	// from its polling loop instead of running forever chasing pods that
+	// no longer exist. Cancel(id) still hits the same func via a direct
+	// b.active lookup.
+	cancelShared := func() {
+		b.activeMu.Lock()
+		if cancel, ok := b.active[id]; ok {
+			cancel()
+		}
+		b.activeMu.Unlock()
+	}
 	key := types.NamespacedName{Name: id, Namespace: b.cfg.Namespace}
 	var lastPhase, lastMessage string
 	for {
@@ -333,6 +340,7 @@ func (b *Builder) watchCRPhase(ctx context.Context, id string, pollInterval time
 		art := &buildv1alpha2.OSArtifact{}
 		err := b.k8s.Get(ctx, key, art)
 		if apierrors.IsNotFound(err) {
+			cancelShared()
 			return
 		}
 		if err == nil {
@@ -349,6 +357,7 @@ func (b *Builder) watchCRPhase(ctx context.Context, id string, pollInterval time
 				lastMessage = st.Message
 			}
 			if st.Phase == builder.BuildReady || st.Phase == builder.BuildError {
+				cancelShared()
 				return
 			}
 		}

@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/kubernetes"
 
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
@@ -52,7 +53,14 @@ type logSink interface {
 // podSource abstracts pod discovery and per-container log streaming so tests
 // can inject a fake and the production wiring can use a client-go clientset.
 type podSource interface {
+	// Find returns the first pod matching the build label, or nil if none
+	// exist yet. Kept for callers that only care about the builder Pod.
 	Find(ctx context.Context, buildID string) (*corev1.Pod, error)
+	// List returns every pod matching the build label. The operator creates
+	// a single builder Pod plus one exporter Pod per exporter Job (with
+	// backoffLimit retries producing additional Pods), so callers that want
+	// to stream logs from all of them need this rather than Find.
+	List(ctx context.Context, buildID string) ([]corev1.Pod, error)
 	Get(ctx context.Context, podName string) (*corev1.Pod, error)
 	Open(ctx context.Context, podName, container string) (io.ReadCloser, error)
 }
@@ -67,18 +75,24 @@ func newClientsetPodSource(cs kubernetes.Interface, namespace string) podSource 
 }
 
 func (c *clientsetPodSource) Find(ctx context.Context, buildID string) (*corev1.Pod, error) {
+	items, err := c.List(ctx, buildID)
+	if err != nil {
+		return nil, err
+	}
+	if len(items) == 0 {
+		return nil, nil
+	}
+	return &items[0], nil
+}
+
+func (c *clientsetPodSource) List(ctx context.Context, buildID string) ([]corev1.Pod, error) {
 	list, err := c.cs.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: podBuildLabel + "=" + buildID,
 	})
 	if err != nil {
 		return nil, err
 	}
-	if len(list.Items) == 0 {
-		return nil, nil
-	}
-	// The operator produces exactly one builder Pod per OSArtifact; if more
-	// somehow appear, pick the first and let the caller sort it out.
-	return &list.Items[0], nil
+	return list.Items, nil
 }
 
 func (c *clientsetPodSource) Get(ctx context.Context, podName string) (*corev1.Pod, error) {
@@ -248,6 +262,51 @@ func scanLines(ctx context.Context, rc io.ReadCloser, container string, sink log
 		return err
 	}
 	return nil
+}
+
+// streamAllArtifactPods discovers every pod carrying the build-label for
+// buildID (builder Pod, exporter Pod(s), any retries) and streams each one's
+// logs through sink. It loops until ctx is cancelled, so pods that come
+// online after the builder finishes (notably the exporter Job created when
+// the operator transitions the CR into Exporting) also get their logs
+// forwarded to the UI. Callers cancel ctx from watchCRPhase when the CR
+// reaches a terminal phase, or from Cancel(id) when the admin bails out.
+func streamAllArtifactPods(ctx context.Context, src podSource, buildID string, sink logSink, pollInterval, retryInterval time.Duration, maxRetries int) {
+	seen := map[types.UID]struct{}{}
+	var wg sync.WaitGroup
+	defer wg.Wait()
+	for {
+		pods, err := src.List(ctx, buildID)
+		if err != nil && !apierrors.IsNotFound(err) {
+			// Transient discovery error - log and keep polling. A persistent
+			// failure surfaces as "no pods ever streamed" from the caller's
+			// perspective, which is preferable to killing log streaming on
+			// the first blip.
+			fmt.Fprintf(os.Stderr, "streamAllArtifactPods: transient list error for build %q: %v\n", buildID, err)
+		}
+		for i := range pods {
+			pod := pods[i]
+			if _, ok := seen[pod.UID]; ok {
+				continue
+			}
+			seen[pod.UID] = struct{}{}
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				if err := streamAll(ctx, src, &pod, sink, retryInterval, maxRetries); err != nil {
+					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+						return
+					}
+					_ = sink.WriteLine("auroraboot", fmt.Sprintf("warning: log streaming for pod %q ended: %v", pod.Name, err))
+				}
+			}()
+		}
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(pollInterval):
+		}
+	}
 }
 
 // streamAll drives every container in pod: init containers sequentially in
