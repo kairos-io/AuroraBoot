@@ -274,16 +274,21 @@ func scanLines(ctx context.Context, rc io.ReadCloser, container string, sink log
 	defer rc.Close()
 	scanner := bufio.NewScanner(rc)
 	scanner.Buffer(make([]byte, 0, 4096), scanLineBufferMax)
+	var lines int
 	for scanner.Scan() {
 		if err := ctx.Err(); err != nil {
+			fmt.Fprintf(os.Stderr, "operator builder: scanLines exiting for container %q at line %d due to ctx: %v\n", container, lines, err)
 			return err
 		}
+		lines++
 		if err := sink.WriteLine(container, scanner.Text()); err != nil {
 			return err
 		}
 	}
-	if err := scanner.Err(); err != nil && !errors.Is(err, context.Canceled) {
-		return err
+	scanErr := scanner.Err()
+	fmt.Fprintf(os.Stderr, "operator builder: scanLines closed for container %q after %d lines (err=%v)\n", container, lines, scanErr)
+	if scanErr != nil && !errors.Is(scanErr, context.Canceled) {
+		return scanErr
 	}
 	return nil
 }
@@ -387,7 +392,9 @@ type broadcastingSink struct {
 func (b *broadcastingSink) WriteLine(container, line string) error {
 	chunk := "[" + container + "] " + line + "\n"
 	if b.store != nil {
-		_ = b.store.AppendLog(b.ctx, b.buildID, chunk)
+		if err := b.store.AppendLog(b.ctx, b.buildID, chunk); err != nil {
+			fmt.Fprintf(os.Stderr, "operator builder: AppendLog for build %q container %q failed: %v (line dropped: %q)\n", b.buildID, container, err, line)
+		}
 	}
 	if b.broadcaster != nil {
 		b.broadcaster.BroadcastLogChunk(b.buildID, chunk)
