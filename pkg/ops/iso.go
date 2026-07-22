@@ -37,6 +37,7 @@ type LiveISO struct {
 	BootloaderInRootFs bool                      `yaml:"bootloader-in-rootfs" mapstructure:"bootloader-in-rootfs"`
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO.
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline,omitempty" mapstructure:"extend-live-cmdline"`
+	LiveConsole       string `yaml:"live-console,omitempty" mapstructure:"live-console"`
 }
 
 // BuildConfig represents the config we need for building isos, raw images, artifacts
@@ -157,6 +158,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 			GrubEntry:          "Kairos",
 			BootloaderInRootFs: false,
 			ExtendLiveCmdline:  i.ExtendLiveCmdline,
+			LiveConsole:        i.LiveConsole,
 		}
 
 		if i.OverlayRootfs != "" {
@@ -319,10 +321,16 @@ func (b *BuildISOAction) ISORun() (err error) {
 	return err
 }
 
-// applyGrubTemplate replaces {{NOMODESET}} and {{EXTEND_CMDLINE}} in the grub config template.
-func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline string) []byte {
+// applyGrubTemplate replaces placeholders in the grub config template.
+func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole string) []byte {
+	if liveConsole == "" {
+		liveConsole = "console=ttyS0 console=tty1"
+	} else {
+		liveConsole = strings.NewReplacer("\n", "", "\r", "").Replace(liveConsole)
+	}
 	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", nomodeset)
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
+	out = strings.ReplaceAll(out, "{{LIVE_CONSOLE}}", liveConsole)
 	return []byte(out)
 }
 
@@ -355,7 +363,11 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 			extendCmdline = strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(extendCmdline))
 			extendCmdline = " " + extendCmdline
 		}
-		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline)
+		liveConsole := ""
+		if b.spec != nil {
+			liveConsole = b.spec.LiveConsole
+		}
+		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole)
 		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), grubCfg, constants.FilePerm)
 	} else {
 		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
