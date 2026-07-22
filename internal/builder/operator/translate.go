@@ -25,12 +25,23 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 		return buildv1alpha2.OSArtifactSpec{}, fmt.Errorf("%w: source.arch must be 'amd64' or 'arm64', got %q", builder.ErrInvalidBuildOptions, arch)
 	}
 
-	// A caller may pass the pre-built base image via the legacy flat field
+	// A caller may pass the base image via the legacy flat field
 	// (opts.BaseImage) or the grouped shape (opts.Source.BaseImage). Both are
-	// valid pre-built refs when no Dockerfile is supplied; treat them as one
-	// so validation and translation cannot disagree.
+	// valid; treat them as one so validation and translation cannot disagree.
 	baseRef := firstNonEmpty(opts.BaseImage, opts.Source.BaseImage)
-	preBuilt := baseRef != "" && opts.Dockerfile == ""
+	kairosVersion := firstNonEmpty(opts.Source.KairosVersion, opts.KairosVersion)
+
+	// Pre-built means: consume the caller's ref as-is, no kairos-init pass.
+	// Any signal that we should do build-time work (a Dockerfile, an explicit
+	// KairosVersion, or a KairosInitImage override) drops us out of the
+	// pre-built branch so the caller's intent lands on the operator's
+	// kairos-init flow rather than getting silently ignored. This mirrors
+	// the local backend's ensureKairosified behaviour, which always
+	// kairosifies unless the image is already Kairos-tagged.
+	preBuilt := baseRef != "" &&
+		opts.Dockerfile == "" &&
+		kairosVersion == "" &&
+		opts.KairosInitImage == ""
 
 	// FIPS and TrustedBoot are build-time flags passed to kairos-init; they
 	// only make sense when we actually build the Stage-1 image. The legacy
@@ -61,15 +72,26 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 			},
 		}
 	default:
+		// The local backend defaults an empty KairosVersion to "latest" when
+		// it invokes kairos-init (auroraboot/builder.go:522-526). Mirror that
+		// so callers who signal from-scratch intent (KairosInitImage set,
+		// FIPS/TrustedBoot flag, ...) without naming a version get the same
+		// behaviour on the operator backend instead of a validation error
+		// from the operator's CRD (Version required).
+		version := kairosVersion
+		if version == "" {
+			version = "latest"
+		}
 		spec.Image = buildv1alpha2.ImageSpec{
 			BuildOptions: &buildv1alpha2.BuildOptions{
-				Version:           firstNonEmpty(opts.Source.KairosVersion, opts.KairosVersion),
-				BaseImage:         opts.Source.BaseImage,
+				Version:           version,
+				BaseImage:         baseRef,
 				Model:             firstNonEmpty(opts.Source.Model, opts.Model),
 				TrustedBoot:       trustedBoot,
 				KubernetesDistro:  firstNonEmpty(opts.Source.KubernetesDistro, opts.KubernetesDistro),
 				KubernetesVersion: firstNonEmpty(opts.Source.KubernetesVersion, opts.KubernetesVersion),
 				FIPS:              fips,
+				KairosInitImage:   opts.KairosInitImage,
 			},
 		}
 	}

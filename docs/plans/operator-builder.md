@@ -82,6 +82,18 @@ commit.
   forwarding, deleting a `Ready` operator artifact wiped the DB row but
   left the OSArtifact CR and its PVC alive forever. `aeb6a18` fixes both
   paths.
+- **Pre-built vs from-scratch is discriminated by more than `BaseImage`.**
+  The translator initially routed `Spec.Image.Ref` on any `BaseImage` with no
+  Dockerfile, which silently skipped kairos-init when the caller provided a
+  raw distro image (bare `ubuntu:24.04` and similar). `preBuilt` now also
+  requires `KairosVersion == ""` and `KairosInitImage == ""`; any signal
+  that the caller wants build-time work drops us onto `Spec.Image.BuildOptions`
+  so the operator's kairos-init flow runs. An empty `KairosVersion` in the
+  from-scratch branch falls back to `"latest"`, mirroring the local backend's
+  `ensureKairosified` (`internal/builder/auroraboot/builder.go:522-526`).
+  Threaded via `internal/builder/operator/translate.go`; the harness pin is
+  now `kairos-operator v0.1.1`, which is the first release to expose
+  `BuildOptions.KairosInitImage` on the CRD.
 - **`sanitizeClusterURL` strips more than userinfo.** The Step 1.6
   hardening initially only stripped `user:pass@`. A review flagged that
   a kubeconfig can also carry credentials in a query parameter
@@ -102,11 +114,14 @@ commit.
   design pass (nginx exporter proxy vs S3 sink vs sidecar - see the three
   options in 3.3).
 - **Cross-backend field alignment.** The operator translator honours both
-  the grouped `Source.*` fields and the legacy flat fields (`9ad7324`);
-  the local backend still only reads the flat fields. Same `BuildOptions`
-  input can therefore produce different builds across backends when the
-  caller uses only the grouped shape. Fixing this is a local-builder
-  refactor that is out of scope for the operator branch.
+  the grouped `Source.*` fields and the legacy flat fields (`9ad7324`),
+  auto-routes to kairos-init when the caller signals build-time intent (see
+  the pre-built-discriminator note above), and threads `KairosInitImage`.
+  The local backend still only reads the flat fields for the non-KairosVersion
+  knobs. Same `BuildOptions` input can therefore produce different builds
+  across backends when the caller uses only the grouped shape for those
+  knobs. Fixing this is a local-builder refactor that is out of scope for
+  the operator branch.
 - **`Step 3.6`**: full-ISO e2e (real Kairos build → `Phase == Ready` → ISO
   on PVC) under a separate build tag, for nightly CI. Not yet started.
 - **`auroraboot.Builder.Cancel` holds a write lock across DB I/O.** A
