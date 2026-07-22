@@ -48,7 +48,7 @@ func TestEnsureKairosifiedDerivesPrebuiltImage(t *testing.T) {
 	dockerCalls := installFakeDocker(t)
 
 	b := New(tmpDir, nil, &kairosifyTestStore{})
-	got, err := b.ensureKairosified(context.Background(), "quay.io/kairos/hadron:v0.2.0-core-amd64-generic-v4.1.0", builder.BuildOptions{
+	got, err := b.kairosify(context.Background(), "quay.io/kairos/hadron:v0.2.0-core-amd64-generic-v4.1.0", builder.BuildOptions{
 		ID:                "artifact-123",
 		KubernetesDistro:  "k3s",
 		KubernetesVersion: "v1.33.1+k3s1",
@@ -133,7 +133,9 @@ func TestEnsureKairosifiedKeepsCompleteDockerfileImage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if strings.Contains(string(calls), " build ") || strings.HasPrefix(string(calls), "build ") {
-		t.Fatalf("expected no second docker build, got calls:\n%s", calls)
+	for _, call := range strings.Split(string(calls), "\n") {
+		if strings.HasPrefix(call, "build ") {
+			t.Fatalf("expected no second docker build, got calls:\n%s", calls)
+		}
 	}
 }

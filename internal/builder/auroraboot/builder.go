@@ -278,8 +278,15 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		logWriter.Flush()
 	}
 
-	// Step 1.5: Ensure image is kairosified.
-	containerImage, err := b.ensureKairosified(ctx, containerImage, opts, outputDir, logWriter)
+	// Step 1.5: Direct base images must always be derived so requested provider
+	// and variant settings are applied. Dockerfile images only need derivation
+	// when the Dockerfile did not produce a complete Kairos image.
+	var err error
+	if opts.Dockerfile == "" {
+		containerImage, err = b.kairosify(ctx, containerImage, opts, outputDir, logWriter)
+	} else {
+		containerImage, err = b.ensureKairosified(ctx, containerImage, opts, outputDir, logWriter)
+	}
 	if err != nil {
 		msg := fmt.Sprintf("kairosify failed: %v", err)
 		b.setPhase(bs, builder.BuildError, msg)
@@ -485,25 +492,31 @@ func validateKairosInitOptions(opts builder.BuildOptions) error {
 			return err
 		}
 	}
+	if opts.KubernetesDistro != "" {
+		if err := validateKairosInitValue("kubernetes distro", opts.KubernetesDistro); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// ensureKairosified builds a per-artifact Kairos image using kairos-init.
-// Skipped when store is nil (test mode without Docker).
+// ensureKairosified defensively checks whether an image is already a complete
+// Kairos image before deriving one with kairos-init.
 func (b *Builder) ensureKairosified(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if b.store == nil {
 		// Test mode — skip kairosification (no Docker available)
 		return image, nil
 	}
+	if b.isKairosified(ctx, image) {
+		return image, nil
+	}
+	return b.kairosify(ctx, image, opts, outputDir, logWriter)
+}
+
+// kairosify builds a per-artifact Kairos image using kairos-init.
+func (b *Builder) kairosify(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
-	}
-	// dockerBuild already creates a per-artifact image. Preserve the existing
-	// shortcut for Dockerfiles that produce a complete Kairos image, but never
-	// return a direct base-image tag because its requested variant and provider
-	// settings have not been applied yet.
-	if opts.Dockerfile != "" && b.isKairosified(ctx, image) {
-		return image, nil
 	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
