@@ -73,6 +73,13 @@ type BuildOptions struct {
 	ID   string // unique build ID
 	Name string // optional friendly name
 
+	// UploadToken is the per-build bearer the operator backend's exporter
+	// Job uses to PUT finished artifacts back to AuroraBoot's upload
+	// endpoint. Populated by the Create handler on every build regardless
+	// of backend; the local backend simply ignores it. Never derived from
+	// the user request.
+	UploadToken string
+
 	// Grouped options (preferred for new code).
 	Source       ImageSource
 	Outputs      OutputOptions
