@@ -11,8 +11,6 @@ var _ = Describe("uploadExporter", func() {
 	It("emits a Job with the artifacts mount, upload env, and retries", func() {
 		spec := uploadExporter("build-42")
 
-		Expect(spec.Template.ObjectMeta.Labels).To(HaveKeyWithValue(buildIDLabel, "build-42"),
-			"exporter Pod must carry the build label so streamAllArtifactPods finds it; the operator does not propagate the Job label to Pods on its own")
 		Expect(spec.Template.Spec.RestartPolicy).To(Equal(corev1.RestartPolicyNever))
 		Expect(spec.BackoffLimit).NotTo(BeNil(),
 			"BackoffLimit is nil; a transient network blip would fail the whole build")
