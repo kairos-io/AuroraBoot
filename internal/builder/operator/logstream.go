@@ -86,13 +86,37 @@ func (c *clientsetPodSource) Find(ctx context.Context, buildID string) (*corev1.
 }
 
 func (c *clientsetPodSource) List(ctx context.Context, buildID string) ([]corev1.Pod, error) {
-	list, err := c.cs.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
+	// Two-hop discovery. The operator labels the builder Pod directly
+	// with the build id, but the CRD schema for
+	// spec.exporters[].template.metadata drops labels via OpenAPI pruning,
+	// so exporter Pods only carry the Job controller's default job-name
+	// label. To catch both, we list Pods by the build label (builder) and
+	// separately list Jobs by the build label - which the operator DOES
+	// label - then list each Job's Pods by job-name (exporters).
+	direct, err := c.cs.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: podBuildLabel + "=" + buildID,
 	})
 	if err != nil {
 		return nil, err
 	}
-	return list.Items, nil
+	result := append([]corev1.Pod(nil), direct.Items...)
+
+	jobs, err := c.cs.BatchV1().Jobs(c.namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: podBuildLabel + "=" + buildID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, j := range jobs.Items {
+		jobPods, err := c.cs.CoreV1().Pods(c.namespace).List(ctx, metav1.ListOptions{
+			LabelSelector: "job-name=" + j.Name,
+		})
+		if err != nil {
+			return nil, err
+		}
+		result = append(result, jobPods.Items...)
+	}
+	return result, nil
 }
 
 func (c *clientsetPodSource) Get(ctx context.Context, podName string) (*corev1.Pod, error) {
