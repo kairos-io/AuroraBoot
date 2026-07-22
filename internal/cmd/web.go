@@ -221,9 +221,10 @@ func runWeb(c *cli.Context) error {
 			return err
 		}
 		b, err := operator.New(operator.Config{
-			RESTConfig: cfg,
-			Namespace:  c.String("builder-namespace"),
-			Store:      artifactStore,
+			RESTConfig:    cfg,
+			Namespace:     c.String("builder-namespace"),
+			Store:         artifactStore,
+			AuroraBootURL: externalURL,
 		})
 		if err != nil {
 			return err

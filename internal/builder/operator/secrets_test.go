@@ -14,12 +14,12 @@ var _ = Describe("materializeSecrets", func() {
 	)
 
 	It("returns no secrets when neither cloud-config nor Dockerfile is set", func() {
-		got := materializeSecrets(id, ns, builder.BuildOptions{})
+		got := materializeSecrets(id, ns, "", builder.BuildOptions{})
 		Expect(got).To(BeEmpty())
 	})
 
 	It("emits a single cloud-config secret when only CloudConfig is set", func() {
-		got := materializeSecrets(id, ns, builder.BuildOptions{
+		got := materializeSecrets(id, ns, "", builder.BuildOptions{
 			CloudConfig: "#cloud-config\n",
 		})
 		Expect(got).To(HaveLen(1))
@@ -30,7 +30,7 @@ var _ = Describe("materializeSecrets", func() {
 	})
 
 	It("emits a single Dockerfile secret when only Dockerfile is set", func() {
-		got := materializeSecrets(id, ns, builder.BuildOptions{
+		got := materializeSecrets(id, ns, "", builder.BuildOptions{
 			Dockerfile: "FROM scratch\n",
 		})
 		Expect(got).To(HaveLen(1))
@@ -40,12 +40,32 @@ var _ = Describe("materializeSecrets", func() {
 	})
 
 	It("emits both secrets when both fields are set", func() {
-		got := materializeSecrets(id, ns, builder.BuildOptions{
+		got := materializeSecrets(id, ns, "", builder.BuildOptions{
 			CloudConfig: "#cloud-config\n",
 			Dockerfile:  "FROM scratch\n",
 		})
 		Expect(got).To(HaveLen(2))
 		names := []string{got[0].Name, got[1].Name}
 		Expect(names).To(ConsistOf("build-42-cloud-config", "build-42-dockerfile"))
+	})
+
+	It("emits an upload secret when both uploadURL and UploadToken are set", func() {
+		got := materializeSecrets(id, ns, "https://auroraboot.example", builder.BuildOptions{
+			UploadToken: "0123456789abcdef",
+		})
+		Expect(got).To(HaveLen(1))
+		Expect(got[0].Name).To(Equal("build-42-upload"))
+		Expect(got[0].Data).To(HaveKeyWithValue(uploadURLKey, []byte("https://auroraboot.example")))
+		Expect(got[0].Data).To(HaveKeyWithValue(uploadTokenKey, []byte("0123456789abcdef")))
+	})
+
+	It("skips the upload secret when uploadURL is set but UploadToken is not", func() {
+		got := materializeSecrets(id, ns, "https://auroraboot.example", builder.BuildOptions{})
+		Expect(got).To(BeEmpty())
+	})
+
+	It("skips the upload secret when UploadToken is set but uploadURL is not", func() {
+		got := materializeSecrets(id, ns, "", builder.BuildOptions{UploadToken: "0123"})
+		Expect(got).To(BeEmpty())
 	})
 })

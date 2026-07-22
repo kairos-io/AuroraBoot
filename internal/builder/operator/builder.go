@@ -41,6 +41,13 @@ type Config struct {
 	// Store is optional; when set, streamed pod log chunks are appended to
 	// the record via AppendLog. Nil is safe (broadcast-only).
 	Store store.ArtifactStore
+	// AuroraBootURL is the externally-reachable URL the exporter Job's
+	// curl-uploader targets to ship finished artifacts back to the
+	// AuroraBoot upload endpoint. Populated from --url at runWeb time;
+	// the empty string skips the exporter injection so a caller can
+	// deliberately build without a return channel (e.g. tests that only
+	// care about Spec.Image translation).
+	AuroraBootURL string
 }
 
 type Builder struct {
@@ -134,6 +141,16 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 		return nil, err
 	}
 
+	// Inject the exporter that ships finished artifacts back to AuroraBoot
+	// (via PUT /api/v1/artifacts/:id/upload/*). Only emit when we have both
+	// a target URL (from Config) and a per-build token (from opts) - a
+	// builder constructed without a URL (e.g. tests that only care about
+	// Spec.Image translation) simply skips it, and the paired upload Secret
+	// is likewise skipped by materializeSecrets.
+	if b.cfg.AuroraBootURL != "" && opts.UploadToken != "" {
+		spec.Exporters = append(spec.Exporters, uploadExporter(id))
+	}
+
 	art := &buildv1alpha2.OSArtifact{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      id,
@@ -177,7 +194,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 // setting the owner reference to the (already-Created) OSArtifact so the
 // operator's GC reclaims them when the CR is deleted.
 func (b *Builder) createSecrets(ctx context.Context, art *buildv1alpha2.OSArtifact, id string, opts builder.BuildOptions) error {
-	for _, secret := range materializeSecrets(id, b.cfg.Namespace, opts) {
+	for _, secret := range materializeSecrets(id, b.cfg.Namespace, b.cfg.AuroraBootURL, opts) {
 		secret := secret
 		if err := controllerutil.SetOwnerReference(art, &secret, b.k8s.Scheme()); err != nil {
 			return fmt.Errorf("set owner on secret %q: %w", secret.Name, err)
