@@ -3,6 +3,7 @@ package auroraboot_test
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 		ch := make(chan struct{}, 1)
 		deployCalled = ch
 
-		mockDeploy := func(_ context.Context, config schema.Config, artifact schema.ReleaseArtifact, _ string) error {
+		mockDeploy := func(_ context.Context, config schema.Config, artifact schema.ReleaseArtifact, _ string, _ io.Writer) error {
 			mu.Lock()
 			capturedConfig = config
 			capturedArtifact = artifact
@@ -66,7 +67,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 		It("should transition to Building status", func() {
 			// Use a deployer that blocks until we release it.
 			blocked := make(chan struct{})
-			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string) error {
+			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
 				select {
 				case <-blocked:
 				case <-ctx.Done():
@@ -202,7 +203,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 	Describe("Cancel", func() {
 		It("should cancel a running build", func() {
 			blocked := make(chan struct{})
-			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string) error {
+			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
 				select {
 				case <-blocked:
 				case <-ctx.Done():
