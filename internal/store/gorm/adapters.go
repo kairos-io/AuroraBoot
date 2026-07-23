@@ -98,6 +98,9 @@ func (a *ArtifactStoreAdapter) List(ctx context.Context) ([]*store.ArtifactRecor
 func (a *ArtifactStoreAdapter) Update(ctx context.Context, rec *store.ArtifactRecord) error {
 	return a.S.ArtifactUpdate(ctx, rec)
 }
+func (a *ArtifactStoreAdapter) UpdatePhaseMessage(ctx context.Context, id, phase, message string) error {
+	return a.S.ArtifactUpdatePhaseMessage(ctx, id, phase, message)
+}
 func (a *ArtifactStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.ArtifactDelete(ctx, id)
 }

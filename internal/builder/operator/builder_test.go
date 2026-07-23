@@ -80,6 +80,19 @@ func (s *stubArtifactStore) Update(_ context.Context, rec *store.ArtifactRecord)
 	return nil
 }
 
+func (s *stubArtifactStore) UpdatePhaseMessage(_ context.Context, id, phase, message string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.records[id]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	rec.Phase = phase
+	rec.Message = message
+	s.updates++
+	return nil
+}
+
 func (s *stubArtifactStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
