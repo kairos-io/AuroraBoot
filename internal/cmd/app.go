@@ -57,6 +57,9 @@ func GetApp(version string) *cli.App {
 			if err != nil {
 				return err
 			}
+			if r.ContainerImage == "" && (r.Repository == "" || r.ReleaseVersion == "" || r.ArtifactVersion == "" || r.Flavor == "") {
+				return errors.New("no source defined: provide container_image or a complete release artifact configuration")
+			}
 
 			c.ISO.HandleDeprecations(internal.Log)
 
