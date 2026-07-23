@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,23 +24,42 @@ import (
 	"github.com/spectrocloud-labs/herd"
 )
 
-// DeployerFunc abstracts the AuroraBoot deployer execution so we can mock it in tests.
-type DeployerFunc func(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string) error
+// DeployerFunc abstracts the AuroraBoot deployer execution so we can mock it
+// in tests. logSink, when non-nil, receives a copy of every deployer step's
+// zerolog output alongside the process stdout, so the caller's per-build log
+// pane sees the same progress the terminal does.
+type DeployerFunc func(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string, logSink io.Writer) error
 
 // UKIBuildFunc abstracts the AuroraBoot pkg/uki.Build call so tests can
 // capture the options we pass without running a real build.
 type UKIBuildFunc func(opts uki.Options) error
 
-// DefaultDeployerFunc runs AuroraBoot for real.
-func DefaultDeployerFunc(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string) error {
+// DefaultDeployerFunc runs AuroraBoot for real. When logSink is non-nil the
+// per-Deployer logger is wired to tee stdout + logSink so the UI's live-log
+// pane receives the same progress lines the operator sees in their terminal.
+// Errors returned from step callbacks (which the deployer aggregates in
+// CollectErrors and which typically come from library calls that do NOT
+// emit through zerolog - the Lchown/dump-source path in particular) are
+// echoed to logSink before we return so the log pane surfaces them, not
+// only the artifact record's message field.
+func DefaultDeployerFunc(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string, logSink io.Writer) error {
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if logSink != nil {
+		d.Log = teeKairosLogger(d.Log, logSink)
+	}
 	if err := deployer.RegisterAll(d); err != nil {
 		return fmt.Errorf("registering deployer steps: %w", err)
 	}
 	if err := d.Run(ctx); err != nil {
+		if logSink != nil {
+			fmt.Fprintf(logSink, "\n=== deployer run failed ===\n%v\n", err)
+		}
 		return fmt.Errorf("running deployer: %w", err)
 	}
 	if err := d.CollectErrors(); err != nil {
+		if logSink != nil {
+			fmt.Fprintf(logSink, "\n=== deployer step errors ===\n%v\n", err)
+		}
 		return fmt.Errorf("deployer errors: %w", err)
 	}
 	return nil
@@ -303,7 +323,11 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		logWriter.Flush()
 	}
 	config, artifact := b.assembleConfig(opts, containerImage, outputDir)
-	if err := b.deployFunc(ctx, config, artifact, outputDir); err != nil {
+	var sink io.Writer
+	if logWriter != nil {
+		sink = logWriter
+	}
+	if err := b.deployFunc(ctx, config, artifact, outputDir, sink); err != nil {
 		msg := fmt.Sprintf("auroraboot failed: %v", err)
 		b.setPhase(bs, builder.BuildError, msg)
 		if b.store != nil {

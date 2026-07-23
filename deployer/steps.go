@@ -9,7 +9,6 @@ import (
 	"strconv"
 
 	"github.com/hashicorp/go-multierror"
-	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -19,17 +18,17 @@ import (
 // CleanTmpDirs removes the temp rootfs and netboot directories when finished to not leave things around
 func (d *Deployer) CleanTmpDirs() error {
 	var err *multierror.Error
-	internal.Log.Logger.Debug().Str("tmpRootFs", d.tmpRootFs()).Msg("Cleaning up temp rootfs directory")
+	d.Log.Logger.Debug().Str("tmpRootFs", d.tmpRootFs()).Msg("Cleaning up temp rootfs directory")
 	err = multierror.Append(err, os.RemoveAll(d.tmpRootFs()))
 	if err.ErrorOrNil() != nil {
-		internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+		d.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
 	}
 
-	internal.Log.Logger.Debug().Str("dstNetboot", d.dstNetboot()).Msg("Cleaning up temp netboot directory")
+	d.Log.Logger.Debug().Str("dstNetboot", d.dstNetboot()).Msg("Cleaning up temp netboot directory")
 	err = multierror.Append(err, os.RemoveAll(d.dstNetboot()))
 
 	if _, err2 := os.Stat(d.cloudConfigPath()); err2 == nil {
-		internal.Log.Logger.Debug().Str("config", d.cloudConfigPath()).Msg("Cleaning up config.yaml")
+		d.Log.Logger.Debug().Str("config", d.cloudConfigPath()).Msg("Cleaning up config.yaml")
 		err = multierror.Append(err, os.RemoveAll(d.cloudConfigPath()))
 	}
 
@@ -40,37 +39,37 @@ func (d *Deployer) CleanTmpDirs() error {
 // This is the first step always executed in the deployer, it creates the destination directory in which other build steps will operate.
 func (d *Deployer) PrepDirs() error {
 	return d.Add(constants.OpPrepareDirs, herd.WithCallback(func(ctx context.Context) error {
-		internal.Log.Logger.Debug().Str("destination", d.destination()).Msg("Preparing destination temporal directory")
+		d.Log.Logger.Debug().Str("destination", d.destination()).Msg("Preparing destination temporal directory")
 		if d.destination() == "" {
-			internal.Log.Logger.Error().Msg("Destination directory is not set, cannot prepare ISO directory")
+			d.Log.Logger.Error().Msg("Destination directory is not set, cannot prepare ISO directory")
 			return fmt.Errorf("destination directory is not set")
 		}
 		err := os.MkdirAll(d.destination(), 0755)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("Failed to create destination directory")
+			d.Log.Logger.Error().Err(err).Msg("Failed to create destination directory")
 			return err
 		}
-		internal.Log.Logger.Debug().Str("destination", d.tmpRootFs()).Msg("Preparing temp rootfs directory")
+		d.Log.Logger.Debug().Str("destination", d.tmpRootFs()).Msg("Preparing temp rootfs directory")
 		err = os.RemoveAll(d.tmpRootFs())
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
+			d.Log.Logger.Error().Err(err).Msg("Failed to remove temp rootfs")
 			return err
 		}
 		err = os.MkdirAll(d.tmpRootFs(), 0755)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("Failed to create temp rootfs directory")
+			d.Log.Logger.Error().Err(err).Msg("Failed to create temp rootfs directory")
 			return err
 		}
 
-		internal.Log.Logger.Debug().Str("destination", d.dstNetboot()).Msg("Preparing temp netboot directory")
+		d.Log.Logger.Debug().Str("destination", d.dstNetboot()).Msg("Preparing temp netboot directory")
 		err = os.RemoveAll(d.dstNetboot())
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
+			d.Log.Logger.Error().Err(err).Msg("Failed to remove temp netboot dir")
 			return err
 		}
 		err = os.MkdirAll(d.dstNetboot(), 0755)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("Failed to create temp netboot directory")
+			d.Log.Logger.Error().Err(err).Msg("Failed to create temp netboot directory")
 			return err
 		}
 
@@ -82,9 +81,9 @@ func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(constants.OpCopyCloudConfig,
 		herd.WithDeps(constants.OpPrepareDirs),
 		herd.WithCallback(func(ctx context.Context) error {
-			internal.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
+			d.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
 			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
-				internal.Log.Logger.Error().Err(err).Msg("Destination directory does not exist, creating it")
+				d.Log.Logger.Error().Err(err).Msg("Destination directory does not exist, creating it")
 				if err := os.MkdirAll(d.destination(), 0755); err != nil {
 					return err
 				}
@@ -96,7 +95,7 @@ func (d *Deployer) StepCopyCloudConfig() error {
 
 func (d *Deployer) StepDumpSource() error {
 	// Ops to generate from container image
-	internal.Log.Logger.Debug().Str("arch", d.Config.Arch).Str("image", d.Artifact.ContainerImage).Msg("StepDumpSource: config arch and image")
+	d.Log.Logger.Debug().Str("arch", d.Config.Arch).Str("image", d.Artifact.ContainerImage).Msg("StepDumpSource: config arch and image")
 	return d.Add(constants.OpDumpSource,
 		herd.EnableIf(d.fromImage),
 		herd.WithDeps(constants.OpPrepareDirs), herd.WithCallback(ops.DumpSource(d.Artifact.ContainerImage, d.tmpRootFs, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
@@ -249,13 +248,13 @@ func (d *Deployer) getIsoFile() string {
 	defaultIsoPath := filepath.Join(d.destination(), "kairos.iso")
 	// This is to look for the ISO file in the destination directory
 	if _, err := os.Stat(defaultIsoPath); err == nil {
-		internal.Log.Logger.Info().Str("isoFile", defaultIsoPath).Msg("Found existing ISO file")
+		d.Log.Logger.Info().Str("isoFile", defaultIsoPath).Msg("Found existing ISO file")
 		return defaultIsoPath
 	}
 	// If its not the default name, we search for the ISO file in the destination directory
 	files, err := os.ReadDir(d.destination())
 	if err != nil {
-		internal.Log.Logger.Debug().Msg("Failed to read destination directory, falling back to default ISO name")
+		d.Log.Logger.Debug().Msg("Failed to read destination directory, falling back to default ISO name")
 		return defaultIsoPath // fallback to the default name
 	}
 	for _, file := range files {
@@ -263,11 +262,11 @@ func (d *Deployer) getIsoFile() string {
 			continue
 		}
 		if filepath.Ext(file.Name()) == ".iso" {
-			internal.Log.Logger.Info().Str("isoFile", file.Name()).Msg("Found existing ISO file")
+			d.Log.Logger.Info().Str("isoFile", file.Name()).Msg("Found existing ISO file")
 			return filepath.Join(d.destination(), file.Name())
 		}
 	}
-	internal.Log.Logger.Info().Str("isoFile", defaultIsoPath).Msg("No ISO file found, falling back to default ISO name")
+	d.Log.Logger.Info().Str("isoFile", defaultIsoPath).Msg("No ISO file found, falling back to default ISO name")
 	return defaultIsoPath
 }
 
@@ -353,7 +352,7 @@ func (d *Deployer) rawDiskSize() uint64 {
 	}
 	sizeInt, err := strconv.ParseUint(d.Config.Disk.Size, 10, 64)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
+		d.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.Size).Msg("Failed to parse disk size, setting value to 0")
 		return 0
 	}
 	return sizeInt
@@ -365,7 +364,7 @@ func (d *Deployer) rawDiskStateSize() int64 {
 	}
 	sizeInt, err := strconv.ParseInt(d.Config.Disk.StateSize, 10, 64)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.StateSize).Msg("Failed to parse disk state size, setting value to 0")
+		d.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.StateSize).Msg("Failed to parse disk state size, setting value to 0")
 		return 0
 	}
 	return sizeInt

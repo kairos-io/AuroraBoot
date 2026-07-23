@@ -44,6 +44,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.1.1
+	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.23.0
 	github.com/swaggo/swag v1.16.6
 	github.com/urfave/cli/v2 v2.27.7
@@ -185,7 +186,6 @@ require (
 	github.com/pkg/xattr v0.4.12 // indirect
 	github.com/pterm/pterm v0.12.83 // indirect
 	github.com/qeesung/image2ascii v1.0.1 // indirect
-	github.com/rs/zerolog v1.35.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/saferwall/pe v1.6.5 // indirect
 	github.com/sagikazarmark/locafero v0.11.0 // indirect
