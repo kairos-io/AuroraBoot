@@ -64,6 +64,10 @@ var BuildISOCmd = cli.Command{
 			Name:  "extend-live-cmdline",
 			Usage: "Append options to the kernel cmdline when booting from the live/installer ISO (e.g. rd.debug rd.shell). Does not affect the installed system.",
 		},
+		&cli.StringFlag{
+			Name:  "live-console",
+			Usage: "Replace the console options used when booting from the live/installer ISO",
+		},
 		AllowInsecureRegistriesFlag,
 	},
 	ArgsUsage: "<source>",
@@ -116,6 +120,7 @@ var BuildISOCmd = cli.Command{
 			OverlayISO:        ctx.String("overlay-iso"),
 			OverlayRootfs:     ctx.String("overlay-rootfs"),
 			ExtendLiveCmdline: ctx.String("extend-live-cmdline"),
+			LiveConsole:       ctx.String("live-console"),
 		}
 
 		if err := validateISOOptions(isoOptions); err != nil {
