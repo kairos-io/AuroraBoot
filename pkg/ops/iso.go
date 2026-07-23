@@ -323,10 +323,9 @@ func (b *BuildISOAction) ISORun() (err error) {
 
 // applyGrubTemplate replaces placeholders in the grub config template.
 func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole string) []byte {
+	liveConsole = strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(liveConsole))
 	if liveConsole == "" {
 		liveConsole = "console=ttyS0 console=tty1"
-	} else {
-		liveConsole = strings.NewReplacer("\n", "", "\r", "").Replace(liveConsole)
 	}
 	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", nomodeset)
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
