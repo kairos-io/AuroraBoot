@@ -282,7 +282,7 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	// and variant settings are applied. Dockerfile images only need derivation
 	// when the Dockerfile did not produce a complete Kairos image.
 	var err error
-	if opts.Dockerfile == "" {
+	if opts.Dockerfile == "" && b.store != nil {
 		containerImage, err = b.kairosify(ctx, containerImage, opts, outputDir, logWriter)
 	} else {
 		containerImage, err = b.ensureKairosified(ctx, containerImage, opts, outputDir, logWriter)
