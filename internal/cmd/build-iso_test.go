@@ -89,6 +89,13 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err.Error()).ToNot(ContainSubstring("extend-live-cmdline"))
 	})
 
+	It("Accepts the live-console flag", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--live-console", "console=ttyUSB0,115200", "system/cos"})
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("live-console"))
+		Expect(err.Error()).ToNot(ContainSubstring("unknown"))
+	})
+
 	It("Accepts the allow-insecure-registries flag", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--allow-insecure-registries", "system/cos"})
 		// Fails on image reference, but the flag should be accepted (no "unknown flag" error)
