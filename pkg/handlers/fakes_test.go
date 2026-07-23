@@ -361,6 +361,19 @@ func (f *fakeArtifactStore) Update(_ context.Context, rec *store.ArtifactRecord)
 	return fmt.Errorf("not found")
 }
 
+func (f *fakeArtifactStore) UpdatePhaseMessage(_ context.Context, id, phase, message string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.records {
+		if r.ID == id {
+			r.Phase = phase
+			r.Message = message
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
 func (f *fakeArtifactStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

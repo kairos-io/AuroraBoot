@@ -297,12 +297,8 @@ func (b *Builder) Cancel(ctx context.Context, id string) error {
 	// Match the local backend's exact wording so the two are indistinguishable
 	// from the operator's perspective.
 	if b.cfg.Store != nil {
-		if rec, getErr := b.cfg.Store.GetByID(ctx, id); getErr == nil {
-			rec.Phase = builder.BuildError
-			rec.Message = "cancelled"
-			if upErr := b.cfg.Store.Update(ctx, rec); upErr != nil {
-				fmt.Fprintf(os.Stderr, "operator builder: cancel store update for %q failed: %v\n", id, upErr)
-			}
+		if upErr := b.cfg.Store.UpdatePhaseMessage(ctx, id, builder.BuildError, "cancelled"); upErr != nil {
+			fmt.Fprintf(os.Stderr, "operator builder: cancel store update for %q failed: %v\n", id, upErr)
 		}
 	}
 	return nil
@@ -346,12 +342,8 @@ func (b *Builder) watchCRPhase(ctx context.Context, id string, pollInterval time
 		if err == nil {
 			st := statusFromArtifact(art)
 			if st.Phase != lastPhase || st.Message != lastMessage {
-				if rec, getErr := b.cfg.Store.GetByID(ctx, id); getErr == nil {
-					rec.Phase = st.Phase
-					rec.Message = st.Message
-					if upErr := b.cfg.Store.Update(ctx, rec); upErr != nil {
-						fmt.Fprintf(os.Stderr, "operator builder: phase-watch update for %q failed: %v\n", id, upErr)
-					}
+				if upErr := b.cfg.Store.UpdatePhaseMessage(ctx, id, st.Phase, st.Message); upErr != nil {
+					fmt.Fprintf(os.Stderr, "operator builder: phase-watch update for %q failed: %v\n", id, upErr)
 				}
 				lastPhase = st.Phase
 				lastMessage = st.Message
