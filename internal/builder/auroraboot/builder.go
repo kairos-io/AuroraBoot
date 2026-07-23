@@ -634,8 +634,18 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 
 // dockerBuild runs `docker build` when a Dockerfile is provided.
 func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	// The UI's Hadron composer emits middle content only (no FROM line) so
+	// the operator backend can hand it to the kairos-operator as OCISpec
+	// wrapped by BuildOptions.BaseImage. On the local backend the Dockerfile
+	// must have its own FROM before docker will accept it, so prepend one
+	// from the structured HadronBase field. Custom (non-Hadron) Dockerfile
+	// builds carry their own FROM and are written verbatim.
+	dockerfile := opts.Dockerfile
+	if opts.HadronBase != "" {
+		dockerfile = "FROM " + opts.HadronBase + "\n" + dockerfile
+	}
 	dockerfilePath := filepath.Join(outputDir, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, []byte(opts.Dockerfile), 0o644); err != nil {
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
 	}
 

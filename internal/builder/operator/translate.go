@@ -62,6 +62,37 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 	switch {
 	case preBuilt:
 		spec.Image = buildv1alpha2.ImageSpec{Ref: baseRef}
+	case isHadronBuild(opts):
+		// The UI's Hadron composer produces a Dockerfile that is base +
+		// firmware/usr-sbin sysprep + firmware/layer COPYs. It does NOT
+		// include the kairos-init RUN block, so the resulting image has no
+		// kernel/initrd and the downstream ISO stage fails with "no initrd
+		// file found". Send OCISpec + BuildOptions so the operator wraps the
+		// composed content: FROM ${HadronBase} at the top (injected by the
+		// operator from BuildOptions.BaseImage), then our middle content
+		// (sysprep + COPYs), then the kairos-init COPY+RUN at the bottom.
+		version := kairosVersion
+		if version == "" {
+			version = "latest"
+		}
+		spec.Image = buildv1alpha2.ImageSpec{
+			BuildOptions: &buildv1alpha2.BuildOptions{
+				Version:           version,
+				BaseImage:         opts.HadronBase,
+				Model:             firstNonEmpty(opts.Source.Model, opts.Model),
+				TrustedBoot:       trustedBoot,
+				KubernetesDistro:  firstNonEmpty(opts.Source.KubernetesDistro, opts.KubernetesDistro),
+				KubernetesVersion: firstNonEmpty(opts.Source.KubernetesVersion, opts.KubernetesVersion),
+				FIPS:              fips,
+				KairosInitImage:   opts.KairosInitImage,
+			},
+			OCISpec: &buildv1alpha2.OCISpec{
+				Ref: &buildv1alpha2.SecretKeySelector{
+					Name: dockerfileSecretName(id),
+					Key:  dockerfileSecretKey,
+				},
+			},
+		}
 	case opts.Dockerfile != "":
 		spec.Image = buildv1alpha2.ImageSpec{
 			OCISpec: &buildv1alpha2.OCISpec{
@@ -131,4 +162,15 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// isHadronBuild reports whether the caller's options describe a Hadron build.
+// The UI's Hadron composer sets HadronBase alongside the composed middle
+// content in Dockerfile; no other flow sets HadronBase, so its presence
+// uniquely identifies a build whose middle content lacks a base FROM and
+// kairos-init - it needs the operator to inject both via BuildOptions.
+// Plain custom-Dockerfile builds (HadronBase empty) stay in the advanced
+// branch that submits the Dockerfile verbatim.
+func isHadronBuild(opts builder.BuildOptions) bool {
+	return opts.HadronBase != "" && opts.Dockerfile != ""
 }
