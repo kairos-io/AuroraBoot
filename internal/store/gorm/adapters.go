@@ -33,8 +33,11 @@ func (a *NodeStoreAdapter) ListByLabels(ctx context.Context, labels map[string]s
 func (a *NodeStoreAdapter) ListBySelector(ctx context.Context, sel store.CommandSelector) ([]*store.ManagedNode, error) {
 	return a.S.ListBySelector(ctx, sel)
 }
-func (a *NodeStoreAdapter) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
-	return a.S.UpdateHeartbeat(ctx, id, agentVersion, osRelease, addresses, bootState)
+func (a *NodeStoreAdapter) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string) error {
+	return a.S.UpdateHeartbeat(ctx, id, agentVersion, osRelease, addresses, bootState, hostname)
+}
+func (a *NodeStoreAdapter) SetHostname(ctx context.Context, id string, hostname string) error {
+	return a.S.SetHostname(ctx, id, hostname)
 }
 func (a *NodeStoreAdapter) UpdatePhase(ctx context.Context, id string, phase string) error {
 	return a.S.UpdatePhase(ctx, id, phase)

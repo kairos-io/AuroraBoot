@@ -118,7 +118,7 @@ func (f *fakeNodeStore) ListBySelector(_ context.Context, sel store.CommandSelec
 	return f.nodes, nil
 }
 
-func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
+func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
@@ -132,6 +132,24 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersi
 			if bootState != "" {
 				n.BootState = bootState
 			}
+			if hostname != "" {
+				n.Hostname = hostname
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
+func (f *fakeNodeStore) SetHostname(_ context.Context, id string, hostname string) error {
+	if hostname == "" {
+		return nil
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID == id {
+			n.Hostname = hostname
 			return nil
 		}
 	}

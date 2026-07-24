@@ -59,6 +59,12 @@ type APIHeartbeatRequest struct {
 	// BootState is the node's current boot state (optional): one of
 	// active | passive | recovery | autoreset (unknown values pass through).
 	BootState string `json:"bootState,omitempty" example:"active"`
+	// Hostname is the node's current OS hostname (optional). When non-empty
+	// it replaces the stored value; omitted preserves it. Present so nodes
+	// that register with a boot-time default and later apply a
+	// cloud-config-templated hostname (e.g. `kairos-{{ trunc 4 .MachineID }}`)
+	// see the UI refresh on the next heartbeat (kairos-io/kairos#4196).
+	Hostname string `json:"hostname,omitempty" example:"kairos-a1b2"`
 }
 
 // APISetLabelsRequest is the JSON body of PUT /api/v1/nodes/:nodeID/labels.
