@@ -89,6 +89,18 @@ definitions:
         type: string
       dockerfile:
         type: string
+      hadronBase:
+        type: string
+      hadronExtra:
+        type: string
+      hadronFirmware:
+        items:
+          type: string
+        type: array
+      hadronLayers:
+        items:
+          type: string
+        type: array
       kairosInitImage:
         type: string
       kairosVersion:
@@ -99,6 +111,8 @@ definitions:
         - k3s
         - k0s
         type: string
+      kubernetesEnabled:
+        type: boolean
       kubernetesVersion:
         type: string
       model:
@@ -169,8 +183,22 @@ definitions:
     type: object
   handlers.APIHeartbeatRequest:
     properties:
+      addresses:
+        description: |-
+          Addresses are the node's current network addresses (optional, multi-NIC).
+          When present they replace the stored list (e.g. after a DHCP change); when
+          omitted the stored list is preserved.
+        items:
+          $ref: '#/definitions/store.NodeAddress'
+        type: array
       agentVersion:
         example: v2.27.0
+        type: string
+      bootState:
+        description: |-
+          BootState is the node's current boot state (optional): one of
+          active | passive | recovery | autoreset (unknown values pass through).
+        example: active
         type: string
       labels:
         additionalProperties:
@@ -183,8 +211,21 @@ definitions:
     type: object
   handlers.APIRegisterRequest:
     properties:
+      addresses:
+        description: |-
+          Addresses are the node's reported network addresses (optional, multi-NIC).
+          Stored exactly as received; interface filtering is the agent's job.
+        items:
+          $ref: '#/definitions/store.NodeAddress'
+        type: array
       agentVersion:
         example: v2.27.0
+        type: string
+      bootState:
+        description: |-
+          BootState is the node's reported boot state (optional): one of
+          active | passive | recovery | autoreset (unknown values pass through).
+        example: active
         type: string
       hostname:
         example: kairos-node-01
@@ -297,6 +338,18 @@ definitions:
         type: boolean
       gce:
         type: boolean
+      hadronBase:
+        type: string
+      hadronExtra:
+        type: string
+      hadronFirmware:
+        items:
+          type: string
+        type: array
+      hadronLayers:
+        items:
+          type: string
+        type: array
       id:
         type: string
       iso:
@@ -307,6 +360,8 @@ definitions:
         type: string
       kubernetesDistro:
         type: string
+      kubernetesEnabled:
+        type: boolean
       kubernetesVersion:
         type: string
       message:
@@ -344,7 +399,22 @@ definitions:
     type: object
   store.ManagedNode:
     properties:
+      addresses:
+        description: |-
+          Addresses are the node's reported network addresses (multi-NIC). Optional
+          and backward-compatible: an agent that does not send them leaves the list
+          empty. Stored as JSON, mirroring OSRelease/Labels.
+        items:
+          $ref: '#/definitions/store.NodeAddress'
+        type: array
       agentVersion:
+        type: string
+      bootState:
+        description: |-
+          BootState is the node's reported boot state for day-2 lifecycle (e.g. a node
+          that booted the passive image signals a broken active image). Known values:
+          active | passive | recovery | autoreset — but unknown values are accepted
+          and stored as-is so future boot states pass through without a server change.
         type: string
       createdAt:
         type: string
@@ -371,6 +441,13 @@ definitions:
       phase:
         type: string
       updatedAt:
+        type: string
+    type: object
+  store.NodeAddress:
+    properties:
+      address:
+        type: string
+      type:
         type: string
     type: object
   store.NodeCommand:
