@@ -186,5 +186,18 @@ type APIRegistrationTokenResponse struct {
 	RegistrationToken string `json:"registrationToken"`
 }
 
+// --- System ---
+
+// APISystemBuilder is the JSON body returned by GET /api/v1/system/builder.
+// Reports which build backend is active and enough context for the UI to
+// render a "Builds via cluster X" badge and decide whether to expose the
+// download UI. `cluster` and `namespace` are omitted for the local backend.
+type APISystemBuilder struct {
+	Backend           string `json:"backend" example:"operator" enums:"local,operator"`
+	Cluster           string `json:"cluster,omitempty" example:"https://kind.example"`
+	Namespace         string `json:"namespace,omitempty" example:"kairos-builds"`
+	DownloadSupported bool   `json:"downloadSupported"`
+}
+
 // Verify time is imported — otherwise unused-import error.
 var _ = time.Time{}

@@ -4,6 +4,9 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -20,6 +23,23 @@ import (
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
 )
+
+// uploadTokenBytes is the raw entropy for a per-build UploadToken; 32 random
+// bytes hex-encoded gives a 64-character bearer with 256 bits of entropy.
+const uploadTokenBytes = 32
+
+// maxUploadBytes caps a single exporter upload. 20 GiB covers any single
+// Kairos artifact today (an oversized UKI ISO is a few GiB); the limit exists
+// to keep a runaway exporter from filling the AuroraBoot host's disk.
+const maxUploadBytes = 20 * 1024 * 1024 * 1024
+
+func mintUploadToken() (string, error) {
+	b := make([]byte, uploadTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("mint upload token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
 
 // ArtifactHandler handles artifact-related REST endpoints.
 type ArtifactHandler struct {
@@ -169,10 +189,19 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		}
 	}
 
+	// Mint the per-build upload token before we hand opts to the builder so
+	// the operator backend's exporter Secret carries a fresh token for every
+	// build, and the store record can validate the incoming PUT /upload.
+	uploadToken, err := mintUploadToken()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare build"})
+	}
+
 	// Build opts — set both flat fields and grouped sub-structs.
 	opts := builder.BuildOptions{
 		ID:                uuid.New().String(),
 		Name:              req.Name,
+		UploadToken:       uploadToken,
 		BaseImage:         req.BaseImage,
 		KairosVersion:     req.KairosVersion,
 		Model:             req.Model,
@@ -283,6 +312,11 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		if errors.Is(err, builder.ErrInvalidBuildOptions) {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 		}
+		// A builder that cannot service this request (e.g. a scaffolded backend
+		// or one that does not produce a requested output) is 501, not 500.
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
 	}
 
@@ -298,6 +332,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		rec := &store.ArtifactRecord{
 			ID:                      status.ID,
 			Name:                    req.Name,
+			UploadToken:             uploadToken,
 			Phase:                   status.Phase,
 			Message:                 status.Message,
 			BaseImage:               req.BaseImage,
@@ -331,7 +366,26 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			TargetGroupID:           req.Provisioning.TargetGroupId,
 			OverlayRootfs:           req.OverlayRootfs,
 		}
-		_ = h.store.Create(ctx, rec)
+		// A builder that persists on its own (the local backend) will have
+		// already written the row before Build returned; a builder that does
+		// not (the operator backend, and the mock builder used in tests)
+		// relies on this Create being the one that writes it. Check first
+		// so a legitimate Create failure for the operator path is not
+		// masked as a benign duplicate-primary-key error.
+		if _, err := h.store.GetByID(ctx, status.ID); err != nil {
+			if err := h.store.Create(ctx, rec); err != nil {
+				// The operator backend has already Created an OSArtifact
+				// CR at this point. Failing to persist the row would leave
+				// the cluster with a live CR the DB knows nothing about;
+				// the UI cannot List/Get/Cancel/Delete it. Reap it
+				// best-effort so a retry lands in a clean state, then
+				// surface the failure.
+				if cancelErr := h.builder.Cancel(ctx, status.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
+					fmt.Fprintf(os.Stderr, "create: reap phantom CR %q after store.Create failed: %v\n", status.ID, cancelErr)
+				}
+				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist build"})
+			}
+		}
 	}
 
 	return c.JSON(http.StatusCreated, status)
@@ -361,6 +415,9 @@ func (h *ArtifactHandler) List(c echo.Context) error {
 	// Fall back to builder if no store.
 	statuses, err := h.builder.List(c.Request().Context())
 	if err != nil {
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list artifacts"})
 	}
 	if statuses == nil {
@@ -394,6 +451,9 @@ func (h *ArtifactHandler) Get(c echo.Context) error {
 	// Fall back to builder if no store.
 	status, err := h.builder.Status(c.Request().Context(), id)
 	if err != nil {
+		if errors.Is(err, builder.ErrNotSupported) {
+			return c.JSON(http.StatusNotImplemented, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 	return c.JSON(http.StatusOK, status)
@@ -424,6 +484,127 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 	return c.String(http.StatusOK, logs)
 }
 
+// Upload handles PUT /api/v1/artifacts/:id/upload/*.
+//
+// The operator backend's exporter Job hits this endpoint once per artifact
+// file to ship a finished build back to AuroraBoot's on-disk store, so that
+// Download can serve it the same way whether the build was produced locally
+// or delegated to an in-cluster operator. Authenticated by the per-build
+// bearer minted in Create and stored on the ArtifactRecord.
+//
+//	@Summary	Upload a single artifact file for a build
+//	@Description	Per-build endpoint the operator backend's exporter uses to ship finished artifacts back to AuroraBoot. Bearer is the UploadToken minted at Create time; the admin bearer does not grant access.
+//	@Tags		Artifacts
+//	@Accept		octet-stream
+//	@Param		id			path	string	true	"Artifact ID"
+//	@Param		filename	path	string	true	"Artifact filename (single-segment; no path separators)"
+//	@Success	201
+//	@Failure	400	{object}	APIError
+//	@Failure	401	{object}	APIError
+//	@Failure	404	{object}	APIError
+//	@Failure	413	{object}	APIError
+//	@Router		/api/v1/artifacts/{id}/upload/{filename} [put]
+func (h *ArtifactHandler) Upload(c echo.Context) error {
+	id := c.Param("id")
+	filename := c.Param("*")
+	ctx := c.Request().Context()
+
+	if err := safePathSegment(id); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifact id"})
+	}
+	if err := safePathSegment(filename); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+	clean := filename
+
+	if h.store == nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+	rec, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+
+	presented := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+	if presented == "" || rec.UploadToken == "" ||
+		subtle.ConstantTimeCompare([]byte(presented), []byte(rec.UploadToken)) != 1 {
+		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid upload token"})
+	}
+
+	buildDir := filepath.Join(h.artifactsDir, id)
+	if err := os.MkdirAll(buildDir, 0o755); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare artifact directory"})
+	}
+
+	// Stream to a sibling temp file and rename in place so a partial upload
+	// never appears under the destination path. maxUploadBytes caps the body
+	// so a runaway exporter cannot fill the AuroraBoot host's disk.
+	tmp, err := os.CreateTemp(buildDir, ".upload-*")
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to open upload buffer"})
+	}
+	tmpPath := tmp.Name()
+	defer os.Remove(tmpPath)
+
+	limited := http.MaxBytesReader(c.Response().Writer, c.Request().Body, maxUploadBytes)
+	if _, err := io.Copy(tmp, limited); err != nil {
+		_ = tmp.Close()
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "upload exceeds size limit"})
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload write failed"})
+	}
+	if err := tmp.Close(); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload close failed"})
+	}
+
+	dst := filepath.Join(buildDir, clean)
+	if err := os.Rename(tmpPath, dst); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "upload finalize failed"})
+	}
+
+	// Reflect the newly-uploaded file in the store record so the UI's
+	// existing artifact list (which reads ArtifactFiles verbatim) surfaces
+	// operator-produced artifacts the same way it does local ones. Dedupe
+	// the append so a retried exporter Job (backoffLimit) does not stack
+	// duplicates. Ignore Update failures - the file is on disk, the store
+	// row can be reconciled later, and returning 500 here would mislead the
+	// exporter into retrying an already-durable upload.
+	appendArtifactFile(rec, clean)
+	_ = h.store.Update(ctx, rec)
+
+	return c.NoContent(http.StatusCreated)
+}
+
+// appendArtifactFile adds name to rec.ArtifactFiles if it is not already
+// present. Kept as a small helper so tests can reason about it in isolation
+// from the Upload handler.
+func appendArtifactFile(rec *store.ArtifactRecord, name string) {
+	for _, existing := range rec.ArtifactFiles {
+		if existing == name {
+			return
+		}
+	}
+	rec.ArtifactFiles = append(rec.ArtifactFiles, name)
+}
+
+// safePathSegment rejects a URL path parameter that cannot be safely used as
+// a single filesystem path segment. Both Upload and Download route their id
+// and filename inputs through here before touching the store or the disk:
+// once at the boundary we can trust the value downstream. "." by itself is
+// not a traversal but is meaningless as an id or filename, so it is rejected
+// too rather than resolving to the parent directory later.
+func safePathSegment(s string) error {
+	if s == "" || s == "." {
+		return errors.New("empty segment")
+	}
+	if strings.ContainsAny(s, `/\`) || strings.Contains(s, "..") || filepath.IsAbs(s) {
+		return errors.New("path traversal")
+	}
+	return nil
+}
+
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 //
@@ -435,24 +616,44 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 //	@Router		/api/v1/artifacts/{id}/cancel [post]
 func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
+	ctx := c.Request().Context()
 
-	if err := h.builder.Cancel(c.Request().Context(), id); err != nil {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
+	// Always drive builder.Cancel first so backend state gets reclaimed even
+	// when the store lookup is racing a restart or a transient DB failure.
+	// Cancel is idempotent on both backends (local: unknown id -> nil;
+	// operator: NotFound -> nil), so a stale invocation is safe.
+	cancelErr := h.builder.Cancel(ctx, id)
+	if errors.Is(cancelErr, builder.ErrNotSupported) {
+		return c.JSON(http.StatusNotImplemented, map[string]string{"error": cancelErr.Error()})
 	}
 
-	// Return updated status.
-	if h.store != nil {
-		rec, err := h.store.GetByID(c.Request().Context(), id)
-		if err == nil {
-			return c.JSON(http.StatusOK, rec)
+	// Consult the store for the response body. Response matrix:
+	//   cancel OK + record   -> 200 with record
+	//   cancel OK + no store -> 200 {"status":"cancelled"}
+	//   cancel FAIL + record -> 500 (record still there; backend refused)
+	//   cancel FAIL + no rec -> 404 (unknown id and backend refused too)
+	if h.store == nil {
+		if cancelErr != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
 		}
-	}
-
-	status, err := h.builder.Status(c.Request().Context(), id)
-	if err != nil {
 		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
 	}
-	return c.JSON(http.StatusOK, status)
+
+	rec, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		// The store lookup failed (missing row or transient DB error). If
+		// the builder also refused, treat this as a 404 to match the old
+		// UX for orphaned rows; a hard 500 for a DB blip would train the
+		// UI to retry cancels indefinitely.
+		if cancelErr != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found or cannot be cancelled"})
+		}
+		return c.JSON(http.StatusOK, map[string]string{"status": "cancelled"})
+	}
+	if cancelErr != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cancel failed"})
+	}
+	return c.JSON(http.StatusOK, rec)
 }
 
 // Download handles GET /api/v1/artifacts/:id/download/*.
@@ -460,13 +661,11 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 	id := c.Param("id")
 	// Echo uses * for catch-all params; the param name is "*".
 	filename := c.Param("*")
-	if filename == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "filename required"})
-	}
 
-	// Clean the filename to prevent directory traversal.
-	filename = filepath.Clean(filename)
-	if strings.Contains(filename, "..") {
+	if err := safePathSegment(id); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifact id"})
+	}
+	if err := safePathSegment(filename); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
@@ -500,10 +699,18 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 func (h *ArtifactHandler) ClearFailed(c echo.Context) error {
 	ctx := c.Request().Context()
 
-	// Clean up output and overlay dirs for failed artifacts before deleting records.
+	// Clean up output and overlay dirs for failed artifacts before deleting
+	// records. Forward a Cancel to the builder for each so terminal-phase
+	// OSArtifact CRs (operator backend) and their owned PVCs leave the
+	// cluster alongside the DB row. Cancel is best-effort: a backend error
+	// here should not block DB cleanup, since the row is what the UI keys
+	// off, and Cancel is idempotent on both backends.
 	if records, err := h.store.List(ctx); err == nil {
 		for _, r := range records {
 			if r.Phase == store.ArtifactError {
+				if cancelErr := h.builder.Cancel(ctx, r.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
+					fmt.Fprintf(os.Stderr, "clear-failed: builder.Cancel(%q) failed: %v\n", r.ID, cancelErr)
+				}
 				os.RemoveAll(filepath.Join(h.artifactsDir, r.ID))
 				if r.OverlayRootfs != "" && strings.HasPrefix(r.OverlayRootfs, h.artifactsDir) {
 					os.RemoveAll(r.OverlayRootfs)
@@ -536,9 +743,17 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
 
-	// Cancel if running.
-	if rec.Phase == store.ArtifactPending || rec.Phase == store.ArtifactBuilding {
-		_ = h.builder.Cancel(ctx, id)
+	// Cancel is best-effort AND unconditional. Delete's job is to reclaim
+	// state, and refusing here would strand the row and its on-disk files
+	// whenever the backend cannot cancel (a scaffold that returns
+	// ErrNotSupported for every id cannot tell "not mine" from "cannot
+	// cancel", so refusing would trap orphaned rows forever). We forward the
+	// call for every phase, not just Pending/Building, because the operator
+	// backend also owns state for terminal-phase records (the OSArtifact CR
+	// and its PVC); those need reaping too. The subsequent os.RemoveAll and
+	// store.Delete complete the cleanup regardless.
+	if cancelErr := h.builder.Cancel(ctx, id); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
+		fmt.Fprintf(os.Stderr, "delete: builder.Cancel(%q) failed: %v\n", id, cancelErr)
 	}
 
 	// Remove build output directory.

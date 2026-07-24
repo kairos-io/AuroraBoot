@@ -433,7 +433,21 @@ func (s *Store) ArtifactList(ctx context.Context) ([]*store.ArtifactRecord, erro
 }
 
 func (s *Store) ArtifactUpdate(ctx context.Context, rec *store.ArtifactRecord) error {
-	return s.db.WithContext(ctx).Save(rec).Error
+	// Omit the logs column so a caller's stale in-memory rec.Logs never
+	// clobbers concurrent AppendLog appends. AppendLog is the sole writer of
+	// that column; every other field remains updatable via this method.
+	return s.db.WithContext(ctx).Omit("logs").Save(rec).Error
+}
+
+// ArtifactUpdatePhaseMessage writes only the phase and message columns for the
+// row with id. It avoids the read-modify-write race that ArtifactUpdate has
+// against ArtifactAppendLog: Save rewrites every column from the in-memory
+// record, so a log line appended between a caller's GetByID and its Update is
+// clobbered by the stale logs snapshot. This method touches only the two
+// columns callers actually want to change.
+func (s *Store) ArtifactUpdatePhaseMessage(ctx context.Context, id, phase, message string) error {
+	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
+		Updates(map[string]interface{}{"phase": phase, "message": message}).Error
 }
 
 func (s *Store) ArtifactDelete(ctx context.Context, id string) error {

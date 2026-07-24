@@ -177,6 +177,13 @@ type ArtifactRecord struct {
 	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
 	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
 	Logs                    string    `json:"-" gorm:"type:text"`
+	// UploadToken is a per-build bearer used by the operator backend's
+	// exporter Job to push artifacts to PUT /api/v1/artifacts/:id/upload/:file.
+	// Minted on Create for every build regardless of backend and never
+	// serialized to clients: the JSON tag stays "-" so a compromised UI
+	// bearer cannot lift it, and only the operator-materialized Secret ever
+	// carries it in cleartext.
+	UploadToken string `json:"-"`
 	CreatedAt               time.Time `json:"createdAt"`
 	UpdatedAt               time.Time `json:"updatedAt"`
 }
@@ -195,6 +202,13 @@ type ArtifactStore interface {
 	GetByID(ctx context.Context, id string) (*ArtifactRecord, error)
 	List(ctx context.Context) ([]*ArtifactRecord, error)
 	Update(ctx context.Context, rec *ArtifactRecord) error
+	// UpdatePhaseMessage updates only the phase and message columns for the
+	// record with the given id. Callers that only need to publish a phase
+	// transition must prefer this over Update: Update rewrites every column
+	// (including logs) from an in-memory copy and races with concurrent
+	// AppendLog calls, silently dropping log lines that land between the
+	// caller's GetByID and its Update.
+	UpdatePhaseMessage(ctx context.Context, id, phase, message string) error
 	Delete(ctx context.Context, id string) error
 	DeleteByPhase(ctx context.Context, phase string) error
 	GetLogs(ctx context.Context, id string) (string, error)

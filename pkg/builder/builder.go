@@ -11,6 +11,13 @@ import (
 // map such failures to a 400 Bad Request instead of a 500.
 var ErrInvalidBuildOptions = errors.New("invalid build options")
 
+// ErrNotSupported marks a builder-backend refusal because the caller asked for
+// something the backend cannot do (e.g. an unimplemented operation on a stub,
+// or an output format a specific backend does not produce). Handlers map this
+// to 501 Not Implemented rather than 500 or 404, so the UI can distinguish
+// "your request is fine, this backend just cannot serve it" from real faults.
+var ErrNotSupported = errors.New("operation not supported by builder")
+
 // ImageSource describes the base image and its properties.
 type ImageSource struct {
 	BaseImage         string
@@ -65,6 +72,13 @@ type ProvisioningOptions struct {
 type BuildOptions struct {
 	ID   string // unique build ID
 	Name string // optional friendly name
+
+	// UploadToken is the per-build bearer the operator backend's exporter
+	// Job uses to PUT finished artifacts back to AuroraBoot's upload
+	// endpoint. Populated by the Create handler on every build regardless
+	// of backend; the local backend simply ignores it. Never derived from
+	// the user request.
+	UploadToken string
 
 	// Grouped options (preferred for new code).
 	Source       ImageSource

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,23 +24,42 @@ import (
 	"github.com/spectrocloud-labs/herd"
 )
 
-// DeployerFunc abstracts the AuroraBoot deployer execution so we can mock it in tests.
-type DeployerFunc func(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string) error
+// DeployerFunc abstracts the AuroraBoot deployer execution so we can mock it
+// in tests. logSink, when non-nil, receives a copy of every deployer step's
+// zerolog output alongside the process stdout, so the caller's per-build log
+// pane sees the same progress the terminal does.
+type DeployerFunc func(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string, logSink io.Writer) error
 
 // UKIBuildFunc abstracts the AuroraBoot pkg/uki.Build call so tests can
 // capture the options we pass without running a real build.
 type UKIBuildFunc func(opts uki.Options) error
 
-// DefaultDeployerFunc runs AuroraBoot for real.
-func DefaultDeployerFunc(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string) error {
+// DefaultDeployerFunc runs AuroraBoot for real. When logSink is non-nil the
+// per-Deployer logger is wired to tee stdout + logSink so the UI's live-log
+// pane receives the same progress lines the operator sees in their terminal.
+// Errors returned from step callbacks (which the deployer aggregates in
+// CollectErrors and which typically come from library calls that do NOT
+// emit through zerolog - the Lchown/dump-source path in particular) are
+// echoed to logSink before we return so the log pane surfaces them, not
+// only the artifact record's message field.
+func DefaultDeployerFunc(ctx context.Context, config schema.Config, artifact schema.ReleaseArtifact, outputDir string, logSink io.Writer) error {
 	d := deployer.NewDeployer(config, artifact, herd.EnableInit)
+	if logSink != nil {
+		d.Log = teeKairosLogger(d.Log, logSink)
+	}
 	if err := deployer.RegisterAll(d); err != nil {
 		return fmt.Errorf("registering deployer steps: %w", err)
 	}
 	if err := d.Run(ctx); err != nil {
+		if logSink != nil {
+			fmt.Fprintf(logSink, "\n=== deployer run failed ===\n%v\n", err)
+		}
 		return fmt.Errorf("running deployer: %w", err)
 	}
 	if err := d.CollectErrors(); err != nil {
+		if logSink != nil {
+			fmt.Fprintf(logSink, "\n=== deployer step errors ===\n%v\n", err)
+		}
 		return fmt.Errorf("deployer errors: %w", err)
 	}
 	return nil
@@ -56,16 +76,7 @@ type Builder struct {
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
 	store          store.ArtifactStore
-	logBroadcaster LogBroadcaster
-}
-
-// LogBroadcaster is the hook dbLogWriter calls on every flush. The
-// production implementation is a thin wrapper around ws.UIHub — the
-// builder package declares this minimal interface so it doesn't have to
-// import ws and risk an import cycle. Tests pass a nil broadcaster and
-// the flush path falls back to DB-only.
-type LogBroadcaster interface {
-	BroadcastLogChunk(buildID string, chunk string)
+	logBroadcaster builder.LogBroadcaster
 }
 
 type buildState struct {
@@ -82,7 +93,7 @@ type dbLogWriter struct {
 	buf         bytes.Buffer
 	mu          sync.Mutex
 	ctx         context.Context
-	broadcaster LogBroadcaster
+	broadcaster builder.LogBroadcaster
 }
 
 func (w *dbLogWriter) Write(p []byte) (int, error) {
@@ -139,7 +150,7 @@ func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 // WithLogBroadcaster attaches a broadcaster that receives every log chunk
 // flushed by a build. Usually a *ws.UIHub — but kept as an interface so
 // the builder package doesn't have to import ws.
-func (b *Builder) WithLogBroadcaster(lb LogBroadcaster) *Builder {
+func (b *Builder) WithLogBroadcaster(lb builder.LogBroadcaster) *Builder {
 	b.logBroadcaster = lb
 	return b
 }
@@ -312,7 +323,11 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		logWriter.Flush()
 	}
 	config, artifact := b.assembleConfig(opts, containerImage, outputDir)
-	if err := b.deployFunc(ctx, config, artifact, outputDir); err != nil {
+	var sink io.Writer
+	if logWriter != nil {
+		sink = logWriter
+	}
+	if err := b.deployFunc(ctx, config, artifact, outputDir, sink); err != nil {
 		msg := fmt.Sprintf("auroraboot failed: %v", err)
 		b.setPhase(bs, builder.BuildError, msg)
 		if b.store != nil {
@@ -643,8 +658,18 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 
 // dockerBuild runs `docker build` when a Dockerfile is provided.
 func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	// The UI's Hadron composer emits middle content only (no FROM line) so
+	// the operator backend can hand it to the kairos-operator as OCISpec
+	// wrapped by BuildOptions.BaseImage. On the local backend the Dockerfile
+	// must have its own FROM before docker will accept it, so prepend one
+	// from the structured HadronBase field. Custom (non-Hadron) Dockerfile
+	// builds carry their own FROM and are written verbatim.
+	dockerfile := opts.Dockerfile
+	if opts.HadronBase != "" {
+		dockerfile = "FROM " + opts.HadronBase + "\n" + dockerfile
+	}
 	dockerfilePath := filepath.Join(outputDir, "Dockerfile")
-	if err := os.WriteFile(dockerfilePath, []byte(opts.Dockerfile), 0o644); err != nil {
+	if err := os.WriteFile(dockerfilePath, []byte(dockerfile), 0o644); err != nil {
 		return "", fmt.Errorf("writing Dockerfile: %w", err)
 	}
 
@@ -729,14 +754,17 @@ func (b *Builder) List(ctx context.Context) ([]*builder.BuildStatus, error) {
 	return result, nil
 }
 
-// Cancel cancels a running build.
+// Cancel cancels a running build. Cancel is idempotent: an unknown id (e.g.
+// a store row that survived a restart while the in-memory builds map did not)
+// is not an error. The builder has nothing to cancel and reports success so
+// the caller does not have to distinguish "already gone" from "cannot cancel".
 func (b *Builder) Cancel(_ context.Context, id string) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	bs, ok := b.builds[id]
 	if !ok {
-		return fmt.Errorf("build %q not found", id)
+		return nil
 	}
 
 	bs.cancel()

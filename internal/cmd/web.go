@@ -64,9 +64,11 @@ import (
 
 	_ "github.com/kairos-io/AuroraBoot/docs" // swag-generated; populates docs.SwaggerInfo
 	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
+	"github.com/kairos-io/AuroraBoot/internal/builder/operator"
 	netbootmgr "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/internal/secrets"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/kairos-io/AuroraBoot/pkg/server"
@@ -99,11 +101,21 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "redfish-serve-tls-cert", Usage: "TLS certificate for the Redfish ISO-serve (opt-in HTTPS; requires a BMC-trusted cert)"},
 		&cli.StringFlag{Name: "redfish-serve-tls-key", Usage: "TLS key for the Redfish ISO-serve"},
 		&cli.StringFlag{Name: "redfish-quirks-dir", Usage: "Directory of operator-supplied *.yaml/*.yml Redfish quirk profiles, loaded once at server start (not hot-reloaded). A BMCTarget's vendor resolves to a profile by name; an operator profile named the same as a built-in overrides it (logged). A malformed profile is skipped, not fatal", EnvVars: []string{redfishQuirksDirEnv}},
+		&cli.StringFlag{Name: "builder", Value: "local", Usage: "Which builder backend to use: 'local' or 'operator'"},
+		&cli.StringFlag{Name: "kubeconfig", Usage: "Path to a kubeconfig file for the operator builder (single file). Empty means try in-cluster config first, then the default client-go loading rules (which honour a multi-file KUBECONFIG env)"},
+		&cli.StringFlag{Name: "builder-namespace", Value: "default", Usage: "Namespace in which OSArtifact CRs are created. Used only when --builder=operator"},
 	},
 	Action: runWeb,
 }
 
 func runWeb(c *cli.Context) error {
+	builderKind := c.String("builder")
+	switch builderKind {
+	case "local", "operator":
+	default:
+		return fmt.Errorf("--builder must be 'local' or 'operator', got %q", builderKind)
+	}
+
 	listenAddr := c.String("listen")
 	dataDir := c.String("data-dir")
 	dbDSN := c.String("db")
@@ -193,8 +205,45 @@ func runWeb(c *cli.Context) error {
 	// handed to server.New below so the HTTP routes share it.
 	wsHub := ws.NewHub()
 
-	artifactBuilder := auroraboot.New(artifactsDir, nil, artifactStore).
-		WithLogBroadcaster(wsHub.UI)
+	var artifactBuilder builder.ArtifactBuilder
+	var systemInfo handlers.APISystemBuilder
+	switch builderKind {
+	case "local":
+		artifactBuilder = auroraboot.New(artifactsDir, nil, artifactStore).
+			WithLogBroadcaster(wsHub.UI)
+		systemInfo = handlers.APISystemBuilder{
+			Backend:           "local",
+			DownloadSupported: true,
+		}
+	case "operator":
+		cfg, err := loadKubeConfig(c.String("kubeconfig"))
+		if err != nil {
+			return err
+		}
+		b, err := operator.New(operator.Config{
+			RESTConfig:    cfg,
+			Namespace:     c.String("builder-namespace"),
+			Store:         artifactStore,
+			AuroraBootURL: externalURL,
+		})
+		if err != nil {
+			return err
+		}
+		artifactBuilder = b.WithLogBroadcaster(wsHub.UI)
+		systemInfo = handlers.APISystemBuilder{
+			Backend:   "operator",
+			Cluster:   sanitizeClusterURL(cfg.Host),
+			Namespace: c.String("builder-namespace"),
+			// Operator builds ship their finished artifacts back to
+			// AuroraBoot's on-disk store via the exporter Job we inject in
+			// internal/builder/operator, so Download serves them the same
+			// way as local builds. The UI no longer needs to gate its
+			// download link by backend.
+			DownloadSupported: true,
+		}
+	default:
+		return fmt.Errorf("unreachable: --builder=%q survived validation", builderKind)
+	}
 
 	nodeStore := &gormstore.NodeStoreAdapter{S: store}
 	commandStore := &gormstore.CommandStoreAdapter{S: store}
@@ -264,6 +313,7 @@ func runWeb(c *cli.Context) error {
 		BMCTargetStore:        bmcTargetStore,
 		SettingsStore:         settingsStore,
 		Builder:               artifactBuilder,
+		SystemInfo:            systemInfo,
 		AdminPassword:         adminPassword,
 		RegToken:              regToken,
 		RegTokenFile:          regTokenFile,

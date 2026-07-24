@@ -312,11 +312,19 @@ func (f *fakeCommandStore) DeleteTerminal(_ context.Context, nodeID string) erro
 type fakeArtifactStore struct {
 	mu      sync.Mutex
 	records []*store.ArtifactRecord
+	// getErr, when set, overrides the natural GetByID result so tests can
+	// exercise handler paths that must survive a transient store failure
+	// (e.g. Cancel must not silently 404 on a DB blip).
+	getErr    error
+	createErr error
 }
 
 func (f *fakeArtifactStore) Create(_ context.Context, rec *store.ArtifactRecord) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.createErr != nil {
+		return f.createErr
+	}
 	f.records = append(f.records, rec)
 	return nil
 }
@@ -324,6 +332,9 @@ func (f *fakeArtifactStore) Create(_ context.Context, rec *store.ArtifactRecord)
 func (f *fakeArtifactStore) GetByID(_ context.Context, id string) (*store.ArtifactRecord, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.getErr != nil {
+		return nil, f.getErr
+	}
 	for _, r := range f.records {
 		if r.ID == id {
 			return r, nil
@@ -344,6 +355,19 @@ func (f *fakeArtifactStore) Update(_ context.Context, rec *store.ArtifactRecord)
 	for i, r := range f.records {
 		if r.ID == rec.ID {
 			f.records[i] = rec
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
+func (f *fakeArtifactStore) UpdatePhaseMessage(_ context.Context, id, phase, message string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.records {
+		if r.ID == id {
+			r.Phase = phase
+			r.Message = message
 			return nil
 		}
 	}
@@ -453,10 +477,18 @@ type fakeBuilder struct {
 	mu       sync.Mutex
 	builds   []*builder.BuildStatus
 	lastOpts builder.BuildOptions // lets tests assert on the generated cloud-config
-	// buildErr, when set, is returned from Build instead of starting a build.
-	// Tests use it to exercise the handler's error-to-status mapping without a
-	// real builder.
-	buildErr error
+	// buildErr, statusErr, listErr, cancelErr — when set, are returned from
+	// the matching method instead of the default success behaviour. Tests use
+	// them to exercise the handler's error-to-status mapping (including the
+	// ErrNotSupported → 501 route) without a real builder.
+	buildErr  error
+	statusErr error
+	listErr   error
+	cancelErr error
+	// cancelledIDs records every id Cancel was called with so tests can
+	// assert the handler forwards cancellations to the backend, including
+	// for terminal-phase artifacts where cleanup used to be skipped.
+	cancelledIDs []string
 }
 
 func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
@@ -479,6 +511,9 @@ func (f *fakeBuilder) Build(_ context.Context, opts builder.BuildOptions) (*buil
 func (f *fakeBuilder) Status(_ context.Context, id string) (*builder.BuildStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.statusErr != nil {
+		return nil, f.statusErr
+	}
 	for _, b := range f.builds {
 		if b.ID == id {
 			return b, nil
@@ -490,11 +525,17 @@ func (f *fakeBuilder) Status(_ context.Context, id string) (*builder.BuildStatus
 func (f *fakeBuilder) List(_ context.Context) ([]*builder.BuildStatus, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	if f.listErr != nil {
+		return nil, f.listErr
+	}
 	return f.builds, nil
 }
 
 func (f *fakeBuilder) Cancel(_ context.Context, id string) error {
-	return nil
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cancelledIDs = append(f.cancelledIDs, id)
+	return f.cancelErr
 }
 
 // fakeSettingsStore implements store.SettingsStore for testing.
