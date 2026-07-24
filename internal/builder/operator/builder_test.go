@@ -175,6 +175,14 @@ func newFakeBuilderWith(namespace string, s store.ArtifactStore, funcs *intercep
 	return b, fc
 }
 
+// cancelOnCleanup registers a DeferCleanup that Cancels the given build so
+// its watchCRPhase and streamPodLogs goroutines exit before the test binary
+// does. Without it the fake clientset keeps polling every 2s until process
+// teardown.
+func cancelOnCleanup(b *Builder, id string) {
+	DeferCleanup(func() { _ = b.Cancel(context.Background(), id) })
+}
+
 var _ = Describe("Operator Builder", func() {
 	Describe("New", func() {
 		It("returns an error when RESTConfig is nil", func() {
@@ -204,6 +212,7 @@ var _ = Describe("Operator Builder", func() {
 				Outputs:   builder.OutputOptions{ISO: true},
 			})
 			Expect(err).NotTo(HaveOccurred())
+			cancelOnCleanup(b, status.ID)
 			Expect(status.ID).To(Equal("build-1"))
 			Expect(status.Phase).To(Equal(builder.BuildPending))
 
@@ -223,6 +232,7 @@ var _ = Describe("Operator Builder", func() {
 				Outputs:   builder.OutputOptions{ISO: true},
 			})
 			Expect(err).NotTo(HaveOccurred())
+			cancelOnCleanup(b, status.ID)
 			Expect(status.ID).NotTo(BeEmpty())
 		})
 
@@ -238,6 +248,7 @@ var _ = Describe("Operator Builder", func() {
 				CloudConfig: "#cloud-config\n",
 			})
 			Expect(err).NotTo(HaveOccurred())
+			cancelOnCleanup(b, "build-cc")
 
 			sec := &corev1.Secret{}
 			Expect(fc.Get(ctx, types.NamespacedName{Name: "build-cc-cloud-config", Namespace: "kairos-builds"}, sec)).To(Succeed())
@@ -288,6 +299,7 @@ var _ = Describe("Operator Builder", func() {
 				Outputs:     builder.OutputOptions{ISO: true},
 			})
 			Expect(err).NotTo(HaveOccurred())
+			cancelOnCleanup(bld, "build-up")
 
 			got := &buildv1alpha2.OSArtifact{}
 			Expect(fc.Get(ctx, types.NamespacedName{Name: "build-up", Namespace: "kairos-builds"}, got)).To(Succeed())

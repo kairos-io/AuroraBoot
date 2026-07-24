@@ -22,11 +22,11 @@ import (
 )
 
 const (
-	// podDiscoveryBudget is how long we wait for the operator to create the
-	// build Pod before giving up. Five minutes is generous enough to cover a
-	// slow operator reconcile loop but not so long that an RBAC/CRD failure
-	// keeps the streaming goroutine alive forever.
-	podDiscoveryBudget       = 5 * time.Minute
+	// podDiscoveryPollInterval is how often streamAllArtifactPods re-lists
+	// pods labelled with the build id, so a Pod (builder or exporter) that
+	// appears after the previous pass gets picked up on the next tick.
+	// Termination is driven by watchCRPhase cancelling the shared streamCtx
+	// on the terminal transition.
 	podDiscoveryPollInterval = 2 * time.Second
 
 	// containerStartRetryInterval is the backoff between attempts when a
@@ -133,45 +133,6 @@ func (c *clientsetPodSource) Open(ctx context.Context, podName, container string
 // podBuildLabel matches the operator's builder-pod label
 // (kairos-operator/internal/controller/osartifact_controller.go: artifactLabel).
 const podBuildLabel = "build.kairos.io/artifact"
-
-// waitForPod polls src.Find every pollInterval until a pod is returned or the
-// budget expires. It respects ctx cancellation as an immediate exit. Transient
-// non-NotFound API errors (a single kube-apiserver hiccup) are tolerated and
-// logged to stderr so the caller can still catch a persistent failure via
-// the overall discovery budget; a fatal error is only surfaced once the entire
-// budget elapses. This mirrors waitContainerLeftWaiting's asymmetric behaviour:
-// a transient blip must not permanently disable log streaming for a build.
-func waitForPod(ctx context.Context, src podSource, buildID string, budget, pollInterval time.Duration) (*corev1.Pod, error) {
-	deadline := time.Now().Add(budget)
-	var lastErr error
-	for {
-		pod, err := src.Find(ctx, buildID)
-		switch {
-		case err == nil:
-			// no-op; fall through to pod nil-check.
-		case apierrors.IsNotFound(err):
-			// Pod is not created yet; keep waiting.
-		default:
-			// Transient API error; remember it, log for visibility, keep polling.
-			lastErr = err
-			fmt.Fprintf(os.Stderr, "waitForPod: transient discovery error for build %q: %v\n", buildID, err)
-		}
-		if pod != nil {
-			return pod, nil
-		}
-		if time.Now().After(deadline) {
-			if lastErr != nil {
-				return nil, fmt.Errorf("build pod for %q did not appear within %s (last error: %w)", buildID, budget, lastErr)
-			}
-			return nil, fmt.Errorf("build pod for %q did not appear within %s", buildID, budget)
-		}
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		case <-time.After(pollInterval):
-		}
-	}
-}
 
 // streamContainer streams one container's logs into sink. It first polls the
 // pod until the container leaves Waiting state — the log API returns an empty
@@ -320,7 +281,7 @@ func streamAllArtifactPods(ctx context.Context, src podSource, buildID string, s
 			}
 			seen[pod.UID] = struct{}{}
 			wg.Add(1)
-			go func() {
+			go func(pod corev1.Pod) {
 				defer wg.Done()
 				if err := streamAll(ctx, src, &pod, sink, retryInterval, maxRetries); err != nil {
 					if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -328,7 +289,7 @@ func streamAllArtifactPods(ctx context.Context, src podSource, buildID string, s
 					}
 					_ = sink.WriteLine("auroraboot", fmt.Sprintf("warning: log streaming for pod %q ended: %v", pod.Name, err))
 				}
-			}()
+			}(pod)
 		}
 		select {
 		case <-ctx.Done():

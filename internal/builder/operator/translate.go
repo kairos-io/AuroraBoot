@@ -32,12 +32,20 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 	kairosVersion := firstNonEmpty(opts.Source.KairosVersion, opts.KairosVersion)
 
 	// Pre-built means: consume the caller's ref as-is, no kairos-init pass.
-	// Any signal that we should do build-time work (a Dockerfile, an explicit
-	// KairosVersion, or a KairosInitImage override) drops us out of the
-	// pre-built branch so the caller's intent lands on the operator's
-	// kairos-init flow rather than getting silently ignored. This mirrors
-	// the local backend's ensureKairosified behaviour, which always
-	// kairosifies unless the image is already Kairos-tagged.
+	// Any signal that we should do build-time work (a Dockerfile, an
+	// explicit KairosVersion, or a KairosInitImage override) drops us out
+	// of the pre-built branch so the caller's intent lands on the
+	// operator's kairos-init flow rather than getting silently ignored.
+	//
+	// KubernetesDistro/KubernetesVersion are NOT signals here. kairos-init
+	// installs a provider only when it builds Kairos from a plain OS base
+	// (Variant=Standard, controlled by -p); it does not layer a provider
+	// onto an existing Kairos image. The local backend's ensureKairosified
+	// short-circuits on /etc/kairos-release and never runs kairos-init in
+	// that case either, so "prebuilt Kairos + KubernetesDistro=k3s"
+	// silently drops the k8s knob on both backends. Rejecting the
+	// combination outright is the cleaner fix but belongs to a shared
+	// change across both backends, not to this translator alone.
 	preBuilt := baseRef != "" &&
 		opts.Dockerfile == "" &&
 		kairosVersion == "" &&
