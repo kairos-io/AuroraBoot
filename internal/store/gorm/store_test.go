@@ -238,7 +238,11 @@ var _ = Describe("Gorm Store", func() {
 			Expect(s.Register(ctx, n)).To(Succeed())
 
 			osRel := map[string]string{"name": "Kairos", "version": "1.0"}
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel)).To(Succeed())
+			addrs := []store.NodeAddress{
+				{Type: "InternalIP", Address: "10.0.10.21"},
+				{Type: "Hostname", Address: "hb1"},
+			}
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
@@ -246,6 +250,25 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.AgentVersion).To(Equal("v0.5.0"))
 			Expect(found.OSRelease).To(HaveKeyWithValue("name", "Kairos"))
 			Expect(found.LastHeartbeat).NotTo(BeNil())
+			Expect(found.Addresses).To(Equal(addrs))
+			Expect(found.BootState).To(Equal("active"))
+		})
+
+		It("preserves addresses and boot state when a heartbeat omits them", func() {
+			n := &store.ManagedNode{
+				MachineID: "hb2",
+				Addresses: []store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}},
+				BootState: "active",
+			}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			// An older agent (or the WS heartbeat path) sends nil/"" — must not wipe.
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "")).To(Succeed())
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}}))
+			Expect(found.BootState).To(Equal("active"))
 		})
 
 		It("updates phase", func() {

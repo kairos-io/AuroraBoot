@@ -87,10 +87,12 @@ func (h *NodeHandler) triggerFinalize(nodeID string) {
 
 // registerRequest is the expected body for node registration.
 type registerRequest struct {
-	RegistrationToken string `json:"registrationToken"`
-	MachineID         string `json:"machineID"`
-	Hostname          string `json:"hostname"`
-	AgentVersion      string `json:"agentVersion"`
+	RegistrationToken string              `json:"registrationToken"`
+	MachineID         string              `json:"machineID"`
+	Hostname          string              `json:"hostname"`
+	AgentVersion      string              `json:"agentVersion"`
+	Addresses         []store.NodeAddress `json:"addresses,omitempty"`
+	BootState         string              `json:"bootState,omitempty"`
 }
 
 // Register handles POST /api/v1/nodes/register.
@@ -137,6 +139,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		Phase:        store.PhaseRegistered,
 		APIKey:       uuid.New().String(),
 		Labels:       make(map[string]string),
+		// Optional; empty when an older agent does not report them. Stored exactly
+		// as received — interface filtering is the agent's responsibility.
+		Addresses: req.Addresses,
+		BootState: req.BootState,
 	}
 
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
@@ -375,7 +381,9 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 // heartbeatRequest is the expected body for a heartbeat.
 type heartbeatRequest struct {
 	AgentVersion string            `json:"agentVersion"`
-	OSRelease    map[string]string `json:"osRelease"`
+	OSRelease    map[string]string   `json:"osRelease"`
+	Addresses    []store.NodeAddress `json:"addresses,omitempty"`
+	BootState    string              `json:"bootState,omitempty"`
 }
 
 // Heartbeat handles POST /api/v1/nodes/:nodeID/heartbeat.
@@ -395,7 +403,7 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease); err != nil {
+	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update heartbeat"})
 	}
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {

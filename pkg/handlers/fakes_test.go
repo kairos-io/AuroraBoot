@@ -118,13 +118,20 @@ func (f *fakeNodeStore) ListBySelector(_ context.Context, sel store.CommandSelec
 	return f.nodes, nil
 }
 
-func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersion string, osRelease map[string]string) error {
+func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
 		if n.ID == id {
 			n.AgentVersion = agentVersion
 			n.OSRelease = osRelease
+			// Mirror the gorm store: only overwrite when the heartbeat carries them.
+			if addresses != nil {
+				n.Addresses = addresses
+			}
+			if bootState != "" {
+				n.BootState = bootState
+			}
 			return nil
 		}
 	}

@@ -33,6 +33,12 @@ type APIRegisterRequest struct {
 	MachineID         string `json:"machineID" example:"a1b2c3d4e5f6"`
 	Hostname          string `json:"hostname" example:"kairos-node-01"`
 	AgentVersion      string `json:"agentVersion" example:"v2.27.0"`
+	// Addresses are the node's reported network addresses (optional, multi-NIC).
+	// Stored exactly as received; interface filtering is the agent's job.
+	Addresses []store.NodeAddress `json:"addresses,omitempty"`
+	// BootState is the node's reported boot state (optional): one of
+	// active | passive | recovery | autoreset (unknown values pass through).
+	BootState string `json:"bootState,omitempty" example:"active"`
 }
 
 // APIRegisterResponse is the JSON body returned by POST /api/v1/nodes/register.
@@ -46,6 +52,13 @@ type APIHeartbeatRequest struct {
 	AgentVersion string            `json:"agentVersion" example:"v2.27.0"`
 	OSRelease    map[string]string `json:"osRelease"`
 	Labels       map[string]string `json:"labels"`
+	// Addresses are the node's current network addresses (optional, multi-NIC).
+	// When present they replace the stored list (e.g. after a DHCP change); when
+	// omitted the stored list is preserved.
+	Addresses []store.NodeAddress `json:"addresses,omitempty"`
+	// BootState is the node's current boot state (optional): one of
+	// active | passive | recovery | autoreset (unknown values pass through).
+	BootState string `json:"bootState,omitempty" example:"active"`
 }
 
 // APISetLabelsRequest is the JSON body of PUT /api/v1/nodes/:nodeID/labels.

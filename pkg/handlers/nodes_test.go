@@ -88,6 +88,29 @@ var _ = Describe("NodeHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
+
+		It("should persist addresses and bootState and expose them on GET", func() {
+			body := `{"registrationToken":"reg-token","machineID":"machine-addr","hostname":"n1",` +
+				`"addresses":[{"type":"InternalIP","address":"10.0.10.21"},{"type":"Hostname","address":"n1"}],` +
+				`"bootState":"active"}`
+			id := registerNode(e, handler, body)
+
+			node := getNode(e, handler, id)
+			Expect(node.Addresses).To(Equal([]store.NodeAddress{
+				{Type: "InternalIP", Address: "10.0.10.21"},
+				{Type: "Hostname", Address: "n1"},
+			}))
+			Expect(node.BootState).To(Equal("active"))
+		})
+
+		It("should register without addresses/bootState (backward compat) and leave them empty", func() {
+			body := `{"registrationToken":"reg-token","machineID":"machine-old","hostname":"n2","agentVersion":"v2.29.4"}`
+			id := registerNode(e, handler, body)
+
+			node := getNode(e, handler, id)
+			Expect(node.Addresses).To(BeEmpty())
+			Expect(node.BootState).To(BeEmpty())
+		})
 	})
 
 	Describe("List", func() {
@@ -287,6 +310,41 @@ var _ = Describe("NodeHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			Expect(ns.nodes[0].Phase).To(Equal(store.PhaseOnline))
+		})
+
+		It("should update addresses and bootState on heartbeat (e.g. a DHCP change)", func() {
+			ns.nodes = []*store.ManagedNode{{
+				ID:        "node-1",
+				Phase:     store.PhaseRegistered,
+				Addresses: []store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.21"}},
+				BootState: "active",
+			}}
+			body := `{"agentVersion":"1.1",` +
+				`"addresses":[{"type":"InternalIP","address":"10.0.10.99"},{"type":"Hostname","address":"n1"}],` +
+				`"bootState":"passive"}`
+			heartbeat(e, handler, "node-1", body)
+
+			node := getNode(e, handler, "node-1")
+			Expect(node.Addresses).To(Equal([]store.NodeAddress{
+				{Type: "InternalIP", Address: "10.0.10.99"},
+				{Type: "Hostname", Address: "n1"},
+			}))
+			Expect(node.BootState).To(Equal("passive"))
+		})
+
+		It("should preserve addresses and bootState when a heartbeat omits them", func() {
+			ns.nodes = []*store.ManagedNode{{
+				ID:        "node-1",
+				Phase:     store.PhaseRegistered,
+				Addresses: []store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.21"}},
+				BootState: "active",
+			}}
+			// An older agent sends neither field — must not wipe existing values.
+			heartbeat(e, handler, "node-1", `{"agentVersion":"1.1","osRelease":{"ID":"ubuntu"}}`)
+
+			node := getNode(e, handler, "node-1")
+			Expect(node.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.21"}}))
+			Expect(node.BootState).To(Equal("active"))
 		})
 	})
 
@@ -532,3 +590,49 @@ var _ = Describe("NodeHandler", func() {
 		})
 	})
 })
+
+// registerNode POSTs a registration body and returns the new node's id.
+func registerNode(e *echo.Echo, handler *handlers.NodeHandler, body string) string {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+
+	ExpectWithOffset(1, handler.Register(c)).To(Succeed())
+	ExpectWithOffset(1, rec.Code).To(Equal(http.StatusCreated))
+
+	var resp map[string]any
+	ExpectWithOffset(1, json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+	id, _ := resp["id"].(string)
+	ExpectWithOffset(1, id).NotTo(BeEmpty())
+	return id
+}
+
+// heartbeat POSTs a heartbeat body for the given node id and asserts 200.
+func heartbeat(e *echo.Echo, handler *handlers.NodeHandler, id, body string) {
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/"+id+"/heartbeat", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("nodeID")
+	c.SetParamValues(id)
+
+	ExpectWithOffset(1, handler.Heartbeat(c)).To(Succeed())
+	ExpectWithOffset(1, rec.Code).To(Equal(http.StatusOK))
+}
+
+// getNode GETs /api/v1/nodes/:id and decodes the ManagedNode the API returns.
+func getNode(e *echo.Echo, handler *handlers.NodeHandler, id string) store.ManagedNode {
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/"+id, nil)
+	rec := httptest.NewRecorder()
+	c := e.NewContext(req, rec)
+	c.SetParamNames("nodeID")
+	c.SetParamValues(id)
+
+	ExpectWithOffset(1, handler.Get(c)).To(Succeed())
+	ExpectWithOffset(1, rec.Code).To(Equal(http.StatusOK))
+
+	var node store.ManagedNode
+	ExpectWithOffset(1, json.Unmarshal(rec.Body.Bytes(), &node)).To(Succeed())
+	return node
+}

@@ -22,6 +22,21 @@ type NodeGroup struct {
 }
 
 // ManagedNode represents a Kairos node managed by auroraboot.
+// NodeAddress is one network address a node reports, mirroring CAPI's
+// MachineAddress (a {type, address} pair) so a CAPI infrastructure provider can
+// pass it straight through to Machine.status.addresses. Nodes report a LIST:
+// multi-NIC is normal. Type is one of InternalIP | ExternalIP | Hostname (kept as
+// a plain string so a future type passes through without a server change).
+//
+// The agent decides which interfaces to report (loopback/bridge/veth/bond
+// filtering is the agent's job); the server stores the list exactly as received.
+// The shape also leaves room for a future externally-supplied ExternalIP that is
+// not on any NIC — no injection path is built for that here.
+type NodeAddress struct {
+	Type    string `json:"type"`
+	Address string `json:"address"`
+}
+
 type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
@@ -33,9 +48,18 @@ type ManagedNode struct {
 	AgentVersion  string            `json:"agentVersion"`
 	OSRelease     map[string]string `json:"osRelease" gorm:"serializer:json"`
 	Labels        map[string]string `json:"labels" gorm:"serializer:json"`
-	APIKey        string            `json:"-" gorm:"index"`
-	CreatedAt     time.Time         `json:"createdAt"`
-	UpdatedAt     time.Time         `json:"updatedAt"`
+	// Addresses are the node's reported network addresses (multi-NIC). Optional
+	// and backward-compatible: an agent that does not send them leaves the list
+	// empty. Stored as JSON, mirroring OSRelease/Labels.
+	Addresses []NodeAddress `json:"addresses,omitempty" gorm:"serializer:json"`
+	// BootState is the node's reported boot state for day-2 lifecycle (e.g. a node
+	// that booted the passive image signals a broken active image). Known values:
+	// active | passive | recovery | autoreset — but unknown values are accepted
+	// and stored as-is so future boot states pass through without a server change.
+	BootState string    `json:"bootState,omitempty"`
+	APIKey    string    `json:"-" gorm:"index"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // Node phases.
@@ -107,7 +131,7 @@ type NodeStore interface {
 	ListByGroup(ctx context.Context, groupID string) ([]*ManagedNode, error)
 	ListByLabels(ctx context.Context, labels map[string]string) ([]*ManagedNode, error)
 	ListBySelector(ctx context.Context, sel CommandSelector) ([]*ManagedNode, error)
-	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string) error
+	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
 	SetGroup(ctx context.Context, nodeID string, groupID string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
