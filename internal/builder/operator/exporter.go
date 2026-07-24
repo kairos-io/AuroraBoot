@@ -52,7 +52,7 @@ for f in /artifacts/*; do
   [ -f "$f" ] || continue
   base=$(basename "$f")
   echo "Uploading $base to $AURORABOOT_URL"
-  curl -fsS --retry 3 -X PUT \
+  curl -fsS --retry 3 --connect-timeout 30 --max-time 3600 -X PUT \
     -H "Authorization: Bearer $AURORABOOT_UPLOAD_TOKEN" \
     --upload-file "$f" \
     "$AURORABOOT_URL/api/v1/artifacts/$BUILD_ID/upload/$base" || exit 1
