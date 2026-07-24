@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
 	"errors"
@@ -39,6 +40,18 @@ func mintUploadToken() (string, error) {
 		return "", fmt.Errorf("mint upload token: %w", err)
 	}
 	return hex.EncodeToString(b), nil
+}
+
+// hashUploadToken is the digest AuroraBoot stores in place of the plaintext
+// upload token. Plaintext only lives in the per-build k8s Secret the
+// exporter reads; the DB never sees it. Upload hashes the presented bearer
+// with the same function and constant-time compares against the stored
+// digest. sha256 is sufficient here because the token is 32 bytes of
+// crypto/rand output - no rainbow table applies and no work factor is
+// needed to slow guessing.
+func hashUploadToken(plaintext string) string {
+	sum := sha256.Sum256([]byte(plaintext))
+	return hex.EncodeToString(sum[:])
 }
 
 // ArtifactHandler handles artifact-related REST endpoints.
@@ -332,7 +345,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		rec := &store.ArtifactRecord{
 			ID:                      status.ID,
 			Name:                    req.Name,
-			UploadToken:             uploadToken,
+			UploadToken:             hashUploadToken(uploadToken),
 			Phase:                   status.Phase,
 			Message:                 status.Message,
 			BaseImage:               req.BaseImage,
@@ -526,8 +539,11 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 	}
 
 	presented := strings.TrimPrefix(c.Request().Header.Get("Authorization"), "Bearer ")
+	// rec.UploadToken holds a sha256 hex digest, not the plaintext. Hash the
+	// presented bearer and constant-time compare so an attacker with DB read
+	// access (backup, SQLite file, SQLi elsewhere) never sees a live token.
 	if presented == "" || rec.UploadToken == "" ||
-		subtle.ConstantTimeCompare([]byte(presented), []byte(rec.UploadToken)) != 1 {
+		subtle.ConstantTimeCompare([]byte(hashUploadToken(presented)), []byte(rec.UploadToken)) != 1 {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid upload token"})
 	}
 

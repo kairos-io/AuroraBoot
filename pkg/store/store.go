@@ -201,12 +201,14 @@ type ArtifactRecord struct {
 	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
 	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
 	Logs                    string    `json:"-" gorm:"type:text"`
-	// UploadToken is a per-build bearer used by the operator backend's
-	// exporter Job to push artifacts to PUT /api/v1/artifacts/:id/upload/:file.
-	// Minted on Create for every build regardless of backend and never
-	// serialized to clients: the JSON tag stays "-" so a compromised UI
-	// bearer cannot lift it, and only the operator-materialized Secret ever
-	// carries it in cleartext.
+	// UploadToken holds the sha256 hex digest of the per-build bearer the
+	// operator backend's exporter Job uses to PUT /api/v1/artifacts/:id/upload/:file.
+	// The plaintext token is minted by the handler on Create, injected into
+	// the k8s Secret the exporter reads, and never written to the DB in
+	// cleartext. Upload hashes the presented bearer and constant-time
+	// compares it against this digest, so DB read access (backup, SQLite
+	// file, SQLi elsewhere) does not surface live write tokens. The JSON
+	// tag stays "-" so nothing here is serialized to clients regardless.
 	UploadToken string `json:"-"`
 	CreatedAt               time.Time `json:"createdAt"`
 	UpdatedAt               time.Time `json:"updatedAt"`

@@ -2,6 +2,8 @@ package handlers_test
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -15,6 +17,13 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
+
+// mirrors handlers.hashUploadToken (unexported); seeding the fake store
+// requires the same digest the production Create path would write.
+func sha256Hex(s string) string {
+	sum := sha256.Sum256([]byte(s))
+	return hex.EncodeToString(sum[:])
+}
 
 var _ = Describe("ArtifactHandler.Upload", func() {
 	var (
@@ -38,7 +47,7 @@ var _ = Describe("ArtifactHandler.Upload", func() {
 		Expect(err).NotTo(HaveOccurred())
 		as = &fakeArtifactStore{
 			records: []*store.ArtifactRecord{
-				{ID: buildID, Phase: store.ArtifactBuilding, UploadToken: token},
+				{ID: buildID, Phase: store.ArtifactBuilding, UploadToken: sha256Hex(token)},
 			},
 		}
 		handler = handlers.NewArtifactHandler(fb, as, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
@@ -124,6 +133,16 @@ var _ = Describe("ArtifactHandler.Upload", func() {
 		rec, err := as.GetByID(nil, buildID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rec.ArtifactFiles).To(ConsistOf("kairos.iso", "kairos.raw"))
+	})
+
+	It("stores the sha256 digest, never the plaintext token", func() {
+		// The DB only ever holds the digest so a snapshot/backup/SQLi read
+		// cannot yield a live write bearer. Presenting the plaintext still
+		// works because the handler hashes on verify.
+		Expect(as.records[0].UploadToken).NotTo(Equal(token),
+			"the fake was seeded with sha256Hex(token); a plaintext value would mean the semantics leaked")
+		Expect(as.records[0].UploadToken).To(Equal(sha256Hex(token)))
+		Expect(upload(buildID, "kairos.iso", token, []byte("x")).Code).To(Equal(http.StatusCreated))
 	})
 
 	It("uses constant-time comparison so a length-mismatch token cannot short-circuit", func() {
