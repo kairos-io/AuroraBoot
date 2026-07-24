@@ -509,12 +509,13 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 	filename := c.Param("*")
 	ctx := c.Request().Context()
 
-	// Both id and filename land in filesystem paths below (buildDir, tmpPath,
-	// dst). Reject anything that could traverse out of artifactsDir before we
-	// touch the store or the disk.
-	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") || filepath.IsAbs(id) {
+	if err := safePathSegment(id); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifact id"})
 	}
+	if err := safePathSegment(filename); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
+	}
+	clean := filename
 
 	if h.store == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
@@ -528,17 +529,6 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 	if presented == "" || rec.UploadToken == "" ||
 		subtle.ConstantTimeCompare([]byte(presented), []byte(rec.UploadToken)) != 1 {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid upload token"})
-	}
-
-	// The filename lands directly under artifactsDir/<id>/, so we must reject
-	// anything that would traverse or escape it. filepath.Clean plus the
-	// separator/`..` checks give us the same guard the Download handler uses.
-	clean := filepath.Clean(filename)
-	if clean == "." || clean == ".." || clean == "" ||
-		strings.HasPrefix(clean, "..") ||
-		strings.ContainsAny(clean, `/\`) ||
-		filepath.IsAbs(clean) {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
 	buildDir := filepath.Join(h.artifactsDir, id)
@@ -599,6 +589,22 @@ func appendArtifactFile(rec *store.ArtifactRecord, name string) {
 	rec.ArtifactFiles = append(rec.ArtifactFiles, name)
 }
 
+// safePathSegment rejects a URL path parameter that cannot be safely used as
+// a single filesystem path segment. Both Upload and Download route their id
+// and filename inputs through here before touching the store or the disk:
+// once at the boundary we can trust the value downstream. "." by itself is
+// not a traversal but is meaningless as an id or filename, so it is rejected
+// too rather than resolving to the parent directory later.
+func safePathSegment(s string) error {
+	if s == "" || s == "." {
+		return errors.New("empty segment")
+	}
+	if strings.ContainsAny(s, `/\`) || strings.Contains(s, "..") || filepath.IsAbs(s) {
+		return errors.New("path traversal")
+	}
+	return nil
+}
+
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 //
@@ -655,13 +661,11 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 	id := c.Param("id")
 	// Echo uses * for catch-all params; the param name is "*".
 	filename := c.Param("*")
-	if filename == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "filename required"})
-	}
 
-	// Clean the filename to prevent directory traversal.
-	filename = filepath.Clean(filename)
-	if strings.Contains(filename, "..") {
+	if err := safePathSegment(id); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifact id"})
+	}
+	if err := safePathSegment(filename); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
