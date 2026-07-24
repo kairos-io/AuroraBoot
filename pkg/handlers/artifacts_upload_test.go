@@ -94,6 +94,18 @@ var _ = Describe("ArtifactHandler.Upload", func() {
 		Expect(rec.Code).To(Equal(http.StatusBadRequest))
 	})
 
+	It("rejects artifact ids that would escape artifactsDir", func() {
+		// Ids feed into filesystem paths (buildDir, tmpPath, dst) so any
+		// traversal in the URL segment would let a caller mkdir or rename
+		// outside artifactsDir. GetByID would reject unknown ids on its own,
+		// but validate at the boundary too - defense in depth.
+		for _, badID := range []string{"..", "../other", "a/b", `a\b`, "/abs"} {
+			rec := upload(badID, "kairos.iso", token, []byte("x"))
+			Expect(rec.Code).To(Equal(http.StatusBadRequest),
+				"id %q should be rejected before store lookup", badID)
+		}
+	})
+
 	It("overwrites atomically when the same filename uploads twice", func() {
 		Expect(upload(buildID, "kairos.iso", token, []byte("first")).Code).To(Equal(http.StatusCreated))
 		Expect(upload(buildID, "kairos.iso", token, []byte("second")).Code).To(Equal(http.StatusCreated))
