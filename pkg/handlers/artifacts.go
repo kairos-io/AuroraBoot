@@ -215,6 +215,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		ID:                uuid.New().String(),
 		Name:              req.Name,
 		UploadToken:       uploadToken,
+		LogRedactValues:   []string{h.regToken, req.Provisioning.Password},
 		BaseImage:         req.BaseImage,
 		KairosVersion:     req.KairosVersion,
 		Model:             req.Model,

@@ -381,15 +381,20 @@ func streamAll(ctx context.Context, src podSource, pod *corev1.Pod, sink logSink
 // and the LogBroadcaster (if configured). Lines land in the store as
 // "[<container>] <line>\n" so a post-mortem reader can tell which stage of
 // the buildah/auroraboot pipeline produced them; broadcasts carry the same
-// prefixed text so subscribers render matching output.
+// prefixed text so subscribers render matching output. Every line runs
+// through builder.RedactLine against redactValues before persist/broadcast
+// so a build step that echoes the injected cloud-config cannot land the
+// fleet registration token or the default node password in either sink.
 type broadcastingSink struct {
-	ctx         context.Context
-	buildID     string
-	store       store.ArtifactStore
-	broadcaster builder.LogBroadcaster
+	ctx           context.Context
+	buildID       string
+	store         store.ArtifactStore
+	broadcaster   builder.LogBroadcaster
+	redactValues  []string
 }
 
 func (b *broadcastingSink) WriteLine(container, line string) error {
+	line = builder.RedactLine(line, b.redactValues)
 	chunk := "[" + container + "] " + line + "\n"
 	if b.store != nil {
 		if err := b.store.AppendLog(b.ctx, b.buildID, chunk); err != nil {

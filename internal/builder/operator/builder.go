@@ -184,7 +184,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	b.activeMu.Lock()
 	b.active[id] = cancel
 	b.activeMu.Unlock()
-	go b.streamPodLogs(streamCtx, id)
+	go b.streamPodLogs(streamCtx, id, opts.LogRedactValues)
 	go b.watchCRPhase(streamCtx, id, phaseWatchInterval)
 
 	return &builder.BuildStatus{ID: id, Phase: builder.BuildPending}, nil
@@ -210,7 +210,7 @@ func (b *Builder) createSecrets(ctx context.Context, art *buildv1alpha2.OSArtifa
 // streams every container's log into the persistent store and any attached
 // LogBroadcaster. It exits when the pod completes, ctx is cancelled, or the
 // pod-discovery budget expires.
-func (b *Builder) streamPodLogs(ctx context.Context, id string) {
+func (b *Builder) streamPodLogs(ctx context.Context, id string, redactValues []string) {
 	defer func() {
 		b.activeMu.Lock()
 		delete(b.active, id)
@@ -221,10 +221,11 @@ func (b *Builder) streamPodLogs(ctx context.Context, id string) {
 	}
 
 	sink := &broadcastingSink{
-		ctx:         context.Background(),
-		buildID:     id,
-		store:       b.cfg.Store,
-		broadcaster: b.logBroadcaster,
+		ctx:          context.Background(),
+		buildID:      id,
+		store:        b.cfg.Store,
+		broadcaster:  b.logBroadcaster,
+		redactValues: redactValues,
 	}
 	src := newClientsetPodSource(b.clientset, b.cfg.Namespace)
 

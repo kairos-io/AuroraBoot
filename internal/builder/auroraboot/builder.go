@@ -87,13 +87,18 @@ type buildState struct {
 // dbLogWriter buffers log output and periodically flushes to the artifact
 // store. When a broadcaster is attached, every flush also fans the chunk
 // out to any subscribed UI clients so they can render logs in real time.
+// redactValues are substrings scrubbed from every flushed chunk before
+// either sink sees it, so a build step that echoes the injected
+// cloud-config does not persist the fleet registration token or the
+// default node password.
 type dbLogWriter struct {
-	store       store.ArtifactStore
-	id          string
-	buf         bytes.Buffer
-	mu          sync.Mutex
-	ctx         context.Context
-	broadcaster builder.LogBroadcaster
+	store        store.ArtifactStore
+	id           string
+	buf          bytes.Buffer
+	mu           sync.Mutex
+	ctx          context.Context
+	broadcaster  builder.LogBroadcaster
+	redactValues []string
 }
 
 func (w *dbLogWriter) Write(p []byte) (int, error) {
@@ -112,6 +117,7 @@ func (w *dbLogWriter) flush() {
 	}
 	text := w.buf.String()
 	w.buf.Reset()
+	text = builder.RedactLine(text, w.redactValues)
 	_ = w.store.AppendLog(w.ctx, w.id, text)
 	if w.broadcaster != nil {
 		w.broadcaster.BroadcastLogChunk(w.id, text)
@@ -250,10 +256,11 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	var logWriter *dbLogWriter
 	if b.store != nil {
 		logWriter = &dbLogWriter{
-			store:       b.store,
-			id:          bs.status.ID,
-			ctx:         context.Background(), // use background so flushes work even after build ctx cancel
-			broadcaster: b.logBroadcaster,
+			store:        b.store,
+			id:           bs.status.ID,
+			ctx:          context.Background(), // use background so flushes work even after build ctx cancel
+			broadcaster:  b.logBroadcaster,
+			redactValues: opts.LogRedactValues,
 		}
 	}
 
