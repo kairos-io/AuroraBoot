@@ -6,6 +6,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
+	sdklogger "github.com/kairos-io/kairos-sdk/types/logger"
 
 	"github.com/spectrocloud-labs/herd"
 	"gopkg.in/yaml.v3"
@@ -15,10 +16,16 @@ type Deployer struct {
 	*herd.Graph
 	Config   schema.Config
 	Artifact schema.ReleaseArtifact
+	// Log is where every step in this deployer emits progress. Callers who
+	// want the deployer's zerolog output to reach a specific sink (for
+	// example an AuroraBoot build's live-log pane) set this before Run.
+	// NewDeployer defaults it to internal.Log so callers that don't care
+	// (the CLI) keep their existing terminal output.
+	Log sdklogger.KairosLogger
 }
 
 func NewDeployer(c schema.Config, a schema.ReleaseArtifact, opts ...herd.GraphOption) *Deployer {
-	d := &Deployer{Config: c, Artifact: a}
+	d := &Deployer{Config: c, Artifact: a, Log: internal.Log}
 	d.Graph = herd.DAG(opts...)
 
 	return d
@@ -40,17 +47,17 @@ func (d *Deployer) CollectErrors() error {
 func (d *Deployer) WriteDag() {
 	graph := d.Analyze()
 	for i, layer := range graph {
-		internal.Log.Printf("%d.", (i + 1))
+		d.Log.Printf("%d.", (i + 1))
 		for _, op := range layer {
 			if !op.Ignored {
 				if op.Error != nil {
-					internal.Log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
+					d.Log.Printf(" <%s> (error: %s) (background: %t)", op.Name, op.Error.Error(), op.Background)
 				} else {
-					internal.Log.Printf(" <%s> (background: %t)", op.Name, op.Background)
+					d.Log.Printf(" <%s> (background: %t)", op.Name, op.Background)
 				}
 			}
 		}
-		internal.Log.Print("")
+		d.Log.Print("")
 	}
 }
 

@@ -81,6 +81,12 @@ build-docker: ## Build the Docker image
 test: ui-build ## Run Go tests
 	go test ./...
 
+# Run the operator-backed builder e2e suite. Requires kind + docker + kubectl.
+# The suite is guarded by the operator_e2e build tag so `make test` skips it.
+.PHONY: test-operator-e2e
+test-operator-e2e: ## Run the kind-based operator builder e2e suite
+	go test -tags=operator_e2e ./test/operator/... -v -timeout=30m
+
 # Install development dependencies
 install-deps: ## Install development dependencies
 	@echo "Installing Go dependencies..."

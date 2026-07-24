@@ -652,4 +652,101 @@ var _ = Describe("Gorm Store", func() {
 			Expect(records).To(HaveLen(2))
 		})
 	})
+
+	Describe("ArtifactUpdate vs AppendLog", func() {
+		It("does not clobber log lines appended between GetByID and Update", func() {
+			rec := &store.ArtifactRecord{ID: "art-race", Phase: store.ArtifactBuilding, BaseImage: "img"}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			Expect(s.ArtifactAppendLog(ctx, "art-race", "line-1\n")).To(Succeed())
+
+			snapshot, err := s.ArtifactGetByID(ctx, "art-race")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(s.ArtifactAppendLog(ctx, "art-race", "line-2\n")).To(Succeed())
+
+			snapshot.Phase = store.ArtifactReady
+			snapshot.Message = "done"
+			Expect(s.ArtifactUpdate(ctx, snapshot)).To(Succeed())
+
+			logs, err := s.ArtifactGetLogs(ctx, "art-race")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(logs).To(Equal("line-1\nline-2\n"))
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-race")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Phase).To(Equal(store.ArtifactReady))
+			Expect(refreshed.Message).To(Equal("done"))
+		})
+	})
+
+	Describe("ArtifactUpdatePhaseMessage", func() {
+		It("updates only phase and message and never touches logs", func() {
+			rec := &store.ArtifactRecord{ID: "art-phase", Phase: store.ArtifactBuilding, BaseImage: "img"}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+			Expect(s.ArtifactAppendLog(ctx, "art-phase", "hello\n")).To(Succeed())
+
+			Expect(s.ArtifactUpdatePhaseMessage(ctx, "art-phase", store.ArtifactReady, "ok")).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-phase")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Phase).To(Equal(store.ArtifactReady))
+			Expect(refreshed.Message).To(Equal("ok"))
+			Expect(refreshed.Logs).To(Equal("hello\n"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+	})
+
+	Describe("ArtifactUpdateFiles", func() {
+		It("writes only artifact_files and does not clobber a concurrent phase write", func() {
+			rec := &store.ArtifactRecord{
+				ID: "art-files", Phase: store.ArtifactBuilding, BaseImage: "img",
+				UploadToken: "tok",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			// A handler snapshot mid-build.
+			snapshot, err := s.ArtifactGetByID(ctx, "art-files")
+			Expect(err).NotTo(HaveOccurred())
+
+			// watchCRPhase publishes a terminal transition while the handler
+			// is still processing the upload.
+			Expect(s.ArtifactUpdatePhaseMessage(ctx, "art-files", store.ArtifactReady, "done")).To(Succeed())
+
+			// Handler now writes back the new file list from its stale
+			// snapshot. UpdateFiles must NOT overwrite the phase the watcher
+			// just committed.
+			snapshot.ArtifactFiles = []string{"kairos.iso", "kairos.iso.sha256"}
+			Expect(s.ArtifactUpdateFiles(ctx, "art-files", snapshot.ArtifactFiles)).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-files")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Phase).To(Equal(store.ArtifactReady))
+			Expect(refreshed.Message).To(Equal("done"))
+			Expect(refreshed.ArtifactFiles).To(Equal([]string{"kairos.iso", "kairos.iso.sha256"}))
+			Expect(refreshed.UploadToken).To(Equal("tok"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+	})
+
+	Describe("ArtifactClearUploadToken", func() {
+		It("zeroes upload_token and leaves everything else alone", func() {
+			rec := &store.ArtifactRecord{
+				ID: "art-clear", Phase: store.ArtifactBuilding, BaseImage: "img",
+				UploadToken: "tok", Message: "still going",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+			Expect(s.ArtifactAppendLog(ctx, "art-clear", "line\n")).To(Succeed())
+
+			Expect(s.ArtifactClearUploadToken(ctx, "art-clear")).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-clear")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.UploadToken).To(Equal(""))
+			Expect(refreshed.Phase).To(Equal(store.ArtifactBuilding))
+			Expect(refreshed.Message).To(Equal("still going"))
+			Expect(refreshed.Logs).To(Equal("line\n"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+	})
 })

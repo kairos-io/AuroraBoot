@@ -3,6 +3,7 @@ package auroraboot_test
 import (
 	"context"
 	"errors"
+	"io"
 	"sync"
 	"time"
 
@@ -33,7 +34,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 		ch := make(chan struct{}, 1)
 		deployCalled = ch
 
-		mockDeploy := func(_ context.Context, config schema.Config, artifact schema.ReleaseArtifact, _ string) error {
+		mockDeploy := func(_ context.Context, config schema.Config, artifact schema.ReleaseArtifact, _ string, _ io.Writer) error {
 			mu.Lock()
 			capturedConfig = config
 			capturedArtifact = artifact
@@ -66,7 +67,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 		It("should transition to Building status", func() {
 			// Use a deployer that blocks until we release it.
 			blocked := make(chan struct{})
-			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string) error {
+			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
 				select {
 				case <-blocked:
 				case <-ctx.Done():
@@ -202,7 +203,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 	Describe("Cancel", func() {
 		It("should cancel a running build", func() {
 			blocked := make(chan struct{})
-			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string) error {
+			slowDeploy := func(ctx context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
 				select {
 				case <-blocked:
 				case <-ctx.Done():
@@ -236,10 +237,15 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(status.Message).To(ContainSubstring("cancel"))
 		})
 
-		It("should return error for unknown build ID", func() {
+		// After a restart, the in-memory builds map is empty but the store
+		// still holds rows in Phase=Building. Cancel must not surface a
+		// spurious "not found" for those orphaned rows: from the builder's
+		// perspective there is genuinely nothing to cancel, so the correct
+		// answer is nil. This matches the operator backend's NotFound
+		// short-circuit and lets the HTTP handler treat Cancel as idempotent.
+		It("returns nil for an unknown build ID (idempotent)", func() {
 			err := b.Cancel(context.Background(), "no-such-build")
-			Expect(err).To(HaveOccurred())
-			Expect(err.Error()).To(ContainSubstring("not found"))
+			Expect(err).NotTo(HaveOccurred())
 		})
 	})
 
