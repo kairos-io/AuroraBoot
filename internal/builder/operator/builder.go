@@ -349,6 +349,15 @@ func (b *Builder) watchCRPhase(ctx context.Context, id string, pollInterval time
 				lastMessage = st.Message
 			}
 			if st.Phase == builder.BuildReady || st.Phase == builder.BuildError {
+				// The exporter has either completed (Ready) or given up (Error).
+				// Invalidate the per-build upload token so a leaked credential
+				// cannot be replayed to overwrite finished artifacts. Upload also
+				// phase-gates rejects post-terminal PUTs; clearing here closes
+				// the window where a stale in-flight request slips through
+				// between the last legit exporter PUT and the phase transition.
+				if clearErr := b.cfg.Store.ClearUploadToken(ctx, id); clearErr != nil {
+					fmt.Fprintf(os.Stderr, "operator builder: clear upload token for %q failed: %v\n", id, clearErr)
+				}
 				cancelShared()
 				return
 			}

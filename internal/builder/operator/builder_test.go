@@ -93,6 +93,30 @@ func (s *stubArtifactStore) UpdatePhaseMessage(_ context.Context, id, phase, mes
 	return nil
 }
 
+func (s *stubArtifactStore) UpdateFiles(_ context.Context, id string, files []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.records[id]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	rec.ArtifactFiles = files
+	s.updates++
+	return nil
+}
+
+func (s *stubArtifactStore) ClearUploadToken(_ context.Context, id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rec, ok := s.records[id]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	rec.UploadToken = ""
+	s.updates++
+	return nil
+}
+
 func (s *stubArtifactStore) Delete(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -451,6 +475,38 @@ var _ = Describe("Operator Builder", func() {
 				r, _ := s.GetByID(ctx, "watch-1")
 				return r.Phase
 			}, 2*time.Second, 20*time.Millisecond).Should(Equal(builder.BuildReady))
+		})
+
+		It("clears the upload token when the CR reaches a terminal phase", func() {
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			s := newStubArtifactStore()
+			Expect(s.Create(ctx, &store.ArtifactRecord{
+				ID: "watch-token", Phase: builder.BuildBuilding, UploadToken: "tok-abc",
+			})).To(Succeed())
+
+			a := &buildv1alpha2.OSArtifact{
+				ObjectMeta: metav1.ObjectMeta{Name: "watch-token", Namespace: "kairos-builds", Labels: map[string]string{buildIDLabel: "watch-token"}},
+				Status:     buildv1alpha2.OSArtifactStatus{Phase: buildv1alpha2.Ready, Message: "done"},
+			}
+			bld, _ := newFakeBuilderWith("kairos-builds", s, nil, a)
+
+			done := make(chan struct{})
+			go func() {
+				bld.watchCRPhase(ctx, "watch-token", 20*time.Millisecond)
+				close(done)
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+				Fail("watcher did not exit after terminal phase")
+			}
+
+			rec, err := s.GetByID(ctx, "watch-token")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rec.UploadToken).To(Equal(""),
+				"upload token must be zeroed on terminal transition so a leaked bearer cannot overwrite artifacts")
 		})
 
 		It("exits when the CR is deleted", func() {

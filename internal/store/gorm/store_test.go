@@ -696,4 +696,57 @@ var _ = Describe("Gorm Store", func() {
 			Expect(refreshed.BaseImage).To(Equal("img"))
 		})
 	})
+
+	Describe("ArtifactUpdateFiles", func() {
+		It("writes only artifact_files and does not clobber a concurrent phase write", func() {
+			rec := &store.ArtifactRecord{
+				ID: "art-files", Phase: store.ArtifactBuilding, BaseImage: "img",
+				UploadToken: "tok",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			// A handler snapshot mid-build.
+			snapshot, err := s.ArtifactGetByID(ctx, "art-files")
+			Expect(err).NotTo(HaveOccurred())
+
+			// watchCRPhase publishes a terminal transition while the handler
+			// is still processing the upload.
+			Expect(s.ArtifactUpdatePhaseMessage(ctx, "art-files", store.ArtifactReady, "done")).To(Succeed())
+
+			// Handler now writes back the new file list from its stale
+			// snapshot. UpdateFiles must NOT overwrite the phase the watcher
+			// just committed.
+			snapshot.ArtifactFiles = []string{"kairos.iso", "kairos.iso.sha256"}
+			Expect(s.ArtifactUpdateFiles(ctx, "art-files", snapshot.ArtifactFiles)).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-files")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Phase).To(Equal(store.ArtifactReady))
+			Expect(refreshed.Message).To(Equal("done"))
+			Expect(refreshed.ArtifactFiles).To(Equal([]string{"kairos.iso", "kairos.iso.sha256"}))
+			Expect(refreshed.UploadToken).To(Equal("tok"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+	})
+
+	Describe("ArtifactClearUploadToken", func() {
+		It("zeroes upload_token and leaves everything else alone", func() {
+			rec := &store.ArtifactRecord{
+				ID: "art-clear", Phase: store.ArtifactBuilding, BaseImage: "img",
+				UploadToken: "tok", Message: "still going",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+			Expect(s.ArtifactAppendLog(ctx, "art-clear", "line\n")).To(Succeed())
+
+			Expect(s.ArtifactClearUploadToken(ctx, "art-clear")).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-clear")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.UploadToken).To(Equal(""))
+			Expect(refreshed.Phase).To(Equal(store.ArtifactBuilding))
+			Expect(refreshed.Message).To(Equal("still going"))
+			Expect(refreshed.Logs).To(Equal("line\n"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+	})
 })

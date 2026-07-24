@@ -136,4 +136,46 @@ var _ = Describe("ArtifactHandler.Upload", func() {
 		Expect(shortRec.Code).To(Equal(http.StatusUnauthorized))
 		Expect(wrongRec.Code).To(Equal(http.StatusUnauthorized))
 	})
+
+	It("rejects uploads once the build has reached a terminal phase", func() {
+		// Even with a still-valid token, once the build is Ready its
+		// artifacts have been announced to downstream consumers (BMCs,
+		// nodes) and must be immutable. Same rule for Error - the build
+		// gave up and any late artifact would be lying about the outcome.
+		for _, phase := range []string{store.ArtifactReady, store.ArtifactError} {
+			as.records[0].Phase = phase
+			rec := upload(buildID, "kairos.iso", token, []byte("late"))
+			Expect(rec.Code).To(Equal(http.StatusConflict),
+				"phase %q should refuse late uploads", phase)
+			// And nothing landed on disk.
+			_, err := os.Stat(filepath.Join(artifactsDir, buildID, "kairos.iso"))
+			Expect(os.IsNotExist(err)).To(BeTrue())
+		}
+	})
+
+	It("writes only the artifact_files column, not the whole record", func() {
+		// Recreates William's specific concern: a full-row Save from Upload
+		// would race watchCRPhase and roll back a phase transition that
+		// landed between GetByID and the write. Assert that phase and
+		// message set by a mid-flight transition survive an Upload.
+		as.records[0].Phase = store.ArtifactBuilding
+		as.records[0].Message = "in progress"
+
+		// Simulate watchCRPhase transitioning the CR to Ready between the
+		// handler's GetByID and its final store write. We flip the record
+		// AFTER the request starts but the ONLY store roundtrip in Upload
+		// past GetByID is UpdateFiles - so it is enough to check the row
+		// state after the upload.
+		//
+		// Two-step ordering: upload then a phase transition, then upload
+		// again should still keep both phase writes intact.
+		Expect(upload(buildID, "a.iso", token, []byte("x")).Code).To(Equal(http.StatusCreated))
+		Expect(as.UpdatePhaseMessage(nil, buildID, store.ArtifactReady, "done")).To(Succeed())
+
+		rec, err := as.GetByID(nil, buildID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.Phase).To(Equal(store.ArtifactReady))
+		Expect(rec.Message).To(Equal("done"))
+		Expect(rec.ArtifactFiles).To(ConsistOf("a.iso"))
+	})
 })

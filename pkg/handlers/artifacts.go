@@ -531,6 +531,17 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid upload token"})
 	}
 
+	// Once a build has reached a terminal phase the artifacts it advertises
+	// are consumed by nodes and BMCs; a late upload with a still-valid token
+	// (leaked or replayed) would overwrite them out from under those
+	// consumers. watchCRPhase clears the token on the terminal transition,
+	// so a legitimate exporter Job that finishes before its own build is
+	// marked Ready still lands; anything after that fails here or fails the
+	// token check above.
+	if rec.Phase == store.ArtifactReady || rec.Phase == store.ArtifactError {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "build is not accepting uploads"})
+	}
+
 	buildDir := filepath.Join(h.artifactsDir, id)
 	if err := os.MkdirAll(buildDir, 0o755); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare artifact directory"})
@@ -568,11 +579,13 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 	// existing artifact list (which reads ArtifactFiles verbatim) surfaces
 	// operator-produced artifacts the same way it does local ones. Dedupe
 	// the append so a retried exporter Job (backoffLimit) does not stack
-	// duplicates. Ignore Update failures - the file is on disk, the store
-	// row can be reconciled later, and returning 500 here would mislead the
-	// exporter into retrying an already-durable upload.
+	// duplicates. UpdateFiles writes only the artifact_files column so a
+	// concurrent watchCRPhase transition cannot be clobbered by rec's
+	// snapshotted phase/message. Failures are non-fatal - the file is on
+	// disk, the store row can be reconciled later, and returning 500 here
+	// would mislead the exporter into retrying an already-durable upload.
 	appendArtifactFile(rec, clean)
-	_ = h.store.Update(ctx, rec)
+	_ = h.store.UpdateFiles(ctx, id, rec.ArtifactFiles)
 
 	return c.NoContent(http.StatusCreated)
 }

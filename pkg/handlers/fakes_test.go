@@ -381,6 +381,30 @@ func (f *fakeArtifactStore) UpdatePhaseMessage(_ context.Context, id, phase, mes
 	return fmt.Errorf("not found")
 }
 
+func (f *fakeArtifactStore) UpdateFiles(_ context.Context, id string, files []string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.records {
+		if r.ID == id {
+			r.ArtifactFiles = files
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
+func (f *fakeArtifactStore) ClearUploadToken(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.records {
+		if r.ID == id {
+			r.UploadToken = ""
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
 func (f *fakeArtifactStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

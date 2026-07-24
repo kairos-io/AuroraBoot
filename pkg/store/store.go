@@ -233,6 +233,16 @@ type ArtifactStore interface {
 	// AppendLog calls, silently dropping log lines that land between the
 	// caller's GetByID and its Update.
 	UpdatePhaseMessage(ctx context.Context, id, phase, message string) error
+	// UpdateFiles updates only the artifact_files column for id. Upload uses
+	// this instead of Update because a full-row Save from an Upload handler
+	// would race watchCRPhase's phase writes: the handler snapshotted the
+	// record at entry, then writes back a stale phase/message alongside the
+	// new file list. Column-scoped writes converge cleanly.
+	UpdateFiles(ctx context.Context, id string, files []string) error
+	// ClearUploadToken zeroes the upload_token column for id. watchCRPhase
+	// calls this on the terminal transition so a leaked token cannot be
+	// used to overwrite artifacts of a finished build.
+	ClearUploadToken(ctx context.Context, id string) error
 	Delete(ctx context.Context, id string) error
 	DeleteByPhase(ctx context.Context, phase string) error
 	GetLogs(ctx context.Context, id string) (string, error)
