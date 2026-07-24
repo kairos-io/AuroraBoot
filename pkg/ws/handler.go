@@ -63,6 +63,13 @@ type AgentHandler struct {
 	// BaseCtx is the server lifecycle context the finalize goroutine derives from
 	// (cancelled on shutdown). Nil means context.Background().
 	BaseCtx context.Context
+
+	// OnCommandStatus is invoked after the agent's command-status report has
+	// been persisted. The server uses this hook to update node_extensions
+	// tracking for the new `extension` command and for compound `upgrade`s
+	// that carry an extensions[] payload. nil-safe — if unset, only the
+	// command-status row is updated. Wired in pkg/server/server.go.
+	OnCommandStatus func(ctx context.Context, nodeID string, cmd *store.NodeCommand)
 }
 
 // triggerFinalize fires the auto eject-on-phone-home hook off the WS read loop so
@@ -195,6 +202,11 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 			log.Printf("ws: failed to update command status for %s: %v", status.ID, err)
 		}
 		return
+	}
+	if status.Phase == store.CommandCompleted && h.OnCommandStatus != nil {
+		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
+			h.OnCommandStatus(ctx, cmd.ManagedNodeID, cmd)
+		}
 	}
 
 	if h.Hub != nil && h.Hub.UI != nil {

@@ -34,10 +34,16 @@ var SysextCmd = cli.Command{
 			Value:   false,
 			Usage:   "Make systemctl reload the service when loading the sysext. This is useful for sysext that provide systemd service files.",
 		},
+		// Deprecated: prefer --include-path=/opt. Kept as an indefinite alias —
+		// the cost of carrying it is negligible; breaking scripts isn't.
 		&cli.BoolFlag{
 			Name:  "with-opt",
 			Value: false,
-			Usage: "Include files from /opt in the sysext (requires SYSTEMD_SYSEXT_HIERARCHIES to be set to include /opt subdirs to avoid making whole /opt as read-only)",
+			Usage: "Deprecated: prefer --include-path=/opt. Include files from /opt in the sysext.",
+		},
+		&cli.StringSliceFlag{
+			Name:  "include-path",
+			Usage: "Filesystem path to extract from the image layer (repeatable). /usr is always included.",
 		},
 	),
 	Before: validateSysextConfextArgs,
@@ -135,12 +141,26 @@ func generateSysextConfext(ctx *cli.Context) error {
 		return err
 	}
 
-	// We only want to extract files from /usr for sysext and /etc for confext, so we create a regex allowlist based on the build type
-	// Users including /opt must set SYSTEMD_SYSEXT_HIERARCHIES accordingly.
+	// We only want to extract files from /usr for sysext and /etc for confext, so we create a regex allowlist based on the build type.
+	// Operators can extend the allowlist via --include-path (repeatable) or the
+	// legacy --with-opt alias. Paths flow into SYSTEMD_SYSEXT_HIERARCHIES at
+	// boot time (AuroraBoot bakes the drop-in via extensionHierarchies on the
+	// artifact create payload).
 	allowList := regexp.MustCompile(`^usr/*|^/usr/*`)
-	if ctx.Bool("with-opt") {
-		logger.Logger.Debug().Msg("including /opt in the allowlist")
-		allowList = regexp.MustCompile(`^usr/*|^/usr/*|^opt/*|^/opt/*`)
+	if buildType == "sysext" {
+		includes := includePathsFromFlags(ctx)
+		if len(includes) > 0 {
+			parts := []string{`^usr/*`, `^/usr/*`}
+			for _, p := range includes {
+				p = strings.TrimPrefix(strings.TrimSpace(p), "/")
+				if p == "" {
+					continue
+				}
+				parts = append(parts, "^"+regexp.QuoteMeta(p)+"/*", "^/"+regexp.QuoteMeta(p)+"/*")
+			}
+			logger.Logger.Debug().Strs("includes", includes).Msg("extending sysext allowlist")
+			allowList = regexp.MustCompile(strings.Join(parts, "|"))
+		}
 	}
 	// The directory where the extension-release file will be created, based on the build type
 	extensionReleaseDir := filepath.Join(dir, "/usr/lib/extension-release.d/")
@@ -156,6 +176,18 @@ func generateSysextConfext(ctx *cli.Context) error {
 	if err != nil {
 		logger.Logger.Error().Str("image", args.Get(1)).Err(err).Msg("⛔ extracting layer")
 		return err
+	}
+
+	// Strip any os-release the base image happens to ship: systemd-sysext
+	// refuses to merge an extension that contains /usr/lib/os-release
+	// ("Extension contains '/usr/lib/os-release', which is not allowed,
+	// refusing.") because it would let the extension redefine the host OS
+	// identity. The extension-release.d file we write below is the correct
+	// place to declare compat.
+	for _, p := range []string{"usr/lib/os-release", "etc/os-release"} {
+		if rerr := os.Remove(filepath.Join(dir, p)); rerr != nil && !os.IsNotExist(rerr) {
+			logger.Logger.Warn().Str("path", p).Err(rerr).Msg("could not strip base os-release")
+		}
 	}
 
 	// Now create the file that tells systemd that this is a sysext/confext!
@@ -216,4 +248,27 @@ func generateSysextConfext(ctx *cli.Context) error {
 
 	logger.Logger.Info().Str("output", outputFile).Msgf("🎉 Done %s creation", buildType)
 	return nil
+}
+
+// includePathsFromFlags merges --include-path entries with the legacy
+// --with-opt boolean (which is equivalent to --include-path=/opt) and
+// dedupes the result. A one-time deprecation warning fires on stderr when
+// --with-opt is set so existing scripts keep working without log spam.
+func includePathsFromFlags(ctx *cli.Context) []string {
+	out := append([]string(nil), ctx.StringSlice("include-path")...)
+	if ctx.Bool("with-opt") {
+		fmt.Fprintln(os.Stderr,
+			"auroraboot sysext: --with-opt is deprecated; use --include-path=/opt instead.")
+		out = append(out, "/opt")
+	}
+	seen := map[string]struct{}{}
+	dedup := out[:0]
+	for _, p := range out {
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		dedup = append(dedup, p)
+	}
+	return dedup
 }
