@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { NavLink, Outlet, useNavigate } from "react-router-dom";
 import {
   LayoutDashboard,
@@ -16,6 +17,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { logout } from "@/api/client";
+import { getSystemBuilder, type SystemBuilder } from "@/api/system";
 import { cn } from "@/lib/utils";
 import { KairosLogo } from "@/components/KairosLogo";
 import { Toaster } from "@/components/ui/toaster";
@@ -74,8 +76,52 @@ const navSections: NavSection[] = [
   },
 ];
 
+// BuilderChip is a small legend at the sidebar footer telling the operator
+// which build backend is active. Deliberately unobtrusive - most users do
+// not care where their builds run, but when something goes wrong (or a
+// cluster is misconfigured) it is useful to confirm at a glance. On the
+// operator backend the cluster URL is available on hover via the
+// browser's native tooltip so we do not stretch the sidebar width.
+function BuilderChip({ info }: { info: SystemBuilder }) {
+  const rows =
+    info.backend === "operator"
+      ? [
+          ["Backend:", "Operator"],
+          ["Namespace:", info.namespace || "default"],
+        ]
+      : [["Backend:", "Local"]];
+  return (
+    <div
+      className="grid grid-cols-2 gap-x-1 px-4 pb-2 text-[10px] leading-tight text-sidebar-fg/40"
+      title={info.backend === "operator" && info.cluster ? info.cluster : undefined}
+    >
+      {rows.map(([label, value]) => (
+        <span key={label} className="contents">
+          <span className="text-right">{label}</span>
+          <span className="text-left">{value}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export function Layout() {
   const navigate = useNavigate();
+  const [builder, setBuilder] = useState<SystemBuilder | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    getSystemBuilder()
+      .then((info) => {
+        if (!cancelled) setBuilder(info);
+      })
+      .catch(() => {
+        // Non-fatal - the badge is decorative; the app functions without it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   function handleLogout() {
     logout();
@@ -138,6 +184,7 @@ export function Layout() {
             </div>
           ))}
         </nav>
+        {builder && <BuilderChip info={builder} />}
         <div className="mx-4 border-t border-white/10" />
         <div className="p-3 pb-5">
           <Button

@@ -201,6 +201,15 @@ type ArtifactRecord struct {
 	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
 	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
 	Logs                    string    `json:"-" gorm:"type:text"`
+	// UploadToken holds the sha256 hex digest of the per-build bearer the
+	// operator backend's exporter Job uses to PUT /api/v1/artifacts/:id/upload/:file.
+	// The plaintext token is minted by the handler on Create, injected into
+	// the k8s Secret the exporter reads, and never written to the DB in
+	// cleartext. Upload hashes the presented bearer and constant-time
+	// compares it against this digest, so DB read access (backup, SQLite
+	// file, SQLi elsewhere) does not surface live write tokens. The JSON
+	// tag stays "-" so nothing here is serialized to clients regardless.
+	UploadToken string `json:"-"`
 	CreatedAt               time.Time `json:"createdAt"`
 	UpdatedAt               time.Time `json:"updatedAt"`
 }
@@ -219,6 +228,23 @@ type ArtifactStore interface {
 	GetByID(ctx context.Context, id string) (*ArtifactRecord, error)
 	List(ctx context.Context) ([]*ArtifactRecord, error)
 	Update(ctx context.Context, rec *ArtifactRecord) error
+	// UpdatePhaseMessage updates only the phase and message columns for the
+	// record with the given id. Callers that only need to publish a phase
+	// transition must prefer this over Update: Update rewrites every column
+	// (including logs) from an in-memory copy and races with concurrent
+	// AppendLog calls, silently dropping log lines that land between the
+	// caller's GetByID and its Update.
+	UpdatePhaseMessage(ctx context.Context, id, phase, message string) error
+	// UpdateFiles updates only the artifact_files column for id. Upload uses
+	// this instead of Update because a full-row Save from an Upload handler
+	// would race watchCRPhase's phase writes: the handler snapshotted the
+	// record at entry, then writes back a stale phase/message alongside the
+	// new file list. Column-scoped writes converge cleanly.
+	UpdateFiles(ctx context.Context, id string, files []string) error
+	// ClearUploadToken zeroes the upload_token column for id. watchCRPhase
+	// calls this on the terminal transition so a leaked token cannot be
+	// used to overwrite artifacts of a finished build.
+	ClearUploadToken(ctx context.Context, id string) error
 	Delete(ctx context.Context, id string) error
 	DeleteByPhase(ctx context.Context, phase string) error
 	GetLogs(ctx context.Context, id string) (string, error)

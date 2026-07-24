@@ -84,6 +84,29 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
 		})
+
+		// The operator backend has already created an OSArtifact CR by the
+		// time we reach store.Create. If persisting the row fails, we must
+		// reap the phantom CR and report the failure to the caller;
+		// swallowing the error silently would leave a live cluster resource
+		// invisible to List/Get/Cancel/Delete.
+		It("reaps the builder resource and returns 500 when store.Create fails", func() {
+			as := &fakeArtifactStore{createErr: fmt.Errorf("db write refused")}
+			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handlerWithStore.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+			// The build was queued (Build succeeded), and the handler
+			// forwarded a Cancel to reap the phantom CR.
+			Expect(fb.builds).To(HaveLen(1))
+			Expect(fb.cancelledIDs).To(ContainElement(fb.builds[0].ID))
+		})
 	})
 
 	// The allowed_commands block in the generated phonehome cloud-config is
@@ -252,6 +275,23 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusNotFound))
 		})
+
+		// Terminal-phase artifacts (Ready or Error) still keep backend state
+		// alive when the builder is the operator backend (OSArtifact CR plus
+		// its PVC). Delete must forward the cancellation regardless of phase
+		// so the operator can reclaim the CR and its owned resources; the
+		// call is best-effort so an error does not block the local cleanup.
+		It("forwards Cancel to the builder for a Ready record so operator CRs get reaped", func() {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/artifacts/art-1", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("art-1")
+
+			Expect(handlerWithStore.Delete(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNoContent))
+			Expect(fb.cancelledIDs).To(ContainElement("art-1"))
+		})
 	})
 
 	Describe("DELETE /artifacts/failed (ClearFailed)", func() {
@@ -283,6 +323,20 @@ var _ = Describe("ArtifactHandler", func() {
 			remaining, _ := as.List(nil)
 			Expect(remaining).To(HaveLen(1))
 			Expect(remaining[0].ID).To(Equal("art-ok"))
+		})
+
+		// The operator backend produces terminal-phase OSArtifact CRs that
+		// only go away when we tell the operator to release them. ClearFailed
+		// must forward a cancellation for every failed record it drops so
+		// the CR (and its PVC) leaves the cluster along with the DB row.
+		It("calls builder.Cancel for each failed record so operator CRs get reaped", func() {
+			req := httptest.NewRequest(http.MethodDelete, "/api/v1/artifacts/failed", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handlerWithStore.ClearFailed(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNoContent))
+			Expect(fb.cancelledIDs).To(ConsistOf("art-err1", "art-err2"))
 		})
 	})
 

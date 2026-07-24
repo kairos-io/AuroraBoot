@@ -444,7 +444,43 @@ func (s *Store) ArtifactList(ctx context.Context) ([]*store.ArtifactRecord, erro
 }
 
 func (s *Store) ArtifactUpdate(ctx context.Context, rec *store.ArtifactRecord) error {
-	return s.db.WithContext(ctx).Save(rec).Error
+	// Omit the logs column so a caller's stale in-memory rec.Logs never
+	// clobbers concurrent AppendLog appends. AppendLog is the sole writer of
+	// that column; every other field remains updatable via this method.
+	return s.db.WithContext(ctx).Omit("logs").Save(rec).Error
+}
+
+// ArtifactUpdatePhaseMessage writes only the phase and message columns for the
+// row with id. It avoids the read-modify-write race that ArtifactUpdate has
+// against ArtifactAppendLog: Save rewrites every column from the in-memory
+// record, so a log line appended between a caller's GetByID and its Update is
+// clobbered by the stale logs snapshot. This method touches only the two
+// columns callers actually want to change.
+func (s *Store) ArtifactUpdatePhaseMessage(ctx context.Context, id, phase, message string) error {
+	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
+		Updates(map[string]interface{}{"phase": phase, "message": message}).Error
+}
+
+// ArtifactUpdateFiles writes only the artifact_files column for the row with
+// id. Upload calls this instead of ArtifactUpdate so its snapshotted
+// phase/message do not race back over watchCRPhase's phase writes. Select
+// forces the write even when files is empty (zero-value struct fields are
+// otherwise skipped by GORM's Updates on a struct), and it engages the JSON
+// serializer registered on the ArtifactFiles field.
+func (s *Store) ArtifactUpdateFiles(ctx context.Context, id string, files []string) error {
+	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
+		Select("ArtifactFiles").
+		Updates(store.ArtifactRecord{ArtifactFiles: files}).Error
+}
+
+// ArtifactClearUploadToken zeroes the upload_token column for the row with id.
+// watchCRPhase calls this on the terminal transition so a leaked token cannot
+// be replayed against Upload after the build has finished. Select forces the
+// write even though the empty-string value is a zero for the field.
+func (s *Store) ArtifactClearUploadToken(ctx context.Context, id string) error {
+	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
+		Select("UploadToken").
+		Updates(store.ArtifactRecord{UploadToken: ""}).Error
 }
 
 func (s *Store) ArtifactDelete(ctx context.Context, id string) error {
