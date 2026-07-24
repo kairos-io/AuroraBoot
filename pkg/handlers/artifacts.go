@@ -509,6 +509,13 @@ func (h *ArtifactHandler) Upload(c echo.Context) error {
 	filename := c.Param("*")
 	ctx := c.Request().Context()
 
+	// Both id and filename land in filesystem paths below (buildDir, tmpPath,
+	// dst). Reject anything that could traverse out of artifactsDir before we
+	// touch the store or the disk.
+	if id == "" || strings.ContainsAny(id, `/\`) || strings.Contains(id, "..") || filepath.IsAbs(id) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifact id"})
+	}
+
 	if h.store == nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
