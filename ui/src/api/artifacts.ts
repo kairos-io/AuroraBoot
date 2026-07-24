@@ -23,6 +23,7 @@ export interface Artifact {
   tar: boolean;
   gce: boolean;
   vhd: boolean;
+  maas: boolean;
   uki: boolean;
   fips: boolean;
   trustedBoot: boolean;
@@ -53,6 +54,7 @@ export interface CreateArtifactOutputs {
   tar: boolean;
   gce: boolean;
   vhd: boolean;
+  maas: boolean;
   uki: boolean;
   fips: boolean;
   trustedBoot: boolean;

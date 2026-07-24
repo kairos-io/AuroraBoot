@@ -168,6 +168,7 @@ const (
 	OpGenEFIRawDisk  = "gen-raw-efi-disk"
 	OpGenBIOSRawDisk = "gen-raw-bios-disk"
 
-	OpConvertGCE = "convert-gce"
-	OpConvertVHD = "convert-vhd"
+	OpConvertGCE  = "convert-gce"
+	OpConvertVHD  = "convert-vhd"
+	OpConvertMAAS = "convert-maas"
 )

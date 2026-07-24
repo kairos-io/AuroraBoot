@@ -183,6 +183,7 @@ type ArtifactRecord struct {
 	Tar                     bool      `json:"tar"`
 	GCE                     bool      `json:"gce"`
 	VHD                     bool      `json:"vhd"`
+	MAAS                    bool      `json:"maas"`
 	UKI                     bool      `json:"uki"`
 	KairosInitImage         string    `json:"kairosInitImage,omitempty"`
 	AutoInstall             bool      `json:"autoInstall"`
