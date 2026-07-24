@@ -131,7 +131,17 @@ type NodeStore interface {
 	ListByGroup(ctx context.Context, groupID string) ([]*ManagedNode, error)
 	ListByLabels(ctx context.Context, labels map[string]string) ([]*ManagedNode, error)
 	ListBySelector(ctx context.Context, sel CommandSelector) ([]*ManagedNode, error)
-	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string) error
+	// UpdateHeartbeat writes the fields the agent reports on a periodic
+	// heartbeat. Empty/nil arguments preserve whatever the record already has —
+	// an older agent that does not report a given field must not wipe values
+	// the node supplied via register or a richer heartbeat.
+	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string) error
+	// SetHostname upserts the node's hostname without touching heartbeat/phase
+	// fields. Used by the re-register path so a machine that shows up with its
+	// cloud-config-templated name after an earlier register with the boot-time
+	// default (kairos-io/kairos#4196) refreshes the stored value straight away
+	// instead of waiting for the first heartbeat. Empty hostname is a no-op.
+	SetHostname(ctx context.Context, id string, hostname string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
 	SetGroup(ctx context.Context, nodeID string, groupID string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error

@@ -24,6 +24,10 @@ type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
+	// Hostname is the node's current OS hostname. Optional and only upserted
+	// when non-empty so an older agent that omits it does not wipe the value
+	// stored at register time. Fixes kairos-io/kairos#4196.
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // commandData is sent to the agent.
@@ -162,8 +166,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	ctx := context.Background()
 	// The WebSocket heartbeat does not carry network addresses or boot state
 	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
-	// preserves whatever the node reported there.
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, ""); err != nil {
+	// preserves whatever the node reported there. Hostname does ride the WS
+	// heartbeat so the UI reflects cloud-config-templated names applied after
+	// first boot (kairos-io/kairos#4196).
+	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname); err != nil {
 		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {

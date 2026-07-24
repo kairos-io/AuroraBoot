@@ -111,6 +111,39 @@ var _ = Describe("NodeHandler", func() {
 			Expect(node.Addresses).To(BeEmpty())
 			Expect(node.BootState).To(BeEmpty())
 		})
+
+		// Regression for kairos-io/kairos#4196: an idempotent re-register (same
+		// machineID) must upsert the reported hostname on the existing record
+		// instead of returning early with the boot-time default still stored.
+		It("should update hostname on re-register when it changed", func() {
+			ns.nodes = []*store.ManagedNode{
+				{ID: "existing-id", MachineID: "machine-1", APIKey: "existing-key", Hostname: "kairos"},
+			}
+			body := `{"registrationToken":"reg-token","machineID":"machine-1","hostname":"kairos-a1b2"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Register(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(ns.nodes[0].Hostname).To(Equal("kairos-a1b2"))
+		})
+
+		It("should preserve hostname on re-register when the client sends empty", func() {
+			ns.nodes = []*store.ManagedNode{
+				{ID: "existing-id", MachineID: "machine-1", APIKey: "existing-key", Hostname: "kairos-a1b2"},
+			}
+			body := `{"registrationToken":"reg-token","machineID":"machine-1"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Register(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(ns.nodes[0].Hostname).To(Equal("kairos-a1b2"))
+		})
 	})
 
 	Describe("List", func() {
@@ -345,6 +378,35 @@ var _ = Describe("NodeHandler", func() {
 			node := getNode(e, handler, "node-1")
 			Expect(node.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.21"}}))
 			Expect(node.BootState).To(Equal("active"))
+		})
+
+		// Regression for kairos-io/kairos#4196: nodes register with the default
+		// hostname before cloud-config applies the templated one. The heartbeat
+		// path must carry the current hostname and upsert it on the record so the
+		// UI reflects the final `kairos-<id>` name instead of the boot-time default.
+		It("should update hostname when the agent reports a new one on heartbeat", func() {
+			ns.nodes = []*store.ManagedNode{{
+				ID:       "node-1",
+				Phase:    store.PhaseRegistered,
+				Hostname: "kairos",
+			}}
+			heartbeat(e, handler, "node-1",
+				`{"agentVersion":"1.1","hostname":"kairos-a1b2"}`)
+
+			node := getNode(e, handler, "node-1")
+			Expect(node.Hostname).To(Equal("kairos-a1b2"))
+		})
+
+		It("should preserve hostname when a heartbeat omits it (old agent)", func() {
+			ns.nodes = []*store.ManagedNode{{
+				ID:       "node-1",
+				Phase:    store.PhaseRegistered,
+				Hostname: "kairos-a1b2",
+			}}
+			heartbeat(e, handler, "node-1", `{"agentVersion":"1.1"}`)
+
+			node := getNode(e, handler, "node-1")
+			Expect(node.Hostname).To(Equal("kairos-a1b2"))
 		})
 	})
 

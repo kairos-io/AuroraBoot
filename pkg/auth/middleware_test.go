@@ -60,10 +60,11 @@ func (f *fakeNodeStore) ListByLabels(_ context.Context, _ map[string]string) ([]
 func (f *fakeNodeStore) ListBySelector(_ context.Context, _ store.CommandSelector) ([]*store.ManagedNode, error) {
 	return nil, nil
 }
-func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _ map[string]string, _ []store.NodeAddress, _ string) error {
+func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _ map[string]string, _ []store.NodeAddress, _ string, _ string) error {
 	return nil
 }
-func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
+func (f *fakeNodeStore) SetHostname(_ context.Context, _ string, _ string) error { return nil }
+func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error  { return nil }
 func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error    { return nil }
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil

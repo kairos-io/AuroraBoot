@@ -242,7 +242,7 @@ var _ = Describe("Gorm Store", func() {
 				{Type: "InternalIP", Address: "10.0.10.21"},
 				{Type: "Hostname", Address: "hb1"},
 			}
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active", "")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
@@ -263,12 +263,38 @@ var _ = Describe("Gorm Store", func() {
 			Expect(s.Register(ctx, n)).To(Succeed())
 
 			// An older agent (or the WS heartbeat path) sends nil/"" — must not wipe.
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}}))
 			Expect(found.BootState).To(Equal("active"))
+		})
+
+		// Regression for kairos-io/kairos#4196: nodes register with the boot-time
+		// default hostname (e.g. `kairos`) before cloud-config templates apply the
+		// final one. The heartbeat store must upsert the reported hostname so the
+		// UI reflects the current value.
+		It("updates hostname when the heartbeat carries a new one", func() {
+			n := &store.ManagedNode{MachineID: "hb3", Hostname: "kairos"}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.7.0", nil, nil, "", "kairos-a1b2")).To(Succeed())
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Hostname).To(Equal("kairos-a1b2"))
+		})
+
+		It("preserves hostname when the heartbeat omits it", func() {
+			n := &store.ManagedNode{MachineID: "hb4", Hostname: "kairos-a1b2"}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.7.0", nil, nil, "", "")).To(Succeed())
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Hostname).To(Equal("kairos-a1b2"))
 		})
 
 		It("updates phase", func() {

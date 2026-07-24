@@ -124,6 +124,18 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// A re-register is a strong "OS is up" signal too (a freshly-installed node
 		// phones home on first boot): attempt the auto eject-on-phone-home.
 		h.triggerFinalize(existing.ID)
+		// Upsert the reported hostname on the existing record when it changed.
+		// A node whose credentials survive across reboots does not re-register
+		// often, so the heartbeat path is the primary hostname-refresh channel,
+		// but re-register hitting first (fresh install, restored disk) should
+		// not leave the record stuck at the boot-time default either
+		// (kairos-io/kairos#4196). Only overwrite when non-empty so an older
+		// agent that does not report it preserves the stored value.
+		if req.Hostname != "" && req.Hostname != existing.Hostname {
+			// Best-effort: a heartbeat will retry, and the register response
+			// itself must not fail just because a hostname refresh failed.
+			_ = h.nodes.SetHostname(c.Request().Context(), existing.ID, req.Hostname)
+		}
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,
@@ -380,10 +392,17 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 
 // heartbeatRequest is the expected body for a heartbeat.
 type heartbeatRequest struct {
-	AgentVersion string            `json:"agentVersion"`
+	AgentVersion string              `json:"agentVersion"`
 	OSRelease    map[string]string   `json:"osRelease"`
 	Addresses    []store.NodeAddress `json:"addresses,omitempty"`
 	BootState    string              `json:"bootState,omitempty"`
+	// Hostname is the node's current OS hostname. Optional and only upserted
+	// when non-empty so an older agent that doesn't report it does not wipe
+	// the value stored at register time. Fixes kairos-io/kairos#4196 — nodes
+	// booted with a templated `hostname: kairos-{{ trunc 4 .MachineID }}`
+	// register before cloud-config applies the final name, so the UI would
+	// otherwise be stuck at the boot-time default forever.
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // Heartbeat handles POST /api/v1/nodes/:nodeID/heartbeat.
@@ -403,7 +422,7 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState); err != nil {
+	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState, req.Hostname); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update heartbeat"})
 	}
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {
