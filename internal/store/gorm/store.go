@@ -253,7 +253,7 @@ func (s *Store) ListBySelector(ctx context.Context, sel store.CommandSelector) (
 	return nodes, nil
 }
 
-func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string) error {
+func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
 	var n store.ManagedNode
 	if err := s.db.WithContext(ctx).First(&n, "id = ?", id).Error; err != nil {
 		return err
@@ -263,6 +263,17 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	n.AgentVersion = agentVersion
 	n.OSRelease = osRelease
 	n.Phase = store.PhaseOnline
+	// Addresses and boot state are only updated when the heartbeat actually
+	// carries them: an older agent (or the WebSocket heartbeat path, which does
+	// not collect them) omits the fields, and must not clobber values a node
+	// supplied via register or a richer heartbeat. A real update — e.g. a DHCP
+	// change — sends the full current list, which replaces the stored one.
+	if addresses != nil {
+		n.Addresses = addresses
+	}
+	if bootState != "" {
+		n.BootState = bootState
+	}
 	return s.db.WithContext(ctx).Save(&n).Error
 }
 

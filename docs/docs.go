@@ -1218,6 +1218,24 @@ const docTemplate = `{
                 "dockerfile": {
                     "type": "string"
                 },
+                "hadronBase": {
+                    "type": "string"
+                },
+                "hadronExtra": {
+                    "type": "string"
+                },
+                "hadronFirmware": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hadronLayers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "kairosInitImage": {
                     "type": "string"
                 },
@@ -1231,6 +1249,9 @@ const docTemplate = `{
                         "k3s",
                         "k0s"
                     ]
+                },
+                "kubernetesEnabled": {
+                    "type": "boolean"
                 },
                 "kubernetesVersion": {
                     "type": "string"
@@ -1332,9 +1353,21 @@ const docTemplate = `{
         "handlers.APIHeartbeatRequest": {
             "type": "object",
             "properties": {
+                "addresses": {
+                    "description": "Addresses are the node's current network addresses (optional, multi-NIC).\nWhen present they replace the stored list (e.g. after a DHCP change); when\nomitted the stored list is preserved.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeAddress"
+                    }
+                },
                 "agentVersion": {
                     "type": "string",
                     "example": "v2.27.0"
+                },
+                "bootState": {
+                    "description": "BootState is the node's current boot state (optional): one of\nactive | passive | recovery | autoreset (unknown values pass through).",
+                    "type": "string",
+                    "example": "active"
                 },
                 "labels": {
                     "type": "object",
@@ -1353,9 +1386,21 @@ const docTemplate = `{
         "handlers.APIRegisterRequest": {
             "type": "object",
             "properties": {
+                "addresses": {
+                    "description": "Addresses are the node's reported network addresses (optional, multi-NIC).\nStored exactly as received; interface filtering is the agent's job.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeAddress"
+                    }
+                },
                 "agentVersion": {
                     "type": "string",
                     "example": "v2.27.0"
+                },
+                "bootState": {
+                    "description": "BootState is the node's reported boot state (optional): one of\nactive | passive | recovery | autoreset (unknown values pass through).",
+                    "type": "string",
+                    "example": "active"
                 },
                 "hostname": {
                     "type": "string",
@@ -1519,6 +1564,24 @@ const docTemplate = `{
                 "gce": {
                     "type": "boolean"
                 },
+                "hadronBase": {
+                    "type": "string"
+                },
+                "hadronExtra": {
+                    "type": "string"
+                },
+                "hadronFirmware": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "hadronLayers": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -1533,6 +1596,9 @@ const docTemplate = `{
                 },
                 "kubernetesDistro": {
                     "type": "string"
+                },
+                "kubernetesEnabled": {
+                    "type": "boolean"
                 },
                 "kubernetesVersion": {
                     "type": "string"
@@ -1590,7 +1656,18 @@ const docTemplate = `{
         "store.ManagedNode": {
             "type": "object",
             "properties": {
+                "addresses": {
+                    "description": "Addresses are the node's reported network addresses (multi-NIC). Optional\nand backward-compatible: an agent that does not send them leaves the list\nempty. Stored as JSON, mirroring OSRelease/Labels.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeAddress"
+                    }
+                },
                 "agentVersion": {
+                    "type": "string"
+                },
+                "bootState": {
+                    "description": "BootState is the node's reported boot state for day-2 lifecycle (e.g. a node\nthat booted the passive image signals a broken active image). Known values:\nactive | passive | recovery | autoreset — but unknown values are accepted\nand stored as-is so future boot states pass through without a server change.",
                     "type": "string"
                 },
                 "createdAt": {
@@ -1630,6 +1707,17 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.NodeAddress": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "type": {
                     "type": "string"
                 }
             }

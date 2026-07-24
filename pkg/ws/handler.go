@@ -160,7 +160,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	// context.Background() is correct here: handleHeartbeat is called from the
 	// WS read loop which outlives the original HTTP request context.
 	ctx := context.Background()
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease); err != nil {
+	// The WebSocket heartbeat does not carry network addresses or boot state
+	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
+	// preserves whatever the node reported there.
+	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, ""); err != nil {
 		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {
