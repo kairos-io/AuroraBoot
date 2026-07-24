@@ -60,6 +60,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	_ "github.com/kairos-io/AuroraBoot/docs" // swag-generated; populates docs.SwaggerInfo
@@ -219,6 +220,17 @@ func runWeb(c *cli.Context) error {
 		cfg, err := loadKubeConfig(c.String("kubeconfig"))
 		if err != nil {
 			return err
+		}
+		// Operator builds ship the per-build upload token plus the finished
+		// artifact bytes back to AuroraBoot over --url. Over plaintext http
+		// both traverse the cluster network in the clear, so anyone with
+		// pod-network access can capture the token and overwrite artifacts
+		// while the build is Building (watchCRPhase zeroes the token on
+		// terminal transition, closing the window at Ready/Error). Left
+		// unforced so dev environments can iterate without cert setup; a
+		// production deployment should terminate --url via https.
+		if strings.HasPrefix(strings.ToLower(externalURL), "http://") {
+			fmt.Fprintf(os.Stderr, "Warning: --builder=operator with plaintext --url (%s): exporter Pods will PUT the per-build upload token and artifact bytes over http. Use https:// in production.\n", externalURL)
 		}
 		b, err := operator.New(operator.Config{
 			RESTConfig:    cfg,
