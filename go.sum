@@ -88,6 +88,8 @@ github.com/containerd/containerd/api v1.11.1 h1:h8nfoDW9+fNsC/9TwiAHj8B1GzXKtR4e
 github.com/containerd/containerd/api v1.11.1/go.mod h1:CaQFRu+N1MtbgL6JDOJLUB1hCKESU1lD6MuTJhgtdlw=
 github.com/containerd/containerd/v2 v2.3.2 h1:eLven1YxRMkeiKu7IcMrPKE+gn8sGR1DqHbbshMEvWM=
 github.com/containerd/containerd/v2 v2.3.2/go.mod h1:rHKGm3VW6wNrINb3x8mNT+w7qYXFVElTt/8HTuxVhD4=
+github.com/containerd/containerd/v2 v2.3.3 h1:MUNBVVBTBpPll7KPh5GTvkC3cfG03PQLAHVdsUoue9k=
+github.com/containerd/containerd/v2 v2.3.3/go.mod h1:rHKGm3VW6wNrINb3x8mNT+w7qYXFVElTt/8HTuxVhD4=
 github.com/containerd/continuity v0.5.0 h1:7a85HZpCSs+1Zps0Ee3DPSuAWY+0SJM1JNM51nlEVDg=
 github.com/containerd/continuity v0.5.0/go.mod h1:/lNJvtJKUQStBzpVQ1+rasXO1LAWtUQssk28EZvJ3nE=
 github.com/containerd/errdefs v1.0.0 h1:tg5yIfIlQIrxYtu9ajqY42W3lpS19XqdxRQeEwYG8PI=
@@ -298,6 +300,8 @@ github.com/jackc/puddle/v2 v2.2.2 h1:PR8nw+E/1w0GLuRFSmiioY6UooMp6KJv0/61nB7icHo
 github.com/jackc/puddle/v2 v2.2.2/go.mod h1:vriiEXHvEE654aYKXXjOvZM39qJ0q+azkZFrfEOc3H4=
 github.com/jaypipes/ghw v0.24.0 h1:6RBrJzvHvZ0t+hSvqPmOd5b21C4fMsyiyFzWljEj8Wg=
 github.com/jaypipes/ghw v0.24.0/go.mod h1:Qk3UjdH8Xu/OiVyb/eDJqnDsUc+awHU75y23ErZU33s=
+github.com/jaypipes/ghw v0.25.0 h1:+7HlAHtQSrCOafYC6oRjqxuCzDZXBr2dFgVlYRRafrs=
+github.com/jaypipes/ghw v0.25.0/go.mod h1:Qk3UjdH8Xu/OiVyb/eDJqnDsUc+awHU75y23ErZU33s=
 github.com/jaypipes/pcidb v1.1.1 h1:QmPhpsbmmnCwZmHeYAATxEaoRuiMAJusKYkUncMC0ro=
 github.com/jaypipes/pcidb v1.1.1/go.mod h1:x27LT2krrUgjf875KxQXKB0Ha/YXLdZRVmw6hH0G7g8=
 github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 h1:BQSFePA1RWJOlocH6Fxy8MmwDt+yVQYULKfN0RoTN8A=
@@ -319,10 +323,14 @@ github.com/kairos-io/go-ukify v0.5.0 h1:cmEauHZ6RdPk/2xkfG2EPxjEYqfSZGuCYIHpnYRL
 github.com/kairos-io/go-ukify v0.5.0/go.mod h1:vUmdBgpj4AyW/0an0ZDfeGE1f6NRDpbQ2MILJtAvy+4=
 github.com/kairos-io/kairos-agent/v2 v2.30.1 h1:H/urMnUAdXUj5kbCozJRtviArTQWPWx3VCA1mnEy83A=
 github.com/kairos-io/kairos-agent/v2 v2.30.1/go.mod h1:8iRDghaHQFU4sZ0PFfQ9bv0a3iZQcQFNscwGgJIAFMI=
+github.com/kairos-io/kairos-agent/v2 v2.30.2 h1:jsEjDyfXrzl08izK1F/+ldK6miHLYJTBGcUM+/EzxY8=
+github.com/kairos-io/kairos-agent/v2 v2.30.2/go.mod h1:kngQkD17C3FI8k2ABhTycgPm80ghwgI0F2meFW83YMI=
 github.com/kairos-io/kairos-operator v0.1.1 h1:TakrlQ0lt3jQpwClNN32tg23Ft+7YakAt7z5q7b4GhU=
 github.com/kairos-io/kairos-operator v0.1.1/go.mod h1:NnjTjq7jwLnCr8B+yMdl63hFdSOGxQvniOx5WD4YRlk=
 github.com/kairos-io/kairos-sdk v0.23.2 h1:5dZzdzYn+sGoeOoaFBwYMukdO02WdDeWLzTZ4NsqQk0=
 github.com/kairos-io/kairos-sdk v0.23.2/go.mod h1:DnDXUdqr55o/yQQYtX0blKeukEEeYGJwCOBhFJuIJ90=
+github.com/kairos-io/kairos-sdk v0.23.3 h1:xYflI9vIGMOSQGwYgrH7Gbu8e3UVhAfzLVgPQS4j64I=
+github.com/kairos-io/kairos-sdk v0.23.3/go.mod h1:GqoFurJzpu0ym9TEPBrjUqw0efvK0d9oZMV9HsQ6APU=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872 h1:O9H3QrUNNZJTU+TjM3BPR5lvztYWD57V75WzWhIe1aY=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
@@ -372,6 +380,8 @@ github.com/mattn/go-sqlite3 v1.14.22 h1:2gZY6PC6kBnID23Tichd1K+Z0oS6nE/XwU+Vz/5o
 github.com/mattn/go-sqlite3 v1.14.22/go.mod h1:Uh1q+B4BYcTPb+yiD3kU8Ct7aC0hY9fxUwlHK0RXw+Y=
 github.com/mauromorales/xpasswd v0.4.7 h1:s5I/zVkV1UG2fof4f98KVpw4k0aQJ8QKoAQvSAU2GPg=
 github.com/mauromorales/xpasswd v0.4.7/go.mod h1:FZdWdaNfMX97OBXggPsbA5pvXJlx2HJKcJz0/TVQ2YY=
+github.com/mauromorales/xpasswd v0.4.8 h1:Qie3ULymml8r8wgzoabEPLFI+2npwqIAl9C6oaflKEM=
+github.com/mauromorales/xpasswd v0.4.8/go.mod h1:bbsgVAIlwjwZm/hCoijzUbZczeaNsaXyLkJLZPWNeW8=
 github.com/mfridman/tparse v0.18.0 h1:wh6dzOKaIwkUGyKgOntDW4liXSo37qg5AXbIhkMV3vE=
 github.com/mfridman/tparse v0.18.0/go.mod h1:gEvqZTuCgEhPbYk/2lS3Kcxg1GmTxxU7kTC8DvP0i/A=
 github.com/miekg/pkcs11 v1.1.1 h1:Ugu9pdy6vAYku5DEpVWVFPYnzV+bxB+iRdbuFSu7TvU=
@@ -406,6 +416,8 @@ github.com/mudler/go-processmanager v0.1.1 h1:c/1NRZOZpW8HuFv9RhBG57nQu1oDMRomEH
 github.com/mudler/go-processmanager v0.1.1/go.mod h1:h6kmHUZeafr+k5hRYpGLMzJFH4hItHffgpRo2QIkP+o=
 github.com/mudler/yip v1.24.2 h1:cryRBw7HRmKha9wF9ObhuNiuIHiMrRDAU3xRyotzLBE=
 github.com/mudler/yip v1.24.2/go.mod h1:I6EA3+52+ZZcfM6UwFt5K9W6YBg12zhEJfRmHiU8rPM=
+github.com/mudler/yip v1.25.0 h1:4pJa9DHP7gmkSh2ZLHn0gWzU/W0IdBfK48juXdr64Y0=
+github.com/mudler/yip v1.25.0/go.mod h1:uXxkc2Xo0eoex7MyJiUdBIeS3NZAutC2QtvdM3by7MU=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 h1:zYyBkD/k9seD2A7fsi6Oo2LfFZAehjjQMERAvZLEDnQ=
