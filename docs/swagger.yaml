@@ -72,6 +72,12 @@ definitions:
       ukiTpmPcrKey:
         type: string
     type: object
+  handlers.APIClaimRequest:
+    properties:
+      claimKey:
+        example: machine-abc123
+        type: string
+    type: object
   handlers.APICreateArtifactRequest:
     properties:
       allow-insecure-registries:
@@ -163,6 +169,8 @@ definitions:
     type: object
   handlers.APIError:
     properties:
+      code:
+        type: string
       detail:
         type: string
       error:
@@ -251,6 +259,17 @@ definitions:
       registrationToken:
         type: string
     type: object
+  handlers.APIReleaseRequest:
+    properties:
+      claimKey:
+        example: machine-abc123
+        type: string
+    type: object
+  handlers.APIReleaseResponse:
+    properties:
+      released:
+        type: boolean
+    type: object
   handlers.APISetGroupRequest:
     properties:
       groupID:
@@ -263,6 +282,23 @@ definitions:
         additionalProperties:
           type: string
         type: object
+    type: object
+  handlers.APISystemBuilder:
+    properties:
+      backend:
+        enum:
+        - local
+        - operator
+        example: operator
+        type: string
+      cluster:
+        example: https://kind.example
+        type: string
+      downloadSupported:
+        type: boolean
+      namespace:
+        example: kairos-builds
+        type: string
     type: object
   handlers.APIUpdateArtifactRequest:
     properties:
@@ -415,6 +451,20 @@ definitions:
           that booted the passive image signals a broken active image). Known values:
           active | passive | recovery | autoreset — but unknown values are accepted
           and stored as-is so future boot states pass through without a server change.
+        type: string
+      claimKey:
+        description: |-
+          ClaimKey, when non-nil, is the opaque caller-owned key that has claimed this
+          node via POST /api/v1/groups/:id/claim (e.g. a CAPI machine's identity). A
+          nil ClaimKey means the node is unclaimed and available. It is a pointer, not
+          a string, on purpose: "unclaimed" must be SQL NULL, because the composite
+          unique index idx_node_group_claim on (group_id, claim_key) makes a claimKey
+          own at most one node per group, and NULLs are exempt from unique indexes on
+          both SQLite and PostgreSQL — so many unclaimed nodes coexist while a second
+          node can never take an already-used claimKey in the same group.
+        type: string
+      claimedAt:
+        description: ClaimedAt is when ClaimKey was set; nil when unclaimed.
         type: string
       createdAt:
         type: string
@@ -675,6 +725,46 @@ paths:
       summary: Get build log snapshot
       tags:
       - Artifacts
+  /api/v1/artifacts/{id}/upload/{filename}:
+    put:
+      consumes:
+      - application/octet-stream
+      description: Per-build endpoint the operator backend's exporter uses to ship
+        finished artifacts back to AuroraBoot. Bearer is the UploadToken minted at
+        Create time; the admin bearer does not grant access.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Artifact filename (single-segment; no path separators)
+        in: path
+        name: filename
+        required: true
+        type: string
+      responses:
+        "201":
+          description: Created
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Upload a single artifact file for a build
+      tags:
+      - Artifacts
   /api/v1/groups:
     get:
       produces:
@@ -787,6 +877,46 @@ paths:
       security:
       - AdminBearer: []
       summary: Update a group
+      tags:
+      - Groups
+  /api/v1/groups/{id}/claim:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Claim payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIClaimRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.ManagedNode'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: No unclaimed node available (code=NoCapacity)
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Claim a node from a group
       tags:
       - Groups
   /api/v1/nodes:
@@ -994,6 +1124,46 @@ paths:
       summary: Replace a node's labels
       tags:
       - Nodes
+  /api/v1/nodes/{nodeID}/release:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      - description: Release payload
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIReleaseRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APIReleaseResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: Claimed by a different key (code=ClaimMismatch)
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Release a node's claim
+      tags:
+      - Nodes
   /api/v1/nodes/register:
     post:
       consumes:
@@ -1199,6 +1369,20 @@ paths:
       summary: Rotate the registration token
       tags:
       - Settings
+  /api/v1/system/builder:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APISystemBuilder'
+      security:
+      - AdminBearer: []
+      summary: Report the active builder backend
+      tags:
+      - System
 securityDefinitions:
   AdminBearer:
     description: Supply as "Bearer <admin-password>".
