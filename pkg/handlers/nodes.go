@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
@@ -378,9 +379,119 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
+// Claim handles POST /api/v1/groups/:id/claim.
+//
+// It atomically assigns one unclaimed node in the group to the caller-supplied
+// claimKey and returns it. The operation is idempotent: replaying with the same
+// claimKey returns the same node, so a controller that crashed mid-provision and
+// reconciles again re-finds its own node instead of grabbing a second. When the
+// group has no unclaimed node, it returns 409 with code "NoCapacity" so the
+// caller can surface "waiting for capacity" and requeue rather than treat it as
+// a hard error.
+//
+//	@Summary		Claim a node from a group
+//	@Tags			Groups
+//	@Accept			json
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			id		path		string				true	"Group ID"
+//	@Param			body	body		APIClaimRequest		true	"Claim payload"
+//	@Success		200		{object}	store.ManagedNode
+//	@Failure		400		{object}	APIError
+//	@Failure		404		{object}	APIError
+//	@Failure		409		{object}	APIError	"No unclaimed node available (code=NoCapacity)"
+//	@Router			/api/v1/groups/{id}/claim [post]
+func (h *NodeHandler) Claim(c echo.Context) error {
+	groupID := c.Param("id")
+	ctx := c.Request().Context()
+
+	var req APIClaimRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid request body"})
+	}
+	if req.ClaimKey == "" {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "claimKey is required"})
+	}
+
+	// Reject an unknown group up front so the caller gets 404 rather than an
+	// indistinguishable "no capacity" for a group that does not exist.
+	if _, err := h.groups.GetByID(ctx, groupID); err != nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "group not found"})
+	}
+
+	node, err := h.nodes.ClaimNode(ctx, groupID, req.ClaimKey)
+	if err != nil {
+		if errors.Is(err, store.ErrNoClaimCapacity) {
+			return c.JSON(http.StatusConflict, APIError{
+				Error: "no unclaimed node available in group",
+				Code:  ClaimErrorCodeNoCapacity,
+			})
+		}
+		return c.JSON(http.StatusInternalServerError, APIError{Error: "failed to claim node"})
+	}
+	return c.JSON(http.StatusOK, node)
+}
+
+// Release handles POST /api/v1/nodes/:nodeID/release.
+//
+// It clears the claim on the node and returns it to the group's pool, but only
+// if the claim is currently held by the supplied claimKey. Releasing an already
+// unclaimed node is a no-op that still returns 200 with released=false
+// (idempotent). A node claimed by a DIFFERENT key returns 409 with code
+// "ClaimMismatch" so a caller cannot release someone else's claim by accident.
+//
+//	@Summary		Release a node's claim
+//	@Tags			Nodes
+//	@Accept			json
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			nodeID	path		string				true	"Node ID"
+//	@Param			body	body		APIReleaseRequest	true	"Release payload"
+//	@Success		200		{object}	APIReleaseResponse
+//	@Failure		400		{object}	APIError
+//	@Failure		404		{object}	APIError
+//	@Failure		409		{object}	APIError	"Claimed by a different key (code=ClaimMismatch)"
+//	@Router			/api/v1/nodes/{nodeID}/release [post]
+func (h *NodeHandler) Release(c echo.Context) error {
+	nodeID := c.Param("nodeID")
+	ctx := c.Request().Context()
+
+	var req APIReleaseRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid request body"})
+	}
+	if req.ClaimKey == "" {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "claimKey is required"})
+	}
+
+	node, err := h.nodes.GetByID(ctx, nodeID)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "node not found"})
+	}
+
+	// Already unclaimed: nothing to do, report it plainly (idempotent).
+	if node.ClaimKey == nil {
+		return c.JSON(http.StatusOK, APIReleaseResponse{Released: false})
+	}
+	// Claimed by someone else: refuse rather than silently no-op, so the caller
+	// learns it does not own this node.
+	if *node.ClaimKey != req.ClaimKey {
+		return c.JSON(http.StatusConflict, APIError{
+			Error: "node is claimed by a different key",
+			Code:  ClaimErrorCodeClaimMismatch,
+		})
+	}
+
+	released, err := h.nodes.ReleaseNode(ctx, nodeID, req.ClaimKey)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, APIError{Error: "failed to release node"})
+	}
+	return c.JSON(http.StatusOK, APIReleaseResponse{Released: released})
+}
+
 // heartbeatRequest is the expected body for a heartbeat.
 type heartbeatRequest struct {
-	AgentVersion string            `json:"agentVersion"`
+	AgentVersion string              `json:"agentVersion"`
 	OSRelease    map[string]string   `json:"osRelease"`
 	Addresses    []store.NodeAddress `json:"addresses,omitempty"`
 	BootState    string              `json:"bootState,omitempty"`
