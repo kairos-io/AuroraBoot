@@ -45,6 +45,12 @@ func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID 
 func (a *NodeStoreAdapter) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {
 	return a.S.SetLabels(ctx, nodeID, labels)
 }
+func (a *NodeStoreAdapter) ClaimNode(ctx context.Context, groupID, claimKey string) (*store.ManagedNode, error) {
+	return a.S.ClaimNode(ctx, groupID, claimKey)
+}
+func (a *NodeStoreAdapter) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool, error) {
+	return a.S.ReleaseNode(ctx, nodeID, claimKey)
+}
 func (a *NodeStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.NodeDelete(ctx, id)
 }

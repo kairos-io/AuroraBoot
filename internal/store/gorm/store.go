@@ -43,7 +43,12 @@ func (s *Store) WithCipher(c *secrets.Cipher) *Store {
 //   - anything else → SQLite (file path or ":memory:")
 func New(dsn string) (*Store, error) {
 	dialector := openDialector(dsn)
-	db, err := gorm.Open(dialector, &gorm.Config{})
+	// TranslateError makes GORM return its portable sentinel errors (e.g.
+	// gorm.ErrDuplicatedKey, gorm.ErrRecordNotFound) instead of raw driver
+	// errors, so store code can branch on them without SQLite/PostgreSQL string
+	// matching. ClaimNode relies on ErrDuplicatedKey to arbitrate a concurrent
+	// same-key claim against the (group_id, claim_key) unique index.
+	db, err := gorm.Open(dialector, &gorm.Config{TranslateError: true})
 	if err != nil {
 		return nil, fmt.Errorf("opening database: %w", err)
 	}
@@ -300,6 +305,105 @@ func (s *Store) NodeDelete(ctx context.Context, id string) error {
 		return err
 	}
 	return s.db.WithContext(ctx).Delete(&store.ManagedNode{}, "id = ?", id).Error
+}
+
+// nodeClaimedByKey returns the node in groupID currently claimed by claimKey, or
+// (nil, nil) when there is none. It is the idempotent-replay lookup for ClaimNode.
+func (s *Store) nodeClaimedByKey(ctx context.Context, groupID, claimKey string) (*store.ManagedNode, error) {
+	var n store.ManagedNode
+	err := s.db.WithContext(ctx).Preload("Group").
+		Where("group_id = ? AND claim_key = ?", groupID, claimKey).
+		First(&n).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &n, nil
+}
+
+// ClaimNode atomically assigns one unclaimed node in groupID to claimKey.
+//
+// Idempotency comes first: if claimKey already owns a node in the group, that
+// same node is returned without claiming a second one — so a controller that
+// crashed mid-provision and reconciles again re-finds its own node.
+//
+// Otherwise it walks a snapshot of the group's currently-unclaimed nodes and
+// tries to claim each with a conditional UPDATE (... WHERE id = ? AND claim_key
+// IS NULL). Exactly one of several concurrent callers wins any given node — a
+// lost race yields RowsAffected == 0 and moves to the next candidate — so two
+// callers never receive the same node. This mirrors the store's existing
+// compare-and-set claim idiom (ClaimForDelivery / CASEjectState) and needs no
+// FOR UPDATE / SKIP LOCKED, so it is correct on both SQLite and PostgreSQL.
+//
+// A concurrent claim with the SAME new claimKey is caught by the (group_id,
+// claim_key) unique index: the second UPDATE fails with ErrDuplicatedKey, and we
+// resolve it to the node the first call claimed. When the snapshot is exhausted
+// with nothing won, the group is at capacity and we return ErrNoClaimCapacity.
+func (s *Store) ClaimNode(ctx context.Context, groupID, claimKey string) (*store.ManagedNode, error) {
+	if existing, err := s.nodeClaimedByKey(ctx, groupID, claimKey); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return existing, nil
+	}
+
+	// Snapshot unclaimed candidate IDs (oldest first) so the loop is bounded.
+	var candidateIDs []string
+	if err := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("group_id = ? AND claim_key IS NULL", groupID).
+		Order("created_at asc").
+		Pluck("id", &candidateIDs).Error; err != nil {
+		return nil, err
+	}
+
+	now := time.Now()
+	for _, id := range candidateIDs {
+		res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+			Where("id = ? AND claim_key IS NULL", id).
+			Updates(map[string]any{"claim_key": claimKey, "claimed_at": &now})
+		if res.Error != nil {
+			// A concurrent claim with this same key already took another node in
+			// the group; the unique index rejected this one. Return that node.
+			if errors.Is(res.Error, gorm.ErrDuplicatedKey) {
+				if mine, err := s.nodeClaimedByKey(ctx, groupID, claimKey); err != nil {
+					return nil, err
+				} else if mine != nil {
+					return mine, nil
+				}
+			}
+			return nil, res.Error
+		}
+		if res.RowsAffected == 1 {
+			return s.NodeGetByID(ctx, id)
+		}
+		// RowsAffected == 0: another caller claimed this node between the snapshot
+		// and now — try the next candidate.
+	}
+
+	// Snapshot exhausted. One last idempotent check covers the case where our own
+	// key won a node via a concurrent call while we were losing races here.
+	if mine, err := s.nodeClaimedByKey(ctx, groupID, claimKey); err != nil {
+		return nil, err
+	} else if mine != nil {
+		return mine, nil
+	}
+	return nil, store.ErrNoClaimCapacity
+}
+
+// ReleaseNode clears the claim on nodeID and returns it to the pool, but only if
+// the claim is currently held by claimKey. The conditional UPDATE (... WHERE id =
+// ? AND claim_key = ?) means a caller can only release its own claim: a node that
+// is unclaimed or owned by a different key is left untouched and released is
+// false. Setting claim_key back to NULL frees it for a future ClaimNode.
+func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool, error) {
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND claim_key = ?", nodeID, claimKey).
+		Updates(map[string]any{"claim_key": nil, "claimed_at": nil})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
 }
 
 // --- CommandStore ---
