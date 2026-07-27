@@ -168,7 +168,9 @@ export function ArtifactDetail() {
   // would retrigger this effect and turn it into a log poll. We read the
   // current artifact via a ref instead.
   const artifactRef = useRef<Artifact | null>(null);
-  artifactRef.current = artifact;
+  useEffect(() => {
+    artifactRef.current = artifact;
+  });
   const lastWsConnected = useRef(false);
   useEffect(() => {
     const justConnected = wsConnected && !lastWsConnected.current;

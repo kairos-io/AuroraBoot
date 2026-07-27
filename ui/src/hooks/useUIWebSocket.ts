@@ -3,7 +3,7 @@ import { getToken } from "@/api/client";
 
 interface WSMessage {
   type: string;
-  data: any;
+  data: unknown;
 }
 
 // useUIWebSocket connects to the admin UI WebSocket at /api/v1/ws/ui and
@@ -13,7 +13,9 @@ interface WSMessage {
 export function useUIWebSocket(onMessage: (msg: WSMessage) => void): { connected: boolean } {
   const wsRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  });
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
@@ -39,7 +41,9 @@ export function useUIWebSocket(onMessage: (msg: WSMessage) => void): { connected
         try {
           const msg = JSON.parse(event.data) as WSMessage;
           onMessageRef.current(msg);
-        } catch {}
+        } catch {
+          // ignore malformed frames
+        }
       };
 
       ws.onclose = () => {
