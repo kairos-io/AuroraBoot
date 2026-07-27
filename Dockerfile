@@ -28,6 +28,7 @@ RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://d
 # llvm is needed for uki building specifically llvm-objcopy
 RUN dnf in -y bc \
               binutils \
+              busybox \
               containerd.io \
               curl \
               docker-ce \

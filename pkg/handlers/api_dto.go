@@ -146,6 +146,7 @@ type APIArtifactOutputs struct {
 	Tar         bool `json:"tar"`
 	GCE         bool `json:"gce"`
 	VHD         bool `json:"vhd"`
+	MAAS        bool `json:"maas"`
 	UKI         bool `json:"uki"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`

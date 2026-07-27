@@ -58,7 +58,7 @@ import {
   payloadFromBuilder,
 } from "@/lib/buildConfig";
 
-type OutputField = "iso" | "netboot" | "uki" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "tar";
+type OutputField = "iso" | "netboot" | "uki" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "maas" | "tar";
 type OutputTone = "install" | "disk" | "archive";
 type OutputCardDef = {
   field: OutputField;
@@ -94,6 +94,7 @@ const OUTPUT_GROUPS: { title: string; tone: OutputTone; items: OutputCardDef[] }
       { field: "cloudImage", label: "Cloud Image", desc: "Generic cloud disk", icon: Cloud },
       { field: "gce", label: "Google Cloud", desc: "GCE-compatible image", icon: CloudCog },
       { field: "vhd", label: "Azure (VHD)", desc: "Azure VHD image", icon: CloudCog },
+      { field: "maas", label: "MAAS", desc: "MAAS-deployable image (ddgz)", icon: Server },
     ],
   },
   {
@@ -363,7 +364,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -375,7 +376,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -387,7 +388,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -399,7 +400,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -411,7 +412,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -423,7 +424,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -447,6 +448,7 @@ const EMPTY_OUTPUTS = {
   tar: false,
   gce: false,
   vhd: false,
+  maas: false,
   uki: false,
   fips: false,
   trustedBoot: false,
@@ -904,6 +906,7 @@ export function ArtifactBuilder() {
               tar: a.tar ?? false,
               gce: a.gce ?? false,
               vhd: a.vhd ?? false,
+              maas: a.maas ?? false,
               uki: a.uki ?? false,
               fips: a.fips,
               trustedBoot: a.trustedBoot,
@@ -947,6 +950,7 @@ export function ArtifactBuilder() {
             tar: a.tar ?? false,
             gce: a.gce ?? false,
             vhd: a.vhd ?? false,
+            maas: a.maas ?? false,
             uki: a.uki ?? false,
             fips: a.fips,
             trustedBoot: a.trustedBoot,
