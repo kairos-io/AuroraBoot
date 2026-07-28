@@ -3,6 +3,7 @@ package auroraboot
 import (
 	"context"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,6 +25,11 @@ func (*kairosifyTestStore) List(context.Context) ([]*store.ArtifactRecord, error
 	return nil, errors.New("not implemented")
 }
 func (*kairosifyTestStore) Update(context.Context, *store.ArtifactRecord) error { return nil }
+func (*kairosifyTestStore) UpdatePhaseMessage(context.Context, string, string, string) error {
+	return nil
+}
+func (*kairosifyTestStore) UpdateFiles(context.Context, string, []string) error { return nil }
+func (*kairosifyTestStore) ClearUploadToken(context.Context, string) error      { return nil }
 func (*kairosifyTestStore) Delete(context.Context, string) error                { return nil }
 func (*kairosifyTestStore) DeleteByPhase(context.Context, string) error         { return nil }
 func (*kairosifyTestStore) GetLogs(context.Context, string) (string, error)     { return "", nil }
@@ -88,7 +94,7 @@ func TestBuildUsesGeneratedIDForDerivedImage(t *testing.T) {
 	tmpDir := t.TempDir()
 	installFakeDocker(t)
 	deployedImage := make(chan string, 1)
-	b := New(tmpDir, func(_ context.Context, _ schema.Config, artifact schema.ReleaseArtifact, _ string) error {
+	b := New(tmpDir, func(_ context.Context, _ schema.Config, artifact schema.ReleaseArtifact, _ string, _ io.Writer) error {
 		deployedImage <- artifact.ContainerImage
 		return nil
 	}, &kairosifyTestStore{})
