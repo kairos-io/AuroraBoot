@@ -21,6 +21,10 @@ FROM ${SWAGGER_STAGE} AS swagger
 FROM golang:1.26 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
+# libpcsclite-dev is pulled in transitively by sbctl -> go-piv/piv-go
+# (cgo). Install before go mod download so the cache layer has it.
+RUN apt-get update && apt-get install -y --no-install-recommends libpcsclite-dev \
+    && rm -rf /var/lib/apt/lists/*
 ADD go.mod .
 ADD go.sum .
 RUN go mod download
