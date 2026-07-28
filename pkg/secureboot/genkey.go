@@ -25,7 +25,6 @@ import (
 	"github.com/foxboron/go-uefi/efivar"
 	"github.com/foxboron/sbctl"
 	"github.com/foxboron/sbctl/certs"
-	"github.com/foxboron/sbctl/fs"
 	"github.com/kairos-io/kairos-sdk/types/logger"
 )
 
@@ -159,19 +158,19 @@ func GenerateKeySet(opts Options) error {
 // KEK signs db.
 func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir string, skipMicrosoftCerts bool) error {
 	var err error
-	var key []byte
+	var keyBytes []byte
 
 	switch keyType {
 	case "PK", "KEK":
-		key, err = fs.ReadFile(filepath.Join(keyPath, "PK.key"))
+		keyBytes, err = os.ReadFile(filepath.Join(keyPath, "PK.key"))
 	case "db":
-		key, err = fs.ReadFile(filepath.Join(keyPath, "KEK.key"))
+		keyBytes, err = os.ReadFile(filepath.Join(keyPath, "KEK.key"))
 	}
 	if err != nil {
 		return fmt.Errorf("reading the key file: %w", err)
 	}
 
-	pem, err := fs.ReadFile(filepath.Join(keyPath, keyType+".pem"))
+	pem, err := os.ReadFile(filepath.Join(keyPath, keyType+".pem"))
 	if err != nil {
 		return fmt.Errorf("reading the pem file: %w", err)
 	}
@@ -210,16 +209,25 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 		return fmt.Errorf("unsupported key type %s", keyType)
 	}
 
-	signedDB, err := sbctl.SignDatabase(sigdb, key, pem, efiVarType)
+	signer, err := efiutil.ReadKey(keyBytes)
+	if err != nil {
+		return fmt.Errorf("parsing signing key: %w", err)
+	}
+	cert, err := efiutil.ReadCert(pem)
+	if err != nil {
+		return fmt.Errorf("parsing signing certificate: %w", err)
+	}
+
+	_, signedVar, err := signature.SignEFIVariable(efiVarType, sigdb, signer, cert)
 	if err != nil {
 		return fmt.Errorf("creating the signed db: %w", err)
 	}
 
-	if err := fs.WriteFile(filepath.Join(keyPath, keyType+".auth"), signedDB, 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(keyPath, keyType+".auth"), signedVar.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("writing the auth file: %w", err)
 	}
 
-	if err := fs.WriteFile(filepath.Join(keyPath, keyType+".esl"), sigdb.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(keyPath, keyType+".esl"), sigdb.Bytes(), 0o644); err != nil {
 		return fmt.Errorf("writing the esl file: %w", err)
 	}
 
