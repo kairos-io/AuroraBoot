@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router";
 import { getNode, sendCommand, setLabels, setGroup, type Node } from "@/api/nodes";
 import { DecommissionDialog } from "@/components/DecommissionDialog";
 import { listNodeCommands, deleteCommand, clearCommandHistory, type Command } from "@/api/commands";

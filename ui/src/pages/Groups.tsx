@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { listGroups, createGroup, deleteGroup, type Group } from "@/api/groups";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
