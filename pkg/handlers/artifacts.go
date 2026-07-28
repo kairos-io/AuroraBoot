@@ -333,6 +333,9 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		HadronFirmware:    req.HadronFirmware,
 		HadronLayers:      req.HadronLayers,
 		HadronExtra:       req.HadronExtra,
+
+		SysextHierarchies:  sysHierarchies,
+		ConfextHierarchies: conHierarchies,
 	}
 	// Set grouped fields.
 	opts.Source = builder.ImageSource{

@@ -128,6 +128,15 @@ type BuildOptions struct {
 	HadronFirmware []string
 	HadronLayers   []string
 	HadronExtra    string
+
+	// SysextHierarchies / ConfextHierarchies carry the SYSTEMD_*_HIERARCHIES
+	// paths declared at artifact build time. They also drive the cloud-config
+	// drop-ins the handler bakes in (see buildCloudConfig). Passed through the
+	// builder so its initial Create seeds the store row with the values — the
+	// handler's post-Build Update would otherwise race the builder goroutine's
+	// GetByID+Save cycle and lose them.
+	SysextHierarchies  []string
+	ConfextHierarchies []string
 }
 
 // BuildStatus tracks the state of a build.

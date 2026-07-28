@@ -94,7 +94,7 @@ var _ = Describe("ArtifactHandler", func() {
 		// invisible to List/Get/Cancel/Delete.
 		It("reaps the builder resource and returns 500 when store.Create fails", func() {
 			as := &fakeArtifactStore{createErr: fmt.Errorf("db write refused")}
-			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 
 			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
