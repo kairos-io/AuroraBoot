@@ -47,6 +47,7 @@ type RawImage struct {
 	Output               string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
 	FinalSize            uint64               // Final size of the disk image in MB
 	StateSize            int64                // Size of the state partition in MB
+	SystemSize           int64                // Size of the system image in MB
 	tmpDir               string               // A temp dir to do all work on
 	elemental            *elemental.Elemental // Elemental instance to use for the operations
 	efi                  bool                 // If the image should be EFI or BIOS
@@ -61,7 +62,7 @@ type RawImage struct {
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64, noDefaultCloudConfig bool) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize, systemSize int64, noDefaultCloudConfig bool) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
 	return &RawImage{
 		efi:                  true,
@@ -72,11 +73,12 @@ func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize int64
 		CloudConfig:          cc,
 		FinalSize:            finalsize,
 		StateSize:            stateSize,
+		SystemSize:           systemSize,
 		NoDefaultCloudConfig: noDefaultCloudConfig,
 	}
 }
 
-func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize int64, noDefaultCloudConfig bool) *RawImage {
+func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize, systemSize int64, noDefaultCloudConfig bool) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
 	return &RawImage{efi: false,
 		config:               cfg,
@@ -86,6 +88,7 @@ func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSi
 		CloudConfig:          cc,
 		FinalSize:            finalsize,
 		StateSize:            stateSize,
+		SystemSize:           systemSize,
 		NoDefaultCloudConfig: noDefaultCloudConfig,
 	}
 }
@@ -339,8 +342,10 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 		MountPoint: tmpDirRecoveryImage,
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
-	// Add some extra space to the image in case the calculation is a bit off
-	recoveryImage.Size = uint(size + 200)
+	recoveryImage.Size = systemImageSize(uint64(size), r.SystemSize)
+	if r.SystemSize > 0 {
+		internal.Log.Logger.Info().Int64("size", r.SystemSize).Msg("Using configured system image size")
+	}
 
 	_, err = r.elemental.DeployImage(recoveryImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
@@ -386,11 +391,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 		MountPoint: tmpDirRecoveryImage,
 	}
 
-	size, _ = config.GetSourceSize(r.config, recoveryImage.Source)
-	// Add some extra space to the image in case the calculation is a bit off
-	// we add an extra 50Mb of top as the recovery.img has to fit in there plus any artifacts we copy
-	// Double the size as the partition needs to account for recovery and transition image during recovery upgrade
-	recoverPartitionImage.Size = uint(size*2 + 150)
+	recoverPartitionImage.Size = recoveryPartitionSize(recoveryImage.Size)
 
 	_, err = r.elemental.DeployImageNodirs(recoverPartitionImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
@@ -401,6 +402,19 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	return recoverPartitionImage.File, nil
 
+}
+
+func systemImageSize(sourceSize uint64, configuredSize int64) uint {
+	if configuredSize > 0 {
+		return uint(configuredSize)
+	}
+	return uint(sourceSize + 200)
+}
+
+func recoveryPartitionSize(systemSize uint) uint {
+	// The partition must hold both the recovery image and a transition image
+	// during recovery upgrades, plus space for copied boot artifacts.
+	return systemSize*2 + 150
 }
 
 // createEFIPartitionImage creates an EFI partition image with the given source

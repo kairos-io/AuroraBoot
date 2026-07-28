@@ -82,6 +82,7 @@ type Disk struct {
 	MAAS       bool   `yaml:"maas"`
 	Size       string `yaml:"size"`
 	StateSize  string `yaml:"state_size"`
+	SystemSize string `yaml:"system_size"`
 }
 
 type NetBoot struct {
