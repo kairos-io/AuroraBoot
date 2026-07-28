@@ -496,17 +496,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		if err := h.store.Update(ctx, rec); err != nil {
 			c.Logger().Errorf("persist artifact handler-side fields for %s: %v", status.ID, err)
 		}
-	}
-
-	// Persist bundle rows once the artifact has an ID. Errors here are
-	// non-fatal: the operator can re-attach via PUT /bundle-extensions.
-	if h.bundles != nil && len(bundleRows) > 0 {
-		for i := range bundleRows {
-			bundleRows[i].ArtifactID = status.ID
-		}
-		if err := h.bundles.ReplaceForArtifact(ctx, status.ID, bundleRows); err != nil {
-			c.Logger().Errorf("persist bundle for %s: %v", status.ID, err)
-		}
 		// A builder that persists on its own (the local backend) will have
 		// already written the row before Build returned; a builder that does
 		// not (the operator backend, and the mock builder used in tests)
@@ -526,6 +515,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 				}
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist build"})
 			}
+		}
+	}
+
+	// Persist bundle rows once the artifact has an ID. Errors here are
+	// non-fatal: the operator can re-attach via PUT /bundle-extensions.
+	if h.bundles != nil && len(bundleRows) > 0 {
+		for i := range bundleRows {
+			bundleRows[i].ArtifactID = status.ID
+		}
+		if err := h.bundles.ReplaceForArtifact(ctx, status.ID, bundleRows); err != nil {
+			c.Logger().Errorf("persist bundle for %s: %v", status.ID, err)
 		}
 	}
 
