@@ -113,7 +113,12 @@ func (noopArtifactStore) GetByID(context.Context, string) (*store.ArtifactRecord
 }
 func (noopArtifactStore) List(context.Context) ([]*store.ArtifactRecord, error) { return nil, nil }
 func (noopArtifactStore) Update(context.Context, *store.ArtifactRecord) error   { return nil }
-func (noopArtifactStore) Delete(context.Context, string) error                  { return nil }
-func (noopArtifactStore) DeleteByPhase(context.Context, string) error           { return nil }
-func (noopArtifactStore) GetLogs(context.Context, string) (string, error)       { return "", nil }
-func (noopArtifactStore) AppendLog(context.Context, string, string) error       { return nil }
+func (noopArtifactStore) UpdatePhaseMessage(context.Context, string, string, string) error {
+	return nil
+}
+func (noopArtifactStore) UpdateFiles(context.Context, string, []string) error { return nil }
+func (noopArtifactStore) ClearUploadToken(context.Context, string) error      { return nil }
+func (noopArtifactStore) Delete(context.Context, string) error                { return nil }
+func (noopArtifactStore) DeleteByPhase(context.Context, string) error         { return nil }
+func (noopArtifactStore) GetLogs(context.Context, string) (string, error)     { return "", nil }
+func (noopArtifactStore) AppendLog(context.Context, string, string) error     { return nil }
