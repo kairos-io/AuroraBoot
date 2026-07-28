@@ -79,6 +79,7 @@ type Disk struct {
 	// such as Nvidia Jetson AGX Orin. Implies an EFI build and is mutually
 	// exclusive with the gce/vhd cloud-image conversions.
 	Partitions bool   `yaml:"partitions"`
+	MAAS       bool   `yaml:"maas"`
 	Size       string `yaml:"size"`
 	StateSize  string `yaml:"state_size"`
 }

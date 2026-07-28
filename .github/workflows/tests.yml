@@ -16,11 +16,11 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Set up Node
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -55,27 +55,20 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
-      - name: Login to Quay Registry
-        uses: docker/login-action@v4
-        with:
-          registry: quay.io
-          username: ${{ secrets.QUAY_USERNAME }}
-          password: ${{ secrets.QUAY_PASSWORD }}
-      - name: Build and push Docker image
+      - name: Build Docker image
         uses: docker/build-push-action@v7
         with:
-          push: false
-          load: true
           context: .
           file: ./Dockerfile
           platforms: linux/amd64
-          tags: |
-            quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
-          labels: |
-            quay.expires-after=6h
-      - name: Push
-        run: |
-          docker push quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
+          tags: auroraboot:ci
+          outputs: type=docker,dest=/tmp/auroraboot-image.tar
+      - name: Upload image artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: auroraboot-image
+          path: /tmp/auroraboot-image.tar
+          retention-days: 1
   e2e-tests:
     runs-on: kvm
     steps:
@@ -84,7 +77,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Set up QEMU
@@ -124,7 +117,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Set up Docker Buildx
@@ -132,6 +125,13 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+      - name: Download image artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: auroraboot-image
+          path: /tmp/
+      - name: Load image
+        run: docker load -i /tmp/auroraboot-image.tar
       - name: Generate ISO
         run: |
           mkdir build
@@ -139,7 +139,7 @@ jobs:
           --network=host \
           -v $PWD/build/:/output \
           -v $PWD/e2e/assets/keys/:/keys \
-          quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
+          auroraboot:ci \
           --debug \
           build-uki \
           --output-dir /output \
@@ -175,7 +175,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Set up Docker Buildx
@@ -183,13 +183,20 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+      - name: Download image artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: auroraboot-image
+          path: /tmp/
+      - name: Load image
+        run: docker load -i /tmp/auroraboot-image.tar
       - name: Generate raw image
         run: |
           mkdir build
           docker run --rm --privileged \
           --network=host \
           -v $PWD/build/:/output \
-          quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
+          auroraboot:ci \
           --debug \
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.efi=true" \
@@ -218,7 +225,7 @@ jobs:
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
       - name: Set up Docker Buildx
@@ -226,13 +233,20 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+      - name: Download image artifact
+        uses: actions/download-artifact@v7
+        with:
+          name: auroraboot-image
+          path: /tmp/
+      - name: Load image
+        run: docker load -i /tmp/auroraboot-image.tar
       - name: Generate raw image
         run: |
           mkdir build
           docker run --rm --privileged \
           --network=host \
           -v $PWD/build/:/output \
-          quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} \
+          auroraboot:ci \
           --debug \
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.bios=true" \
@@ -257,13 +271,18 @@ jobs:
        uses: docker/setup-buildx-action@v4
        with:
          driver-opts: network=host
-     - name: Preload the Aurora image
-       run: docker pull quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }}
+     - name: Download image artifact
+       uses: actions/download-artifact@v7
+       with:
+         name: auroraboot-image
+         path: /tmp/
+     - name: Load image
+       run: docker load -i /tmp/auroraboot-image.tar
      - name: Cypress run
        uses: cypress-io/github-action@v7.4.1
        with:
          working-directory: e2e/web/
-         start: docker run --network=host --rm quay.io/kairos/ci-temp-images:auroraboot-${{ github.sha }} web
+         start: docker run --network=host --rm auroraboot:ci web
          wait-on: 'http://localhost:8080'
          wait-on-timeout: 60
      - name: Upload Cypress screenshots

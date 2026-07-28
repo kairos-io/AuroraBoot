@@ -42,6 +42,7 @@ type OutputOptions struct {
 	Tar         bool
 	GCE         bool
 	VHD         bool
+	MAAS        bool
 	UKI         bool
 	FIPS        bool
 	TrustedBoot bool

@@ -323,6 +323,8 @@ github.com/kairos-io/kairos-operator v0.1.1 h1:TakrlQ0lt3jQpwClNN32tg23Ft+7YakAt
 github.com/kairos-io/kairos-operator v0.1.1/go.mod h1:NnjTjq7jwLnCr8B+yMdl63hFdSOGxQvniOx5WD4YRlk=
 github.com/kairos-io/kairos-sdk v0.23.3 h1:xYflI9vIGMOSQGwYgrH7Gbu8e3UVhAfzLVgPQS4j64I=
 github.com/kairos-io/kairos-sdk v0.23.3/go.mod h1:GqoFurJzpu0ym9TEPBrjUqw0efvK0d9oZMV9HsQ6APU=
+github.com/kairos-io/kairos-sdk v0.24.0 h1:MOD/bL+ZDLrZILN3PVhuVNcinWiFw6QWFaWmAwnUERE=
+github.com/kairos-io/kairos-sdk v0.24.0/go.mod h1:u/k5mhH2kqtegckE0izUz+Rtu0OoJcsilO+nkz1t8BU=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872 h1:O9H3QrUNNZJTU+TjM3BPR5lvztYWD57V75WzWhIe1aY=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
@@ -406,6 +408,8 @@ github.com/mudler/go-processmanager v0.1.1 h1:c/1NRZOZpW8HuFv9RhBG57nQu1oDMRomEH
 github.com/mudler/go-processmanager v0.1.1/go.mod h1:h6kmHUZeafr+k5hRYpGLMzJFH4hItHffgpRo2QIkP+o=
 github.com/mudler/yip v1.25.0 h1:4pJa9DHP7gmkSh2ZLHn0gWzU/W0IdBfK48juXdr64Y0=
 github.com/mudler/yip v1.25.0/go.mod h1:uXxkc2Xo0eoex7MyJiUdBIeS3NZAutC2QtvdM3by7MU=
+github.com/mudler/yip v1.25.1 h1:V/N5m1S8rlxGfr36bLlX0NpzqD5uh35M67FDuZ5wfSI=
+github.com/mudler/yip v1.25.1/go.mod h1:nwV/hboHZzzgCe1Qjy5hUujhAsBkYqTIe2xxmvi/J+g=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
 github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 h1:zYyBkD/k9seD2A7fsi6Oo2LfFZAehjjQMERAvZLEDnQ=
