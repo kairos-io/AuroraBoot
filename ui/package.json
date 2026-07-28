@@ -48,5 +48,8 @@
     "typescript-eslint": "^8.18.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "react-router": "8.3.0"
   }
 }
