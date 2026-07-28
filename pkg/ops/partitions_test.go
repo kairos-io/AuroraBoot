@@ -20,7 +20,7 @@ var _ = Describe("RawImage emitPartitionImages", Label("raw"), func() {
 	BeforeEach(func() {
 		out = GinkgoT().TempDir()
 		src := GinkgoT().TempDir()
-		r = NewEFIRawImage(src, out, "", 0, 0, true)
+		r = NewEFIRawImage(src, out, "", 0, 0, 0, true)
 		r.SeparatePartitionsImages = true
 
 		// Stand-in partition images already built in the temp dir.
