@@ -227,8 +227,12 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			HadronLayers:            opts.HadronLayers,
 			HadronExtra:             opts.HadronExtra,
 			CloudConfig:             opts.CloudConfig,
-			CreatedAt:               time.Now(),
-			UpdatedAt:               time.Now(),
+			ExtensionHierarchies: store.ExtensionHierarchies{
+				Sysext:  opts.SysextHierarchies,
+				Confext: opts.ConfextHierarchies,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()
