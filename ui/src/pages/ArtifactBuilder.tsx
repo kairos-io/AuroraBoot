@@ -56,26 +56,8 @@ import {
   BUILD_CONFIG_VERSION,
   downloadBuildConfig,
   payloadFromBuilder,
-  type BuildConfigPayload,
+  sanitizeImportedBuildConfig,
 } from "@/lib/buildConfig";
-
-// Shape used to type an imported build-config JSON before it's been fully
-// validated. Every nested object is Partial to accept legacy exports that
-// omit newer fields; top-level string/number fields are looser to survive
-// user-edited files.
-type ImportedBuildConfig = {
-  kind?: string;
-  version?: number;
-  name?: string;
-  buildMode?: string;
-  dockerfile?: string;
-  overlayRootfs?: string;
-  advancedCloudConfig?: string;
-  source?: Partial<BuildConfigPayload["source"]>;
-  provisioning?: Partial<BuildConfigPayload["provisioning"]>;
-  outputs?: Partial<BuildConfigPayload["outputs"]>;
-  signing?: Partial<BuildConfigPayload["signing"]>;
-};
 
 type OutputField = "iso" | "netboot" | "uki" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "maas" | "tar";
 type OutputTone = "install" | "disk" | "archive";
@@ -807,18 +789,19 @@ export function ArtifactBuilder() {
       return;
     }
     if (typeof raw !== "object" || raw === null) {
-      toast("Import failed: not a auroraboot build config", "error");
+      toast("Import failed: not an AuroraBoot build config", "error");
       return;
     }
-    const parsed = raw as ImportedBuildConfig;
-    if (parsed.kind !== BUILD_CONFIG_KIND) {
-      toast("Import failed: not a auroraboot build config", "error");
+    const r = raw as Record<string, unknown>;
+    if (r.kind !== BUILD_CONFIG_KIND) {
+      toast("Import failed: not an AuroraBoot build config", "error");
       return;
     }
-    if (parsed.version !== BUILD_CONFIG_VERSION) {
-      toast(`Import failed: unsupported version ${parsed.version}`, "error");
+    if (r.version !== BUILD_CONFIG_VERSION) {
+      toast(`Import failed: unsupported version ${r.version}`, "error");
       return;
     }
+    const parsed = sanitizeImportedBuildConfig(r);
 
     const src = parsed.source ?? {};
     const prov = parsed.provisioning ?? {};

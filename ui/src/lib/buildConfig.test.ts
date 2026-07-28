@@ -6,6 +6,7 @@ import {
   PHONEHOME_SAFE_DEFAULTS,
   payloadFromArtifact,
   payloadFromBuilder,
+  sanitizeImportedBuildConfig,
 } from "./buildConfig";
 import type { Artifact, CreateArtifactInput, SecureBootKeySet } from "@/api/artifacts";
 import type { Group } from "@/api/groups";
@@ -460,5 +461,70 @@ describe("payloadFromArtifact", () => {
     const reparsed = JSON.parse(serialized);
     expect(reparsed.kind).toBe(BUILD_CONFIG_KIND);
     expect(reparsed.version).toBe(BUILD_CONFIG_VERSION);
+  });
+});
+
+describe("sanitizeImportedBuildConfig", () => {
+  it("passes through a well-typed payload", () => {
+    const out = sanitizeImportedBuildConfig({
+      name: "my-build",
+      buildMode: "dockerfile",
+      dockerfile: "FROM alpine",
+      overlayRootfs: "/overlay",
+      advancedCloudConfig: "#cloud-config",
+      source: { baseImage: "ubuntu:24.04" },
+      provisioning: { autoInstall: true },
+      outputs: { iso: true },
+      signing: { ukiKeySetName: "prod-keys" },
+    });
+    expect(out).toEqual({
+      name: "my-build",
+      buildMode: "dockerfile",
+      dockerfile: "FROM alpine",
+      overlayRootfs: "/overlay",
+      advancedCloudConfig: "#cloud-config",
+      source: { baseImage: "ubuntu:24.04" },
+      provisioning: { autoInstall: true },
+      outputs: { iso: true },
+      signing: { ukiKeySetName: "prod-keys" },
+    });
+  });
+
+  it("drops non-string top-level string fields to undefined", () => {
+    const out = sanitizeImportedBuildConfig({
+      name: 42,
+      buildMode: { nested: true },
+      dockerfile: ["FROM alpine"],
+      overlayRootfs: null,
+      advancedCloudConfig: false,
+    });
+    expect(out.name).toBeUndefined();
+    expect(out.buildMode).toBeUndefined();
+    expect(out.dockerfile).toBeUndefined();
+    expect(out.overlayRootfs).toBeUndefined();
+    expect(out.advancedCloudConfig).toBeUndefined();
+  });
+
+  it("drops non-object nested sections to undefined", () => {
+    const out = sanitizeImportedBuildConfig({
+      source: ["not", "an", "object"],
+      provisioning: "nope",
+      outputs: null,
+      signing: 7,
+    });
+    expect(out.source).toBeUndefined();
+    expect(out.provisioning).toBeUndefined();
+    expect(out.outputs).toBeUndefined();
+    expect(out.signing).toBeUndefined();
+  });
+
+  it("returns an empty shape for an empty input", () => {
+    expect(sanitizeImportedBuildConfig({})).toEqual({});
+  });
+
+  it("preserves an empty string in top-level string fields", () => {
+    const out = sanitizeImportedBuildConfig({ name: "", dockerfile: "" });
+    expect(out.name).toBe("");
+    expect(out.dockerfile).toBe("");
   });
 });
