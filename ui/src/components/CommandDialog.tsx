@@ -167,6 +167,7 @@ export function CommandDialog({
   // Prefill or reset command selection on open/defaultCommand change. When
   // the dialog closes, clear the selection so next open starts clean.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- reset internal state when parent toggles `open` */
     if (open) {
       setCommand(defaultCommand ?? "");
     } else {
@@ -179,6 +180,7 @@ export function CommandDialog({
       setResetOem(false);
       setResetConfig("");
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, defaultCommand]);
 
   useEffect(() => {

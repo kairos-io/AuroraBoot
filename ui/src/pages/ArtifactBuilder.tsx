@@ -651,6 +651,7 @@ export function ArtifactBuilder() {
   useEffect(() => {
     if (selectedTemplate !== HADRON_TEMPLATE_NAME) return;
     if (firmwareCatalogState === "idle") {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- lazy-load catalog once when Hadron template selected
       setFirmwareCatalogState("loading");
       fetchHadronFirmware()
         .then((items) => {

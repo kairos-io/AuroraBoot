@@ -124,9 +124,11 @@ export function DeployDialog({
 
   // Clear any prior inspection when the operator picks a different target.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- reset derived state when selectedTarget changes */
     setInspectResult(null);
     setInspectError("");
     setOverrideWarning(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [selectedTarget]);
 
   // belowMinimum reports whether an inspected node is under either threshold.

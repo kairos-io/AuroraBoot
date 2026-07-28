@@ -13,7 +13,9 @@ interface WSMessage {
 export function useUIWebSocket(onMessage: (msg: WSMessage) => void): { connected: boolean } {
   const wsRef = useRef<WebSocket | null>(null);
   const onMessageRef = useRef(onMessage);
-  onMessageRef.current = onMessage;
+  useEffect(() => {
+    onMessageRef.current = onMessage;
+  });
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {

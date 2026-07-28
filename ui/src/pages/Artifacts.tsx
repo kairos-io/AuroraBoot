@@ -82,6 +82,7 @@ export function Artifacts() {
   // the input reflects the browser's idea of the current filter.
   useEffect(() => {
     const urlQ = sp.get("q") ?? "";
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync draft to external URL change (back/forward)
     if (urlQ !== searchDraft) setSearchDraft(urlQ);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sp]);

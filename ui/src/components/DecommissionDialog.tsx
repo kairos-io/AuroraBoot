@@ -52,12 +52,14 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
   // previous decommission doesn't flash on re-open for another node.
   useEffect(() => {
     if (!open) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- reset internal state when parent toggles `open` */
     setPhase("idle");
     setCommandID("");
     setOutput("");
     setError("");
     setElapsedS(0);
     setCopied(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
     startedAt.current = null;
   }, [open]);
 
