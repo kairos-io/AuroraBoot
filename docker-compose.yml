@@ -4,13 +4,26 @@ services:
     command: ["web", "--data-dir", "/data", "--listen", ":8080"]
     ports:
       - "${PORT:-9099}:8080"
+    # privileged + /dev bind are needed for extension building. `systemd-repart
+    # --make-ddi=sysext` calls LOOP_CTL_GET_FREE, and the kernel-created loop
+    # device node only lands in the host devtmpfs — without --privileged and a
+    # /dev bind, the container's snapshot /dev never sees it and the build dies
+    # with "device node /dev/loop0 is lost". No udev runs inside the container to
+    # materialise the node after the fact.
+    privileged: true
     volumes:
       - auroraboot-data:/data
       - /var/run/docker.sock:/var/run/docker.sock
+      - /dev:/dev
     environment:
       - AURORABOOT_URL=${AURORABOOT_URL:-}
       - AURORABOOT_ADMIN_PASSWORD=${ADMIN_PASSWORD:-}
       - AURORABOOT_REG_TOKEN=${REGISTRATION_TOKEN:-}
+    # mkfs.erofs (used by `systemd-repart --make-ddi=sysext`) is TSAN-instrumented in
+    # the Fedora 42 image; its runtime calls personality(ADDR_NO_RANDOMIZE) which the
+    # default Docker seccomp profile blocks. Relax seccomp so erofs builds succeed.
+    security_opt:
+      - seccomp=unconfined
 
 volumes:
   auroraboot-data:

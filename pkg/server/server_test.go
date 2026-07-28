@@ -352,4 +352,39 @@ var _ = Describe("Server", func() {
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 	})
+
+	Describe("Extension routes", func() {
+		It("GET /api/v1/artifacts/:id/bundle-extensions is reachable behind admin auth", func() {
+			req, _ := http.NewRequest(http.MethodGet, e.URL+"/api/v1/artifacts/a-1/bundle-extensions", nil)
+			req.Header.Set("Authorization", "Bearer admin-pass")
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			// Reaches the handler; with nil bundle store the empty-list branch is taken.
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		})
+
+		It("/api/v1/artifacts/:id/bundle-extensions requires auth", func() {
+			resp, err := http.Get(e.URL + "/api/v1/artifacts/a-1/bundle-extensions")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+		})
+
+		It("POST /api/v1/artifacts/:id/bundle-resolve is reachable", func() {
+			req, _ := http.NewRequest(http.MethodPost, e.URL+"/api/v1/artifacts/a-1/bundle-resolve", nil)
+			req.Header.Set("Authorization", "Bearer admin-pass")
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			// Stores are nil here; ResolveBundle short-circuits with 500. Routing works.
+			Expect(resp.StatusCode).To(Equal(http.StatusInternalServerError))
+		})
+
+		It("does NOT register /api/v1/extensions when ExtensionBuilder is nil", func() {
+			req, _ := http.NewRequest(http.MethodGet, e.URL+"/api/v1/extensions", nil)
+			req.Header.Set("Authorization", "Bearer admin-pass")
+			resp, err := http.DefaultClient.Do(req)
+			Expect(err).NotTo(HaveOccurred())
+			// 404 (no route) or the SPA fallback — both prove the admin route isn't bound.
+			Expect(resp.StatusCode).To(BeNumerically(">=", 400))
+		})
+	})
 })

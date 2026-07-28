@@ -13,3 +13,13 @@ reason = "Transitive go-attestation (v0.6.1); no patched release listed yet (Fix
 id = "GO-2026-5932"
 ignoreUntil = 2026-08-17
 reason = "No patched golang.org/x/crypto release listed in OSV yet (Fixed in N/A); upgraded to v0.54.0. Re-evaluate before expiry."
+
+# react-router CSRF-bypass advisory is specific to RSC (React Server Components)
+# mode. AuroraBoot's UI is a plain Vite SPA (React 19, client-side routing only,
+# no RSC), so the vulnerable code path is not reachable. The fix is a react-router
+# major bump (7 -> 8) with breaking changes in loader/action APIs; bumping would
+# ripple through the SPA without a security benefit for this app.
+[[IgnoredVulns]]
+id = "GHSA-qwww-vcr4-c8h2"
+ignoreUntil = 2026-09-30
+reason = "RSC-mode CSRF bypass; AuroraBoot's UI is a plain Vite SPA without React Server Components. Not applicable. Re-evaluate before expiry."

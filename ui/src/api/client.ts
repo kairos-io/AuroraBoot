@@ -1,5 +1,28 @@
 const TOKEN_KEY = "auroraboot_token";
 
+/**
+ * ApiError carries the HTTP status plus the parsed response body so callers
+ * can render structured errors (e.g. a 409 with the list of artifacts that
+ * still reference an extension) instead of dumping raw JSON at the user.
+ */
+export class ApiError extends Error {
+  status: number;
+  body: unknown;
+  raw: string;
+  constructor(status: number, body: unknown, raw: string) {
+    const detail =
+      (body && typeof body === "object" && "error" in (body as any) && (body as any).error) ||
+      raw ||
+      `HTTP ${status}`;
+    super(String(detail));
+    this.name = "ApiError";
+    this.status = status;
+    this.body = body;
+    this.raw = raw;
+  }
+}
+
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -68,7 +91,13 @@ export async function apiFetch<T>(
 
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(`API error ${res.status}: ${text}`);
+    let body: unknown = text;
+    try {
+      body = JSON.parse(text);
+    } catch {
+      /* keep body as raw text */
+    }
+    throw new ApiError(res.status, body, text);
   }
 
   if (res.status === 204) {
