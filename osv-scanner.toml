@@ -23,3 +23,4 @@ reason = "No patched golang.org/x/crypto release listed in OSV yet (Fixed in N/A
 id = "GHSA-qwww-vcr4-c8h2"
 ignoreUntil = 2026-09-30
 reason = "RSC-mode CSRF bypass; AuroraBoot's UI is a plain Vite SPA without React Server Components. Not applicable. Re-evaluate before expiry."
+
