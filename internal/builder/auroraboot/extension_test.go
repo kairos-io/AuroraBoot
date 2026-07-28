@@ -102,6 +102,15 @@ func (f *fakeArtifactStore) GetLogs(context.Context, string) (string, error) {
 func (f *fakeArtifactStore) AppendLog(context.Context, string, string) error {
 	return fmt.Errorf("unused")
 }
+func (f *fakeArtifactStore) ClearUploadToken(context.Context, string) error {
+	return nil
+}
+func (f *fakeArtifactStore) UpdatePhaseMessage(context.Context, string, string, string) error {
+	return nil
+}
+func (f *fakeArtifactStore) UpdateFiles(context.Context, string, []string) error {
+	return nil
+}
 
 var _ store.ArtifactStore = (*fakeArtifactStore)(nil)
 

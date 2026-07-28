@@ -53,7 +53,7 @@ type ExtensionBuilder struct {
 	artifacts       store.ArtifactStore // used to resolve Source.SourceArtifactID
 	dockerBuildFn   DockerBuildFunc
 	aurorabootCLIFn AurorabootCLIFunc
-	logBroadcaster  LogBroadcaster
+	logBroadcaster  builder.LogBroadcaster
 
 	mu     sync.RWMutex
 	builds map[string]*extBuildState
@@ -97,7 +97,7 @@ func (b *ExtensionBuilder) WithArtifactStore(s store.ArtifactStore) *ExtensionBu
 
 // WithLogBroadcaster fans every log chunk out to a UI hub. Mirrors the
 // existing Builder.WithLogBroadcaster.
-func (b *ExtensionBuilder) WithLogBroadcaster(lb LogBroadcaster) *ExtensionBuilder {
+func (b *ExtensionBuilder) WithLogBroadcaster(lb builder.LogBroadcaster) *ExtensionBuilder {
 	b.logBroadcaster = lb
 	return b
 }
@@ -405,7 +405,7 @@ type extDBLogWriter struct {
 	id          string
 	buf         bytes.Buffer
 	mu          sync.Mutex
-	broadcaster LogBroadcaster
+	broadcaster builder.LogBroadcaster
 }
 
 func (w *extDBLogWriter) Write(p []byte) (int, error) {
