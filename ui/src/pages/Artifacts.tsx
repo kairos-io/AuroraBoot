@@ -59,8 +59,17 @@ export function Artifacts() {
   const status = coerceStatus(sp.get("status"));
   // Local mirror of the search query so typing stays snappy; the URL gets
   // debounced-updated so the browser history doesn't fill with keystrokes.
-  const [searchDraft, setSearchDraft] = useState(sp.get("q") ?? "");
   const search = sp.get("q") ?? "";
+  const [searchDraft, setSearchDraft] = useState(search);
+  // If the URL's ?q= changes externally (back/forward, cleared filter, etc.),
+  // reconcile the local draft with it. This is the React canonical "adjust
+  // state during rendering" pattern — the conditional setState converges in
+  // one extra render and avoids the setState-in-effect anti-pattern.
+  const [prevUrlSearch, setPrevUrlSearch] = useState(search);
+  if (search !== prevUrlSearch) {
+    setPrevUrlSearch(search);
+    setSearchDraft(search);
+  }
   const [confirmState, setConfirmState] = useState<{ open: boolean; action: () => void; title: string; description: string }>({ open: false, action: () => {}, title: "", description: "" });
   const navigate = useNavigate();
 
@@ -77,14 +86,6 @@ export function Artifacts() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchDraft]);
-
-  // If the URL's ?q= changes externally (back/forward), sync the draft so
-  // the input reflects the browser's idea of the current filter.
-  useEffect(() => {
-    const urlQ = sp.get("q") ?? "";
-    if (urlQ !== searchDraft) setSearchDraft(urlQ);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sp]);
 
   // patchParams merges into the existing URLSearchParams and drops keys
   // whose value is the default/empty so the URL stays short when no
