@@ -78,11 +78,11 @@ type Disk struct {
 	// of merging them into a single .raw disk. Intended for flashing workflows
 	// such as Nvidia Jetson AGX Orin. Implies an EFI build and is mutually
 	// exclusive with the gce/vhd cloud-image conversions.
-	Partitions bool   `yaml:"partitions"`
-	MAAS       bool   `yaml:"maas"`
-	Size       string `yaml:"size"`
-	StateSize  string `yaml:"state_size"`
-	SystemSize string `yaml:"system_size"`
+	Partitions        bool   `yaml:"partitions"`
+	MAAS              bool   `yaml:"maas"`
+	Size              string `yaml:"size"`
+	StateSize         string `yaml:"state_size"`
+	RecoveryImageSize string `yaml:"recovery_image_size"`
 }
 
 type NetBoot struct {

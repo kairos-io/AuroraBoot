@@ -2,7 +2,7 @@ package ops
 
 import "testing"
 
-func TestSystemImageSize(t *testing.T) {
+func TestRecoveryImageSize(t *testing.T) {
 	tests := []struct {
 		name       string
 		sourceSize uint64
@@ -16,18 +16,31 @@ func TestSystemImageSize(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := systemImageSize(tt.sourceSize, tt.configured); got != tt.want {
-				t.Fatalf("systemImageSize(%d, %d) = %d, want %d", tt.sourceSize, tt.configured, got, tt.want)
+			got, err := recoveryImageSize(tt.sourceSize, tt.configured)
+			if err != nil {
+				t.Fatalf("recoveryImageSize(%d, %d) returned error: %v", tt.sourceSize, tt.configured, err)
+			}
+			if got != tt.want {
+				t.Fatalf("recoveryImageSize(%d, %d) = %d, want %d", tt.sourceSize, tt.configured, got, tt.want)
 			}
 		})
 	}
 }
 
-func TestRecoveryPartitionSizeTracksSystemImage(t *testing.T) {
-	const systemSize = uint(12_000)
+func TestRecoveryImageSizeRejectsOverrideBelowSource(t *testing.T) {
+	const sourceSize = uint64(7_774)
+	const configuredSize = int64(7_000)
+
+	if _, err := recoveryImageSize(sourceSize, configuredSize); err == nil {
+		t.Fatalf("recoveryImageSize(%d, %d) returned no error", sourceSize, configuredSize)
+	}
+}
+
+func TestRecoveryPartitionSizeTracksRecoveryImage(t *testing.T) {
+	const recoveryImageSize = uint(12_000)
 	const want = uint(24_150)
 
-	if got := recoveryPartitionSize(systemSize); got != want {
-		t.Fatalf("recoveryPartitionSize(%d) = %d, want %d", systemSize, got, want)
+	if got := recoveryPartitionSize(recoveryImageSize); got != want {
+		t.Fatalf("recoveryPartitionSize(%d) = %d, want %d", recoveryImageSize, got, want)
 	}
 }

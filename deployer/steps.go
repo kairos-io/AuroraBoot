@@ -147,14 +147,14 @@ func (d *Deployer) StepGenRawDisk() error {
 			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 		}),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskSystemSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS)))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS)))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskSystemSize(), d.Config.NoDefaultCloudConfig)))
+		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig)))
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -379,13 +379,13 @@ func (d *Deployer) rawDiskStateSize() int64 {
 	return sizeInt
 }
 
-func (d *Deployer) rawDiskSystemSize() int64 {
-	if d.Config.Disk.SystemSize == "" {
+func (d *Deployer) rawDiskRecoveryImageSize() int64 {
+	if d.Config.Disk.RecoveryImageSize == "" {
 		return 0
 	}
-	sizeInt, err := strconv.ParseInt(d.Config.Disk.SystemSize, 10, 64)
+	sizeInt, err := strconv.ParseInt(d.Config.Disk.RecoveryImageSize, 10, 64)
 	if err != nil {
-		d.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.SystemSize).Msg("Failed to parse disk system size, setting value to 0")
+		d.Log.Logger.Error().Err(err).Str("arg", d.Config.Disk.RecoveryImageSize).Msg("Failed to parse disk recovery image size, setting value to 0")
 		return 0
 	}
 	return sizeInt

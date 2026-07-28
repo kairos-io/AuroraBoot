@@ -47,7 +47,7 @@ type RawImage struct {
 	Output               string               // Output image destination dir. Final image name will be based on the contents of the source /etc/kairos-release file
 	FinalSize            uint64               // Final size of the disk image in MB
 	StateSize            int64                // Size of the state partition in MB
-	SystemSize           int64                // Size of the system image in MB
+	RecoveryImageSize    int64                // Size of the recovery image in MB
 	tmpDir               string               // A temp dir to do all work on
 	elemental            *elemental.Elemental // Elemental instance to use for the operations
 	efi                  bool                 // If the image should be EFI or BIOS
@@ -62,7 +62,7 @@ type RawImage struct {
 
 // NewEFIRawImage creates a new RawImage struct
 // config is initialized with a default config to use the standard logger
-func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize, systemSize int64, noDefaultCloudConfig bool) *RawImage {
+func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize, recoveryImageSize int64, noDefaultCloudConfig bool) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
 	return &RawImage{
 		efi:                  true,
@@ -73,12 +73,12 @@ func NewEFIRawImage(source, output, cc string, finalsize uint64, stateSize, syst
 		CloudConfig:          cc,
 		FinalSize:            finalsize,
 		StateSize:            stateSize,
-		SystemSize:           systemSize,
+		RecoveryImageSize:    recoveryImageSize,
 		NoDefaultCloudConfig: noDefaultCloudConfig,
 	}
 }
 
-func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize, systemSize int64, noDefaultCloudConfig bool) *RawImage {
+func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSize, recoveryImageSize int64, noDefaultCloudConfig bool) *RawImage {
 	cfg := config.NewConfig(config.WithLogger(internal.Log))
 	return &RawImage{efi: false,
 		config:               cfg,
@@ -88,7 +88,7 @@ func NewBiosRawImage(source, output string, cc string, finalsize uint64, stateSi
 		CloudConfig:          cc,
 		FinalSize:            finalsize,
 		StateSize:            stateSize,
-		SystemSize:           systemSize,
+		RecoveryImageSize:    recoveryImageSize,
 		NoDefaultCloudConfig: noDefaultCloudConfig,
 	}
 }
@@ -342,9 +342,12 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 		MountPoint: tmpDirRecoveryImage,
 	}
 	size, _ := config.GetSourceSize(r.config, recoveryImage.Source)
-	recoveryImage.Size = systemImageSize(uint64(size), r.SystemSize)
-	if r.SystemSize > 0 {
-		internal.Log.Logger.Info().Int64("size", r.SystemSize).Msg("Using configured system image size")
+	recoveryImage.Size, err = recoveryImageSize(uint64(size), r.RecoveryImageSize)
+	if err != nil {
+		return "", err
+	}
+	if r.RecoveryImageSize > 0 {
+		internal.Log.Logger.Info().Int64("size", r.RecoveryImageSize).Msg("Using configured recovery image size")
 	}
 
 	_, err = r.elemental.DeployImage(recoveryImage, false)
@@ -404,17 +407,20 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 }
 
-func systemImageSize(sourceSize uint64, configuredSize int64) uint {
+func recoveryImageSize(sourceSize uint64, configuredSize int64) (uint, error) {
 	if configuredSize > 0 {
-		return uint(configuredSize)
+		if uint64(configuredSize) < sourceSize {
+			return 0, fmt.Errorf("configured recovery image size %d MB is smaller than source size %d MB", configuredSize, sourceSize)
+		}
+		return uint(configuredSize), nil
 	}
-	return uint(sourceSize + 200)
+	return uint(sourceSize + 200), nil
 }
 
-func recoveryPartitionSize(systemSize uint) uint {
+func recoveryPartitionSize(recoveryImageSize uint) uint {
 	// The partition must hold both the recovery image and a transition image
 	// during recovery upgrades, plus space for copied boot artifacts.
-	return systemSize*2 + 150
+	return recoveryImageSize*2 + 150
 }
 
 // createEFIPartitionImage creates an EFI partition image with the given source
