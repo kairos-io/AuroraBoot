@@ -157,17 +157,28 @@ func GenerateKeySet(opts Options) error {
 // the foxboron/sbctl and foxboron/go-uefi libraries. PK signs itself and KEK;
 // KEK signs db.
 func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir string, skipMicrosoftCerts bool) error {
-	var err error
-	var keyBytes []byte
-
+	// Enrollment chain of trust: PK is self-signed; KEK is signed by PK;
+	// db is signed by KEK. The signer's key AND certificate must match
+	// each other so that PKCS7.Verify (which checks both IssuerAndSerial
+	// and the signature bytes against the cert's public key) accepts the
+	// resulting .auth file.
+	var signerName string
 	switch keyType {
 	case "PK", "KEK":
-		keyBytes, err = os.ReadFile(filepath.Join(keyPath, "PK.key"))
+		signerName = "PK"
 	case "db":
-		keyBytes, err = os.ReadFile(filepath.Join(keyPath, "KEK.key"))
+		signerName = "KEK"
+	default:
+		return fmt.Errorf("unsupported key type %s", keyType)
 	}
+
+	signerKeyBytes, err := os.ReadFile(filepath.Join(keyPath, signerName+".key"))
 	if err != nil {
-		return fmt.Errorf("reading the key file: %w", err)
+		return fmt.Errorf("reading signer key file: %w", err)
+	}
+	signerPemBytes, err := os.ReadFile(filepath.Join(keyPath, signerName+".pem"))
+	if err != nil {
+		return fmt.Errorf("reading signer pem file: %w", err)
 	}
 
 	pem, err := os.ReadFile(filepath.Join(keyPath, keyType+".pem"))
@@ -205,15 +216,13 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 		efiVarType = efivar.KEK
 	case "db":
 		efiVarType = efivar.Db
-	default:
-		return fmt.Errorf("unsupported key type %s", keyType)
 	}
 
-	signer, err := efiutil.ReadKey(keyBytes)
+	signer, err := efiutil.ReadKey(signerKeyBytes)
 	if err != nil {
 		return fmt.Errorf("parsing signing key: %w", err)
 	}
-	cert, err := efiutil.ReadCert(pem)
+	cert, err := efiutil.ReadCert(signerPemBytes)
 	if err != nil {
 		return fmt.Errorf("parsing signing certificate: %w", err)
 	}
