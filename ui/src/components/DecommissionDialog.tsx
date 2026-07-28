@@ -48,18 +48,24 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
   const [copied, setCopied] = useState(false);
   const startedAt = useRef<number | null>(null);
 
-  // Reset state whenever the dialog is re-opened, so stale output from a
-  // previous decommission doesn't flash on re-open for another node.
-  useEffect(() => {
-    if (!open) return;
-    setPhase("idle");
-    setCommandID("");
-    setOutput("");
-    setError("");
-    setElapsedS(0);
-    setCopied(false);
-    startedAt.current = null;
-  }, [open]);
+  // Reset state on every open transition so stale output from a previous
+  // decommission doesn't flash on re-open for another node. Uses React's
+  // "adjust state during rendering" pattern — the conditional setState
+  // converges in one extra render and avoids setState-in-effect.
+  const [prevOpen, setPrevOpen] = useState(open);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    if (open) {
+      setPhase("idle");
+      setCommandID("");
+      setOutput("");
+      setError("");
+      setElapsedS(0);
+      setCopied(false);
+      // startedAt.current is overwritten on the next phase="running" transition,
+      // so no need to reset it here (updating a ref during render is disallowed).
+    }
+  }
 
   // Elapsed-seconds ticker while running; used to reveal "Force delete
   // anyway" after the 30 s timeout.
@@ -82,19 +88,19 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
   // The hook is unconditionally mounted (it auto-reconnects internally) so
   // it stays subscribed across state transitions while the dialog is open.
   useUIWebSocket((msg) => {
-    if (msg.type !== "command_update" || !msg.data || !commandID) return;
-    if (msg.data.id !== commandID) return;
+    if (msg.type !== "command_update" || !commandID) return;
+    const d = msg.data as { id?: string; phase?: string; result?: string } | null | undefined;
+    if (!d || d.id !== commandID) return;
 
-    if (typeof msg.data.result === "string" && msg.data.result) {
-      setOutput(msg.data.result);
+    if (typeof d.result === "string" && d.result) {
+      setOutput(d.result);
     }
 
-    const nextPhase = msg.data.phase;
-    if (nextPhase === "Completed") {
+    if (d.phase === "Completed") {
       setPhase("completed");
-    } else if (nextPhase === "Failed") {
+    } else if (d.phase === "Failed") {
       setPhase("failed");
-      setError(typeof msg.data.result === "string" ? msg.data.result : "teardown failed on the node");
+      setError(typeof d.result === "string" ? d.result : "teardown failed on the node");
     }
   });
 

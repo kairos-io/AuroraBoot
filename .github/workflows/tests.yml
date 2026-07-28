@@ -27,6 +27,8 @@ jobs:
           cache-dependency-path: ui/package-lock.json
       - name: Build UI bundle (embedded via go:embed)
         run: make ui-build
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v4
       - name: Set up Docker Buildx
@@ -76,6 +78,8 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -115,7 +119,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm libpcsclite-dev
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -173,7 +177,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -223,7 +227,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
       - name: Set up Go
         uses: actions/setup-go@v7
         with:

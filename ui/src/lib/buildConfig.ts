@@ -189,6 +189,49 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
   };
 }
 
+// Shape used to type an imported build-config JSON before it's been fully
+// validated. Every nested object is Partial to accept legacy exports that
+// omit newer fields; top-level string fields are optional to survive
+// user-edited files.
+export interface ImportedBuildConfig {
+  name?: string;
+  buildMode?: string;
+  dockerfile?: string;
+  overlayRootfs?: string;
+  advancedCloudConfig?: string;
+  source?: Partial<BuildConfigPayload["source"]>;
+  provisioning?: Partial<BuildConfigPayload["provisioning"]>;
+  outputs?: Partial<BuildConfigPayload["outputs"]>;
+  signing?: Partial<BuildConfigPayload["signing"]>;
+}
+
+// Runtime guard for imported JSON. A user-edited config can put non-string
+// values where the type says string; those would then flow into controlled
+// React inputs and break rendering. This function keeps only the values that
+// match the declared shape, dropping the rest to undefined. Callers are
+// expected to have already checked `kind` and `version`.
+export function sanitizeImportedBuildConfig(
+  raw: Record<string, unknown>,
+): ImportedBuildConfig {
+  const str = (v: unknown): string | undefined =>
+    typeof v === "string" ? v : undefined;
+  const obj = <T>(v: unknown): Partial<T> | undefined =>
+    typeof v === "object" && v !== null && !Array.isArray(v)
+      ? (v as Partial<T>)
+      : undefined;
+  return {
+    name: str(raw.name),
+    buildMode: str(raw.buildMode),
+    dockerfile: str(raw.dockerfile),
+    overlayRootfs: str(raw.overlayRootfs),
+    advancedCloudConfig: str(raw.advancedCloudConfig),
+    source: obj<BuildConfigPayload["source"]>(raw.source),
+    provisioning: obj<BuildConfigPayload["provisioning"]>(raw.provisioning),
+    outputs: obj<BuildConfigPayload["outputs"]>(raw.outputs),
+    signing: obj<BuildConfigPayload["signing"]>(raw.signing),
+  };
+}
+
 // Triggers a browser download of the given payload as a JSON file.
 // Returns the chosen filename so callers can surface it in a toast.
 export function downloadBuildConfig(payload: BuildConfigPayload): string {

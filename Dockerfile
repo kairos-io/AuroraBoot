@@ -72,6 +72,8 @@ FROM ${SWAGGER_STAGE} AS swagger
 FROM golang:1.26 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
+# libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive via sbctl)
+RUN apt-get update && apt-get install -y --no-install-recommends libpcsclite-dev && rm -rf /var/lib/apt/lists/*
 ADD go.mod .
 ADD go.sum .
 RUN go mod download

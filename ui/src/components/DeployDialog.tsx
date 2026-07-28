@@ -123,11 +123,12 @@ export function DeployDialog({
   }, [hasNetboot, netbootStatus?.running]);
 
   // Clear any prior inspection when the operator picks a different target.
-  useEffect(() => {
+  function chooseTarget(id: string) {
+    setSelectedTarget(id);
     setInspectResult(null);
     setInspectError("");
     setOverrideWarning(false);
-  }, [selectedTarget]);
+  }
 
   // belowMinimum reports whether an inspected node is under either threshold.
   const belowMinimum =
@@ -192,7 +193,7 @@ export function DeployDialog({
     try {
       const created = await createBMCTarget(newTarget);
       setBmcTargets((prev) => [...prev, created]);
-      setSelectedTarget(created.id);
+      chooseTarget(created.id);
       setShowNewTarget(false);
       setNewTarget({ name: "", endpoint: "", vendor: "generic", username: "", password: "", verifySSL: false, systemId: "" });
     } catch {
@@ -266,7 +267,7 @@ export function DeployDialog({
                     Manage BMCs →
                   </Link>
                 </div>
-                <Select value={selectedTarget} onValueChange={setSelectedTarget}>
+                <Select value={selectedTarget} onValueChange={chooseTarget}>
                   <SelectTrigger>
                     <SelectValue placeholder="Select a BMC target..." />
                   </SelectTrigger>

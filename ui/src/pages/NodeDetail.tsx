@@ -92,15 +92,16 @@ export function NodeDetail() {
 
   // Live updates via WebSocket
   useUIWebSocket((msg) => {
-    if (msg.type === "command_update" && msg.data) {
-      setCommands((prev) =>
-        prev.map((cmd) =>
-          cmd.id === msg.data.id
-            ? { ...cmd, phase: msg.data.phase ?? cmd.phase, result: msg.data.result ?? cmd.result }
-            : cmd
-        )
-      );
-    }
+    if (msg.type !== "command_update") return;
+    const d = msg.data as { id?: string; phase?: string; result?: string } | null | undefined;
+    if (!d?.id) return;
+    setCommands((prev) =>
+      prev.map((cmd) =>
+        cmd.id === d.id
+          ? { ...cmd, phase: d.phase ?? cmd.phase, result: d.result ?? cmd.result }
+          : cmd
+      )
+    );
   });
 
   async function handleCommand(command: string, args: Record<string, unknown>) {
