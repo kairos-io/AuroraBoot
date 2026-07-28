@@ -164,9 +164,16 @@ export function CommandDialog({
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
 
-  // Prefill or reset command selection on open/defaultCommand change. When
-  // the dialog closes, clear the selection so next open starts clean.
-  useEffect(() => {
+  // Prefill or reset state on open/defaultCommand change. On open transition
+  // we seed `command` with `defaultCommand`; on close transition we wipe
+  // every field so the next open starts clean. Uses React's "adjust state
+  // during rendering" pattern — the conditional setState converges in one
+  // extra render and avoids setState-in-effect.
+  const [prevOpen, setPrevOpen] = useState(open);
+  const [prevDefaultCommand, setPrevDefaultCommand] = useState(defaultCommand);
+  if (open !== prevOpen) {
+    setPrevOpen(open);
+    setPrevDefaultCommand(defaultCommand);
     if (open) {
       setCommand(defaultCommand ?? "");
     } else {
@@ -179,7 +186,10 @@ export function CommandDialog({
       setResetOem(false);
       setResetConfig("");
     }
-  }, [open, defaultCommand]);
+  } else if (open && defaultCommand !== prevDefaultCommand) {
+    setPrevDefaultCommand(defaultCommand);
+    setCommand(defaultCommand ?? "");
+  }
 
   useEffect(() => {
     if (open && isUpgrade && upgradeSourceMode === "artifact") {

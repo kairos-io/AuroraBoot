@@ -56,6 +56,7 @@ import {
   BUILD_CONFIG_VERSION,
   downloadBuildConfig,
   payloadFromBuilder,
+  sanitizeImportedBuildConfig,
 } from "@/lib/buildConfig";
 
 type OutputField = "iso" | "netboot" | "uki" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "maas" | "tar";
@@ -648,8 +649,10 @@ export function ArtifactBuilder() {
   // Lazy-load the upstream catalogs the first time the Hadron panel opens.
   // Both live on public endpoints with permissive CORS, so no backend proxy
   // needed. Kept lazy so the wizard's other paths don't pay the network cost.
-  useEffect(() => {
-    if (selectedTemplate !== HADRON_TEMPLATE_NAME) return;
+  // Called from the event handlers that transition the template into Hadron,
+  // rather than an effect, to keep the "start loading" state update off the
+  // synchronous render path.
+  function startHadronCatalogs() {
     if (firmwareCatalogState === "idle") {
       setFirmwareCatalogState("loading");
       fetchHadronFirmware()
@@ -668,7 +671,7 @@ export function ArtifactBuilder() {
         })
         .catch(() => setLayersCatalogState("error"));
     }
-  }, [selectedTemplate, firmwareCatalogState, layersCatalogState]);
+  }
 
   // Fetch the hadron release tag list once the panel is open. Silent-fallback
   // to the bundled `main` entry so a rate-limited GH API doesn't blank the
@@ -778,26 +781,32 @@ export function ArtifactBuilder() {
     if (ev.target) ev.target.value = "";
     if (!file) return;
 
-    let parsed: any;
+    let raw: unknown;
     try {
-      parsed = JSON.parse(await file.text());
+      raw = JSON.parse(await file.text());
     } catch {
       toast("Import failed: not valid JSON", "error");
       return;
     }
-    if (parsed?.kind !== BUILD_CONFIG_KIND) {
-      toast("Import failed: not a auroraboot build config", "error");
+    if (typeof raw !== "object" || raw === null) {
+      toast("Import failed: not an AuroraBoot build config", "error");
       return;
     }
-    if (parsed.version !== BUILD_CONFIG_VERSION) {
-      toast(`Import failed: unsupported version ${parsed.version}`, "error");
+    const r = raw as Record<string, unknown>;
+    if (r.kind !== BUILD_CONFIG_KIND) {
+      toast("Import failed: not an AuroraBoot build config", "error");
       return;
     }
+    if (r.version !== BUILD_CONFIG_VERSION) {
+      toast(`Import failed: unsupported version ${r.version}`, "error");
+      return;
+    }
+    const parsed = sanitizeImportedBuildConfig(r);
 
-    const src = parsed.source || {};
-    const prov = parsed.provisioning || {};
-    const out = parsed.outputs || {};
-    const sign = parsed.signing || {};
+    const src = parsed.source ?? {};
+    const prov = parsed.provisioning ?? {};
+    const out = parsed.outputs ?? {};
+    const sign = parsed.signing ?? {};
 
     const resolvedGroupId = prov.targetGroupName
       ? groups.find((g) => g.name === prov.targetGroupName)?.id || ""
@@ -880,6 +889,7 @@ export function ArtifactBuilder() {
         if (a.hadronBase) {
           const HADRON_PREFIX = "ghcr.io/kairos-io/hadron:";
           setSelectedTemplate(HADRON_TEMPLATE_NAME);
+          startHadronCatalogs();
           if (a.hadronBase.startsWith(HADRON_PREFIX)) {
             setHadronBaseTag(a.hadronBase.slice(HADRON_PREFIX.length));
             setHadronBaseCustom("");
@@ -974,6 +984,7 @@ export function ArtifactBuilder() {
         setStep(3);
       }).catch(() => {});
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
 
   function update(field: keyof CreateArtifactInput, value: unknown) {
@@ -1304,6 +1315,7 @@ export function ArtifactBuilder() {
                       }`}
                       onClick={() => {
                         setSelectedTemplate(t.name);
+                        if (t.name === HADRON_TEMPLATE_NAME) startHadronCatalogs();
                         setForm((prev) => ({
                           ...EMPTY_FORM,
                           ...t.values,
