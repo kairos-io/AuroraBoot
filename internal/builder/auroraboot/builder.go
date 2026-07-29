@@ -574,7 +574,10 @@ RUN /kairos-init -l debug -s install %s && \
 	}
 
 	tag := fmt.Sprintf("auroraboot-kairos:%s", opts.ID)
-	cmd := exec.CommandContext(ctx, "docker", "build", "-t", tag, "-f", dockerfilePath, outputDir)
+	args := []string{"build"}
+	args = append(args, dockerBuildPlatformArgs(opts)...)
+	args = append(args, "-t", tag, "-f", dockerfilePath, outputDir)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	if logWriter != nil {
 		cmd.Stdout = logWriter
 		cmd.Stderr = logWriter
@@ -689,7 +692,10 @@ func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, ou
 		buildContext = outputDir
 	}
 
-	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "-t", tag, "-f", dockerfilePath, buildContext)
+	args := []string{"build", "--no-cache"}
+	args = append(args, dockerBuildPlatformArgs(opts)...)
+	args = append(args, "-t", tag, "-f", dockerfilePath, buildContext)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	if logWriter != nil {
 		cmd.Stdout = logWriter
 		cmd.Stderr = logWriter
@@ -702,6 +708,13 @@ func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, ou
 	}
 
 	return tag, nil
+}
+
+func dockerBuildPlatformArgs(opts builder.BuildOptions) []string {
+	if opts.Source.Arch == "" {
+		return nil
+	}
+	return []string{"--platform", "linux/" + opts.Source.Arch}
 }
 
 // Status returns the current build status for a given ID.
