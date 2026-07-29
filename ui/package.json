@@ -44,9 +44,12 @@
     "jsdom": "^30.0.0",
     "postcss": "^8.5.10",
     "tailwindcss": "^4.0.0",
-    "typescript": "~5.9.0",
+    "typescript": "~7.0.0",
     "typescript-eslint": "^8.18.2",
     "vite": "^8.0.16",
     "vitest": "^4.1.9"
+  },
+  "overrides": {
+    "typescript": "$typescript"
   }
 }
