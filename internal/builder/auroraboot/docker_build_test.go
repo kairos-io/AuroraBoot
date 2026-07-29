@@ -4,106 +4,59 @@ import (
 	"context"
 	"os"
 	"path/filepath"
-	"strings"
-	"testing"
 
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
-func TestDockerBuildPlatformArgs(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		arch string
-		want []string
-	}{
-		{
-			name: "target architecture",
-			arch: "amd64",
-			want: []string{"--platform", "linux/amd64"},
-		},
-		{
-			name: "unspecified architecture",
-			want: nil,
-		},
-	}
-
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
+var _ = Describe("Docker build platform", func() {
+	DescribeTable("selects platform arguments",
+		func(arch string, want []string) {
 			opts := builder.BuildOptions{}
-			opts.Source.Arch = tt.arch
-			got := dockerBuildPlatformArgs(opts)
-
-			if len(got) != len(tt.want) {
-				t.Fatalf("dockerBuildPlatformArgs() = %q, want %q", got, tt.want)
-			}
-			for i := range tt.want {
-				if got[i] != tt.want[i] {
-					t.Errorf("dockerBuildPlatformArgs()[%d] = %q, want %q", i, got[i], tt.want[i])
-				}
-			}
-		})
-	}
-}
-
-func TestDockerBuildsUseTargetPlatform(t *testing.T) {
-	tests := []struct {
-		name string
-		run  func(*Builder, builder.BuildOptions, string) error
-	}{
-		{
-			name: "custom Dockerfile",
-			run: func(b *Builder, opts builder.BuildOptions, outputDir string) error {
-				opts.Dockerfile = "FROM scratch\n"
-				_, err := b.dockerBuild(context.Background(), opts, outputDir, nil)
-				return err
-			},
+			opts.Source.Arch = arch
+			Expect(dockerBuildPlatformArgs(opts)).To(Equal(want))
 		},
-		{
-			name: "kairosification",
-			run: func(b *Builder, opts builder.BuildOptions, outputDir string) error {
-				_, err := b.ensureKairosified(context.Background(), "example.invalid/base:latest", opts, outputDir, nil)
-				return err
-			},
-		},
-	}
+		Entry("target architecture", "amd64", []string{"--platform", "linux/amd64"}),
+		Entry("unspecified architecture", "", nil),
+	)
 
-	for _, tt := range tests {
-		tt := tt
-		t.Run(tt.name, func(t *testing.T) {
-			baseDir := t.TempDir()
+	DescribeTable("targets the requested platform",
+		func(run func(*Builder, builder.BuildOptions, string) error) {
+			baseDir := GinkgoT().TempDir()
 			callsPath := filepath.Join(baseDir, "docker.calls")
 			dockerPath := filepath.Join(baseDir, "docker")
 			script := "#!/bin/sh\nprintf '%s\\n' \"$*\" >> \"" + callsPath + "\"\n" +
 				"if [ \"$1\" = inspect ] || [ \"$1\" = run ]; then exit 1; fi\n"
-			if err := os.WriteFile(dockerPath, []byte(script), 0o755); err != nil {
-				t.Fatal(err)
-			}
-			t.Setenv("PATH", baseDir+string(os.PathListSeparator)+os.Getenv("PATH"))
+			Expect(os.WriteFile(dockerPath, []byte(script), 0o755)).To(Succeed())
+			GinkgoT().Setenv("PATH", baseDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 			b := New(baseDir, nil, noopArtifactStore{})
 			opts := builder.BuildOptions{ID: "cross-arch"}
 			opts.Source.Arch = "amd64"
-			if err := tt.run(b, opts, baseDir); err != nil {
-				t.Fatal(err)
-			}
+			Expect(run(b, opts, baseDir)).To(Succeed())
 
 			calls, err := os.ReadFile(callsPath)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !strings.Contains(string(calls), "build") ||
-				!strings.Contains(string(calls), "--platform linux/amd64") {
-				t.Fatalf("docker calls did not target linux/amd64:\n%s", calls)
-			}
-		})
-	}
-}
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(calls)).To(And(
+				ContainSubstring("build"),
+				ContainSubstring("--platform linux/amd64"),
+			))
+		},
+		Entry("custom Dockerfile",
+			func(b *Builder, opts builder.BuildOptions, outputDir string) error {
+				opts.Dockerfile = "FROM scratch\n"
+				_, err := b.dockerBuild(context.Background(), opts, outputDir, nil)
+				return err
+			}),
+		Entry("kairosification",
+			func(b *Builder, opts builder.BuildOptions, outputDir string) error {
+				_, err := b.ensureKairosified(context.Background(), "example.invalid/base:latest", opts, outputDir, nil)
+				return err
+			}),
+	)
+})
 
 type noopArtifactStore struct{}
 
