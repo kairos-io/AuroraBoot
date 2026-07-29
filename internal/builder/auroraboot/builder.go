@@ -172,6 +172,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	id := opts.ID
 	if id == "" {
 		id = uuid.New().String()
+		opts.ID = id
 	}
 
 	outputDir := filepath.Join(b.baseDir, id)
@@ -296,8 +297,15 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		logWriter.Flush()
 	}
 
-	// Step 1.5: Ensure image is kairosified.
-	containerImage, err := b.ensureKairosified(ctx, containerImage, opts, outputDir, logWriter)
+	// Step 1.5: Direct base images must always be derived so requested provider
+	// and variant settings are applied. Dockerfile images only need derivation
+	// when the Dockerfile did not produce a complete Kairos image.
+	var err error
+	if opts.Dockerfile == "" && b.store != nil {
+		containerImage, err = b.kairosify(ctx, containerImage, opts, outputDir, logWriter)
+	} else {
+		containerImage, err = b.ensureKairosified(ctx, containerImage, opts, outputDir, logWriter)
+	}
 	if err != nil {
 		msg := fmt.Sprintf("kairosify failed: %v", err)
 		b.setPhase(bs, builder.BuildError, msg)
@@ -507,23 +515,32 @@ func validateKairosInitOptions(opts builder.BuildOptions) error {
 			return err
 		}
 	}
+	if opts.KubernetesDistro != "" {
+		if err := validateKairosInitValue("kubernetes distro", opts.KubernetesDistro); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-// ensureKairosified checks if the image is a Kairos image, and if not, builds one using kairos-init.
-// Skipped when store is nil (test mode without Docker).
+// ensureKairosified defensively checks whether an image is already a complete
+// Kairos image before deriving one with kairos-init.
 func (b *Builder) ensureKairosified(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if b.store == nil {
 		// Test mode — skip kairosification (no Docker available)
 		return image, nil
 	}
-	if err := validateKairosInitOptions(opts); err != nil {
-		return "", fmt.Errorf("validating kairos-init options: %w", err)
-	}
 	if b.isKairosified(ctx, image) {
 		return image, nil
 	}
+	return b.kairosify(ctx, image, opts, outputDir, logWriter)
+}
 
+// kairosify builds a per-artifact Kairos image using kairos-init.
+func (b *Builder) kairosify(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	if err := validateKairosInitOptions(opts); err != nil {
+		return "", fmt.Errorf("validating kairos-init options: %w", err)
+	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
 		kairosInitImage = os.Getenv("KAIROS_INIT_IMAGE")
@@ -574,7 +591,10 @@ RUN /kairos-init -l debug -s install %s && \
 	}
 
 	tag := fmt.Sprintf("auroraboot-kairos:%s", opts.ID)
-	cmd := exec.CommandContext(ctx, "docker", "build", "-t", tag, "-f", dockerfilePath, outputDir)
+	args := []string{"build"}
+	args = append(args, dockerBuildPlatformArgs(opts)...)
+	args = append(args, "-t", tag, "-f", dockerfilePath, outputDir)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	if logWriter != nil {
 		cmd.Stdout = logWriter
 		cmd.Stderr = logWriter
@@ -689,7 +709,10 @@ func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, ou
 		buildContext = outputDir
 	}
 
-	cmd := exec.CommandContext(ctx, "docker", "build", "--no-cache", "-t", tag, "-f", dockerfilePath, buildContext)
+	args := []string{"build", "--no-cache"}
+	args = append(args, dockerBuildPlatformArgs(opts)...)
+	args = append(args, "-t", tag, "-f", dockerfilePath, buildContext)
+	cmd := exec.CommandContext(ctx, "docker", args...)
 	if logWriter != nil {
 		cmd.Stdout = logWriter
 		cmd.Stderr = logWriter
@@ -702,6 +725,13 @@ func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, ou
 	}
 
 	return tag, nil
+}
+
+func dockerBuildPlatformArgs(opts builder.BuildOptions) []string {
+	if opts.Source.Arch == "" {
+		return nil
+	}
+	return []string{"--platform", "linux/" + opts.Source.Arch}
 }
 
 // Status returns the current build status for a given ID.
