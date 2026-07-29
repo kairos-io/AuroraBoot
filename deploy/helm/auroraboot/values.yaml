@@ -1,0 +1,82 @@
+# The externally reachable hostname for the AuroraBoot web UI. Required.
+# DNS for this name must resolve to the ingress controller's external
+# IP (LoadBalancer address, MetalLB VIP, or a node's port), not the
+# cluster API server IP.
+host: ""
+
+image:
+  repository: quay.io/kairos/auroraboot
+  # If empty, the chart uses appVersion from Chart.yaml.
+  tag: ""
+  pullPolicy: IfNotPresent
+
+imagePullSecrets: []
+
+replicaCount: 1
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: true
+  className: ""
+  annotations: {}
+  tls:
+    # When true, adds a tls block to the Ingress. If issuerName is set,
+    # a cert-manager annotation is added and a secret name is generated.
+    # If existingSecret is set, that secret is referenced verbatim.
+    enabled: false
+    issuerName: ""
+    issuerKind: ClusterIssuer
+    existingSecret: ""
+
+builder:
+  # 'operator' delegates artifact builds to the kairos-operator via
+  # OSArtifact CRs. 'local' runs the build inside this pod (needs
+  # docker-in-docker; not the intended mode for in-cluster use).
+  kind: operator
+  # Namespace where OSArtifact CRs are created and their exporter pods
+  # run. Empty means the release namespace.
+  namespace: ""
+
+persistence:
+  # A single PVC mounted at /var/lib/auroraboot holds the SQLite store,
+  # keys, secrets, and built artifacts.
+  enabled: true
+  size: 20Gi
+  storageClass: ""
+  accessModes:
+    - ReadWriteOnce
+
+serviceAccount:
+  create: true
+  name: ""
+  annotations: {}
+
+rbac:
+  # Chart-managed Role + RoleBinding in builder.namespace granting the
+  # SA access to OSArtifacts, secrets, pods, pod logs, and jobs.
+  create: true
+
+registrationToken:
+  # When empty, the chart generates a random token on first install and
+  # reuses it on upgrades via helm's lookup function so agents don't
+  # need to be re-enrolled.
+  value: ""
+
+resources: {}
+
+podSecurityContext: {}
+securityContext: {}
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+podAnnotations: {}
+podLabels: {}
+
+env: []
+
+extraArgs: []
