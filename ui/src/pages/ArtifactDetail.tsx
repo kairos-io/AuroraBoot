@@ -1,5 +1,5 @@
 import { useEffect, useState, useRef, useCallback, useMemo, memo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate } from "react-router";
 import {
   getArtifact,
   getArtifactLogs,

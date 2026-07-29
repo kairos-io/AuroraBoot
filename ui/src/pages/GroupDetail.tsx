@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useParams, useNavigate, Link } from "react-router-dom";
+import { useParams, useNavigate, Link } from "react-router";
 import { getGroup, deleteGroup, sendGroupCommand, type Group } from "@/api/groups";
 import { listNodes, type Node } from "@/api/nodes";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

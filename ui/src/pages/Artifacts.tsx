@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router";
 import { listArtifacts, deleteArtifact, clearFailedArtifacts, updateArtifact, type Artifact } from "@/api/artifacts";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";

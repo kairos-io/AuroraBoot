@@ -154,7 +154,7 @@ require (
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
-	github.com/landlock-lsm/go-landlock v0.0.0-20240715193425-db0c8d6f1dff // indirect
+	github.com/landlock-lsm/go-landlock v0.0.0-20241013234402-fb3ad845df46 // indirect
 	github.com/lithammer/fuzzysearch v1.1.8 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect

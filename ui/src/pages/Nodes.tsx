@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router";
 import { listNodes, sendBulkCommand, type Node, type NodeListParams } from "@/api/nodes";
 import { listGroups, type Group } from "@/api/groups";
 import { NodeTable } from "@/components/NodeTable";

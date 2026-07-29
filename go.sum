@@ -359,6 +359,8 @@ github.com/labstack/gommon v0.5.0 h1:6VSQ2NOzsnEJ5W6+84E0RbcaDDmgB6NIAzWCczTEe6c
 github.com/labstack/gommon v0.5.0/go.mod h1:Rzlg7HHy1maLfzBYGg9NZcVuz1sA68HHhLjhcEllYE0=
 github.com/landlock-lsm/go-landlock v0.0.0-20240715193425-db0c8d6f1dff h1:x3f7WnTbCmOl/pCqbb5UDFH1PqRNAAkn/xy5mwZJgoo=
 github.com/landlock-lsm/go-landlock v0.0.0-20240715193425-db0c8d6f1dff/go.mod h1:ln1YHTUL4mGdRe14d/8nDEGF0ikfpiWK1yk20Txy490=
+github.com/landlock-lsm/go-landlock v0.0.0-20241013234402-fb3ad845df46 h1:JYrMzkOqdueJj9jaAYzA+u/ki98hOgdqmFBk2wFgy0c=
+github.com/landlock-lsm/go-landlock v0.0.0-20241013234402-fb3ad845df46/go.mod h1:RSub3ourNF8Hf+swvw49Catm3s7HVf4hzdFxDUnEzdA=
 github.com/lithammer/fuzzysearch v1.1.8 h1:/HIuJnjHuXS8bKaiTMeeDlW2/AyIWk2brx1V8LFgLN4=
 github.com/lithammer/fuzzysearch v1.1.8/go.mod h1:IdqeyBClc3FFqSzYq/MXESsS4S0FsZ5ajtkr5xPLts4=
 github.com/mailru/easyjson v0.0.0-20190614124828-94de47d64c63/go.mod h1:C1wdFJiN94OJF2b5HbByQZoLdCWB1Yqtg26g4irojpc=
