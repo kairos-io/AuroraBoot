@@ -60,6 +60,27 @@ tests:
           path: spec.template.spec.containers[0].args
           content: --builder-namespace=some-other-ns
 
+  - it: auto-fills builder-upload-url from the release Service DNS
+    set:
+      host: auroraboot.example.com
+    release:
+      name: ab
+      namespace: kairos-operator
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --builder-upload-url=http://ab-auroraboot.kairos-operator.svc.cluster.local:80
+
+  - it: honours an explicit builder.uploadURL override
+    set:
+      host: auroraboot.example.com
+      builder:
+        uploadURL: http://ab.custom.svc:9000
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --builder-upload-url=http://ab.custom.svc:9000
+
   - it: mounts the persistence PVC at /var/lib/auroraboot
     set:
       host: auroraboot.example.com

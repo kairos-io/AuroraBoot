@@ -49,6 +49,7 @@ spec:
             - --data-dir=/var/lib/auroraboot
             - --builder={{ .Values.builder.kind }}
             - --builder-namespace={{ include "auroraboot.builderNamespace" . }}
+            - --builder-upload-url={{ include "auroraboot.uploadURL" . }}
             - --url={{ include "auroraboot.url" . }}
             {{- range .Values.extraArgs }}
             - {{ . | quote }}

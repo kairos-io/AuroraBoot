@@ -89,6 +89,19 @@ this themselves without TLS.
 {{- end -}}
 
 {{/*
+Cluster-internal URL that exporter pods PUT built artifacts to. Uses
+the release Service's DNS so upload traffic never leaves the cluster;
+callers who want to override can set builder.uploadURL explicitly.
+*/}}
+{{- define "auroraboot.uploadURL" -}}
+{{- if .Values.builder.uploadURL -}}
+{{- .Values.builder.uploadURL -}}
+{{- else -}}
+{{- printf "http://%s.%s.svc.cluster.local:%d" (include "auroraboot.fullname" .) .Release.Namespace (int .Values.service.port) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Resolves the registration token that ends up in the Secret. Both the
 Secret template and the Deployment's checksum annotation use this,
 so a token change ripples through the pod annotation and forces a

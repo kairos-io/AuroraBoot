@@ -39,6 +39,11 @@ builder:
   # Namespace where OSArtifact CRs are created and their exporter pods
   # run. Empty means the release namespace.
   namespace: ""
+  # URL exporter pods PUT built artifacts to. Empty defaults to the
+  # release Service's cluster-internal DNS name so uploads never
+  # traverse the ingress. Override only when the exporter pods can't
+  # reach the release Service (e.g. cross-cluster setups).
+  uploadURL: ""
 
 persistence:
   # A single PVC mounted at /var/lib/auroraboot holds the SQLite store,
