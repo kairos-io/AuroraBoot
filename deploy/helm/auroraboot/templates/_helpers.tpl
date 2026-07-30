@@ -87,3 +87,22 @@ this themselves without TLS.
 {{- printf "http://%s" .Values.host -}}
 {{- end -}}
 {{- end -}}
+
+{{/*
+Resolves the registration token that ends up in the Secret. Both the
+Secret template and the Deployment's checksum annotation use this,
+so a token change ripples through the pod annotation and forces a
+rolling restart on the next helm upgrade.
+*/}}
+{{- define "auroraboot.registrationToken" -}}
+{{- if .Values.registrationToken.value -}}
+{{- .Values.registrationToken.value -}}
+{{- else -}}
+{{- $existing := lookup "v1" "Secret" .Release.Namespace (include "auroraboot.registrationSecretName" .) -}}
+{{- if and $existing $existing.data (hasKey $existing.data "token") -}}
+{{- index $existing.data "token" | b64dec -}}
+{{- else -}}
+{{- randAlphaNum 48 -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}

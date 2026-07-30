@@ -114,3 +114,10 @@ tests:
       - equal:
           path: spec.template.spec.serviceAccountName
           value: ab-auroraboot
+
+  - it: hashes the registration token into a pod-template annotation so rotations roll pods
+    set:
+      host: auroraboot.example.com
+    asserts:
+      - exists:
+          path: spec.template.metadata.annotations["checksum/registration-secret"]
