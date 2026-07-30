@@ -143,21 +143,27 @@ func runWeb(c *cli.Context) error {
 	}
 	keysDir := filepath.Join(dataDir, "keys")
 
-	// Resolve secrets in priority order: flag/env > persisted file > generate.
 	// Persisted secrets live under <data-dir>/secrets/ so they survive restarts.
+	// Admin password resolves as flag/env > file > generate. The registration
+	// token treats the env var as a seed rather than a hard override so a
+	// runtime rotation via the settings API survives a pod restart; see
+	// ResolveRegistrationToken.
 	secretsDir := filepath.Join(dataDir, "secrets")
 	if err := os.MkdirAll(secretsDir, 0700); err != nil {
 		return fmt.Errorf("create secrets directory: %w", err)
 	}
 	adminPasswordFile := filepath.Join(secretsDir, "admin-password")
 	regTokenFile := filepath.Join(secretsDir, "registration-token")
+	regTokenSeedFile := filepath.Join(secretsDir, "registration-token.seed")
 
 	if adminPassword == "" {
 		adminPassword = loadOrGenerateSecret(adminPasswordFile, "admin password")
 	}
-	if regToken == "" {
-		regToken = loadOrGenerateSecret(regTokenFile, "registration token")
+	resolvedRegToken, err := ResolveRegistrationToken(regToken, regTokenFile, regTokenSeedFile)
+	if err != nil {
+		return fmt.Errorf("resolve registration token: %w", err)
 	}
+	regToken = resolvedRegToken
 	if externalURL == "" {
 		hostname, _ := os.Hostname()
 		if hostname == "" {
