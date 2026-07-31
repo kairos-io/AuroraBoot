@@ -105,6 +105,7 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "builder", Value: "local", Usage: "Which builder backend to use: 'local' or 'operator'"},
 		&cli.StringFlag{Name: "kubeconfig", Usage: "Path to a kubeconfig file for the operator builder (single file). Empty means try in-cluster config first, then the default client-go loading rules (which honour a multi-file KUBECONFIG env)"},
 		&cli.StringFlag{Name: "builder-namespace", Value: "default", Usage: "Namespace in which OSArtifact CRs are created. Used only when --builder=operator"},
+		&cli.StringFlag{Name: "builder-upload-url", Usage: "URL exporter pods PUT built artifacts to. Only needs cluster-internal reachability, so a Service DNS name is appropriate. Defaults to --url. Used only when --builder=operator", EnvVars: []string{"AURORABOOT_BUILDER_UPLOAD_URL"}},
 	},
 	Action: runWeb,
 }
@@ -143,21 +144,28 @@ func runWeb(c *cli.Context) error {
 	}
 	keysDir := filepath.Join(dataDir, "keys")
 
-	// Resolve secrets in priority order: flag/env > persisted file > generate.
 	// Persisted secrets live under <data-dir>/secrets/ so they survive restarts.
+	// Admin password resolves as flag/env > file > generate. The registration
+	// token treats the launch-time value (from --registration-token or its
+	// AURORABOOT_REG_TOKEN env var) as a seed rather than a hard override,
+	// so a runtime rotation via the settings API survives a pod restart;
+	// see ResolveRegistrationToken.
 	secretsDir := filepath.Join(dataDir, "secrets")
 	if err := os.MkdirAll(secretsDir, 0700); err != nil {
 		return fmt.Errorf("create secrets directory: %w", err)
 	}
 	adminPasswordFile := filepath.Join(secretsDir, "admin-password")
 	regTokenFile := filepath.Join(secretsDir, "registration-token")
+	regTokenSeedFile := filepath.Join(secretsDir, "registration-token.seed")
 
 	if adminPassword == "" {
 		adminPassword = loadOrGenerateSecret(adminPasswordFile, "admin password")
 	}
-	if regToken == "" {
-		regToken = loadOrGenerateSecret(regTokenFile, "registration token")
+	resolvedRegToken, err := ResolveRegistrationToken(regToken, regTokenFile, regTokenSeedFile)
+	if err != nil {
+		return fmt.Errorf("resolve registration token: %w", err)
 	}
+	regToken = resolvedRegToken
 	if externalURL == "" {
 		hostname, _ := os.Hostname()
 		if hostname == "" {
@@ -222,21 +230,27 @@ func runWeb(c *cli.Context) error {
 			return err
 		}
 		// Operator builds ship the per-build upload token plus the finished
-		// artifact bytes back to AuroraBoot over --url. Over plaintext http
-		// both traverse the cluster network in the clear, so anyone with
-		// pod-network access can capture the token and overwrite artifacts
-		// while the build is Building (watchCRPhase zeroes the token on
-		// terminal transition, closing the window at Ready/Error). Left
-		// unforced so dev environments can iterate without cert setup; a
-		// production deployment should terminate --url via https.
-		if strings.HasPrefix(strings.ToLower(externalURL), "http://") {
-			fmt.Fprintf(os.Stderr, "Warning: --builder=operator with plaintext --url (%s): exporter Pods will PUT the per-build upload token and artifact bytes over http. Use https:// in production.\n", externalURL)
+		// artifact bytes back to AuroraBoot over --builder-upload-url. The
+		// exporter pods run inside the cluster, so a Service DNS name works;
+		// only cluster-internal reachability is required. When --builder-upload-url
+		// is unset we fall back to --url for back-compat, which forces the upload
+		// to traverse the public path. Over plaintext http the per-build token
+		// and artifact bytes travel in the clear, so anyone with network access
+		// on the traversed path can capture the token and overwrite artifacts
+		// while the build is Building (watchCRPhase zeroes the token on terminal
+		// transition, closing the window at Ready/Error). Left unforced so dev
+		// environments can iterate without cert setup; a production deployment
+		// should either terminate the upload path via https or scope the URL to
+		// cluster-internal Service DNS.
+		uploadURL := ResolveBuilderUploadURL(c.String("builder-upload-url"), externalURL)
+		if strings.HasPrefix(strings.ToLower(uploadURL), "http://") {
+			fmt.Fprintf(os.Stderr, "Warning: --builder=operator with plaintext upload URL (%s): exporter Pods will PUT the per-build upload token and artifact bytes over http. Fine on cluster-internal Service DNS, risky over public paths.\n", uploadURL)
 		}
 		b, err := operator.New(operator.Config{
 			RESTConfig:    cfg,
 			Namespace:     c.String("builder-namespace"),
 			Store:         artifactStore,
-			AuroraBootURL: externalURL,
+			AuroraBootURL: uploadURL,
 		})
 		if err != nil {
 			return err
@@ -381,6 +395,16 @@ func serveWith(w io.Writer, listenAddr, tlsCert, tlsKey string, startTLS, startP
 		"*****************************************************************************\n\n"
 	_, _ = io.WriteString(w, warning)
 	return startPlain()
+}
+
+// ResolveBuilderUploadURL returns the URL exporter pods should PUT built
+// artifacts to. An explicit --builder-upload-url wins; otherwise it falls
+// back to --url so single-URL deployments keep working unchanged.
+func ResolveBuilderUploadURL(builderUploadURL, externalURL string) string {
+	if builderUploadURL != "" {
+		return builderUploadURL
+	}
+	return externalURL
 }
 
 // loadOrGenerateSecret reads the secret from path if it exists, otherwise

@@ -41,7 +41,7 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 	It("replaces live consoles while preserving the debug console", func() {
 		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "console=ttyUSB0,115200")
 		Expect(string(result)).ToNot(ContainSubstring("console=ttyS0 console=tty1"))
-		Expect(strings.Count(string(result), "console=ttyUSB0,115200")).To(Equal(5))
+		Expect(strings.Count(string(result), "console=ttyUSB0,115200")).To(Equal(6))
 		Expect(string(result)).To(ContainSubstring("console=tty0 rd.debug"))
 	})
 
