@@ -110,3 +110,23 @@ openapi: ## Regenerate Swagger/OpenAPI documentation
 
 # Backwards-compat alias
 swagger: openapi
+
+# Helm chart targets. The chart lives in deploy/helm/auroraboot and its
+# unit tests use the helm-unittest plugin.
+HELM_CHART_DIR := deploy/helm/auroraboot
+
+helm-chart-lint: ## Lint the AuroraBoot helm chart
+	helm lint $(HELM_CHART_DIR) -f $(HELM_CHART_DIR)/examples/values-min.yaml
+
+helm-chart-template: ## Render the helm chart with example values (for eyeballing)
+	helm template ab $(HELM_CHART_DIR) -n kairos-operator -f $(HELM_CHART_DIR)/examples/values-min.yaml
+
+helm-chart-test: ## Run helm-unittest suites against the AuroraBoot chart
+	@helm plugin list 2>/dev/null | grep -q '^unittest' || { \
+		echo "helm-unittest plugin missing. Install with:"; \
+		echo "  helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.5.2"; \
+		exit 1; \
+	}
+	helm unittest $(HELM_CHART_DIR)
+
+helm-chart-check: helm-chart-lint helm-chart-test ## Lint + unit test the helm chart
