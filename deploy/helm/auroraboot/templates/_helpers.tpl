@@ -75,13 +75,15 @@ render failures.
 {{- end -}}
 
 {{/*
-The base URL derived from host. Defaults to https since most clusters
-put a TLS-terminating ingress or LB in front. When ingress is disabled
-entirely, fall back to http on the assumption the user is fronting
-this themselves without TLS.
+The base URL derived from host. Uses https when the chart is managing
+TLS on the Ingress (ingress.tls.enabled), http otherwise. Users whose
+TLS is terminated upstream by an LB or reverse proxy without a chart-
+managed cert should either set ingress.tls.enabled with existingSecret,
+or override the injected URL via extraArgs (--url=...) until a
+first-class url override is added.
 */}}
 {{- define "auroraboot.url" -}}
-{{- if .Values.ingress.enabled -}}
+{{- if .Values.ingress.tls.enabled -}}
 {{- printf "https://%s" .Values.host -}}
 {{- else -}}
 {{- printf "http://%s" .Values.host -}}

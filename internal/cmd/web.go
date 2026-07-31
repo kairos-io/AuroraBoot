@@ -146,9 +146,10 @@ func runWeb(c *cli.Context) error {
 
 	// Persisted secrets live under <data-dir>/secrets/ so they survive restarts.
 	// Admin password resolves as flag/env > file > generate. The registration
-	// token treats the env var as a seed rather than a hard override so a
-	// runtime rotation via the settings API survives a pod restart; see
-	// ResolveRegistrationToken.
+	// token treats the launch-time value (from --registration-token or its
+	// AURORABOOT_REG_TOKEN env var) as a seed rather than a hard override,
+	// so a runtime rotation via the settings API survives a pod restart;
+	// see ResolveRegistrationToken.
 	secretsDir := filepath.Join(dataDir, "secrets")
 	if err := os.MkdirAll(secretsDir, 0700); err != nil {
 		return fmt.Errorf("create secrets directory: %w", err)

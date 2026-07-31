@@ -30,13 +30,16 @@ AuroraBoot is installed. A few things to check before it becomes reachable.
    Provide one of ingress.tls.existingSecret or ingress.tls.issuerName.
 {{- end }}
 {{- else }}
-   TLS is not enabled in the chart. The URL used for cloud-config
-   injection is:
+   TLS is not managed by this chart. The URL advertised in cloud-configs is:
 
      {{ include "auroraboot.url" . }}
 
-   If your ingress terminates TLS externally, set ingress.tls.enabled
-   so the injected URL uses https.
+   For a production deployment, enable chart-managed TLS via
+   ingress.tls.enabled (with ingress.tls.existingSecret or
+   ingress.tls.issuerName) so the injected URL uses https. If your
+   upstream LB or reverse proxy already terminates TLS, either set
+   ingress.tls.enabled with an existingSecret pointer, or override the
+   advertised URL via --url in extraArgs.
 {{- end }}
 
 4. Builder backend

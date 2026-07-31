@@ -35,10 +35,22 @@ tests:
           content: --builder=operator
       - contains:
           path: spec.template.spec.containers[0].args
-          content: --url=https://auroraboot.example.com
+          content: --url=http://auroraboot.example.com
       - contains:
           path: spec.template.spec.containers[0].args
           content: --data-dir=/var/lib/auroraboot
+
+  - it: uses https for --url when chart-managed TLS is enabled
+    set:
+      host: auroraboot.example.com
+      ingress:
+        tls:
+          enabled: true
+          existingSecret: my-cert
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --url=https://auroraboot.example.com
 
   - it: defaults builder-namespace to the release namespace
     set:
@@ -80,6 +92,22 @@ tests:
       - contains:
           path: spec.template.spec.containers[0].args
           content: --builder-upload-url=http://ab.custom.svc:9000
+
+  - it: appends extraArgs after chart-supplied flags so they win on repeated --url
+    set:
+      host: auroraboot.example.com
+      extraArgs:
+        - --url=https://external.example.com
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --url=http://auroraboot.example.com
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: --url=https://external.example.com
+      - equal:
+          path: spec.template.spec.containers[0].args[7]
+          value: --url=https://external.example.com
 
   - it: mounts the persistence PVC at /var/lib/auroraboot
     set:

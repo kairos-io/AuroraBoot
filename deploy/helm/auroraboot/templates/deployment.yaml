@@ -51,6 +51,9 @@ spec:
             - --builder-namespace={{ include "auroraboot.builderNamespace" . }}
             - --builder-upload-url={{ include "auroraboot.uploadURL" . }}
             - --url={{ include "auroraboot.url" . }}
+            {{- /* extraArgs come LAST so users can override any of the
+                    chart-supplied flags above (urfave/cli/v2 takes the
+                    last occurrence of a repeated flag). Do not reorder. */}}
             {{- range .Values.extraArgs }}
             - {{ . | quote }}
             {{- end }}
