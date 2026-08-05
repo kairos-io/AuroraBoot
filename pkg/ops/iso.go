@@ -670,21 +670,12 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 // getEfiGrubFilesForArch returns the possible grub EFI file paths for the given
 // architecture, ordered by preference for building a live ISO.
 //
-// Debian and Ubuntu ship two signed grub binaries: gcd*.efi.signed (prefix
-// /boot/grub, iso9660 baked in, meant for CD/removable media) and
-// grub*.efi.signed (prefix /EFI/<distro>, meant for on-disk installs). The SDK
-// list returns the disk one first because it is what raw-disk builds want.
-// For ISOs we prefer the CD variant, so we prepend it here. The disk variant
-// stays in the list as a fallback for rootfs images that only ship it.
+// The SDK owns the distro-specific live-media ordering. AuroraBoot only adds
+// the openSUSE RISC-V path that is specific to its ISO builder.
 func getEfiGrubFilesForArch(arch string) []string {
-	sdkPaths := sdkutils.GetEfiGrubFiles(arch)
-	switch {
-	case utils.IsRiscv64(arch):
+	sdkPaths := sdkutils.GetEfiLiveGrubFiles(arch)
+	if utils.IsRiscv64(arch) {
 		return append([]string{"/usr/share/efi/riscv64/grub.efi"}, sdkPaths...)
-	case arch == constants.ArchAmd64 || arch == constants.Archx86:
-		return append([]string{"/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed"}, sdkPaths...)
-	case arch == constants.ArchArm64 || arch == constants.Archaarch64:
-		return append([]string{"/usr/lib/grub/arm64-efi-signed/gcdaa64.efi.signed"}, sdkPaths...)
 	}
 	return sdkPaths
 }
