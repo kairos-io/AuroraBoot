@@ -53,7 +53,12 @@ const (
 	BuildImgName              = "elemental"
 	GrubCfg                   = "grub.cfg"
 	GrubPrefixDir             = "/boot/grub2"
-	GrubEfiCfg                = "search --no-floppy --file --set=root " + IsoKernelPath +
+	// CdGrubPrefixDir is the prefix baked into Debian/Ubuntu's CD grub
+	// binary (gcdx64.efi.signed / gcdaa64.efi.signed). When we ship the CD
+	// grub on an ISO we must place a grub.cfg at this path so it can find
+	// its config regardless of what the firmware sets $root to.
+	CdGrubPrefixDir = "/boot/grub"
+	GrubEfiCfg      = "search --no-floppy --file --set=root " + IsoKernelPath +
 		"\nset prefix=($root)" + GrubPrefixDir +
 		"\nconfigfile $prefix/" + GrubCfg
 
@@ -141,6 +146,15 @@ func GetXorrisoBooloaderArgs(root string) []string {
 		"-boot_image", "any", "emul_type=no_emulation",
 		"-append_partition", "2", "0xef", filepath.Join(root, IsoEFIPath),
 		"-boot_image", "any", "efi_path=--interval:appended_partition_2:all::",
+		// Publish appended partitions in a GPT header (with a protective MBR)
+		// so strict UEFI firmwares (VMware ESXi, some OVMF/BMC stacks) that
+		// enumerate the ESP via GPT can find and boot the ISO. Without this
+		// the ISO carries an MBR-only partition table and boot fails on
+		// those firmwares.
+		"-boot_image", "any", "appended_part_as=gpt",
+		// Preserve the active flag in the protective MBR for legacy BIOSes
+		// which refuse to boot an isohybrid image without a bootable entry.
+		"-boot_image", "any", "mbr_force_bootable=on",
 	}
 	return args
 }
