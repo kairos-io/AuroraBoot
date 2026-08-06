@@ -1314,6 +1314,9 @@ const docTemplate = `{
                 "iso": {
                     "type": "boolean"
                 },
+                "maas": {
+                    "type": "boolean"
+                },
                 "netboot": {
                     "type": "boolean"
                 },
@@ -1862,6 +1865,9 @@ const docTemplate = `{
                 },
                 "kubernetesVersion": {
                     "type": "string"
+                },
+                "maas": {
+                    "type": "boolean"
                 },
                 "message": {
                     "type": "string"

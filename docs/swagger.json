@@ -1307,6 +1307,9 @@
                 "iso": {
                     "type": "boolean"
                 },
+                "maas": {
+                    "type": "boolean"
+                },
                 "netboot": {
                     "type": "boolean"
                 },
@@ -1855,6 +1858,9 @@
                 },
                 "kubernetesVersion": {
                     "type": "string"
+                },
+                "maas": {
+                    "type": "boolean"
                 },
                 "message": {
                     "type": "string"

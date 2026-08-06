@@ -325,6 +325,14 @@ func (s *Store) nodeClaimedByKey(ctx context.Context, groupID, claimKey string) 
 
 // ClaimNode atomically assigns one unclaimed node in groupID to claimKey.
 //
+// The three identifiers have distinct roles. groupID is the id of a NodeGroup —
+// a pool of interchangeable nodes an operator has bucketed (e.g. by architecture
+// or capability, like "arm64" or "gpu-nodes"); the caller claims from a pool, not
+// a named machine. claimKey is an opaque, caller-owned label for the claim (e.g. a
+// CAPI Machine's UID) — the naming logic lives entirely on the caller's side, and
+// it need not be a secret. The returned node's own ID is the store-assigned
+// identifier of whichever node the pool handed back.
+//
 // Idempotency comes first: if claimKey already owns a node in the group, that
 // same node is returned without claiming a second one — so a controller that
 // crashed mid-provision and reconciles again re-finds its own node.
@@ -393,9 +401,14 @@ func (s *Store) ClaimNode(ctx context.Context, groupID, claimKey string) (*store
 
 // ReleaseNode clears the claim on nodeID and returns it to the pool, but only if
 // the claim is currently held by claimKey. The conditional UPDATE (... WHERE id =
-// ? AND claim_key = ?) means a caller can only release its own claim: a node that
+// ? AND claim_key = ?) ensures callers only release their own claims: a node that
 // is unclaimed or owned by a different key is left untouched and released is
 // false. Setting claim_key back to NULL frees it for a future ClaimNode.
+//
+// The claimKey match is an accident-prevention guard, not a security boundary:
+// claimKey is not a secret (any admin-authenticated caller can read it from
+// GET /nodes), so this only stops well-behaved callers from releasing each
+// other's claims by mistake — it is not an authorization control.
 func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool, error) {
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND claim_key = ?", nodeID, claimKey).
