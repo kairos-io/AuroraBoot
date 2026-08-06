@@ -53,6 +53,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install build deps
+        # libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive
+        # via sbctl), same as the amd64 tests.yml jobs and the Dockerfiles.
+        run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
+
       - name: Build binary
         run: |
           go build -v -o auroraboot .
