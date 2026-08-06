@@ -28,6 +28,8 @@ ADD . .
 # UI is pre-built and included in the build context
 COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
+# libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive via sbctl)
+RUN apt-get update && apt-get install -y --no-install-recommends libpcsclite-dev && rm -rf /var/lib/apt/lists/*
 RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
