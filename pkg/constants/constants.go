@@ -58,7 +58,7 @@ const (
 	// grub on an ISO we must place a grub.cfg at this path so it can find
 	// its config regardless of what the firmware sets $root to.
 	CdGrubPrefixDir = "/boot/grub"
-	GrubEfiCfg                = "search --no-floppy --file --set=root " + IsoKernelPath +
+	GrubEfiCfg      = "search --no-floppy --file --set=root " + IsoKernelPath +
 		"\nset prefix=($root)" + GrubPrefixDir +
 		"\nconfigfile $prefix/" + GrubCfg
 
@@ -152,6 +152,9 @@ func GetXorrisoBooloaderArgs(root string) []string {
 		// the ISO carries an MBR-only partition table and boot fails on
 		// those firmwares.
 		"-boot_image", "any", "appended_part_as=gpt",
+		// Preserve the active flag in the protective MBR for legacy BIOSes
+		// which refuse to boot an isohybrid image without a bootable entry.
+		"-boot_image", "any", "mbr_force_bootable=on",
 	}
 	return args
 }

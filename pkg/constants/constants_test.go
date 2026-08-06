@@ -27,6 +27,12 @@ var _ = Describe("GetXorrisoBooloaderArgs", Label("constants"), func() {
 		)
 	})
 
+	It("keeps the protective MBR bootable for picky legacy BIOS firmware", func() {
+		Expect(pairedFlagValues(args, "-boot_image", "any")).To(
+			ContainElement("mbr_force_bootable=on"),
+		)
+	})
+
 	It("keeps the isohybrid grub2 MBR wired up", func() {
 		Expect(pairedFlagValues(args, "-boot_image", "grub")).To(
 			ContainElement(MatchRegexp(`^grub2_mbr=/tmp/root/+boot/boot_hybrid\.img$`)),
