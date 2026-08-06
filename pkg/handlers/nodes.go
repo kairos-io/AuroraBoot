@@ -86,6 +86,34 @@ func (h *NodeHandler) triggerFinalize(nodeID string) {
 	}()
 }
 
+// resolveReset advances a node's automatic-reset lifecycle (kairos-io/kairos#4255)
+// when it re-registers after the reset reboot. The phonehome agent calls Register
+// on every boot, so a Register from a node whose ResetState is pending/in-progress
+// means it rebooted; the reported boot state gives the outcome:
+//   - autoreset        → in-progress (the node booted the statereset entry and is
+//     mid-reset; the following boot will be active)
+//   - active           → done (the reset finished and the node is healthy again),
+//     stamping LastReset
+//   - passive/recovery → failed (the active image did not survive the reset)
+//
+// Transitions are compare-and-set so concurrent re-registers resolve exactly once.
+// Best-effort: a store error is ignored — the next boot/heartbeat retries. A node
+// not awaiting a reset is left untouched.
+func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode, bootState string) {
+	if node.ResetState != store.ResetStatePending && node.ResetState != store.ResetStateInProgress {
+		return
+	}
+	inFlight := []string{store.ResetStatePending, store.ResetStateInProgress}
+	switch bootState {
+	case store.BootStateAutoReset:
+		_, _ = h.nodes.AdvanceReset(ctx, node.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
+	case store.BootStateActive:
+		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateDone, true)
+	case store.BootStatePassive, store.BootStateRecovery:
+		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateFailed, false)
+	}
+}
+
 // registerRequest is the expected body for node registration.
 type registerRequest struct {
 	RegistrationToken string              `json:"registrationToken"`
@@ -125,6 +153,9 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// A re-register is a strong "OS is up" signal too (a freshly-installed node
 		// phones home on first boot): attempt the auto eject-on-phone-home.
 		h.triggerFinalize(existing.ID)
+		// If this node is coming back from a reset reboot, resolve the reset
+		// lifecycle from the reported boot state (kairos-io/kairos#4255).
+		h.resolveReset(c.Request().Context(), existing, req.BootState)
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,

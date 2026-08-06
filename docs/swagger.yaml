@@ -486,6 +486,9 @@ definitions:
         type: object
       lastHeartbeat:
         type: string
+      lastReset:
+        description: LastReset is when the most recent automatic reset completed successfully.
+        type: string
       machineID:
         type: string
       osRelease:
@@ -493,6 +496,20 @@ definitions:
           type: string
         type: object
       phase:
+        type: string
+      resetRequestedAt:
+        description: |-
+          ResetRequestedAt is when the reset command was issued (ResetState set to
+          pending); nil when no reset has been requested.
+        type: string
+      resetState:
+        description: |-
+          ResetState tracks the day-2 automatic-reset lifecycle across the reboot a
+          reset command triggers (kairos-io/kairos#4255). A reset can't complete
+          synchronously — the agent selects the statereset boot entry and reboots — so
+          the command acks immediately and the real outcome is resolved here when the
+          node re-registers and reports its post-reboot boot state. One of:
+          "" (none) | pending | in-progress | done | failed.
         type: string
       updatedAt:
         type: string
