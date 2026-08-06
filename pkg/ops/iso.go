@@ -461,6 +461,18 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 		b.cfg.Logger.Errorf("Failed writing grub.cfg: %v", err)
 		return err
 	}
+	// The CD grub (gcd*.efi.signed) has its prefix baked to /boot/grub, so
+	// also drop a grub.cfg there. Placed both in the EFI image (USB case,
+	// where $root is the FAT ESP) and in the ISO root (CD case, where $root
+	// is the ISO9660 device).
+	if err = b.writeCdGrubEfiCfg(temp); err != nil {
+		b.cfg.Logger.Errorf("Failed writing CD grub.cfg: %v", err)
+		return err
+	}
+	if err = b.writeCdGrubEfiCfg(isoDir); err != nil {
+		b.cfg.Logger.Errorf("Failed writing CD grub.cfg: %v", err)
+		return err
+	}
 
 	// For RISC-V, create startup.nsh to auto-boot since some UEFI implementations
 	// don't automatically load the fallback boot path (BOOTRISCV64.EFI)
@@ -548,6 +560,19 @@ func (b BuildISOAction) createEFI(rootdir string, isoDir string) error {
 // writeDefaultGrubEfiCfg writes the default grub.cfg for the EFI image in teh given path
 func (b *BuildISOAction) writeDefaultGrubEfiCfg(path string) error {
 	calculatedPath := filepath.Join(path, constants.EfiBootPath, constants.GrubCfg)
+	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
+}
+
+// writeCdGrubEfiCfg writes grub.cfg at /boot/grub/grub.cfg to match the prefix
+// baked into gcdx64.efi.signed / gcdaa64.efi.signed. Without this, the CD grub
+// (which we prefer for ISO builds) drops to the rescue prompt on firmwares
+// where $root resolves to the ISO9660 root at boot.
+func (b *BuildISOAction) writeCdGrubEfiCfg(path string) error {
+	calculatedPath := filepath.Join(path, constants.CdGrubPrefixDir, constants.GrubCfg)
+	if err := utils.MkdirAll(b.cfg.Fs, filepath.Dir(calculatedPath), constants.DirPerm); err != nil {
+		b.cfg.Logger.Errorf("Failed creating base dir for CD grub.cfg: %v", err)
+		return err
+	}
 	return b.cfg.Fs.WriteFile(calculatedPath, []byte(constants.GrubEfiCfg), constants.FilePerm)
 }
 
@@ -642,16 +667,26 @@ func (b BuildISOAction) copyShim(tempdir, rootdir string) error {
 	return err
 }
 
-// getEfiGrubFilesForArch returns the possible grub EFI file paths for the given architecture.
-// For riscv64, prepend the openSUSE layout then delegate to the SDK (Debian/Ubuntu monolithic paths, ESP fallbacks, etc.).
+// getEfiGrubFilesForArch returns the possible grub EFI file paths for the given
+// architecture, ordered by preference for building a live ISO.
+//
+// Debian and Ubuntu ship two signed grub binaries: gcd*.efi.signed (prefix
+// /boot/grub, iso9660 baked in, meant for CD/removable media) and
+// grub*.efi.signed (prefix /EFI/<distro>, meant for on-disk installs). The SDK
+// list returns the disk one first because it is what raw-disk builds want.
+// For ISOs we prefer the CD variant, so we prepend it here. The disk variant
+// stays in the list as a fallback for rootfs images that only ship it.
 func getEfiGrubFilesForArch(arch string) []string {
-	if utils.IsRiscv64(arch) {
-		return append(
-			[]string{"/usr/share/efi/riscv64/grub.efi"},
-			sdkutils.GetEfiGrubFiles(arch)...,
-		)
+	sdkPaths := sdkutils.GetEfiGrubFiles(arch)
+	switch {
+	case utils.IsRiscv64(arch):
+		return append([]string{"/usr/share/efi/riscv64/grub.efi"}, sdkPaths...)
+	case arch == constants.ArchAmd64 || arch == constants.Archx86:
+		return append([]string{"/usr/lib/grub/x86_64-efi-signed/gcdx64.efi.signed"}, sdkPaths...)
+	case arch == constants.ArchArm64 || arch == constants.Archaarch64:
+		return append([]string{"/usr/lib/grub/arm64-efi-signed/gcdaa64.efi.signed"}, sdkPaths...)
 	}
-	return sdkutils.GetEfiGrubFiles(arch)
+	return sdkPaths
 }
 
 // copyGrub copies the shim files into the EFI partition
@@ -802,17 +837,25 @@ func (b BuildISOAction) applySources(target string, sources ...*imagetypes.Image
 	return nil
 }
 
-// cleanupGrubName will cleanup the grub name to provide a proper grub named file
-// As the original name can contain several suffixes to indicate its signed status
-// we need to clean them up before using them as the shim will look for a file with
-// no suffixes
+// cleanupGrubName normalises a grub EFI filename so shim can chainload it.
+//
+// Two things happen here:
+//  1. Signing suffixes (.signed, .dualsigned, .signed.latest) are stripped,
+//     because shim looks up its grub payload by the unsuffixed name.
+//  2. The CD-media grub (gcdx64.efi / gcdaa64.efi) is renamed to the
+//     corresponding grub*.efi name. Ubuntu's shim is compiled to load
+//     grub{x64,aa64}.efi from the same directory, so we cannot leave the
+//     "gcd" name on disk or Secure Boot chainloading fails.
 func cleanupGrubName(name string) string {
-	// remove the .signed suffix if present
-	clean := strings.TrimSuffix(name, ".signed")
-	// remove the .dualsigned suffix if present
+	clean := strings.TrimSuffix(name, ".signed.latest")
 	clean = strings.TrimSuffix(clean, ".dualsigned")
-	// remove the .signed.latest suffix if present
-	clean = strings.TrimSuffix(clean, ".signed.latest")
+	clean = strings.TrimSuffix(clean, ".signed")
+	switch clean {
+	case "gcdx64.efi":
+		return "grubx64.efi"
+	case "gcdaa64.efi":
+		return "grubaa64.efi"
+	}
 	return clean
 }
 
