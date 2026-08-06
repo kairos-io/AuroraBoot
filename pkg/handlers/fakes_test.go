@@ -210,6 +210,40 @@ func (f *fakeNodeStore) ReleaseNode(_ context.Context, nodeID, claimKey string) 
 	return false, nil
 }
 
+func (f *fakeNodeStore) SetResetPending(_ context.Context, nodeID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID == nodeID {
+			now := time.Now()
+			n.ResetState = store.ResetStatePending
+			n.ResetRequestedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID != nodeID {
+			continue
+		}
+		for _, from := range fromStates {
+			if n.ResetState == from {
+				n.ResetState = to
+				if stampLastReset {
+					now := time.Now()
+					n.LastReset = &now
+				}
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

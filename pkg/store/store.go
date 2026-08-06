@@ -74,10 +74,43 @@ type ManagedNode struct {
 	ClaimKey *string `json:"claimKey,omitempty" gorm:"index:idx_node_group_claim,unique,priority:2"`
 	// ClaimedAt is when ClaimKey was set; nil when unclaimed.
 	ClaimedAt *time.Time `json:"claimedAt,omitempty"`
+	// ResetState tracks the day-2 automatic-reset lifecycle across the reboot a
+	// reset command triggers (kairos-io/kairos#4255). A reset can't complete
+	// synchronously — the agent selects the statereset boot entry and reboots — so
+	// the command acks immediately and the real outcome is resolved here when the
+	// node re-registers and reports its post-reboot boot state. One of:
+	// "" (none) | pending | in-progress | done | failed.
+	ResetState string `json:"resetState,omitempty"`
+	// ResetRequestedAt is when the reset command was issued (ResetState set to
+	// pending); nil when no reset has been requested.
+	ResetRequestedAt *time.Time `json:"resetRequestedAt,omitempty"`
+	// LastReset is when the most recent automatic reset completed successfully.
+	LastReset *time.Time `json:"lastReset,omitempty"`
 	APIKey    string     `json:"-" gorm:"index"`
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 }
+
+// Reported boot states (ManagedNode.BootState) — the short fleet vocabulary the
+// agent sends on register/heartbeat (kairos-io/kairos#4253). Unknown values are
+// still stored as-is; these are the ones the reset lifecycle reasons about.
+const (
+	BootStateActive    = "active"
+	BootStatePassive   = "passive"
+	BootStateRecovery  = "recovery"
+	BootStateAutoReset = "autoreset"
+)
+
+// Reset states (ManagedNode.ResetState) for the day-2 automatic-reset lifecycle
+// (kairos-io/kairos#4255). SetResetPending sets `pending` when a reset command is
+// issued; the re-register resolver advances it from the reported boot state:
+// autoreset → in-progress, active → done, passive/recovery → failed.
+const (
+	ResetStatePending    = "pending"
+	ResetStateInProgress = "in-progress"
+	ResetStateDone       = "done"
+	ResetStateFailed     = "failed"
+)
 
 // Node phases.
 const (
@@ -167,6 +200,17 @@ type NodeStore interface {
 	// caller inspects the node to distinguish those and must not assume ownership
 	// from a false result.
 	ReleaseNode(ctx context.Context, nodeID, claimKey string) (released bool, err error)
+	// SetResetPending marks nodeID as awaiting an automatic reset: ResetState is
+	// set to pending and ResetRequestedAt to now. Called when a reset command is
+	// issued; the outcome is resolved later by AdvanceReset when the node
+	// re-registers with its post-reboot boot state.
+	SetResetPending(ctx context.Context, nodeID string) error
+	// AdvanceReset atomically transitions nodeID's ResetState from any of
+	// fromStates to `to`, returning true only if this call performed the
+	// transition — so concurrent re-registers resolve exactly once. When
+	// stampLastReset is set (the transition to done), LastReset is set to now in
+	// the same update.
+	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
 	Delete(ctx context.Context, id string) error
 }
 
