@@ -12,6 +12,12 @@ import (
 // non-existent command.
 var ErrCommandNotFound = errors.New("command not found")
 
+// ErrNoClaimCapacity is returned by NodeStore.ClaimNode when the target group
+// has no unclaimed node available. It is a distinct, expected outcome — not a
+// failure — so a caller (e.g. a CAPI infrastructure provider) can surface
+// "waiting for capacity" and requeue instead of treating it as an error.
+var ErrNoClaimCapacity = errors.New("no unclaimed node available in group")
+
 // NodeGroup represents a logical group/environment for nodes (e.g., "production", "staging").
 type NodeGroup struct {
 	ID          string    `json:"id" gorm:"primaryKey"`
@@ -41,7 +47,7 @@ type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
 	Hostname      string            `json:"hostname"`
-	GroupID       string            `json:"groupID" gorm:"index"`
+	GroupID       string            `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1"`
 	Group         *NodeGroup        `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 	Phase         string            `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat"`
@@ -56,10 +62,21 @@ type ManagedNode struct {
 	// that booted the passive image signals a broken active image). Known values:
 	// active | passive | recovery | autoreset — but unknown values are accepted
 	// and stored as-is so future boot states pass through without a server change.
-	BootState string    `json:"bootState,omitempty"`
-	APIKey    string    `json:"-" gorm:"index"`
-	CreatedAt time.Time `json:"createdAt"`
-	UpdatedAt time.Time `json:"updatedAt"`
+	BootState string `json:"bootState,omitempty"`
+	// ClaimKey, when non-nil, is the opaque caller-owned key that has claimed this
+	// node via POST /api/v1/groups/:id/claim (e.g. a CAPI machine's identity). A
+	// nil ClaimKey means the node is unclaimed and available. It is a pointer, not
+	// a string, on purpose: "unclaimed" must be SQL NULL, because the composite
+	// unique index idx_node_group_claim on (group_id, claim_key) makes a claimKey
+	// own at most one node per group, and NULLs are exempt from unique indexes on
+	// both SQLite and PostgreSQL — so many unclaimed nodes coexist while a second
+	// node can never take an already-used claimKey in the same group.
+	ClaimKey *string `json:"claimKey,omitempty" gorm:"index:idx_node_group_claim,unique,priority:2"`
+	// ClaimedAt is when ClaimKey was set; nil when unclaimed.
+	ClaimedAt *time.Time `json:"claimedAt,omitempty"`
+	APIKey    string     `json:"-" gorm:"index"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // Node phases.
@@ -135,6 +152,21 @@ type NodeStore interface {
 	UpdatePhase(ctx context.Context, id string, phase string) error
 	SetGroup(ctx context.Context, nodeID string, groupID string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
+	// ClaimNode atomically assigns one unclaimed node in groupID to claimKey and
+	// returns it. It is idempotent: re-issuing with the same (groupID, claimKey)
+	// returns the SAME node, never a second one — which is what makes a
+	// level-triggered CAPI reconcile safe across controller restarts and retries.
+	// Concurrent claims are arbitrated by the store so two callers never receive
+	// the same node. Returns ErrNoClaimCapacity when the group has no unclaimed
+	// node available.
+	ClaimNode(ctx context.Context, groupID, claimKey string) (*ManagedNode, error)
+	// ReleaseNode clears the claim on nodeID, returning it to the group's pool for
+	// reuse, but only if the claim is currently held by claimKey. released reports
+	// whether a claim was actually cleared: (false, nil) means the node was not
+	// claimed by this key (it is already free, or owned by a different key). The
+	// caller inspects the node to distinguish those and must not assume ownership
+	// from a false result.
+	ReleaseNode(ctx context.Context, nodeID, claimKey string) (released bool, err error)
 	Delete(ctx context.Context, id string) error
 }
 
@@ -163,45 +195,45 @@ type CommandStore interface {
 
 // ArtifactRecord stores a build artifact and its metadata.
 type ArtifactRecord struct {
-	ID                      string    `json:"id" gorm:"primaryKey"`
-	Name                    string    `json:"name,omitempty"`
-	Saved                   bool      `json:"saved,omitempty"`
-	Phase                   string    `json:"phase"`
-	Message                 string    `json:"message"`
-	BaseImage               string    `json:"baseImage"`
-	KairosVersion           string    `json:"kairosVersion"`
-	Model                   string    `json:"model"`
-	ISO                     bool      `json:"iso"`
-	CloudImage              bool      `json:"cloudImage"`
-	Netboot                 bool      `json:"netboot"`
-	FIPS                    bool      `json:"fips"`
-	TrustedBoot             bool      `json:"trustedBoot"`
-	Arch                    string    `json:"arch,omitempty"`
-	Variant                 string    `json:"variant,omitempty"`
-	AllowInsecureRegistries bool      `json:"allow-insecure-registries" gorm:"column:insecure"`
-	RawDisk                 bool      `json:"rawDisk"`
-	Tar                     bool      `json:"tar"`
-	GCE                     bool      `json:"gce"`
-	VHD                     bool      `json:"vhd"`
-	MAAS                    bool      `json:"maas"`
-	UKI                     bool      `json:"uki"`
-	KairosInitImage         string    `json:"kairosInitImage,omitempty"`
-	AutoInstall             bool      `json:"autoInstall"`
-	RegisterAuroraBoot      bool      `json:"registerAuroraBoot"`
-	Dockerfile              string    `json:"dockerfile,omitempty"`
-	HadronBase              string    `json:"hadronBase,omitempty"`
-	HadronFirmware          []string  `json:"hadronFirmware,omitempty" gorm:"serializer:json"`
-	HadronLayers            []string  `json:"hadronLayers,omitempty" gorm:"serializer:json"`
-	HadronExtra             string    `json:"hadronExtra,omitempty" gorm:"type:text"`
-	CloudConfig             string    `json:"cloudConfig,omitempty" gorm:"type:text"`
-	KubernetesDistro        string    `json:"kubernetesDistro,omitempty"`
-	KubernetesVersion       string    `json:"kubernetesVersion,omitempty"`
-	KubernetesEnabled       *bool     `json:"kubernetesEnabled,omitempty"`
-	TargetGroupID           string    `json:"targetGroupId,omitempty"`
-	ContainerImage          string    `json:"containerImage,omitempty"`
-	OverlayRootfs           string    `json:"overlayRootfs,omitempty"`
-	ArtifactFiles           []string  `json:"artifacts" gorm:"serializer:json"`
-	Logs                    string    `json:"-" gorm:"type:text"`
+	ID                      string   `json:"id" gorm:"primaryKey"`
+	Name                    string   `json:"name,omitempty"`
+	Saved                   bool     `json:"saved,omitempty"`
+	Phase                   string   `json:"phase"`
+	Message                 string   `json:"message"`
+	BaseImage               string   `json:"baseImage"`
+	KairosVersion           string   `json:"kairosVersion"`
+	Model                   string   `json:"model"`
+	ISO                     bool     `json:"iso"`
+	CloudImage              bool     `json:"cloudImage"`
+	Netboot                 bool     `json:"netboot"`
+	FIPS                    bool     `json:"fips"`
+	TrustedBoot             bool     `json:"trustedBoot"`
+	Arch                    string   `json:"arch,omitempty"`
+	Variant                 string   `json:"variant,omitempty"`
+	AllowInsecureRegistries bool     `json:"allow-insecure-registries" gorm:"column:insecure"`
+	RawDisk                 bool     `json:"rawDisk"`
+	Tar                     bool     `json:"tar"`
+	GCE                     bool     `json:"gce"`
+	VHD                     bool     `json:"vhd"`
+	MAAS                    bool     `json:"maas"`
+	UKI                     bool     `json:"uki"`
+	KairosInitImage         string   `json:"kairosInitImage,omitempty"`
+	AutoInstall             bool     `json:"autoInstall"`
+	RegisterAuroraBoot      bool     `json:"registerAuroraBoot"`
+	Dockerfile              string   `json:"dockerfile,omitempty"`
+	HadronBase              string   `json:"hadronBase,omitempty"`
+	HadronFirmware          []string `json:"hadronFirmware,omitempty" gorm:"serializer:json"`
+	HadronLayers            []string `json:"hadronLayers,omitempty" gorm:"serializer:json"`
+	HadronExtra             string   `json:"hadronExtra,omitempty" gorm:"type:text"`
+	CloudConfig             string   `json:"cloudConfig,omitempty" gorm:"type:text"`
+	KubernetesDistro        string   `json:"kubernetesDistro,omitempty"`
+	KubernetesVersion       string   `json:"kubernetesVersion,omitempty"`
+	KubernetesEnabled       *bool    `json:"kubernetesEnabled,omitempty"`
+	TargetGroupID           string   `json:"targetGroupId,omitempty"`
+	ContainerImage          string   `json:"containerImage,omitempty"`
+	OverlayRootfs           string   `json:"overlayRootfs,omitempty"`
+	ArtifactFiles           []string `json:"artifacts" gorm:"serializer:json"`
+	Logs                    string   `json:"-" gorm:"type:text"`
 	// UploadToken holds the sha256 hex digest of the per-build bearer the
 	// operator backend's exporter Job uses to PUT /api/v1/artifacts/:id/upload/:file.
 	// The plaintext token is minted by the handler on Create, injected into
@@ -210,9 +242,9 @@ type ArtifactRecord struct {
 	// compares it against this digest, so DB read access (backup, SQLite
 	// file, SQLi elsewhere) does not surface live write tokens. The JSON
 	// tag stays "-" so nothing here is serialized to clients regardless.
-	UploadToken string `json:"-"`
-	CreatedAt               time.Time `json:"createdAt"`
-	UpdatedAt               time.Time `json:"updatedAt"`
+	UploadToken string    `json:"-"`
+	CreatedAt   time.Time `json:"createdAt"`
+	UpdatedAt   time.Time `json:"updatedAt"`
 }
 
 // Artifact phases.
