@@ -181,9 +181,6 @@ RUN rm -d /arm/raw/grubartifacts/var || true
 RUN rm -d /amd/raw/grubartifacts/var || true
 RUN rm -d /arm/raw/grubefi/var || true
 
-# ARM helpers
-COPY ./image-assets/prepare_nvidia_orin_images.sh /prepare_nvidia_orin_images.sh
-
 COPY --from=builder /work/auroraboot /usr/bin/auroraboot
 
 ENTRYPOINT ["/usr/bin/auroraboot"]
