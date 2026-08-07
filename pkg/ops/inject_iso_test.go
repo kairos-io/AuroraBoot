@@ -58,6 +58,47 @@ var _ = Describe("InjectISO", Label("iso"), func() {
 		Expect(string(lsOut)).To(ContainSubstring("config.yaml"))
 	})
 
+	// Regression test for #4283: --overlay-iso must apply to the finalised ISO
+	// even when no cloud-config is present. Before the fix, InjectISO copied
+	// overlay content into tmp but only ran xorriso inside the cloud-config
+	// existence check, so overlay-only callers silently got an ISO with no
+	// overlay files.
+	It("injects overlay-iso content even when no cloud-config is present", func() {
+		if _, err := exec.LookPath("xorriso"); err != nil {
+			Skip("xorriso not installed")
+		}
+
+		// Empty dst (no config.yaml) => the cloud-config branch is a no-op.
+		dst := GinkgoT().TempDir()
+
+		// Overlay dir carrying a canary file to look for on the ISO afterwards.
+		overlay := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(overlay, "canary"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(overlay, "canary", "marker.txt"),
+			[]byte("hello from overlay"), 0o644)).To(Succeed())
+
+		// Minimal source ISO so xorriso has something to replay against.
+		payload := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(payload, "placeholder"), []byte("x"), 0o644)).To(Succeed())
+		isoFile := filepath.Join(GinkgoT().TempDir(), "source.iso")
+		mk := exec.Command("xorriso", "-as", "mkisofs", "-o", isoFile, payload)
+		out, err := mk.CombinedOutput()
+		Expect(err).NotTo(HaveOccurred(), string(out))
+
+		fn := InjectISO(
+			func() string { return dst },
+			func() string { return isoFile },
+			schema.ISO{OverlayISO: overlay},
+		)
+		Expect(fn(context.Background())).To(Succeed())
+
+		// Canary file must be present on the ISO under its overlay-relative path.
+		ls := exec.Command("xorriso", "-indev", isoFile, "-find", "/canary/marker.txt")
+		lsOut, lsErr := ls.CombinedOutput()
+		Expect(lsErr).NotTo(HaveOccurred(), string(lsOut))
+		Expect(string(lsOut)).To(ContainSubstring("/canary/marker.txt"))
+	})
+
 	It("does not change the process working directory when xorriso fails", func() {
 		dst := GinkgoT().TempDir()
 		Expect(os.WriteFile(filepath.Join(dst, "config.yaml"),

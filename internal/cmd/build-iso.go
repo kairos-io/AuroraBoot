@@ -146,6 +146,11 @@ var BuildISOCmd = cli.Command{
 			d.StepCopyCloudConfig,
 			d.StepDumpSource,
 			d.StepGenISO,
+			// StepInjectCC is what actually applies --overlay-iso (and the
+			// cloud-config) onto the finalised ISO tree via xorriso. Without
+			// it the subcommand silently drops overlay content that pipeline
+			// mode (Deployer.Run) applies correctly. See #4283.
+			d.StepInjectCC,
 		} {
 			if err := step(); err != nil {
 				return err
