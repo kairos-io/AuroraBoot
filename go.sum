@@ -179,8 +179,8 @@ github.com/go-git/go-billy/v5 v5.9.0 h1:jItGXszUDRtR/AlferWPTMN4j38BQ88XnXKbilmm
 github.com/go-git/go-billy/v5 v5.9.0/go.mod h1:jCnQMLj9eUgGU7+ludSTYoZL/GGmii14RxKFj7ROgHw=
 github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399 h1:eMje31YglSBqCdIqdhKBW8lokaMrL3uTkpGYlE2OOT4=
 github.com/go-git/go-git-fixtures/v4 v4.3.2-0.20231010084843-55a94097c399/go.mod h1:1OCfN199q1Jm3HZlxleg+Dw/mwps2Wbk9frAWm+4FII=
-github.com/go-git/go-git/v5 v5.19.1 h1:nX27AnaU43/K5bKktKwgBmR9lawoYVe1Ckg0rgzzN00=
-github.com/go-git/go-git/v5 v5.19.1/go.mod h1:Pb1v0c7/g8aGQJwx9Us09W85yGoyvSwuhEGMH7zjDKQ=
+github.com/go-git/go-git/v5 v5.19.2 h1:wkfn7vOlUBu8ivAWKBWisTiwJK4jYHzTF8Ndv1LyGqY=
+github.com/go-git/go-git/v5 v5.19.2/go.mod h1:QqCBE1EFN5ddFmrliLQ3/ntRCUjZU3EJuwuB/jWEHjk=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
 github.com/go-logr/logr v1.4.4 h1:tG4xh9yMsRCAiodLVTxyrkzSZ9+o0L1Kg/+cPVcbP/8=
 github.com/go-logr/logr v1.4.4/go.mod h1:9T104GzyrTigFIr8wt5mBrctHMim0Nb2HLGrmQ40KvY=
@@ -325,8 +325,6 @@ github.com/kairos-io/go-ukify v0.5.0 h1:cmEauHZ6RdPk/2xkfG2EPxjEYqfSZGuCYIHpnYRL
 github.com/kairos-io/go-ukify v0.5.0/go.mod h1:vUmdBgpj4AyW/0an0ZDfeGE1f6NRDpbQ2MILJtAvy+4=
 github.com/kairos-io/kairos-agent/v2 v2.30.2 h1:jsEjDyfXrzl08izK1F/+ldK6miHLYJTBGcUM+/EzxY8=
 github.com/kairos-io/kairos-agent/v2 v2.30.2/go.mod h1:kngQkD17C3FI8k2ABhTycgPm80ghwgI0F2meFW83YMI=
-github.com/kairos-io/kairos-operator v0.1.2 h1:nZvfkBZr+KGjKh7xIcz+aCRMdjXBfp1Q5w107mhd+mI=
-github.com/kairos-io/kairos-operator v0.1.2/go.mod h1:HEfMy7VAHde6/7WHzp+vEXxNxxneMaBjeSLLKP1+9wo=
 github.com/kairos-io/kairos-operator v0.1.3 h1:UlEaYFyak3IpDQa/SE6/GVEOLGJo8JOEpLRk5W4Uyoc=
 github.com/kairos-io/kairos-operator v0.1.3/go.mod h1:HEfMy7VAHde6/7WHzp+vEXxNxxneMaBjeSLLKP1+9wo=
 github.com/kairos-io/kairos-sdk v0.25.2 h1:gvwdBklzpmYrvNWAHXAblCh5BRaIDU3axRyjRLJGO8s=
