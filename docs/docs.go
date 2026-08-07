@@ -1968,6 +1968,10 @@ const docTemplate = `{
                 "lastHeartbeat": {
                     "type": "string"
                 },
+                "lastReset": {
+                    "description": "LastReset is when the most recent automatic reset completed successfully.",
+                    "type": "string"
+                },
                 "machineID": {
                     "type": "string"
                 },
@@ -1978,6 +1982,14 @@ const docTemplate = `{
                     }
                 },
                 "phase": {
+                    "type": "string"
+                },
+                "resetRequestedAt": {
+                    "description": "ResetRequestedAt is when the reset command was issued (ResetState set to\npending); nil when no reset has been requested.",
+                    "type": "string"
+                },
+                "resetState": {
+                    "description": "ResetState tracks the day-2 automatic-reset lifecycle across the reboot a\nreset command triggers (kairos-io/kairos#4255). A reset can't complete\nsynchronously — the agent selects the statereset boot entry and reboots — so\nthe command acks immediately and the real outcome is resolved here when the\nnode re-registers and reports its post-reboot boot state. One of:\n\"\" (none) | pending | in-progress | done | failed.",
                     "type": "string"
                 },
                 "updatedAt": {

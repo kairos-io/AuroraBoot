@@ -419,6 +419,38 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 	return res.RowsAffected == 1, nil
 }
 
+// SetResetPending marks a node as awaiting an automatic reset.
+func (s *Store) SetResetPending(ctx context.Context, nodeID string) error {
+	now := time.Now()
+	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ?", nodeID).
+		Updates(map[string]any{
+			"reset_state":        store.ResetStatePending,
+			"reset_requested_at": &now,
+		}).Error
+}
+
+// AdvanceReset compare-and-sets a node's ResetState. The conditional UPDATE
+// (... WHERE id = ? AND reset_state IN fromStates) means exactly one of several
+// concurrent re-register resolvers performs any given transition; the losers see
+// RowsAffected == 0. When stampLastReset is set, last_reset is written in the same
+// statement so the "done" transition and its timestamp land atomically. This
+// mirrors the store's existing CAS idiom (ClaimForDelivery / CASEjectState).
+func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
+	updates := map[string]any{"reset_state": to}
+	if stampLastReset {
+		now := time.Now()
+		updates["last_reset"] = &now
+	}
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND reset_state IN ?", nodeID, fromStates).
+		Updates(updates)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // --- CommandStore ---
 
 func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error {

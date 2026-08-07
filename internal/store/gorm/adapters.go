@@ -51,6 +51,12 @@ func (a *NodeStoreAdapter) ClaimNode(ctx context.Context, groupID, claimKey stri
 func (a *NodeStoreAdapter) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool, error) {
 	return a.S.ReleaseNode(ctx, nodeID, claimKey)
 }
+func (a *NodeStoreAdapter) SetResetPending(ctx context.Context, nodeID string) error {
+	return a.S.SetResetPending(ctx, nodeID)
+}
+func (a *NodeStoreAdapter) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
+	return a.S.AdvanceReset(ctx, nodeID, fromStates, to, stampLastReset)
+}
 func (a *NodeStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.NodeDelete(ctx, id)
 }
