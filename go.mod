@@ -48,7 +48,7 @@ require (
 	github.com/stmcginnis/gofish v0.23.0
 	github.com/swaggo/swag v1.16.6
 	github.com/urfave/cli/v2 v2.27.7
-	gorm.io/driver/postgres v1.6.0
+	gorm.io/driver/postgres v1.6.2
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
 	k8s.io/api v0.36.3
@@ -141,7 +141,7 @@ require (
 	github.com/itchyny/timefmt-go v0.1.8 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
-	github.com/jackc/pgx/v5 v5.9.2 // indirect
+	github.com/jackc/pgx/v5 v5.10.0 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
 	github.com/jaypipes/ghw v0.25.0 // indirect
 	github.com/jaypipes/pcidb v1.1.1 // indirect
