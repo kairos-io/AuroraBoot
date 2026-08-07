@@ -79,6 +79,14 @@ func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error   
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
+func (f *fakeNodeStore) ClaimNode(_ context.Context, _, _ string) (*store.ManagedNode, error) {
+	return nil, store.ErrNoClaimCapacity
+}
+func (f *fakeNodeStore) ReleaseNode(_ context.Context, _, _ string) (bool, error) { return false, nil }
+func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error        { return nil }
+func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
 
 type fakeCommandStore struct {

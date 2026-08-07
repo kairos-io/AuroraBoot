@@ -73,6 +73,21 @@ func (s *NodesService) SetGroup(ctx context.Context, nodeID, groupID string) err
 	return s.c.do(ctx, http.MethodPut, "/api/v1/nodes/"+nodeID+"/group", nil, body, nil)
 }
 
+// Release clears the node's claim, returning it to its group's pool, but only if
+// the claim is held by claimKey. released reports whether a claim was actually
+// cleared: false means the node was already unclaimed. A node claimed by a
+// different key yields an error satisfying IsConflict.
+func (s *NodesService) Release(ctx context.Context, nodeID, claimKey string) (released bool, err error) {
+	body := map[string]string{"claimKey": claimKey}
+	var out struct {
+		Released bool `json:"released"`
+	}
+	if err := s.c.do(ctx, http.MethodPost, "/api/v1/nodes/"+nodeID+"/release", nil, body, &out); err != nil {
+		return false, err
+	}
+	return out.Released, nil
+}
+
 // Heartbeat reports a periodic liveness update from a registered
 // node. Transitions the node to Online server-side.
 func (s *NodesService) Heartbeat(ctx context.Context, nodeID string, req NodeHeartbeatRequest) error {

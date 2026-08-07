@@ -260,6 +260,63 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/artifacts/{id}/upload/{filename}": {
+            "put": {
+                "description": "Per-build endpoint the operator backend's exporter uses to ship finished artifacts back to AuroraBoot. Bearer is the UploadToken minted at Create time; the admin bearer does not grant access.",
+                "consumes": [
+                    "application/octet-stream"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Upload a single artifact file for a build",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "Artifact filename (single-segment; no path separators)",
+                        "name": "filename",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/groups": {
             "get": {
                 "security": [
@@ -439,6 +496,69 @@ const docTemplate = `{
                 "responses": {
                     "204": {
                         "description": "No Content"
+                    }
+                }
+            }
+        },
+        "/api/v1/groups/{id}/claim": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Groups"
+                ],
+                "summary": "Claim a node from a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Claim payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIClaimRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.ManagedNode"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "No unclaimed node available (code=NoCapacity)",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -816,6 +936,69 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nodes/{nodeID}/release": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Release a node's claim",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Release payload",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIReleaseRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIReleaseResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Claimed by a different key (code=ClaimMismatch)",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/secureboot-keys": {
             "get": {
                 "security": [
@@ -1089,6 +1272,30 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/api/v1/system/builder": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "System"
+                ],
+                "summary": "Report the active builder backend",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APISystemBuilder"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1105,6 +1312,9 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "iso": {
+                    "type": "boolean"
+                },
+                "maas": {
                     "type": "boolean"
                 },
                 "netboot": {
@@ -1191,6 +1401,15 @@ const docTemplate = `{
                 },
                 "ukiTpmPcrKey": {
                     "type": "string"
+                }
+            }
+        },
+        "handlers.APIClaimRequest": {
+            "type": "object",
+            "properties": {
+                "claimKey": {
+                    "type": "string",
+                    "example": "machine-abc123"
                 }
             }
         },
@@ -1324,6 +1543,9 @@ const docTemplate = `{
         "handlers.APIError": {
             "type": "object",
             "properties": {
+                "code": {
+                    "type": "string"
+                },
                 "detail": {
                     "type": "string"
                 },
@@ -1437,6 +1659,23 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.APIReleaseRequest": {
+            "type": "object",
+            "properties": {
+                "claimKey": {
+                    "type": "string",
+                    "example": "machine-abc123"
+                }
+            }
+        },
+        "handlers.APIReleaseResponse": {
+            "type": "object",
+            "properties": {
+                "released": {
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.APISetGroupRequest": {
             "type": "object",
             "properties": {
@@ -1454,6 +1693,30 @@ const docTemplate = `{
                     "additionalProperties": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "handlers.APISystemBuilder": {
+            "type": "object",
+            "properties": {
+                "backend": {
+                    "type": "string",
+                    "enum": [
+                        "local",
+                        "operator"
+                    ],
+                    "example": "operator"
+                },
+                "cluster": {
+                    "type": "string",
+                    "example": "https://kind.example"
+                },
+                "downloadSupported": {
+                    "type": "boolean"
+                },
+                "namespace": {
+                    "type": "string",
+                    "example": "kairos-builds"
                 }
             }
         },
@@ -1603,6 +1866,9 @@ const docTemplate = `{
                 "kubernetesVersion": {
                     "type": "string"
                 },
+                "maas": {
+                    "type": "boolean"
+                },
                 "message": {
                     "type": "string"
                 },
@@ -1670,6 +1936,14 @@ const docTemplate = `{
                     "description": "BootState is the node's reported boot state for day-2 lifecycle (e.g. a node\nthat booted the passive image signals a broken active image). Known values:\nactive | passive | recovery | autoreset — but unknown values are accepted\nand stored as-is so future boot states pass through without a server change.",
                     "type": "string"
                 },
+                "claimKey": {
+                    "description": "ClaimKey, when non-nil, is the opaque caller-owned key that has claimed this\nnode via POST /api/v1/groups/:id/claim (e.g. a CAPI machine's identity). A\nnil ClaimKey means the node is unclaimed and available. It is a pointer, not\na string, on purpose: \"unclaimed\" must be SQL NULL, because the composite\nunique index idx_node_group_claim on (group_id, claim_key) makes a claimKey\nown at most one node per group, and NULLs are exempt from unique indexes on\nboth SQLite and PostgreSQL — so many unclaimed nodes coexist while a second\nnode can never take an already-used claimKey in the same group.",
+                    "type": "string"
+                },
+                "claimedAt": {
+                    "description": "ClaimedAt is when ClaimKey was set; nil when unclaimed.",
+                    "type": "string"
+                },
                 "createdAt": {
                     "type": "string"
                 },
@@ -1694,6 +1968,10 @@ const docTemplate = `{
                 "lastHeartbeat": {
                     "type": "string"
                 },
+                "lastReset": {
+                    "description": "LastReset is when the most recent automatic reset completed successfully.",
+                    "type": "string"
+                },
                 "machineID": {
                     "type": "string"
                 },
@@ -1704,6 +1982,14 @@ const docTemplate = `{
                     }
                 },
                 "phase": {
+                    "type": "string"
+                },
+                "resetRequestedAt": {
+                    "description": "ResetRequestedAt is when the reset command was issued (ResetState set to\npending); nil when no reset has been requested.",
+                    "type": "string"
+                },
+                "resetState": {
+                    "description": "ResetState tracks the day-2 automatic-reset lifecycle across the reboot a\nreset command triggers (kairos-io/kairos#4255). A reset can't complete\nsynchronously — the agent selects the statereset boot entry and reboots — so\nthe command acks immediately and the real outcome is resolved here when the\nnode re-registers and reports its post-reboot boot state. One of:\n\"\" (none) | pending | in-progress | done | failed.",
                     "type": "string"
                 },
                 "updatedAt": {

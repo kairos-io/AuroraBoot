@@ -230,6 +230,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/nodes/:nodeID/decommission", nodeHandler.Decommission)
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
+	adminGroup.POST("/nodes/:nodeID/release", nodeHandler.Release)
 	// GET /nodes/:nodeID/commands and PUT .../commands/:commandID/status are
 	// served by the shared agent-or-admin group above (single registration to
 	// avoid Echo route shadowing); they branch on the caller's identity.
@@ -244,6 +245,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.GET("/groups/:id", groupHandler.Get)
 	adminGroup.PUT("/groups/:id", groupHandler.Update)
 	adminGroup.DELETE("/groups/:id", groupHandler.Delete)
+	adminGroup.POST("/groups/:id/claim", nodeHandler.Claim)
 	adminGroup.POST("/groups/:id/commands", cmdHandler.CreateForGroup)
 
 	// Artifact management

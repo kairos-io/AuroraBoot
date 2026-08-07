@@ -126,6 +126,9 @@ type APIError struct {
 	StatusCode int    `json:"-"`
 	ErrorMsg   string `json:"error"`
 	Detail     string `json:"detail,omitempty"`
+	// Code is the server's stable, machine-readable discriminator (e.g.
+	// "NoCapacity", "ClaimMismatch") when several conditions share one status.
+	Code string `json:"code,omitempty"`
 }
 
 // Error implements the error interface.
@@ -155,6 +158,14 @@ func IsConflict(err error) bool {
 func IsUnauthorized(err error) bool {
 	var e *APIError
 	return errorsAs(err, &e) && e.StatusCode == http.StatusUnauthorized
+}
+
+// IsNoCapacity reports whether err is a claim rejected because the group has no
+// unclaimed node (HTTP 409, code "NoCapacity"). A caller can branch on this to
+// wait and retry rather than treat it as a hard failure.
+func IsNoCapacity(err error) bool {
+	var e *APIError
+	return errorsAs(err, &e) && e.Code == "NoCapacity"
 }
 
 // errorsAs is a tiny stdlib shim so the helpers above don't need to

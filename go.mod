@@ -43,7 +43,7 @@ require (
 require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
-	github.com/kairos-io/kairos-operator v0.1.2
+	github.com/kairos-io/kairos-operator v0.1.3
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.23.0
 	github.com/swaggo/swag v1.16.6

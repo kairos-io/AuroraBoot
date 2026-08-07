@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -174,6 +175,75 @@ func (f *fakeNodeStore) SetLabels(_ context.Context, nodeID string, labels map[s
 	return fmt.Errorf("not found")
 }
 
+func (f *fakeNodeStore) ClaimNode(_ context.Context, groupID, claimKey string) (*store.ManagedNode, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	// Idempotent replay: this key already owns a node in the group.
+	for _, n := range f.nodes {
+		if n.GroupID == groupID && n.ClaimKey != nil && *n.ClaimKey == claimKey {
+			return n, nil
+		}
+	}
+	// Claim the first unclaimed node in the group.
+	for _, n := range f.nodes {
+		if n.GroupID == groupID && n.ClaimKey == nil {
+			key := claimKey
+			now := time.Now()
+			n.ClaimKey = &key
+			n.ClaimedAt = &now
+			return n, nil
+		}
+	}
+	return nil, store.ErrNoClaimCapacity
+}
+
+func (f *fakeNodeStore) ReleaseNode(_ context.Context, nodeID, claimKey string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID == nodeID && n.ClaimKey != nil && *n.ClaimKey == claimKey {
+			n.ClaimKey = nil
+			n.ClaimedAt = nil
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (f *fakeNodeStore) SetResetPending(_ context.Context, nodeID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID == nodeID {
+			now := time.Now()
+			n.ResetState = store.ResetStatePending
+			n.ResetRequestedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID != nodeID {
+			continue
+		}
+		for _, from := range fromStates {
+			if n.ResetState == from {
+				n.ResetState = to
+				if stampLastReset {
+					now := time.Now()
+					n.LastReset = &now
+				}
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

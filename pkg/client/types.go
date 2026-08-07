@@ -32,8 +32,12 @@ type Node struct {
 	AgentVersion  string            `json:"agentVersion"`
 	OSRelease     map[string]string `json:"osRelease,omitempty"`
 	Labels        map[string]string `json:"labels,omitempty"`
-	CreatedAt     time.Time         `json:"createdAt"`
-	UpdatedAt     time.Time         `json:"updatedAt"`
+	// ClaimKey is the opaque key that has claimed this node (nil when unclaimed);
+	// ClaimedAt is when it was claimed. See GroupsService.Claim.
+	ClaimKey  *string    `json:"claimKey,omitempty"`
+	ClaimedAt *time.Time `json:"claimedAt,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
 }
 
 // Group is a logical bucket of nodes (environment, cluster, role...).

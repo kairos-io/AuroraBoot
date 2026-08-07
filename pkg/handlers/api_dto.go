@@ -19,11 +19,44 @@ import (
 // --- Error envelope ---
 
 // APIError is the standard error body returned when a handler rejects a
-// request.
+// request. Code is an optional stable, machine-readable discriminator (e.g.
+// "NoCapacity") that lets a programmatic client branch on the specific
+// condition without parsing the human-facing Error text.
 type APIError struct {
 	Error  string `json:"error"`
 	Detail string `json:"detail,omitempty"`
+	Code   string `json:"code,omitempty"`
 }
+
+// --- Node claim (kairos-io/kairos#4252) ---
+
+// APIClaimRequest is the JSON body of POST /api/v1/groups/:id/claim. ClaimKey is
+// an opaque, caller-owned identifier (e.g. a CAPI machine's UID): re-issuing a
+// claim with the same key returns the same node, which is what makes a
+// level-triggered reconcile safe.
+type APIClaimRequest struct {
+	ClaimKey string `json:"claimKey" example:"machine-abc123"`
+}
+
+// APIReleaseRequest is the JSON body of POST /api/v1/nodes/:nodeID/release. The
+// claim is only cleared if it is currently held by ClaimKey.
+type APIReleaseRequest struct {
+	ClaimKey string `json:"claimKey" example:"machine-abc123"`
+}
+
+// APIReleaseResponse reports whether the release cleared a claim. Released is
+// false (with 200) when the node was already unclaimed — release is idempotent.
+type APIReleaseResponse struct {
+	Released bool `json:"released"`
+}
+
+// ClaimErrorCodeNoCapacity is the APIError.Code returned (with HTTP 409) when a
+// claim finds no unclaimed node in the group.
+const ClaimErrorCodeNoCapacity = "NoCapacity"
+
+// ClaimErrorCodeClaimMismatch is the APIError.Code returned (with HTTP 409) when
+// a release names a node that is claimed by a different key.
+const ClaimErrorCodeClaimMismatch = "ClaimMismatch"
 
 // --- Nodes ---
 

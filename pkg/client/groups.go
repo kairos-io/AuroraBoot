@@ -60,3 +60,17 @@ func (s *GroupsService) SendCommand(ctx context.Context, groupID string, req Cre
 	}
 	return out, nil
 }
+
+// Claim atomically assigns one unclaimed node in the group to claimKey and
+// returns it. It is idempotent: calling it again with the same claimKey returns
+// the same node, so a retried or restarted reconcile re-finds its own node. When
+// the group has no unclaimed node the returned error satisfies IsNoCapacity, so
+// a caller can wait for capacity instead of failing.
+func (s *GroupsService) Claim(ctx context.Context, groupID, claimKey string) (*Node, error) {
+	var out Node
+	body := map[string]string{"claimKey": claimKey}
+	if err := s.c.do(ctx, http.MethodPost, "/api/v1/groups/"+groupID+"/claim", nil, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}

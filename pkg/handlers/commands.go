@@ -68,6 +68,15 @@ func (h *CommandHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 	}
 
+	// A reset reboots the node (the agent selects the statereset boot entry), so it
+	// can't complete synchronously. Mark the node as awaiting reset so the
+	// re-register resolver reports the real outcome from the post-reboot boot state
+	// (kairos-io/kairos#4255). Best-effort: a failure here doesn't invalidate the
+	// queued command.
+	if cmd.Command == store.CmdReset {
+		_ = h.nodes.SetResetPending(c.Request().Context(), nodeID)
+	}
+
 	// Push command via WebSocket if node is online.
 	h.pushCommand(c.Request().Context(), cmd)
 
@@ -114,6 +123,12 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 		}
+		// A reset reboots the node, so mark it pending here too — the bulk and
+		// group command paths must track resets the same as the single-node
+		// Create (kairos-io/kairos#4255). Best-effort.
+		if req.Command == store.CmdReset {
+			_ = h.nodes.SetResetPending(ctx, node.ID)
+		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
 	}
@@ -150,6 +165,12 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		}
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
+		}
+		// A reset reboots the node, so mark it pending here too — the bulk and
+		// group command paths must track resets the same as the single-node
+		// Create (kairos-io/kairos#4255). Best-effort.
+		if req.Command == store.CmdReset {
+			_ = h.nodes.SetResetPending(ctx, node.ID)
 		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
