@@ -56,6 +56,58 @@ var _ = Describe("Reset lifecycle", func() {
 		})
 	})
 
+	Describe("issuing a reset via the bulk and group paths marks nodes pending", func() {
+		var cmdHandler *handlers.CommandHandler
+
+		BeforeEach(func() {
+			ns.nodes = []*store.ManagedNode{
+				{ID: "node-1", GroupID: "grp-1"},
+				{ID: "node-2", GroupID: "grp-1"},
+			}
+			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil)
+		})
+
+		expectAllPending := func() {
+			for _, n := range ns.nodes {
+				Expect(n.ResetState).To(Equal(store.ResetStatePending))
+				Expect(n.ResetRequestedAt).NotTo(BeNil())
+			}
+		}
+
+		It("CreateBulk marks every selected node pending", func() {
+			body := `{"selector":{"nodeIDs":["node-1","node-2"]},"command":"reset"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/commands", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			Expect(cmdHandler.CreateBulk(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			expectAllPending()
+		})
+
+		It("CreateForGroup marks every group node pending", func() {
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/grp-1/commands", strings.NewReader(`{"command":"reset"}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("grp-1")
+			Expect(cmdHandler.CreateForGroup(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			expectAllPending()
+		})
+
+		It("a non-reset bulk command leaves ResetState empty", func() {
+			body := `{"selector":{"nodeIDs":["node-1","node-2"]},"command":"upgrade"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/commands", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			Expect(cmdHandler.CreateBulk(e.NewContext(req, rec))).To(Succeed())
+			for _, n := range ns.nodes {
+				Expect(n.ResetState).To(Equal(""))
+			}
+		})
+	})
+
 	Describe("re-register resolves the reset from the reported boot state", func() {
 		var nodeHandler *handlers.NodeHandler
 

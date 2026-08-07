@@ -123,6 +123,12 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 		}
+		// A reset reboots the node, so mark it pending here too — the bulk and
+		// group command paths must track resets the same as the single-node
+		// Create (kairos-io/kairos#4255). Best-effort.
+		if req.Command == store.CmdReset {
+			_ = h.nodes.SetResetPending(ctx, node.ID)
+		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
 	}
@@ -159,6 +165,12 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		}
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
+		}
+		// A reset reboots the node, so mark it pending here too — the bulk and
+		// group command paths must track resets the same as the single-node
+		// Create (kairos-io/kairos#4255). Best-effort.
+		if req.Command == store.CmdReset {
+			_ = h.nodes.SetResetPending(ctx, node.ID)
 		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
