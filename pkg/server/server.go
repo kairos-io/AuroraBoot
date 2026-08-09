@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/docs"
 	netbootpkg "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
@@ -75,6 +76,9 @@ type Config struct {
 	NodeRateLimitBurst     int     // per-node burst
 	RegisterRateLimitRPS   float64 // per-IP requests/sec for registration
 	RegisterRateLimitBurst int     // per-IP burst
+	// ResetTimeout bounds the pending/in-progress automatic-reset lifecycle.
+	// Zero uses handlers.DefaultResetTimeout; a negative value disables expiration.
+	ResetTimeout time.Duration
 }
 
 // firstPositive returns v if it is positive, otherwise fallback. It lets a zero
@@ -185,7 +189,8 @@ func New(cfg Config) *echo.Echo {
 	}
 
 	// Create handlers
-	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, hub, regToken, cfg.AuroraBootURL)
+	nodeHandler := handlers.NewNodeHandler(cfg.NodeStore, cfg.CommandStore, cfg.GroupStore, hub, regToken, cfg.AuroraBootURL).
+		WithResetTimeout(cfg.ResetTimeout)
 	// Wire the auto eject-on-phone-home hook so a freshly-installed node's
 	// Register/Heartbeat ejects its pending-eject Redfish deployment's media. The
 	// hook lives on the deploy handler (it holds the deployment + BMC stores and the
@@ -193,7 +198,8 @@ func New(cfg Config) *echo.Echo {
 	if deployHandler != nil {
 		nodeHandler.WithFinalizer(deployHandler.MaybeFinalizeForNode, cfg.BaseContext)
 	}
-	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
+	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore).
+		WithResetTimeout(cfg.ResetTimeout)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	var extensionHandler *handlers.ExtensionHandler
 	if cfg.ExtensionBuilder != nil {
