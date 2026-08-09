@@ -88,6 +88,9 @@ func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error      
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
+func (f *fakeNodeStore) FailResetBefore(_ context.Context, _ string, _ time.Time) (bool, error) {
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
 
 type fakeCommandStore struct {
