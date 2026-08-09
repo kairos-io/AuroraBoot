@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -85,6 +86,9 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, _, _ string) (*store.Manage
 func (f *fakeNodeStore) ReleaseNode(_ context.Context, _, _ string) (bool, error) { return false, nil }
 func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error        { return nil }
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) FailResetBefore(_ context.Context, _ string, _ time.Time) (bool, error) {
 	return false, nil
 }
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }

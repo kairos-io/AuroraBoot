@@ -109,6 +109,7 @@ var WebCMD = cli.Command{
 		&cli.BoolFlag{Name: "disable-rate-limit", Usage: "Disable per-identity rate limiting of the node-driven endpoints (registration, heartbeat, command polling). Admin/UI/API traffic is never rate-limited regardless. Consider this for a large fleet behind a shared NAT egress IP", EnvVars: []string{"AURORABOOT_DISABLE_RATE_LIMIT"}},
 		&cli.Float64Flag{Name: "node-rate-limit", Usage: "Per-node requests/sec for heartbeat and command polling (0 = generous default). Admin traffic is exempt", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT"}},
 		&cli.Float64Flag{Name: "register-rate-limit", Usage: "Per-client-IP registration requests/sec (0 = generous default)", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT"}},
+		&cli.DurationFlag{Name: "reset-timeout", Value: handlers.DefaultResetTimeout, Usage: "Fail pending or in-progress resets that have not returned within this duration; set a negative duration to disable", EnvVars: []string{"AURORABOOT_RESET_TIMEOUT"}},
 	},
 	Action: runWeb,
 }
@@ -135,6 +136,7 @@ func runWeb(c *cli.Context) error {
 	redfishServeTLSCert := c.String("redfish-serve-tls-cert")
 	redfishServeTLSKey := c.String("redfish-serve-tls-key")
 	redfishQuirksDir := c.String("redfish-quirks-dir")
+	resetTimeout := c.Duration("reset-timeout")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -356,6 +358,7 @@ func runWeb(c *cli.Context) error {
 		DisableRateLimit:     c.Bool("disable-rate-limit"),
 		NodeRateLimitRPS:     c.Float64("node-rate-limit"),
 		RegisterRateLimitRPS: c.Float64("register-rate-limit"),
+		ResetTimeout:         resetTimeout,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
