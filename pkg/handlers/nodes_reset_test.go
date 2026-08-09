@@ -1,9 +1,11 @@
 package handlers_test
 
 import (
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -26,11 +28,15 @@ var _ = Describe("Reset lifecycle", func() {
 	})
 
 	Describe("issuing a reset command marks the node pending", func() {
-		var cmdHandler *handlers.CommandHandler
+		var (
+			cmdHandler *handlers.CommandHandler
+			cs         *fakeCommandStore
+		)
 
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
-			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil)
+			cs = &fakeCommandStore{}
+			cmdHandler = handlers.NewCommandHandler(cs, ns, nil)
 		})
 
 		create := func(body string) {
@@ -48,29 +54,40 @@ var _ = Describe("Reset lifecycle", func() {
 			create(`{"command":"reset"}`)
 			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStatePending))
 			Expect(ns.nodes[0].ResetRequestedAt).NotTo(BeNil())
+			Expect(cs.cmds).To(HaveLen(1))
+			Expect(cs.cmds[0].ExpiresAt).NotTo(BeNil())
+			Expect(time.Until(*cs.cmds[0].ExpiresAt)).To(BeNumerically("~", handlers.DefaultResetTimeout, time.Second))
 		})
 
 		It("leaves ResetState empty for a non-reset command", func() {
 			create(`{"command":"upgrade","args":{"version":"1.2.0"}}`)
 			Expect(ns.nodes[0].ResetState).To(Equal(""))
+			Expect(cs.cmds[0].ExpiresAt).To(BeNil())
 		})
 	})
 
 	Describe("issuing a reset via the bulk and group paths marks nodes pending", func() {
-		var cmdHandler *handlers.CommandHandler
+		var (
+			cmdHandler *handlers.CommandHandler
+			cs         *fakeCommandStore
+		)
 
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{
 				{ID: "node-1", GroupID: "grp-1"},
 				{ID: "node-2", GroupID: "grp-1"},
 			}
-			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil)
+			cs = &fakeCommandStore{}
+			cmdHandler = handlers.NewCommandHandler(cs, ns, nil)
 		})
 
 		expectAllPending := func() {
 			for _, n := range ns.nodes {
 				Expect(n.ResetState).To(Equal(store.ResetStatePending))
 				Expect(n.ResetRequestedAt).NotTo(BeNil())
+			}
+			for _, cmd := range cs.cmds {
+				Expect(cmd.ExpiresAt).NotTo(BeNil())
 			}
 		}
 
@@ -166,6 +183,78 @@ var _ = Describe("Reset lifecycle", func() {
 			reregister("active")
 			Expect(ns.nodes[0].ResetState).To(Equal(""))
 			Expect(ns.nodes[0].LastReset).To(BeNil())
+		})
+	})
+
+	Describe("reading nodes expires stale resets", func() {
+		var nodeHandler *handlers.NodeHandler
+
+		BeforeEach(func() {
+			nodeHandler = handlers.NewNodeHandler(ns, &fakeCommandStore{}, &fakeGroupStore{}, ws.NewHub(), "reg-token", "http://localhost:8080").
+				WithResetTimeout(30 * time.Minute)
+		})
+
+		It("marks an overdue pending reset failed when listing nodes", func() {
+			requestedAt := time.Now().Add(-31 * time.Minute)
+			ns.nodes = []*store.ManagedNode{{
+				ID:               "node-1",
+				ResetState:       store.ResetStatePending,
+				ResetRequestedAt: &requestedAt,
+			}}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+			rec := httptest.NewRecorder()
+			Expect(nodeHandler.List(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStateFailed))
+		})
+
+		It("marks an overdue in-progress reset failed when getting a node", func() {
+			requestedAt := time.Now().Add(-31 * time.Minute)
+			ns.nodes = []*store.ManagedNode{{
+				ID:               "node-1",
+				ResetState:       store.ResetStateInProgress,
+				ResetRequestedAt: &requestedAt,
+			}}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/node-1", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("node-1")
+			Expect(nodeHandler.Get(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStateFailed))
+		})
+
+		It("leaves a recent reset in progress", func() {
+			requestedAt := time.Now().Add(-29 * time.Minute)
+			ns.nodes = []*store.ManagedNode{{
+				ID:               "node-1",
+				ResetState:       store.ResetStatePending,
+				ResetRequestedAt: &requestedAt,
+			}}
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+			rec := httptest.NewRecorder()
+			Expect(nodeHandler.List(e.NewContext(req, rec))).To(Succeed())
+			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStatePending))
+		})
+
+		It("returns an error when the expiry transition cannot be persisted", func() {
+			requestedAt := time.Now().Add(-31 * time.Minute)
+			ns.nodes = []*store.ManagedNode{{
+				ID:               "node-1",
+				ResetState:       store.ResetStatePending,
+				ResetRequestedAt: &requestedAt,
+			}}
+			ns.failResetBeforeErr = errors.New("write failed")
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+			rec := httptest.NewRecorder()
+			Expect(nodeHandler.List(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStatePending))
 		})
 	})
 })
