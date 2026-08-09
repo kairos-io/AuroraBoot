@@ -451,6 +451,20 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 	return res.RowsAffected == 1, nil
 }
 
+// FailResetBefore compare-and-sets an overdue in-flight reset to failed. The
+// request timestamp participates in the conditional update so a concurrent new
+// reset, which refreshes ResetRequestedAt, cannot be failed from a stale read.
+func (s *Store) FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error) {
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND reset_state IN ? AND reset_requested_at <= ?", nodeID,
+			[]string{store.ResetStatePending, store.ResetStateInProgress}, deadline).
+		Update("reset_state", store.ResetStateFailed)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // --- CommandStore ---
 
 func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error {
@@ -487,15 +501,16 @@ func (s *Store) MarkDelivered(ctx context.Context, ids []string) error {
 }
 
 // ClaimForDelivery atomically transitions a single Pending command to Delivered.
-// The conditional WHERE (id = ? AND phase = Pending) plus a RowsAffected check
-// makes the claim a race-free compare-and-set: when a WS push and an agent poll
-// (or two concurrent polls) both target the same command, exactly one UPDATE
-// matches the still-Pending row and the loser sees RowsAffected == 0. Mirrors
-// the RowsAffected pattern in UpdateStatusForNode.
+// The conditional WHERE (id = ? AND phase = Pending AND not expired) plus a
+// RowsAffected check makes the claim a race-free compare-and-set: when a WS push
+// and an agent poll (or two concurrent polls) both target the same command,
+// exactly one UPDATE matches the still-deliverable row and the loser sees
+// RowsAffected == 0. The expiry predicate is repeated here, rather than relying
+// only on GetPending, so a command cannot expire between selection and claim.
 func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	now := time.Now()
 	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
-		Where("id = ? AND phase = ?", id, store.CommandPending).
+		Where("id = ? AND phase = ? AND (expires_at IS NULL OR expires_at > ?)", id, store.CommandPending, now).
 		Updates(map[string]any{
 			"phase":        store.CommandDelivered,
 			"delivered_at": &now,

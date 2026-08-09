@@ -399,6 +399,21 @@ var _ = Describe("Gorm Store", func() {
 			Expect(claimed).To(BeFalse())
 		})
 
+		It("does not claim an expired pending command", func() {
+			expired := time.Now().Add(-time.Minute)
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdReset, ExpiresAt: &expired}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+
+			claimed, err := s.ClaimForDelivery(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimed).To(BeFalse())
+
+			found, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Phase).To(Equal(store.CommandPending))
+			Expect(found.DeliveredAt).To(BeNil())
+		})
+
 		It("yields exactly one winner under concurrent claims", func() {
 			// Use a file-backed DB so concurrent goroutines share one SQLite
 			// database with WAL/busy_timeout, rather than the per-connection

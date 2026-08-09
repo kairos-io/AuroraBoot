@@ -12,8 +12,9 @@ import (
 
 // fakeNodeStore implements store.NodeStore for testing.
 type fakeNodeStore struct {
-	mu    sync.Mutex
-	nodes []*store.ManagedNode
+	mu                 sync.Mutex
+	nodes              []*store.ManagedNode
+	failResetBeforeErr error
 }
 
 func (f *fakeNodeStore) Register(_ context.Context, n *store.ManagedNode) error {
@@ -241,6 +242,23 @@ func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromState
 			}
 		}
 		return false, nil
+	}
+	return false, nil
+}
+func (f *fakeNodeStore) FailResetBefore(_ context.Context, nodeID string, deadline time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.failResetBeforeErr != nil {
+		return false, f.failResetBeforeErr
+	}
+	for _, n := range f.nodes {
+		if n.ID != nodeID || n.ResetRequestedAt == nil || n.ResetRequestedAt.After(deadline) {
+			continue
+		}
+		if n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress {
+			n.ResetState = store.ResetStateFailed
+			return true, nil
+		}
 	}
 	return false, nil
 }
