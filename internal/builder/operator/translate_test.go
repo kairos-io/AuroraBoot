@@ -130,7 +130,7 @@ var _ = Describe("translateBuildOptions", func() {
 			// The Hadron UI composer produces a Dockerfile that lacks the
 			// kairos-init RUN block. Translation must send both BuildOptions
 			// (so the operator injects kairos-init) and OCISpec (so the
-			// composed sysprep/COPYs land in the middle). BaseImage travels
+			// composed compatibility guard/COPYs land in the middle). BaseImage travels
 			// via BuildOptions; the Dockerfile itself must not carry its own
 			// FROM (verified separately in secrets_test.go).
 			name: "Hadron build wraps composed Dockerfile with kairos-init",

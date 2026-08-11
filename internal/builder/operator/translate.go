@@ -72,13 +72,13 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 		spec.Image = buildv1alpha2.ImageSpec{Ref: baseRef}
 	case isHadronBuild(opts):
 		// The UI's Hadron composer produces a Dockerfile that is base +
-		// firmware/usr-sbin sysprep + firmware/layer COPYs. It does NOT
+		// firmware compatibility guard + firmware/layer COPYs. It does NOT
 		// include the kairos-init RUN block, so the resulting image has no
 		// kernel/initrd and the downstream ISO stage fails with "no initrd
 		// file found". Send OCISpec + BuildOptions so the operator wraps the
 		// composed content: FROM ${HadronBase} at the top (injected by the
 		// operator from BuildOptions.BaseImage), then our middle content
-		// (sysprep + COPYs), then the kairos-init COPY+RUN at the bottom.
+		// (compatibility guard + COPYs), then the kairos-init COPY+RUN at the bottom.
 		version := kairosVersion
 		if version == "" {
 			version = "latest"
