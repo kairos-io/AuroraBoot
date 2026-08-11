@@ -2036,8 +2036,12 @@ export function ArtifactBuilder() {
                       <InfoTooltip>
                         Pinned Kubernetes version. Leave empty to take whatever the chosen distro defaults to.
                         Must be the full provider release tag, e.g.{" "}
-                        <code>v1.36.1+k3s1</code> for k3s or{" "}
-                        <code>v1.36.1+k0s.0</code> for k0s.
+                        <code>
+                          {form.kubernetesDistro === "k0s"
+                            ? "v1.36.1+k0s.0"
+                            : "v1.36.1+k3s1"}
+                        </code>
+                        .
                       </InfoTooltip>
                     </Label>
                     <div className="flex gap-2">

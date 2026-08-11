@@ -96,6 +96,16 @@ describe("fetchKubernetesDistroReleases", () => {
     await expect(fetchKubernetesDistroReleases("k3s", 5)).rejects.toThrow(/rate limit/i);
   });
 
+  it("clamps per_page to GitHub's max of 100 even when limit is high", async () => {
+    const fetchMock = mockFetch([{ body: [] }]);
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchKubernetesDistroReleases("k3s", 500);
+
+    const url = fetchMock.mock.calls[0][0] as string;
+    expect(url).toContain("per_page=100");
+  });
+
   it("throws on other non-OK responses", async () => {
     const fetchMock = mockFetch([{ ok: false, status: 500, body: {} }]);
     vi.stubGlobal("fetch", fetchMock);
@@ -144,5 +154,15 @@ describe("compareTagsDesc", () => {
 
   it("tie-breaks equal MAJOR.MINOR.PATCH by suffix", () => {
     expect(compareTagsDesc("v1.32.5+k3s2", "v1.32.5+k3s1")).toBeLessThan(0);
+  });
+
+  it("compares suffix numerically so k3s10 outranks k3s9", () => {
+    expect(compareTagsDesc("v1.32.5+k3s10", "v1.32.5+k3s9")).toBeLessThan(0);
+    const tags = ["v1.32.5+k3s9", "v1.32.5+k3s10", "v1.32.5+k3s2"];
+    expect([...tags].sort(compareTagsDesc)).toEqual([
+      "v1.32.5+k3s10",
+      "v1.32.5+k3s9",
+      "v1.32.5+k3s2",
+    ]);
   });
 });

@@ -57,6 +57,16 @@ function parseVersion(tag: string): [number, number, number] | null {
   return [Number(match[1]), Number(match[2]), Number(match[3])];
 }
 
+// Trailing digits in the provider suffix — e.g. `+k3s10` → 10, `+k0s.2` → 2.
+// Ignores anything before `+` so a bare `v1.32.5` doesn't pull the patch
+// number into the tie-break; falls back to 0 when no suffix number exists.
+function parseSuffixNumber(tag: string): number {
+  const plus = tag.indexOf("+");
+  if (plus < 0) return 0;
+  const match = tag.slice(plus + 1).match(/(\d+)\D*$/);
+  return match ? Number(match[1]) : 0;
+}
+
 export function compareTagsDesc(a: string, b: string): number {
   const va = parseVersion(a);
   const vb = parseVersion(b);
@@ -64,7 +74,8 @@ export function compareTagsDesc(a: string, b: string): number {
     for (let i = 0; i < 3; i += 1) {
       if (va[i] !== vb[i]) return vb[i] - va[i];
     }
-    // Same MAJOR.MINOR.PATCH → fall back to lexical (e.g. "+k3s2" > "+k3s1").
+    const suffixDiff = parseSuffixNumber(b) - parseSuffixNumber(a);
+    if (suffixDiff !== 0) return suffixDiff;
     return b.localeCompare(a);
   }
   if (va) return -1;
@@ -81,8 +92,8 @@ export async function fetchKubernetesDistroReleases(
   if (cached) return cached;
 
   // per_page pulls more than `limit` so we can drop prereleases/drafts and
-  // still return `limit` stable tags.
-  const perPage = Math.max(limit * 3, 10);
+  // still return `limit` stable tags. Clamped to GitHub's max of 100.
+  const perPage = Math.min(Math.max(limit * 3, 10), 100);
   const url = `https://api.github.com/repos/${REPOS[distro]}/releases?per_page=${perPage}`;
 
   const res = await fetch(url, {
