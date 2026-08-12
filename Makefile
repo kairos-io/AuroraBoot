@@ -1,7 +1,7 @@
 # AuroraBoot Makefile
 # Development and build targets for AuroraBoot
 
-.PHONY: help dev ui-install ui-build build-go build clean clean-ui clean-go run-docker build-docker test openapi fmt lint install-deps
+.PHONY: help dev ui-install ui-build ui-test build-go build clean clean-ui clean-go run-docker build-docker test openapi fmt lint install-deps
 
 # Default target
 help: ## Show this help message
@@ -41,6 +41,11 @@ ui-build: ui-install ## Build the React UI bundle
 	@echo "Building React UI..."
 	cd ui && npm run build
 	@echo "UI built to internal/ui/dist"
+
+# Run the React UI vitest suite
+ui-test: ui-install ## Run the React UI test suite
+	@echo "Running UI tests..."
+	cd ui && npm test
 
 # Build Go binary
 build-go: ## Build the Go binary

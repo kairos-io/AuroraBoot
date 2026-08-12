@@ -50,6 +50,7 @@ import {
   Layers,
 } from "lucide-react";
 import { InfoTooltip } from "@/components/InfoTooltip";
+import { KubernetesReleasePicker } from "@/components/KubernetesReleasePicker";
 import { toast } from "@/hooks/useToast";
 import {
   BUILD_CONFIG_KIND,
@@ -2034,13 +2035,35 @@ export function ArtifactBuilder() {
                       Version (optional)
                       <InfoTooltip>
                         Pinned Kubernetes version. Leave empty to take whatever the chosen distro defaults to.
+                        Must be the full provider release tag, e.g.{" "}
+                        <code>
+                          {form.kubernetesDistro === "k0s"
+                            ? "v1.36.1+k0s.0"
+                            : "v1.36.1+k3s1"}
+                        </code>
+                        .
                       </InfoTooltip>
                     </Label>
-                    <Input
-                      placeholder="e.g. v1.28.0"
-                      value={form.kubernetesVersion || ""}
-                      onChange={(e) => update("kubernetesVersion", e.target.value)}
-                    />
+                    <div className="flex gap-2">
+                      <Input
+                        className="flex-1"
+                        placeholder={
+                          form.kubernetesDistro === "k0s"
+                            ? "e.g. v1.36.1+k0s.0"
+                            : "e.g. v1.36.1+k3s1"
+                        }
+                        value={form.kubernetesVersion || ""}
+                        onChange={(e) => update("kubernetesVersion", e.target.value)}
+                      />
+                      {(form.kubernetesDistro === "k3s" ||
+                        form.kubernetesDistro === "k0s") && (
+                        <KubernetesReleasePicker
+                          key={form.kubernetesDistro}
+                          distro={form.kubernetesDistro}
+                          onSelect={(tag) => update("kubernetesVersion", tag)}
+                        />
+                      )}
+                    </div>
                   </div>
                 </CardContent>
               </Card>
