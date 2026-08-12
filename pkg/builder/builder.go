@@ -62,6 +62,12 @@ type ProvisioningOptions struct {
 	AutoInstall        bool
 	RegisterAuroraBoot bool
 	TargetGroupID      string
+	// KubernetesEnabled controls whether k3s/k0s starts on first boot on a
+	// Standard-variant image. The handler resolves the request's tri-state
+	// (nil defaults to true) into this bool before handing it to the builder,
+	// which persists it on the artifact record so the frontend can rehydrate
+	// the Kubernetes card when cloning.
+	KubernetesEnabled bool
 	// AllowedCommands is the explicit phonehome.allowed_commands list baked
 	// into the cloud-config. The AuroraBoot backend substitutes the safe
 	// default set when the caller leaves this nil, so the emitted YAML always
