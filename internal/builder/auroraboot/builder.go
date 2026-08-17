@@ -198,6 +198,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 
 	// Persist artifact record in DB if store is available.
 	if b.store != nil {
+		kubernetesEnabled := opts.Provisioning.KubernetesEnabled
 		rec := &store.ArtifactRecord{
 			ID:                      id,
 			Name:                    opts.Name,
@@ -228,8 +229,18 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			HadronLayers:            opts.HadronLayers,
 			HadronExtra:             opts.HadronExtra,
 			CloudConfig:             opts.CloudConfig,
-			CreatedAt:               time.Now(),
-			UpdatedAt:               time.Now(),
+			// The handler's own store.Create fallback (pkg/handlers/artifacts.go)
+			// is skipped when the row already exists, so any field left out here
+			// is silently dropped for local builds. The clone flow in the
+			// ArtifactBuilder reads these directly, so an omission surfaces as
+			// an empty Kubernetes card on the cloned build.
+			KubernetesDistro:  opts.Source.KubernetesDistro,
+			KubernetesVersion: opts.Source.KubernetesVersion,
+			KubernetesEnabled: &kubernetesEnabled,
+			TargetGroupID:     opts.Provisioning.TargetGroupID,
+			OverlayRootfs:     opts.OverlayRootfs,
+			CreatedAt:         time.Now(),
+			UpdatedAt:         time.Now(),
 		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()

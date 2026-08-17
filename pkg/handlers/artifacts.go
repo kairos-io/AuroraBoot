@@ -288,6 +288,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		AutoInstall:        autoInstall,
 		RegisterAuroraBoot: registerAuroraBoot,
 		TargetGroupID:      req.Provisioning.TargetGroupId,
+		KubernetesEnabled:  kubernetesEnabled,
 		AllowedCommands:    allowedCommands,
 	}
 
