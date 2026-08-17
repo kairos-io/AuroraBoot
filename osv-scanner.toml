@@ -1,15 +1,18 @@
 # OSV-Scanner configuration (see https://google.github.io/osv-scanner/configuration/)
 
-# Transitive via kairos-agent/sdk and sbctl (TPM attestation). Bumped to v0.6.1;
-# govulncheck/OSV still report Fixed in N/A. AuroraBoot does not expose attestation parsing.
+# Transitive via kairos-agent/sdk and sbctl (TPM attestation). OSV still lists
+# "Fixed in N/A" for every go-attestation release, including the current v0.6.4,
+# so a version bump cannot clear this. AuroraBoot does not expose attestation
+# parsing.
 [[IgnoredVulns]]
 id = "GO-2026-5298"
-ignoreUntil = 2026-08-16
-reason = "Transitive go-attestation (v0.6.1); no patched release listed yet (Fixed in N/A). TPM attestation parsing in upstream deps only. Re-evaluate before expiry."
+ignoreUntil = 2026-11-17
+reason = "Transitive go-attestation; OSV lists no patched release (Fixed in N/A) as of 2026-08-17. TPM attestation parsing in upstream deps only. Re-evaluate before expiry."
 
-# golang.org/x/crypto vulnerability with no patched release listed in OSV yet.
-# Upgraded to v0.54.0; re-evaluate before expiry when a fix ships.
+# golang.org/x/crypto/openpgp is unmaintained by design, so OSV will never list a
+# patched release. Only dropping the openpgp dependency clears this, which is an
+# upstream change in our transitive deps, not something a bump here can do.
 [[IgnoredVulns]]
 id = "GO-2026-5932"
-ignoreUntil = 2026-08-17
-reason = "No patched golang.org/x/crypto release listed in OSV yet (Fixed in N/A); upgraded to v0.54.0. Re-evaluate before expiry."
+ignoreUntil = 2026-11-17
+reason = "golang.org/x/crypto/openpgp is unmaintained upstream; OSV lists no patched release (Fixed in N/A). Now on x/crypto v0.55.0. Re-evaluate before expiry."
