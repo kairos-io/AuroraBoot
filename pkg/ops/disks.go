@@ -3,6 +3,7 @@ package ops
 import (
 	"context"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -62,55 +63,88 @@ func ExtractSquashFS(srcFunc, dstFunc valueGetOnCall) func(ctx context.Context) 
 
 func ConvertRawDiskToVHD(src string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		tmp, err := os.MkdirTemp("", "gendisk")
+		internal.Log.Logger.Info().Str("dir", src).Msg("Converting raw disk to VHD")
+		output, err := convertRawOnCopy(src, Raw2Azure)
 		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("dir", src).Msg("Converting raw disk to VHD failed")
 			return err
 		}
-		defer os.RemoveAll(tmp)
-
-		glob, err := filepath.Glob(filepath.Join(src, "kairos-*.raw"))
-		if err != nil {
-			return err
-		}
-
-		if len(glob) == 0 || len(glob) > 1 {
-			return fmt.Errorf("expected to find one and only one raw disk file in '%s' but found %d", src, len(glob))
-		}
-
-		internal.Log.Logger.Info().Msgf("Generating raw disk from '%s'", glob[0])
-		output, err := Raw2Azure(glob[0])
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk from '%s' failed with error '%s'", glob[0], err.Error())
-		} else {
-			internal.Log.Logger.Info().Msgf("Generated VHD disk '%s'", output)
-		}
-		return err
+		internal.Log.Logger.Info().Msgf("Generated VHD disk '%s'", output)
+		return nil
 	}
 }
 
 func ConvertRawDiskToGCE(src string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		tmp, err := os.MkdirTemp("", "gendisk")
+		internal.Log.Logger.Info().Str("dir", src).Msg("Converting raw disk to GCE")
+		output, err := convertRawOnCopy(src, Raw2Gce)
 		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("dir", src).Msg("Converting raw disk to GCE failed")
 			return err
 		}
-		defer os.RemoveAll(tmp)
-		glob, err := filepath.Glob(filepath.Join(src, "kairos-*.raw"))
-		if err != nil {
-			return err
-		}
+		internal.Log.Logger.Info().Msgf("Generated GCE disk '%s'", output)
+		return nil
+	}
+}
 
-		if len(glob) == 0 || len(glob) > 1 {
-			return fmt.Errorf("expected to find one and only one raw disk file in '%s' but found %d", src, len(glob))
-		}
+// convertRawOnCopy runs a Raw2X converter against a PRIVATE COPY of the single
+// kairos-*.raw in dir, then moves the produced artifact back into dir under its
+// conventional <raw>.<ext> name. Working on a copy is what makes the cloud-image
+// conversions safe to run in parallel: Raw2Gce truncates its source in place and
+// Raw2Azure renames it away, so pointing them all at the one shared raw races
+// (and corrupts the raw itself, which may be a requested output). Each converter
+// instead mutates its own throwaway copy and leaves the original raw untouched.
+//
+// The work directory is a subdirectory of dir so both the copy and the final
+// os.Rename stay on the same filesystem. It is nested one level down, so a
+// concurrent converter's top-level `kairos-*.raw` glob never matches the copy.
+func convertRawOnCopy(dir string, convert func(source string) (string, error)) (string, error) {
+	glob, err := filepath.Glob(filepath.Join(dir, "kairos-*.raw"))
+	if err != nil {
+		return "", err
+	}
+	if len(glob) != 1 {
+		return "", fmt.Errorf("expected to find one and only one raw disk file in '%s' but found %d", dir, len(glob))
+	}
+	raw := glob[0]
 
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s'", glob[0])
-		output, err := Raw2Gce(glob[0])
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk from '%s' failed with error '%s'", src, err.Error())
-		} else {
-			internal.Log.Logger.Info().Msgf("Generated GCE disk '%s'", output)
-		}
+	work, err := os.MkdirTemp(dir, ".convert-")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(work)
+
+	workRaw := filepath.Join(work, filepath.Base(raw))
+	if err := copyFile(raw, workRaw); err != nil {
+		return "", fmt.Errorf("copying raw disk for conversion: %w", err)
+	}
+
+	output, err := convert(workRaw)
+	if err != nil {
+		return "", err
+	}
+
+	dst := filepath.Join(dir, filepath.Base(output))
+	if err := os.Rename(output, dst); err != nil {
+		return "", fmt.Errorf("moving converted disk into place: %w", err)
+	}
+	return dst, nil
+}
+
+// copyFile copies the contents of src to a new file at dst.
+func copyFile(src, dst string) error {
+	in, err := os.Open(src)
+	if err != nil {
 		return err
 	}
+	defer in.Close()
+	out, err := os.Create(dst)
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(out, in); err != nil {
+		_ = out.Close()
+		return err
+	}
+	return out.Close()
 }
