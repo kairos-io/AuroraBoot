@@ -80,6 +80,7 @@ netboot:
 
 hostNetwork:
   enabled: false
+  dnsPolicy: ClusterFirstWithHostNet
 
 nodeSelector: {}
 tolerations: []

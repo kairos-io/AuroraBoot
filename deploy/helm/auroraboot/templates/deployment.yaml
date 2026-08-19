@@ -29,6 +29,7 @@ spec:
       serviceAccountName: {{ include "auroraboot.serviceAccountName" . }}
       {{- if .Values.hostNetwork.enabled }}
       hostNetwork: true
+      dnsPolicy: {{ .Values.hostNetwork.dnsPolicy }}
       {{- end }}
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:

@@ -189,8 +189,22 @@ tests:
       - equal:
           path: spec.template.spec.hostNetwork
           value: true
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirstWithHostNet
       - notExists:
           path: spec.template.spec.containers[0].securityContext
+
+  - it: honours a host network DNS policy override
+    set:
+      host: auroraboot.example.com
+      hostNetwork:
+        enabled: true
+        dnsPolicy: ClusterFirst
+    asserts:
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirst
 
   - it: enables netboot privileges independently
     set:
