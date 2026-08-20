@@ -833,7 +833,16 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	if overlayISO != "" {
 		log.Infof("Overlay dir is set, copying files from %s", overlayISO)
 		log.Infof("Adding files from %s to iso", overlayISO)
-		overlay, err := sdkImages.NewSrcFromURI(fmt.Sprintf("dir:%s", overlayISO))
+		// Dereference symlinks / drop kubelet atomic-writer internals so a
+		// Secret- or ConfigMap-mounted overlay can't shadow real ISO-root
+		// dirs with symlinks (kairos-io/kairos#4324).
+		materialized, err := utils.MaterializeOverlay(overlayISO)
+		if err != nil {
+			log.Errorf("error materializing overlay image: %s", err)
+			return err
+		}
+		defer os.RemoveAll(materialized)
+		overlay, err := sdkImages.NewSrcFromURI(fmt.Sprintf("dir:%s", materialized))
 		if err != nil {
 			log.Errorf("error creating overlay image: %s", err)
 			return err

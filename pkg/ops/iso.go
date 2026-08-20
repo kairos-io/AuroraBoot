@@ -165,7 +165,15 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
 		}
 		if i.OverlayISO != "" {
-			spec.Image = append(spec.Image, imagetypes.NewDirSrc(i.OverlayISO))
+			// Dereference symlinks / drop kubelet atomic-writer internals so a
+			// Secret- or ConfigMap-mounted overlay can't shadow real ISO-root
+			// dirs with symlinks (kairos-io/kairos#4324).
+			overlay, err := utils.MaterializeOverlay(i.OverlayISO)
+			if err != nil {
+				return err
+			}
+			defer os.RemoveAll(overlay)
+			spec.Image = append(spec.Image, imagetypes.NewDirSrc(overlay))
 		}
 
 		buildISO := NewBuildISOAction(cfg, spec)
@@ -190,7 +198,9 @@ func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.C
 
 		if i.OverlayISO != "" {
 			internal.Log.Logger.Info().Msgf("Adding overlay data in '%s' to '%s'", i.OverlayISO, isoFile)
-			err = copy.Copy(i.OverlayISO, tmp)
+			// Dereference symlinks / drop kubelet atomic-writer internals
+			// (kairos-io/kairos#4324).
+			err = copy.Copy(i.OverlayISO, tmp, utils.OverlayCopyOptions(i.OverlayISO))
 			if err != nil {
 				return err
 			}
