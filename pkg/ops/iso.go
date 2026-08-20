@@ -165,7 +165,12 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
 		}
 		if i.OverlayISO != "" {
-			spec.Image = append(spec.Image, imagetypes.NewDirSrc(i.OverlayISO))
+			materializedOverlay, cleanup, err := materializeISOOverlay(i.OverlayISO)
+			if err != nil {
+				return err
+			}
+			defer cleanup()
+			spec.Image = append(spec.Image, imagetypes.NewDirSrc(materializedOverlay))
 		}
 
 		buildISO := NewBuildISOAction(cfg, spec)
@@ -190,7 +195,12 @@ func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.C
 
 		if i.OverlayISO != "" {
 			internal.Log.Logger.Info().Msgf("Adding overlay data in '%s' to '%s'", i.OverlayISO, isoFile)
-			err = copy.Copy(i.OverlayISO, tmp)
+			materializedOverlay, cleanup, materializeErr := materializeISOOverlay(i.OverlayISO)
+			if materializeErr != nil {
+				return materializeErr
+			}
+			defer cleanup()
+			err = copy.Copy(materializedOverlay, tmp)
 			if err != nil {
 				return err
 			}
