@@ -18,12 +18,12 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.5.0
 	github.com/kairos-io/kairos-agent/v2 v2.30.2
-	github.com/kairos-io/kairos-sdk v0.25.2
+	github.com/kairos-io/kairos-sdk v0.25.3
 	github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872
 	github.com/klauspost/compress v1.19.2
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/mudler/go-processmanager v0.1.1
-	github.com/onsi/ginkgo/v2 v2.32.0
+	github.com/onsi/ginkgo/v2 v2.32.1
 	github.com/onsi/gomega v1.42.1
 	github.com/otiai10/copy v1.14.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect

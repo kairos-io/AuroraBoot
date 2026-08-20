@@ -331,6 +331,8 @@ github.com/kairos-io/kairos-operator v0.1.3 h1:UlEaYFyak3IpDQa/SE6/GVEOLGJo8JOEp
 github.com/kairos-io/kairos-operator v0.1.3/go.mod h1:HEfMy7VAHde6/7WHzp+vEXxNxxneMaBjeSLLKP1+9wo=
 github.com/kairos-io/kairos-sdk v0.25.2 h1:gvwdBklzpmYrvNWAHXAblCh5BRaIDU3axRyjRLJGO8s=
 github.com/kairos-io/kairos-sdk v0.25.2/go.mod h1:FuO5nc0EfZu3cC7Bt8LZyEAEeA6vfusl3ExanpeG8WM=
+github.com/kairos-io/kairos-sdk v0.25.3 h1:SM8ERS7YlWzk94/IifXb3wpsZZWYVWtCDafO68C3djU=
+github.com/kairos-io/kairos-sdk v0.25.3/go.mod h1:nNoM0GTEvVuvCmn4VpwjFWbn7FfPDseBCH5q2kkqIk0=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872 h1:O9H3QrUNNZJTU+TjM3BPR5lvztYWD57V75WzWhIe1aY=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
@@ -429,6 +431,8 @@ github.com/onsi/ginkgo v1.16.5 h1:8xi0RTUf59SOSfEtZMvwTvXYMzG4gV23XVHOZiXNtnE=
 github.com/onsi/ginkgo v1.16.5/go.mod h1:+E8gABHa3K6zRBolWtd+ROzc/U5bkGt0FwiG042wbpU=
 github.com/onsi/ginkgo/v2 v2.32.0 h1:Hw7s2pVrQo/8Yz5N77qdnpHaoc+c6cC9WIV1Jce+J6E=
 github.com/onsi/ginkgo/v2 v2.32.0/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
+github.com/onsi/ginkgo/v2 v2.32.1 h1:6tlvcDm/3sE8lGJbZ4+d4mO3RLy24/tQWOFzVSQNIfw=
+github.com/onsi/ginkgo/v2 v2.32.1/go.mod h1:+aXOY+vzZ5mu2iI2HpTZUPmM//oQfsNFX6gU9kNcA44=
 github.com/onsi/gomega v1.42.1 h1:iN1rCUX+44NZ1Dc97MPoeFYbFR0vh8zxoxMFwKdyZ6I=
 github.com/onsi/gomega v1.42.1/go.mod h1:REff/hsDsodHoKlWsP2mAPhu1+5/6hVYNf9rIEBpeSg=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
