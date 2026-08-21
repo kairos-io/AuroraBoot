@@ -157,6 +157,8 @@ github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29 h1:2XQY2y+CZCLpFj
 github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29/go.mod h1:sqQZKX1X86EAN4C07n6DcbGC/DCN36BNaX/uNvjzmfk=
 github.com/foxboron/sbctl v0.0.0-20250917190250-6b8ed8715652 h1:S4E7w6VTJfMViV/ir1SKH3i+B3WQEqCH/a6Gw2/VHj8=
 github.com/foxboron/sbctl v0.0.0-20250917190250-6b8ed8715652/go.mod h1:J2pqwbOWShauAI0wDI/4zKxk5B300jOcHvGVuUuCRhc=
+github.com/foxboron/sbctl v0.0.0-20260802183653-a7168106e003 h1:RJXGmm8f4AhVyWxAm0FzQlKlsRZtNQZuHTJsm8D+RIA=
+github.com/foxboron/sbctl v0.0.0-20260802183653-a7168106e003/go.mod h1:xpWus0WLoaeL7TmiD4knkiVBMSDZaFwAfrF0xll/h+Y=
 github.com/foxboron/swtpm_test v0.0.0-20230726224112-46aaafdf7006 h1:50sW4r0PcvlpG4PV8tYh2RVCapszJgaOLRCS2subvV4=
 github.com/foxboron/swtpm_test v0.0.0-20230726224112-46aaafdf7006/go.mod h1:eIXCMsMYCaqq9m1KSSxXwQG11krpuNPGP3k0uaWrbas=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
