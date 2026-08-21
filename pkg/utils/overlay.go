@@ -45,21 +45,71 @@ import (
 //     `boot -> ..data/boot` is dereferenced, otiai10/copy re-invokes Skip
 //     with the *target* path (`<root>/..data/boot`), and that content is
 //     exactly what we must keep.
+//   - Dereferencing is contained: every symlink must resolve *inside* the
+//     overlay root. An overlay influenced by untrusted input (web mode,
+//     external API callers) must not be able to leak host files into the ISO
+//     via `etc -> /etc` or a `..` escape, so those fail the copy. Kubelet's
+//     `..data/*` layout resolves within the root and is unaffected. A symlink
+//     to its own ancestor directory is rejected too: dereferencing it would
+//     recurse forever.
 //
-// src is the overlay root, used to scope the top-level skip check.
+// src is the overlay root, used to scope the top-level skip check and the
+// symlink containment check.
 func OverlayCopyOptions(src string) copy.Options {
 	root := filepath.Clean(src)
 	return copy.Options{
 		OnSymlink: func(string) copy.SymlinkAction {
 			return copy.Deep
 		},
-		Skip: func(_ os.FileInfo, srcPath, _ string) (bool, error) {
-			if filepath.Dir(filepath.Clean(srcPath)) != root {
-				return false, nil
+		Skip: func(info os.FileInfo, srcPath, _ string) (bool, error) {
+			if filepath.Dir(filepath.Clean(srcPath)) == root &&
+				strings.HasPrefix(filepath.Base(srcPath), "..") {
+				return true, nil
 			}
-			return strings.HasPrefix(filepath.Base(srcPath), ".."), nil
+			if info.Mode()&os.ModeSymlink != 0 {
+				if err := checkSymlinkContained(root, srcPath); err != nil {
+					return false, err
+				}
+			}
+			return false, nil
 		},
 	}
+}
+
+// checkSymlinkContained verifies that the symlink at linkPath resolves to a
+// path inside root (the kubelet `..data/*` layout always does) and that
+// dereferencing it cannot recurse forever (a symlink to its own ancestor
+// directory). Anything else — absolute targets like `/etc`, `..` escapes — is
+// rejected so an overlay cannot smuggle host files into an ISO.
+func checkSymlinkContained(root, linkPath string) error {
+	target, err := os.Readlink(linkPath)
+	if err != nil {
+		return fmt.Errorf("reading overlay symlink %s: %w", linkPath, err)
+	}
+	if !filepath.IsAbs(target) {
+		target = filepath.Join(filepath.Dir(linkPath), target)
+	}
+	resolved, err := filepath.EvalSymlinks(target)
+	if err != nil {
+		return fmt.Errorf("resolving overlay symlink %s: %w", linkPath, err)
+	}
+	realRoot, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return fmt.Errorf("resolving overlay root %s: %w", root, err)
+	}
+	sep := string(os.PathSeparator)
+	if resolved != realRoot && !strings.HasPrefix(resolved, realRoot+sep) {
+		return fmt.Errorf("overlay symlink %s points outside the overlay root (%s)", linkPath, resolved)
+	}
+	// A symlink whose target directory contains the symlink itself would be
+	// copied into itself forever by copy.Deep.
+	if info, err := os.Stat(resolved); err == nil && info.IsDir() {
+		dir := filepath.Clean(filepath.Dir(linkPath))
+		if dir == resolved || strings.HasPrefix(dir+sep, resolved+sep) {
+			return fmt.Errorf("overlay symlink %s points at its own ancestor (%s)", linkPath, resolved)
+		}
+	}
+	return nil
 }
 
 // MaterializeOverlay copies an overlay directory into a fresh temporary

@@ -207,6 +207,49 @@ var _ = Describe("MaterializeOverlay", func() {
 		Expect(err).To(HaveOccurred())
 	})
 
+	It("rejects a symlink with an absolute target outside the overlay root", func() {
+		// e.g. an untrusted overlay carrying `etc -> /etc` must not leak host
+		// files into the ISO.
+		Expect(os.Symlink("/etc", filepath.Join(src, "etc"))).To(Succeed())
+
+		_, err := utils.MaterializeOverlay(src)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("outside the overlay root"))
+	})
+
+	It("rejects a symlink escaping the overlay root via '..'", func() {
+		outside := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(outside, "secret"), []byte("top secret"), 0644)).To(Succeed())
+		Expect(os.Symlink(filepath.Join("..", filepath.Base(outside), "secret"), filepath.Join(src, "evil"))).To(Succeed())
+
+		_, err := utils.MaterializeOverlay(src)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("outside the overlay root"))
+	})
+
+	It("rejects a symlink to its own ancestor directory", func() {
+		// Dereferencing `boot/loop -> ..` would copy boot/ into itself forever.
+		Expect(os.MkdirAll(filepath.Join(src, "boot"), 0755)).To(Succeed())
+		Expect(os.Symlink("..", filepath.Join(src, "boot", "loop"))).To(Succeed())
+
+		_, err := utils.MaterializeOverlay(src)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("ancestor"))
+	})
+
+	It("allows an absolute symlink whose target stays inside the overlay root", func() {
+		Expect(os.WriteFile(filepath.Join(src, "real.cfg"), []byte("real"), 0644)).To(Succeed())
+		Expect(os.Symlink(filepath.Join(src, "real.cfg"), filepath.Join(src, "alias.cfg"))).To(Succeed())
+
+		dst, err := utils.MaterializeOverlay(src)
+		Expect(err).ToNot(HaveOccurred())
+		defer os.RemoveAll(dst)
+
+		content, err := os.ReadFile(filepath.Join(dst, "alias.cfg"))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(content)).To(Equal("real"))
+	})
+
 	It("fails when the overlay does not exist", func() {
 		_, err := utils.MaterializeOverlay(filepath.Join(src, "no-such-dir"))
 		Expect(err).To(HaveOccurred())
