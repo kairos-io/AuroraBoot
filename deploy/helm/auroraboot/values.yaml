@@ -75,6 +75,13 @@ resources: {}
 podSecurityContext: {}
 securityContext: {}
 
+netboot:
+  enabled: false
+
+hostNetwork:
+  enabled: false
+  dnsPolicy: ClusterFirstWithHostNet
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
