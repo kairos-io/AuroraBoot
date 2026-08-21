@@ -29,7 +29,7 @@ require (
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect
 	github.com/sanity-io/litter v1.5.8
 	github.com/spectrocloud-labs/herd v0.4.2
-	github.com/spectrocloud/peg v0.0.0-20260123084329-97c9703181cf
+	github.com/spectrocloud/peg v0.0.0-20260813125620-d8627da0983c
 	github.com/spf13/viper v1.21.0 // agent can't use 1.20.0 due to some marshalling changes
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
