@@ -9,11 +9,16 @@
 
 <p align="center">
   <a href="https://opensource.org/licenses/"><img alt="License" src="https://img.shields.io/badge/license-Apache%202.0-blue" /></a>
-  <a href="https://github.com/kairos-io/AuroraBoot/issues"><img alt="Issues" src="https://img.shields.io/github/issues/kairos-io/AuroraBoot"></a>
+  <a href="https://github.com/kairos-io/kairos/issues"><img alt="Issues" src="https://img.shields.io/github/issues/kairos-io/kairos"></a>
   <a href="https://kairos.io/docs/" target="_blank"><img alt="docs" src="https://img.shields.io/badge/Documentation-blue"></a>
   <img alt="Made with Go" src="https://img.shields.io/badge/made%20with-Go-blue">
   <img alt="Go report" src="https://goreportcard.com/badge/github.com/kairos-io/AuroraBoot" />
 </p>
+
+> **Found a bug, or want to request a feature?** Open it on
+> [kairos-io/kairos](https://github.com/kairos-io/kairos/issues), including
+> issues about this repository. Every Kairos issue lives in one place, so you
+> never have to work out which repository to file against.
 
 AuroraBoot is the official bootstrapper for [Kairos](https://kairos.io). With a single binary you can:
 
