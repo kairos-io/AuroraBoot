@@ -279,8 +279,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		allowedCommands = append([]string(nil), phonehomeSafeDefaults...)
 	}
 
-	kubernetesEnabled := true
-	if req.KubernetesEnabled != nil {
+	kubernetesEnabled := req.Variant == "standard"
+	if kubernetesEnabled && req.KubernetesEnabled != nil {
 		kubernetesEnabled = *req.KubernetesEnabled
 	}
 
