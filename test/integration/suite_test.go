@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -26,6 +27,8 @@ const (
 )
 
 var (
+	nodeGormStore *gormstore.Store
+
 	// testRegToken starts at a fixed seed value and is kept in sync with
 	// the server's active token by the Settings rotation specs — rotating
 	// the token invalidates the previous value (RegistrationTokenAuth reads
@@ -90,9 +93,14 @@ func (m *mockArtifactBuilder) Cancel(_ context.Context, id string) error {
 }
 
 var _ = BeforeSuite(func() {
-	// Create in-memory SQLite store with shared cache so all connections see the same data.
-	store, err := gormstore.New("file::memory:?cache=shared")
+	// File-backed SQLite store, NOT :memory: — WAL mode and busy_timeout do not
+	// apply to in-memory databases, so concurrent writers (e.g. the WebSocket
+	// heartbeat path) can hit "database is locked" even though the store sets
+	// both. Matches the pattern in internal/store/gorm/concurrency_test.go.
+	dbPath := filepath.Join(GinkgoT().TempDir(), "integration.db")
+	store, err := gormstore.New(dbPath)
 	Expect(err).NotTo(HaveOccurred())
+	nodeGormStore = store
 
 	nodeStore := &gormstore.NodeStoreAdapter{S: store}
 	commandStore := &gormstore.CommandStoreAdapter{S: store}
@@ -123,6 +131,9 @@ var _ = BeforeSuite(func() {
 var _ = AfterSuite(func() {
 	if testServer != nil {
 		testServer.Close()
+	}
+	if nodeGormStore != nil {
+		Expect(nodeGormStore.Close()).To(Succeed())
 	}
 })
 
