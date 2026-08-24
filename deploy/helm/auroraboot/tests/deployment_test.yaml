@@ -170,3 +170,101 @@ tests:
     asserts:
       - exists:
           path: spec.template.metadata.annotations["checksum/registration-secret"]
+
+  - it: disables host networking and netboot privileges by default
+    set:
+      host: auroraboot.example.com
+    asserts:
+      - notExists:
+          path: spec.template.spec.hostNetwork
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: enables host networking independently
+    set:
+      host: auroraboot.example.com
+      hostNetwork:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.hostNetwork
+          value: true
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirstWithHostNet
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+
+  - it: honours a host network DNS policy override
+    set:
+      host: auroraboot.example.com
+      hostNetwork:
+        enabled: true
+        dnsPolicy: ClusterFirst
+    asserts:
+      - equal:
+          path: spec.template.spec.dnsPolicy
+          value: ClusterFirst
+
+  - it: enables netboot privileges independently
+    set:
+      host: auroraboot.example.com
+      netboot:
+        enabled: true
+    asserts:
+      - notExists:
+          path: spec.template.spec.hostNetwork
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.add
+          value:
+            - NET_RAW
+            - NET_BIND_SERVICE
+
+  - it: enables host networking and netboot privileges together
+    set:
+      host: auroraboot.example.com
+      hostNetwork:
+        enabled: true
+      netboot:
+        enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.hostNetwork
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.add
+          value:
+            - NET_RAW
+            - NET_BIND_SERVICE
+
+  - it: preserves supplied security context and capabilities when netboot is enabled
+    set:
+      host: auroraboot.example.com
+      netboot:
+        enabled: true
+      securityContext:
+        runAsUser: 1000
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop:
+            - ALL
+          add:
+            - SYS_ADMIN
+            - NET_RAW
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.runAsUser
+          value: 1000
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.readOnlyRootFilesystem
+          value: true
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.drop
+          value:
+            - ALL
+      - equal:
+          path: spec.template.spec.containers[0].securityContext.capabilities.add
+          value:
+            - SYS_ADMIN
+            - NET_RAW
+            - NET_BIND_SERVICE
