@@ -14,6 +14,15 @@ import (
 
 const (
 	UserAgent = "AuroraBoot"
+
+	// downloadAttempts and downloadRetryBaseDelay: grab makes exactly one
+	// HTTP attempt per call and returns whatever error it hit, including a
+	// transient one (e.g. an HTTP/2 "stream error: ... PROTOCOL_ERROR"
+	// from the peer mid-transfer). A multi-GB release asset has plenty of
+	// opportunity to hit one of those, so a single failed attempt should
+	// not be the whole download's answer.
+	downloadAttempts       = 3
+	downloadRetryBaseDelay = 2 * time.Second
 )
 
 // ServeArtifacts serve local artifacts as standard http server
@@ -52,7 +61,32 @@ func DownloadArtifact(url string, isoFunc valueGetOnCall) func(ctx context.Conte
 	}
 }
 
+// download retries downloadOnce on failure, up to downloadAttempts times.
+// It does not retry after ctx is canceled -- that is a caller decision to
+// stop, not a transient failure to recover from.
 func download(ctx context.Context, url, dst string) (string, error) {
+	var dstFile string
+	var err error
+	for attempt := 1; attempt <= downloadAttempts; attempt++ {
+		dstFile, err = downloadOnce(ctx, url, dst)
+		if err == nil {
+			return dstFile, nil
+		}
+		if ctx.Err() != nil || attempt == downloadAttempts {
+			return dstFile, err
+		}
+		internal.Log.Logger.Warn().Err(err).Str("artifact", url).Int("attempt", attempt).Msg("download failed, retrying")
+		delay := downloadRetryBaseDelay * time.Duration(attempt)
+		select {
+		case <-ctx.Done():
+			return dstFile, err
+		case <-time.After(delay):
+		}
+	}
+	return dstFile, err
+}
+
+func downloadOnce(ctx context.Context, url, dst string) (string, error) {
 	// create client
 	client := grab.NewClient()
 	// https://github.com/cavaliergopher/grab/issues/104
