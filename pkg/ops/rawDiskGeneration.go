@@ -899,6 +899,18 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		return r.CopyAlpineShimAndGrub(arch, target)
 	}
 
+	// Some architectures have no shim/secure-boot convention at all yet --
+	// kairos-sdk's GetEfiShimFiles returns an empty list for them (riscv64
+	// today). That is not a missing file, it is the architecture having
+	// nothing to chain from, so treat it as a no-op rather than a failure.
+	// The grub copy below writes to the removable-media fallback path
+	// instead, since grub itself is what firmware boots directly there.
+	noShimForArch := len(sdkUtils.GetEfiShimFiles(arch)) == 0
+	if which == "shim" && noShimForArch {
+		return nil
+	}
+	writeFallback := which == "shim" || (which == "grub" && noShimForArch)
+
 	for _, f := range searchFiles {
 		_, err := r.config.Fs.Stat(filepath.Join(r.Source, f))
 		if err != nil {
@@ -926,9 +938,12 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 		}
 		copyDone = true
 
-		// Copy the shim content to the fallback name so the system boots from fallback. This means that we do not create
-		// any bootloader entries, so our recent installation has the lower priority if something else is on the bootloader
-		if which == "shim" {
+		// Copy the shim (or, on a no-shim architecture, grub) content to
+		// the fallback name so the system boots from fallback. This means
+		// that we do not create any bootloader entries, so our recent
+		// installation has the lower priority if something else is on the
+		// bootloader.
+		if writeFallback {
 			writeShim := agentConstants.GetFallBackEfi(arch)
 			err = r.config.Fs.WriteFile(filepath.Join(target, constants.EfiBootPath, writeShim), fileContent, agentConstants.FilePerm)
 			if err != nil {
@@ -939,7 +954,7 @@ func (r *RawImage) copyShimOrGrub(target, which string) error {
 	}
 	if !copyDone {
 		r.config.Logger.Debugf("List of files searched for: %s", searchFiles)
-		return fmt.Errorf("could not find any shim file to copy")
+		return fmt.Errorf("could not find any %s file to copy", which)
 	}
 	return nil
 }
