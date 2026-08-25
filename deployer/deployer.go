@@ -6,7 +6,7 @@ import (
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	sdklogger "github.com/kairos-io/kairos-sdk/types/logger"
+	sdklogger "github.com/kairos-io/kairos/v4/sdk/types/logger"
 
 	"github.com/spectrocloud-labs/herd"
 	"gopkg.in/yaml.v3"

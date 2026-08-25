@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/internal"
-	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	nbConstants "github.com/kairos-io/netboot/constants"
 	"github.com/kairos-io/netboot/dhcp4"
 )

@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/joho/godotenv"
-	"github.com/kairos-io/kairos-sdk/types/runner"
+	"github.com/kairos-io/kairos/v4/sdk/types/runner"
 
 	containerdCompression "github.com/containerd/containerd/v2/pkg/archive/compression"
 	"github.com/google/go-containerregistry/pkg/name"
@@ -22,8 +22,8 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	"github.com/kairos-io/kairos-sdk/types/logger"
-	sdkUtils "github.com/kairos-io/kairos-sdk/utils"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
+	sdkUtils "github.com/kairos-io/kairos/v4/sdk/utils"
 	"github.com/spf13/viper"
 )
 

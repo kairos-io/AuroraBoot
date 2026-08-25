@@ -20,7 +20,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
-	sdklogger "github.com/kairos-io/kairos-sdk/types/logger"
+	sdklogger "github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/spectrocloud-labs/herd"
 )
 

@@ -2,7 +2,7 @@ package e2e_test
 
 import (
 	"fmt"
-	"github.com/kairos-io/kairos-sdk/utils"
+	"github.com/kairos-io/kairos/v4/sdk/utils"
 	"github.com/onsi/gomega/types"
 	"os"
 	"os/exec"

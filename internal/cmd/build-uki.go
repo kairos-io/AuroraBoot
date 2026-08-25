@@ -7,7 +7,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
-	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/urfave/cli/v2"
 )
 

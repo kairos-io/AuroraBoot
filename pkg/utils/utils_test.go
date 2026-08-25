@@ -25,8 +25,8 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
-	v1mock "github.com/kairos-io/kairos-agent/v2/tests/mocks"
-	sdkLogger "github.com/kairos-io/kairos-sdk/types/logger"
+	v1mock "github.com/kairos-io/kairos/v4/agent/tests/mocks"
+	sdkLogger "github.com/kairos-io/kairos/v4/sdk/types/logger"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/viper"

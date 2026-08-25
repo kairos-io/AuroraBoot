@@ -6,7 +6,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	sdklogger "github.com/kairos-io/kairos-sdk/types/logger"
+	sdklogger "github.com/kairos-io/kairos/v4/sdk/types/logger"
 )
 
 var _ = Describe("teeKairosLogger", func() {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 
 	"github.com/kairos-io/AuroraBoot/internal"
-	"github.com/kairos-io/kairos-agent/v2/pkg/elemental"
-	sdkImage "github.com/kairos-io/kairos-sdk/types/images"
-	imageutils "github.com/kairos-io/kairos-sdk/utils/image"
+	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
+	sdkImage "github.com/kairos-io/kairos/v4/sdk/types/images"
+	imageutils "github.com/kairos-io/kairos/v4/sdk/utils/image"
 )
 
 // DumpSource pulls a container image either remotely or locally from a docker daemon
@@ -16,7 +16,7 @@ import (
 // registries and from registries presenting untrusted/self-signed TLS
 // certificates.
 // Supports these prefixes:
-// https://github.com/kairos-io/kairos-agent/blob/1e81cdef38677c8a36cae50d3334559976f66481/pkg/types/v1/common.go#L30-L33
+// https://github.com/kairos-io/kairos/blob/b5e8809b4aeedb9cedf73b02b85cb8dc15c47e26/sdk/types/images/image.go#L13-L17
 func DumpSource(image string, dstFunc valueGetOnCall, arch string, allowInsecureRegistries bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
