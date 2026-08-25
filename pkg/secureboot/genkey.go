@@ -25,7 +25,7 @@ import (
 	"github.com/foxboron/go-uefi/efivar"
 	"github.com/foxboron/sbctl"
 	"github.com/foxboron/sbctl/certs"
-	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 )
 
 // Options configures a Secure Boot key set generation.

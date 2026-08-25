@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/kairos-io/AuroraBoot/internal"
-	"github.com/kairos-io/kairos-sdk/utils"
+	"github.com/kairos-io/kairos/v4/sdk/utils"
 )
 
 func GenEFIRawDisk(src, dst string, size uint64, stateSize, recoveryImageSize int64, noDefaultCloudConfig, separatePartitionsImages, maas bool) func(ctx context.Context) error {

@@ -9,7 +9,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/internal/config"
-	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
 )

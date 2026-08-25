@@ -4,7 +4,7 @@ import (
 	"os"
 
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
-	"github.com/kairos-io/kairos-sdk/types/logger"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/urfave/cli/v2"
 )
 

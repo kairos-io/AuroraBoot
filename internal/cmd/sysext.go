@@ -10,9 +10,9 @@ import (
 
 	"github.com/gofrs/uuid"
 	aurorabootUtils "github.com/kairos-io/AuroraBoot/pkg/utils"
-	"github.com/kairos-io/kairos-sdk/sysext"
-	"github.com/kairos-io/kairos-sdk/types/logger"
-	sdkImage "github.com/kairos-io/kairos-sdk/utils/image"
+	"github.com/kairos-io/kairos/v4/sdk/sysext"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
+	sdkImage "github.com/kairos-io/kairos/v4/sdk/utils/image"
 	"github.com/urfave/cli/v2"
 )
 

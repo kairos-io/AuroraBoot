@@ -17,8 +17,6 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.5.0
-	github.com/kairos-io/kairos-agent/v2 v2.30.2
-	github.com/kairos-io/kairos-sdk v0.25.3
 	github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872
 	github.com/klauspost/compress v1.19.2
 	github.com/labstack/echo/v4 v4.15.4
@@ -44,6 +42,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.1.3
+	github.com/kairos-io/kairos/v4 v4.2.1-0.20260825070803-b5e8809b4aee
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.24.0
 	github.com/swaggo/swag v1.16.6

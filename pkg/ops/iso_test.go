@@ -4,11 +4,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	sdkConfig "github.com/kairos-io/kairos-sdk/types/config"
-	"github.com/kairos-io/kairos-sdk/types/logger"
+	sdkConfig "github.com/kairos-io/kairos/v4/sdk/types/config"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	sdkutils "github.com/kairos-io/kairos-sdk/utils"
+	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/twpayne/go-vfs/v5/vfst"

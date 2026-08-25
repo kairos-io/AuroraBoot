@@ -5,7 +5,7 @@ import (
 	"testing"
 
 	"github.com/kairos-io/AuroraBoot/internal"
-	"github.com/kairos-io/kairos-agent/v2/pkg/config"
+	"github.com/kairos-io/kairos/v4/agent/pkg/config"
 	"github.com/twpayne/go-vfs/v5/vfst"
 )
 

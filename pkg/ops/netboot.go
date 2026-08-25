@@ -9,7 +9,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
-	"github.com/kairos-io/kairos-sdk/iso"
+	"github.com/kairos-io/kairos/v4/sdk/iso"
 )
 
 // valueGetOnCall is a function type that returns a string value.

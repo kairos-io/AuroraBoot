@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
-	sdkFs "github.com/kairos-io/kairos-sdk/types/fs"
+	sdkFs "github.com/kairos-io/kairos/v4/sdk/types/fs"
 	"github.com/twpayne/go-vfs/v5"
 	"github.com/twpayne/go-vfs/v5/vfst"
 )

@@ -1,6 +1,6 @@
 package internal
 
-import "github.com/kairos-io/kairos-sdk/types/logger"
+import "github.com/kairos-io/kairos/v4/sdk/types/logger"
 
 var Log logger.KairosLogger
 
