@@ -12,18 +12,19 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 )
 
-const (
-	UserAgent = "AuroraBoot"
+const UserAgent = "AuroraBoot"
 
-	// downloadAttempts and downloadRetryBaseDelay: grab makes exactly one
-	// HTTP attempt per call and returns whatever error it hit, including a
-	// transient one (e.g. an HTTP/2 "stream error: ... PROTOCOL_ERROR"
-	// from the peer mid-transfer). A multi-GB release asset has plenty of
-	// opportunity to hit one of those, so a single failed attempt should
-	// not be the whole download's answer.
-	downloadAttempts       = 3
-	downloadRetryBaseDelay = 2 * time.Second
-)
+// downloadAttempts and downloadRetryBaseDelay: grab makes exactly one
+// HTTP attempt per call and returns whatever error it hit, including a
+// transient one (e.g. an HTTP/2 "stream error: ... PROTOCOL_ERROR"
+// from the peer mid-transfer). A multi-GB release asset has plenty of
+// opportunity to hit one of those, so a single failed attempt should
+// not be the whole download's answer.
+const downloadAttempts = 3
+
+// downloadRetryBaseDelay is a var, not a const, so tests can shrink the
+// backoff instead of waiting on it in real time.
+var downloadRetryBaseDelay = 2 * time.Second
 
 // ServeArtifacts serve local artifacts as standard http server
 func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.Context) error {
@@ -79,7 +80,10 @@ func download(ctx context.Context, url, dst string) (string, error) {
 		delay := downloadRetryBaseDelay * time.Duration(attempt)
 		select {
 		case <-ctx.Done():
-			return dstFile, err
+			// Report the cancellation itself, not the transient error that
+			// prompted this backoff -- a caller checking for ctx.Err() must
+			// see it, not whatever downloadOnce last failed with.
+			return dstFile, ctx.Err()
 		case <-time.After(delay):
 		}
 	}
