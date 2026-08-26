@@ -12,9 +12,19 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal"
 )
 
-const (
-	UserAgent = "AuroraBoot"
-)
+const UserAgent = "AuroraBoot"
+
+// downloadAttempts and downloadRetryBaseDelay: grab makes exactly one
+// HTTP attempt per call and returns whatever error it hit, including a
+// transient one (e.g. an HTTP/2 "stream error: ... PROTOCOL_ERROR"
+// from the peer mid-transfer). A multi-GB release asset has plenty of
+// opportunity to hit one of those, so a single failed attempt should
+// not be the whole download's answer.
+const downloadAttempts = 3
+
+// downloadRetryBaseDelay is a var, not a const, so tests can shrink the
+// backoff instead of waiting on it in real time.
+var downloadRetryBaseDelay = 2 * time.Second
 
 // ServeArtifacts serve local artifacts as standard http server
 func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.Context) error {
@@ -52,7 +62,35 @@ func DownloadArtifact(url string, isoFunc valueGetOnCall) func(ctx context.Conte
 	}
 }
 
+// download retries downloadOnce on failure, up to downloadAttempts times.
+// It does not retry after ctx is canceled -- that is a caller decision to
+// stop, not a transient failure to recover from.
 func download(ctx context.Context, url, dst string) (string, error) {
+	var dstFile string
+	var err error
+	for attempt := 1; attempt <= downloadAttempts; attempt++ {
+		dstFile, err = downloadOnce(ctx, url, dst)
+		if err == nil {
+			return dstFile, nil
+		}
+		if ctx.Err() != nil || attempt == downloadAttempts {
+			return dstFile, err
+		}
+		internal.Log.Logger.Warn().Err(err).Str("artifact", url).Int("attempt", attempt).Msg("download failed, retrying")
+		delay := downloadRetryBaseDelay * time.Duration(attempt)
+		select {
+		case <-ctx.Done():
+			// Report the cancellation itself, not the transient error that
+			// prompted this backoff -- a caller checking for ctx.Err() must
+			// see it, not whatever downloadOnce last failed with.
+			return dstFile, ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+	return dstFile, err
+}
+
+func downloadOnce(ctx context.Context, url, dst string) (string, error) {
 	// create client
 	client := grab.NewClient()
 	// https://github.com/cavaliergopher/grab/issues/104
