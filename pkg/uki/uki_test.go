@@ -1,12 +1,69 @@
 package uki
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var _ = Describe("catalog extensions", func() {
+	It("rejects extension requests for non-ISO output", func() {
+		opts := validTestOptions()
+		opts.Extensions = []extensions.Request{{Name: "tool"}}
+		opts.ExtensionsCatalog = "catalog.yaml"
+		Expect(opts.validate()).To(MatchError("extensions are only supported for iso artifacts"))
+	})
+
+	It("requires a catalog when extensions are requested", func() {
+		opts := validTestOptions()
+		opts.OutputType = "iso"
+		opts.Extensions = []extensions.Request{{Name: "tool"}}
+		Expect(opts.validate()).To(MatchError("extensions catalog is required when extensions are requested"))
+	})
+
+	It("materializes extensions into the staged ISO root with the target architecture", func() {
+		original := materializeExtensions
+		DeferCleanup(func() { materializeExtensions = original })
+		stagedRoot := tTempDir()
+		called := false
+		materializeExtensions = func(_ context.Context, catalog string, requests []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
+			called = true
+			Expect(catalog).To(Equal("catalog.yaml"))
+			Expect(requests).To(Equal([]extensions.Request{{Name: "tool", Version: "v2"}}))
+			Expect(arch).To(Equal("arm64"))
+			Expect(destination).To(Equal(stagedRoot))
+			Expect(insecure).To(BeTrue())
+			return []string{filepath.Join(destination, "tool.sysext.raw")}, nil
+		}
+
+		Expect(stageExtensions(context.Background(), "catalog.yaml", []extensions.Request{{Name: "tool", Version: "v2"}}, "arm64", stagedRoot, true)).To(Succeed())
+		Expect(called).To(BeTrue())
+	})
+})
+
+func validTestOptions() Options {
+	dir := tTempDir()
+	for _, name := range []string{"sb.key", "sb.pem", "pcr.key"} {
+		Expect(os.WriteFile(filepath.Join(dir, name), []byte("test"), 0o600)).To(Succeed())
+	}
+	return Options{
+		Source:           "dir:rootfs",
+		SBKey:            filepath.Join(dir, "sb.key"),
+		SBCert:           filepath.Join(dir, "sb.pem"),
+		TPMPCRPrivateKey: filepath.Join(dir, "pcr.key"),
+	}
+}
+
+func tTempDir() string {
+	dir, err := os.MkdirTemp("", "uki-extension-test-")
+	Expect(err).ToNot(HaveOccurred())
+	DeferCleanup(func() { _ = os.RemoveAll(dir) })
+	return dir
+}
 
 var _ = Describe("sumFileSizes", func() {
 	var tempDir string
