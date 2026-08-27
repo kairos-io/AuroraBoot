@@ -26,4 +26,20 @@ var _ = Describe("build-uki", Label("uki", "cmd"), func() {
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 	})
+
+	It("accepts repeatable extension flags", Label("flags"), func() {
+		err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extension", "tool", "--extension", "debug@v2", "--extensions-catalog", "catalog.yaml", "some/image:latest"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+	})
+
+	It("requires a catalog when extensions are requested", Label("flags"), func() {
+		err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extension", "tool", "some/image:latest"})
+		Expect(err).To(MatchError("extensions-catalog is required when extension is set"))
+	})
+
+	It("rejects malformed extension requests", Label("flags"), func() {
+		err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extension", "tool@", "--extensions-catalog", "catalog.yaml", "some/image:latest"})
+		Expect(err).To(MatchError(ContainSubstring("invalid extension request")))
+	})
 })

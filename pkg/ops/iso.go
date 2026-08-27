@@ -11,6 +11,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/otiai10/copy"
@@ -114,7 +115,7 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 }
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
+func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
 		src := srcFunc()
@@ -151,6 +152,14 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		cfg.OutDir = dst
 		cfg.Date = i.IncludeDate
 
+		extensionArch := targetArch
+		if extensionArch == "" {
+			extensionArch = cfg.Arch
+		}
+		if err := materializeISOExtensions(ctx, i, extensionArch, tmp, insecure); err != nil {
+			return err
+		}
+
 		spec := &LiveISO{
 			RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(src)},
 			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(tmp)},
@@ -183,6 +192,16 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		}
 		return err
 	}
+}
+
+var materializeExtensionArtifacts = extensions.Materialize
+
+func materializeISOExtensions(ctx context.Context, i schema.ISO, architecture, isoRoot string, insecure bool) error {
+	if len(i.Extensions) == 0 {
+		return nil
+	}
+	_, err := materializeExtensionArtifacts(ctx, i.ExtensionsCatalog, i.Extensions, architecture, isoRoot, insecure)
+	return err
 }
 
 func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {

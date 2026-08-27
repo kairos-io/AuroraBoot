@@ -1,6 +1,8 @@
 package ops
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -8,11 +10,46 @@ import (
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/twpayne/go-vfs/v5/vfst"
 )
+
+var _ = Describe("materializeISOExtensions", func() {
+	It("does nothing when no extensions are configured", func() {
+		called := false
+		materializeExtensionArtifacts = func(context.Context, string, []extensions.Request, string, string, bool) ([]string, error) {
+			called = true
+			return nil, nil
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		Expect(materializeISOExtensions(context.Background(), schema.ISO{}, "amd64", "/unused", false)).To(Succeed())
+		Expect(called).To(BeFalse())
+	})
+
+	It("uses the target architecture and ISO root directory", func() {
+		tmp := GinkgoT().TempDir()
+		requests := []extensions.Request{{Name: "foo", Version: "v1"}}
+		materializeExtensionArtifacts = func(_ context.Context, catalog string, got []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
+			Expect(catalog).To(Equal("catalog.yaml"))
+			Expect(got).To(Equal(requests))
+			Expect(arch).To(Equal("arm64"))
+			Expect(destination).To(Equal(tmp))
+			Expect(insecure).To(BeTrue())
+			path := filepath.Join(destination, "foo.sysext.raw")
+			return []string{path}, os.WriteFile(path, []byte("raw"), 0o644)
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		iso := schema.ISO{ExtensionsCatalog: "catalog.yaml", Extensions: requests}
+		Expect(materializeISOExtensions(context.Background(), iso, "arm64", tmp, true)).To(Succeed())
+		Expect(filepath.Join(tmp, "foo.sysext.raw")).To(BeAnExistingFile())
+	})
+})
 
 var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 	const templateWithPlaceholders = "linux ($root)/boot/kernel cdroot root=live:CDLABEL=COS_LIVE {{LIVE_CONSOLE}}{{NOMODESET}} install-mode\nlinux ($root)/boot/kernel cdroot{{EXTEND_CMDLINE}}\nmenuentry debug { linux console=tty0 }\n"
