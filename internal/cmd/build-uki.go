@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/urfave/cli/v2"
@@ -129,6 +130,14 @@ var BuildUKICmd = cli.Command{
 			Value: false,
 			Usage: "Try to find systemd-boot files in the source rootfs instead of using the bundled ones.",
 		},
+		&cli.StringSliceFlag{
+			Name:  "extension",
+			Usage: "Add a catalog extension by name or name@version (repeatable)",
+		},
+		&cli.StringFlag{
+			Name:  "extensions-catalog",
+			Usage: "Path or URL of the extension catalog",
+		},
 		AllowInsecureRegistriesFlag,
 	},
 	Before: func(ctx *cli.Context) error {
@@ -136,6 +145,14 @@ var BuildUKICmd = cli.Command{
 		// https://github.com/urfave/cli/blob/7ec374fe2abd3e9c75369f6bb4191fe7866bd89c/command.go#L128
 		if len(ctx.StringSlice("extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
 			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
+		}
+		if len(ctx.StringSlice("extension")) > 0 && ctx.String("extensions-catalog") == "" {
+			return errors.New("extensions-catalog is required when extension is set")
+		}
+		for _, value := range ctx.StringSlice("extension") {
+			if _, err := extensions.ParseRequest(value); err != nil {
+				return err
+			}
 		}
 		if ctx.String("public-keys") == "" {
 			fmt.Println("Warning: public-keys directory is not set, Secure Boot auto enroll will not work. You can set it with --public-keys flag.")
@@ -153,6 +170,14 @@ var BuildUKICmd = cli.Command{
 			logLevel = "debug"
 		}
 		log := logger.NewKairosLogger("auroraboot", logLevel, false)
+		extensionRequests := make([]extensions.Request, 0, len(ctx.StringSlice("extension")))
+		for _, value := range ctx.StringSlice("extension") {
+			request, err := extensions.ParseRequest(value)
+			if err != nil {
+				return err
+			}
+			extensionRequests = append(extensionRequests, request)
+		}
 
 		return uki.Build(uki.Options{
 			Source:                  args.Get(0),
@@ -176,6 +201,8 @@ var BuildUKICmd = cli.Command{
 			CmdLinesV2:              ctx.Bool("cmd-lines-v2"),
 			SdBootInSource:          ctx.Bool("sdboot-in-source"),
 			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
+			Extensions:              extensionRequests,
+			ExtensionsCatalog:       ctx.String("extensions-catalog"),
 			Logger:                  &log,
 		})
 	},
