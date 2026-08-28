@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"crypto/subtle"
 	"encoding/json"
 	"io"
 	"net/http"
@@ -13,6 +14,15 @@ import (
 
 // ContextKeyNodeID is the key used to store the authenticated node ID in the echo context.
 const ContextKeyNodeID = "nodeID"
+
+// secureCompare reports whether a and b are equal using a constant-time
+// comparison, so a bearer-token / admin-password check does not leak, via
+// response timing, how many leading bytes of the secret matched. Plain string
+// == returns early on the first differing byte; subtle.ConstantTimeCompare does
+// not, and returns 0 for unequal-length inputs without a data-dependent branch.
+func secureCompare(a, b string) bool {
+	return subtle.ConstantTimeCompare([]byte(a), []byte(b)) == 1
+}
 
 // AuthNodeID returns the authenticated node ID set by NodeAPIKeyMiddleware, or
 // "" when the request was not authenticated as a node (e.g. an admin-bearer
@@ -52,7 +62,7 @@ func AdminMiddleware(password string) echo.MiddlewareFunc {
 			if token == "" {
 				token = c.QueryParam("token")
 			}
-			if token == "" || token != password {
+			if token == "" || !secureCompare(token, password) {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
 			return next(c)
@@ -102,9 +112,9 @@ func AgentOrAdminMiddleware(password string, nodeStore store.NodeStore) echo.Mid
 			if token == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
-			// Admin first — a constant-time-ish equality is fine here; the
-			// admin password is never a valid node API key.
-			if token == password {
+			// Admin first — the admin password is never a valid node API key,
+			// so the order is unambiguous.
+			if secureCompare(token, password) {
 				return next(c)
 			}
 			node, err := nodeStore.GetByAPIKey(c.Request().Context(), token)
@@ -131,7 +141,7 @@ func DownloadMiddleware(password string, nodeStore store.NodeStore) echo.Middlew
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
 			// Check admin password
-			if token == password {
+			if secureCompare(token, password) {
 				return next(c)
 			}
 			// Check node API key
