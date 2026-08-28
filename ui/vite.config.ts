@@ -16,6 +16,12 @@ export default defineConfig({
     emptyOutDir: true,
   },
   server: {
+    // Vite rejects requests whose Host header isn't recognized. Set
+    // VITE_ALLOWED_HOSTS (comma-separated) to reach the dev server via a
+    // LAN or mDNS name, e.g. VITE_ALLOWED_HOSTS=my-machine.local
+    allowedHosts: process.env.VITE_ALLOWED_HOSTS?.split(",").map((h) =>
+      h.trim(),
+    ),
     proxy: {
       "/api": {
         target: "http://localhost:8080",
