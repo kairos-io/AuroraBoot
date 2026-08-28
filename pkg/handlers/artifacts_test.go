@@ -193,6 +193,23 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k0s:"))
 		})
 
+		It("stores kubernetes as disabled for the core variant", func() {
+			as := &fakeArtifactStore{}
+			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(`{"baseImage":"ubuntu:24.04","variant":"core","kubernetesEnabled":true,"outputs":{"iso":true}}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handlerWithStore.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(as.records).To(HaveLen(1))
+			Expect(as.records[0].KubernetesEnabled).NotTo(BeNil())
+			Expect(*as.records[0].KubernetesEnabled).To(BeFalse())
+			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
+		})
+
 		It("merges extra k3s YAML without duplicating the top-level key", func() {
 			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true},"cloudConfig":"k3s:\n  enabled: true\n  cluster-cidr: 10.42.0.0/16"}`)
 			Expect(strings.Count(fb.lastOpts.CloudConfig, "k3s:")).To(Equal(1))
