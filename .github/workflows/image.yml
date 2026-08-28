@@ -14,14 +14,15 @@ concurrency:
   cancel-in-progress: false # we never want to cancel a running job on release
 jobs:
   build-ui:
-    # Shared by every arch job, including riscv64 (Node under QEMU crashed
-    # there before, kairos-io/AuroraBoot#514).
+    # Only riscv64 needs this (Node under QEMU crashed there before,
+    # kairos-io/AuroraBoot#514). amd64/arm64 build their own UI inline via
+    # Dockerfile's js stage.
     runs-on: 'ubuntu-24.04'
     steps:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
           cache: 'npm'
@@ -32,7 +33,7 @@ jobs:
           npm ci
           npm run build
       - name: Upload UI artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ui-dist
           path: internal/ui/dist
