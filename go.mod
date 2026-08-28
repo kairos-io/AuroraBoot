@@ -42,7 +42,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.1.3
-	github.com/kairos-io/kairos/v4 v4.2.1-0.20260825070803-b5e8809b4aee
+	github.com/kairos-io/kairos/v4 v4.2.1-0.20260825071302-240edb85a56f
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.24.0
 	github.com/swaggo/swag v1.16.6

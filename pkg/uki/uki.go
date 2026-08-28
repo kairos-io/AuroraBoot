@@ -9,6 +9,7 @@
 package uki
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	goukiuki "github.com/kairos-io/go-ukify/pkg/uki"
@@ -62,6 +64,12 @@ type Options struct {
 	// served over plain HTTP or presenting an untrusted/self-signed TLS
 	// certificate.
 	AllowInsecureRegistries bool
+
+	// Extensions are named catalog extensions to place in the ISO root.
+	Extensions []extensions.Request
+
+	// ExtensionsCatalog is the path or URL of the extension catalog.
+	ExtensionsCatalog string
 
 	// OverlayRootfs is an optional directory whose contents are copied into
 	// the rootfs before the UKI is built.
@@ -363,7 +371,7 @@ func Build(opts Options) (err error) {
 
 	switch outputType {
 	case string(constants.IsoOutput):
-		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch); err != nil {
+		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalog, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
 			return err
 		}
 	case string(constants.ContainerOutput):
@@ -408,6 +416,14 @@ func (o Options) validate() error {
 	}
 	if outputType != string(constants.DefaultOutput) && outputType != string(constants.IsoOutput) && outputType != string(constants.ContainerOutput) {
 		return fmt.Errorf("uki.Build: invalid output type: %s", outputType)
+	}
+	if len(o.Extensions) > 0 {
+		if outputType != string(constants.IsoOutput) {
+			return errors.New("extensions are only supported for iso artifacts")
+		}
+		if o.ExtensionsCatalog == "" {
+			return errors.New("extensions catalog is required when extensions are requested")
+		}
 	}
 
 	if o.OverlayRootfs != "" {
@@ -792,12 +808,16 @@ func createSystemdConf(dir, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch string) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch, extensionsCatalog string, extensionRequests []extensions.Request, insecure bool) error {
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(isoDir)
+
+	if err := stageExtensions(context.Background(), extensionsCatalog, extensionRequests, arch, isoDir, insecure); err != nil {
+		return err
+	}
 
 	filesMap, err := imageFiles(sourceDir, keysDir, entries, arch)
 	if err != nil {
@@ -868,6 +888,13 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		return fmt.Errorf("error creating iso file: %w\n%s", err, string(out))
 	}
 	return nil
+}
+
+var materializeExtensions = extensions.Materialize
+
+func stageExtensions(ctx context.Context, catalog string, requests []extensions.Request, arch, destination string, insecure bool) error {
+	_, err := materializeExtensions(ctx, catalog, requests, arch, destination, insecure)
+	return err
 }
 
 func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry, arch string) (map[string][]string, error) {
