@@ -14,9 +14,8 @@ concurrency:
   cancel-in-progress: false # we never want to cancel a running job on release
 jobs:
   build-ui:
-    # Built once on amd64 and shared with every arch job. riscv64 needs this
-    # too: running Node under QEMU emulation there crashed (SIGSEGV) when it
-    # ran on a native riscv64 runner (kairos-io/AuroraBoot#514).
+    # Shared by every arch job, including riscv64 (Node under QEMU crashed
+    # there before, kairos-io/AuroraBoot#514).
     runs-on: 'ubuntu-24.04'
     steps:
       - name: Checkout
@@ -37,11 +36,7 @@ jobs:
         with:
           name: ui-dist
           path: internal/ui/dist
-          # #545 disabled riscv64 partly because a same-day retry couldn't
-          # recover: the old 1-day retention had already expired by the
-          # time anyone re-ran the failed job. A few extra days costs
-          # nothing and gives a retry room to work.
-          retention-days: 3
+          retention-days: 3 # was 1; see #545
   build-linux-amd64:
     runs-on: 'ubuntu-24.04'
     steps:
@@ -89,13 +84,8 @@ jobs:
           push: true
           tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-arm64
   build-linux-riscv64:
-    # Re-enabled after #545 disabled it. Checked test-riscv64.yml's actual
-    # recent run history before reverting: the native runner hasn't caused
-    # a single riscv64-job failure in the last 20 PR CI runs (the only
-    # failures were an unrelated build-ui/npm issue that skipped this job
-    # before it ran), so whatever made it unreliable back in June looks
-    # resolved. Reverting to the same runner #545 disabled, unchanged --
-    # the real fix is below, not here.
+    # Reverts #545's disable; same runner, unchanged. See commit message
+    # for why (the runner wasn't actually the problem).
     runs-on: 'ubuntu-24.04-riscv'
     needs: build-ui
     steps:
@@ -131,12 +121,8 @@ jobs:
       - build-linux-amd64
       - build-linux-arm64
       - build-linux-riscv64
-    # #545's other root cause: one failed arch job skipped this job entirely,
-    # leaving the release tag unpublished on quay for every arch (v0.22.0
-    # never got a manifest). Run regardless, but still require amd64/arm64;
-    # riscv64 is included in the manifest only if it actually succeeded this
-    # run, so a riscv64 flake degrades to a two-arch release instead of no
-    # release at all.
+    # riscv64 must not block the amd64/arm64 release (#545); included in
+    # the manifest only if it succeeded this run.
     if: always() && needs.build-linux-amd64.result == 'success' && needs.build-linux-arm64.result == 'success'
     runs-on: ubuntu-24.04
     steps:
