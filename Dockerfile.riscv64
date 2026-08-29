@@ -3,34 +3,53 @@ ARG LUET_VERSION=0.36.5
 ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
+FROM tonistiigi/xx AS xx
 
 # UI is pre-built and passed via build context (internal/ui/dist)
 # This avoids QEMU emulation issues on riscv64 runners.
 
-FROM golang:1.26 AS with-swagger
+FROM --platform=$BUILDPLATFORM golang:1.26 AS with-swagger
 WORKDIR /app
 RUN go install github.com/swaggo/swag/cmd/swag@latest
 COPY . .
 RUN swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
-FROM golang:1.26 AS without-swagger
+FROM --platform=$BUILDPLATFORM golang:1.26 AS without-swagger
 WORKDIR /app
 
 FROM ${SWAGGER_STAGE} AS swagger
 
-FROM golang:1.26 AS builder
+# builder cross-compiles natively on $BUILDPLATFORM instead of emulating the target via
+# QEMU (that emulation was 77% of the whole image build, see mission-control#527).
+# CGO stays on: github.com/go-piv/piv-go/v2 (via sbctl) links against libpcsclite, and
+# without it (CGO_ENABLED=0) its PCSC files are silently dropped from the build, which
+# fails later with "undefined: pkcs11.Ctx" / "undefined: scTx" instead of a clear error.
+FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
+COPY --from=xx / /
 ARG VERSION=v0.0.0
+ARG TARGETPLATFORM
 WORKDIR /work
+RUN apt-get update && apt-get install -y --no-install-recommends clang lld pkg-config && rm -rf /var/lib/apt/lists/*
+# libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive via sbctl);
+# libc6-dev/libgcc-14-dev are the target glibc headers and cgo runtime support libs
+# xx-go's own cross-linking needs and doesn't pull in on its own.
+RUN xx-apt-get install -y --no-install-recommends libc6-dev libgcc-14-dev libpcsclite-dev
+# xx-cc only auto-generates a $TARGET-pkg-config wrapper for Alpine targets. On this
+# Debian base, xx-apt-get installs target .pc files under the multiarch triplet dir,
+# but nothing points pkg-config there, so xx-go's own pkg-config lookup (used by
+# piv-go's `#cgo linux pkg-config: libpcsclite`) needs it wired up by hand.
+RUN triple="$(xx-info triple)" && \
+    printf '#!/usr/bin/env sh\nexport PKG_CONFIG_LIBDIR=/usr/lib/%s/pkgconfig:/usr/share/pkgconfig\nexec pkg-config "$@"\n' "$triple" > "/usr/bin/${triple}-pkg-config" && \
+    chmod +x "/usr/bin/${triple}-pkg-config"
 ADD go.mod .
 ADD go.sum .
-RUN go mod download
+RUN xx-go mod download
 ADD . .
 # UI is pre-built and included in the build context
 COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
-# libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive via sbctl)
-RUN apt-get update && apt-get install -y --no-install-recommends libpcsclite-dev && rm -rf /var/lib/apt/lists/*
-RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
+ENV CGO_ENABLED=1
+RUN xx-go build -ldflags "-X main.version=${VERSION}" -o auroraboot && xx-verify auroraboot
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
 FROM fedorariscv/base:44 AS riscv64
