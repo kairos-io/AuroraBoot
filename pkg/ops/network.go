@@ -68,6 +68,7 @@ func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.
 			<-ctx.Done()
 			serverOne.Shutdown(context.Background())
 		}()
+		internal.WarnUnauthenticatedServe(listenAddr, "artifact HTTP server")
 		internal.Log.Logger.Info().Msgf("Listening on %v...", listenAddr)
 		return serverOne.ListenAndServe()
 	}
