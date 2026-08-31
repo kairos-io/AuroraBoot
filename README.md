@@ -42,14 +42,16 @@ cd AuroraBoot
 docker compose up --build -d
 ```
 
-On first boot AuroraBoot generates an admin password and a node registration token under `./data/secrets/`:
+On first boot AuroraBoot generates an admin password and a node registration token. `docker-compose.yml` keeps `/data` in a named volume, not a bind mount, so read them from inside the container:
 
 ```bash
-cat data/secrets/admin-password
-cat data/secrets/registration-token
+docker compose exec auroraboot cat /data/secrets/admin-password
+docker compose exec auroraboot cat /data/secrets/registration-token
 ```
 
 Open **http://localhost:9099**, sign in, and the welcome wizard walks you through the three steps: build an artifact, deploy it, manage the nodes that come online.
+
+If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL` to that reachable address before starting the stack. Left unset, AuroraBoot falls back to the container's hostname, which nodes can't resolve, so they can't phone home. See `--url` below.
 
 ### What you get
 
@@ -243,11 +245,14 @@ Run `auroraboot help` for the full list.
 # Backend (Go 1.26+)
 go build ./...
 go test ./...
+go run . web --listen :8080   # serves the API the frontend dev server proxies to
 
-# Frontend (Node 22+)
+# Frontend (Node 22+) — in a second terminal, with the backend above running:
 cd ui
 npm install
-npm run dev     # Vite dev server on :5173, proxies /api to :8080
+npm run dev             # Vite dev server on localhost:5173, proxies /api to :8080
+npm run dev -- --host   # same, but reachable from other machines (Vite binds localhost only by default)
+VITE_ALLOWED_HOSTS=my-machine.local npm run dev -- --host   # also needed to reach it by a LAN/mDNS name
 npm run build
 npm test
 
