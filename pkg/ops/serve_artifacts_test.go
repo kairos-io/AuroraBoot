@@ -77,4 +77,44 @@ var _ = Describe("ServeArtifacts", Label("network"), func() {
 		Expect(codeB).To(Equal(http.StatusOK))
 		Expect(bodyB).To(Equal("from-B"))
 	})
+
+	It("serves files by path but does not list the directory", func() {
+		dir := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "secret-artifact.iso"), []byte("payload"), 0o644)).To(Succeed())
+
+		addr := freeAddr()
+		ctx, cancel := context.WithCancel(context.Background())
+		DeferCleanup(cancel)
+		go func() {
+			defer GinkgoRecover()
+			_ = ServeArtifacts(addr, func() string { return dir })(ctx)
+		}()
+
+		get := func(path string) (int, string) {
+			var code int
+			var body string
+			Eventually(func() error {
+				resp, err := http.Get(fmt.Sprintf("http://%s/%s", addr, path))
+				if err != nil {
+					return err
+				}
+				defer resp.Body.Close()
+				b, _ := io.ReadAll(resp.Body)
+				code, body = resp.StatusCode, string(b)
+				return nil
+			}, 5*time.Second, 50*time.Millisecond).Should(Succeed())
+			return code, body
+		}
+
+		// A known file is still served by its exact path.
+		code, body := get("secret-artifact.iso")
+		Expect(code).To(Equal(http.StatusOK))
+		Expect(body).To(Equal("payload"))
+
+		// The directory root is not browsable: it 404s and never leaks the
+		// filenames it contains.
+		rootCode, rootBody := get("")
+		Expect(rootCode).To(Equal(http.StatusNotFound))
+		Expect(rootBody).NotTo(ContainSubstring("secret-artifact.iso"))
+	})
 })

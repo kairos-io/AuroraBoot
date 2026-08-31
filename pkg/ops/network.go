@@ -26,11 +26,35 @@ const downloadAttempts = 3
 // backoff instead of waiting on it in real time.
 var downloadRetryBaseDelay = 2 * time.Second
 
+// noListingFS wraps an http.FileSystem to suppress directory listings. Opening a
+// directory returns os.ErrNotExist, so http.FileServer still serves files by
+// their exact path but renders no browsable index — a request for a directory
+// (including "/") 404s instead of leaking the whole artifact directory's
+// contents to anyone who can reach the server on 0.0.0.0.
+type noListingFS struct{ fs http.FileSystem }
+
+func (n noListingFS) Open(name string) (http.File, error) {
+	f, err := n.fs.Open(name)
+	if err != nil {
+		return nil, err
+	}
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+		return nil, err
+	}
+	if info.IsDir() {
+		_ = f.Close()
+		return nil, os.ErrNotExist
+	}
+	return f, nil
+}
+
 // ServeArtifacts serve local artifacts as standard http server
 func ServeArtifacts(listenAddr string, dirFunc valueGetOnCall) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dir := dirFunc()
-		fs := http.FileServer(http.Dir(dir))
+		fs := http.FileServer(noListingFS{http.Dir(dir)})
 		// Use a private mux instead of http.DefaultServeMux: registering "/" on
 		// the global mux panics ("multiple registrations for /") if this runs
 		// more than once in a process and leaks the handler across servers.
