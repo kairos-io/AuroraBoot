@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/kairos-io/AuroraBoot/internal"
 )
@@ -53,25 +52,19 @@ func Raw2MAAS(source string) (string, error) {
 }
 
 // ConvertRawDiskToMAAS finds the single raw disk in src and compresses it into
-// the MAAS ddgz format. Mirrors ConvertRawDiskToGCE / ConvertRawDiskToVHD.
+// the MAAS ddgz format. Mirrors ConvertRawDiskToGCE / ConvertRawDiskToVHD: it
+// works on a private copy of the raw so a concurrent GCE/VHD conversion (which
+// truncates/renames the shared raw) cannot make this read a torn image, and the
+// original raw is left untouched.
 func ConvertRawDiskToMAAS(src string) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		glob, err := filepath.Glob(filepath.Join(src, "kairos-*.raw"))
+		internal.Log.Logger.Info().Str("dir", src).Msg("Compressing raw disk for MAAS")
+		output, err := convertRawOnCopy(src, Raw2MAAS)
 		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("dir", src).Msg("Compressing raw disk for MAAS failed")
 			return err
 		}
-
-		if len(glob) == 0 || len(glob) > 1 {
-			return fmt.Errorf("expected to find one and only one raw disk file in '%s' but found %d", src, len(glob))
-		}
-
-		internal.Log.Logger.Info().Msgf("Compressing raw disk '%s' for MAAS", glob[0])
-		output, err := Raw2MAAS(glob[0])
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Compressing raw disk from '%s' failed with error '%s'", src, err.Error())
-		} else {
-			internal.Log.Logger.Info().Msgf("Generated MAAS ddgz image '%s'", output)
-		}
-		return err
+		internal.Log.Logger.Info().Msgf("Generated MAAS ddgz image '%s'", output)
+		return nil
 	}
 }
