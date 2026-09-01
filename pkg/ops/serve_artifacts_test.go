@@ -24,6 +24,41 @@ func freeAddr() string {
 	return addr
 }
 
+var _ = Describe("noListingFS", func() {
+	var dir string
+
+	BeforeEach(func() {
+		dir = GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dir, "artifact.txt"), []byte("data"), 0o644)).To(Succeed())
+		Expect(os.Mkdir(filepath.Join(dir, "sub"), 0o755)).To(Succeed())
+	})
+
+	It("serves a regular file by its exact path", func() {
+		f, err := (noListingFS{http.Dir(dir)}).Open("/artifact.txt")
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(f.Close)
+		info, err := f.Stat()
+		Expect(err).NotTo(HaveOccurred())
+		Expect(info.IsDir()).To(BeFalse())
+	})
+
+	It("hides the root directory as not-exist", func() {
+		_, err := (noListingFS{http.Dir(dir)}).Open("/")
+		Expect(err).To(MatchError(os.ErrNotExist))
+	})
+
+	It("hides a subdirectory as not-exist", func() {
+		_, err := (noListingFS{http.Dir(dir)}).Open("/sub")
+		Expect(err).To(MatchError(os.ErrNotExist))
+	})
+
+	It("passes through the underlying error for a missing path", func() {
+		_, err := (noListingFS{http.Dir(dir)}).Open("/does-not-exist")
+		Expect(err).To(HaveOccurred())
+		Expect(os.IsNotExist(err)).To(BeTrue())
+	})
+})
+
 var _ = Describe("ServeArtifacts", Label("network"), func() {
 	// ServeArtifacts must register its file handler on a private mux, not the
 	// global http.DefaultServeMux: registering "/" globally panics on the second
