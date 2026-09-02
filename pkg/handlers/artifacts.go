@@ -279,8 +279,14 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		allowedCommands = append([]string(nil), phonehomeSafeDefaults...)
 	}
 
-	kubernetesEnabled := true
-	if req.KubernetesEnabled != nil {
+	// Kubernetes belongs to the standard variant only: a core image ships no
+	// k3s/k0s at all. Derive the flag from the variant rather than defaulting
+	// it to true, so the value that reaches the build options, the
+	// cloud-config and the persisted record can never contradict the variant.
+	// The UI omits the field entirely for a non-standard variant, and Clone
+	// and Export Config replay the stored record (kairos-io/kairos#4354).
+	kubernetesEnabled := req.Variant == "standard"
+	if kubernetesEnabled && req.KubernetesEnabled != nil {
 		kubernetesEnabled = *req.KubernetesEnabled
 	}
 
