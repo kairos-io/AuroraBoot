@@ -20,11 +20,15 @@ const statusStyles: Record<string, string> = {
   upgrading: "bg-[#FF7442]/15 text-[#FF7442] border-[#FF7442]/25",
 };
 
+// A node whose phase is missing must not be able to throw out of render and
+// take the whole page down with it, so an absent status reads as "unknown"
+// rather than as a blank screen.
 export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const style = statusStyles[status.toLowerCase()] ?? "bg-secondary text-secondary-foreground";
+  const label = status || "unknown";
+  const style = statusStyles[label.toLowerCase()] ?? "bg-secondary text-secondary-foreground";
   return (
     <Badge variant="outline" className={cn(style, className)}>
-      {status}
+      {label}
     </Badge>
   );
 }
