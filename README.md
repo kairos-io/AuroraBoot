@@ -133,6 +133,8 @@ docker run --rm -ti --net host quay.io/kairos/auroraboot \
 
 This downloads the needed artifacts, bakes your cloud-config into a custom ISO, and serves it over the network.
 
+> **Security note:** the netboot HTTP server is **unauthenticated by design**. A PXE/HTTP-booting machine can't present a credential, so everything it needs — kernel, initrd, squashfs, and the cloud-config baked into the ISO (which may carry a registration token, SSH keys or passwords) — is served over plain HTTP to anyone who can reach it. By default it binds all interfaces on `:8080`. Run it only on a **trusted, isolated provisioning network**, and prefer binding a specific interface with `--set listen_addr=<host>:8080` over exposing it everywhere. AuroraBoot logs a warning at startup to make this boundary explicit.
+
 Supported architectures:
 - `amd64` (default, matches x86_64)
 - `arm64` (matches aarch64)
