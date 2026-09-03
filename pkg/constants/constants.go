@@ -87,7 +87,16 @@ const (
 	Archaarch64 = "aarch64"
 	ArchRiscv64 = "riscv64"
 
-	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
+	// UkiCmdline is the kernel cmdline baked into every generated UKI. Because a UKI
+	// measures its own cmdline, there is no post-install way to add options to it, so
+	// anything the initramfs needs has to be here at build time.
+	//
+	// rd.neednet=1 brings the network up inside the initramfs. Without it the dracut
+	// network module is inert (net-genrules.sh returns early when there is no netroot,
+	// no /tmp/net.ifaces and no rd.neednet), so no interface is configured and no
+	// /etc/resolv.conf is written. That is what keeps a remote KMS URL from resolving
+	// during early boot in UKI mode.
+	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.neednet=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
 	UkiCmdlineInstall             = "install-mode"
 	UkiSystemdBootx86Name         = "systemd-bootx64.efi"
 	UkiSystemdBootx86Path         = "/amd/systemd-boot/" + UkiSystemdBootx86Name
