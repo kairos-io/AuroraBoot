@@ -119,12 +119,20 @@ var _ = Describe("WebSocket Handler", func() {
 
 		// Record auto eject-on-phone-home invocations: a WS heartbeat must fire
 		// the same finalize hook as the REST register/heartbeat path.
+		//
+		// The hook closes over a per-spec local, NOT over the shared `finalized`
+		// variable. triggerFinalize dispatches on its own goroutine with a 2
+		// minute budget, so one can still be in flight when the next spec's
+		// BeforeEach runs; closing over the shared variable made that goroutine's
+		// read race the next assignment (caught by -race roughly one run in
+		// three). A fresh local per spec has no writer.
 		finalized = make(chan string, 8)
+		specFinalized := finalized
 		agentHandler := &ws.AgentHandler{
 			Hub:      hub,
 			Nodes:    nodes,
 			Commands: commands,
-			Finalize: func(_ context.Context, id string) { finalized <- id },
+			Finalize: func(_ context.Context, id string) { specFinalized <- id },
 		}
 		uiHandler := &ws.UIHandler{Hub: hub}
 
