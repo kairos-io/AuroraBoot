@@ -29,11 +29,17 @@ type Config struct {
 	GroupStore            store.GroupStore
 	ArtifactStore         store.ArtifactStore
 	SecureBootKeySetStore store.SecureBootKeySetStore
-	NetbootManager        *netbootpkg.Manager
-	DeploymentStore       store.DeploymentStore
-	BMCTargetStore        store.BMCTargetStore
-	SettingsStore         store.SettingsStore
-	Builder               builder.ArtifactBuilder
+
+	ExtensionStore               store.ExtensionStore
+	ArtifactExtensionBundleStore store.ArtifactExtensionBundleStore
+	NodeExtensionStore           store.NodeExtensionStore
+	ExtensionBuilder             builder.ExtensionBuilder
+
+	NetbootManager  *netbootpkg.Manager
+	DeploymentStore store.DeploymentStore
+	BMCTargetStore  store.BMCTargetStore
+	SettingsStore   store.SettingsStore
+	Builder         builder.ArtifactBuilder
 	// SystemInfo describes the active builder backend for the
 	// /api/v1/system/builder introspection endpoint. Populated at wire time in
 	// runWeb from the flags plus the resolved kube REST config.
@@ -166,8 +172,15 @@ func New(cfg Config) *echo.Echo {
 	if deployHandler != nil {
 		nodeHandler.WithFinalizer(deployHandler.MaybeFinalizeForNode, cfg.BaseContext)
 	}
-	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
-	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
+	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	var extensionHandler *handlers.ExtensionHandler
+	if cfg.ExtensionBuilder != nil {
+		extensionHandler = handlers.NewExtensionHandler(
+			cfg.ExtensionBuilder, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore,
+			cfg.SecureBootKeySetStore, cfg.NodeExtensionStore, cfg.ArtifactsDir,
+		)
+	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
 		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
@@ -177,6 +190,10 @@ func New(cfg Config) *echo.Echo {
 		Hub:      hub,
 		Nodes:    cfg.NodeStore,
 		Commands: cfg.CommandStore,
+		// Agents report command results over the WS, so the node_extensions
+		// tracking write must hook in here too (not just on the REST
+		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
+		OnCommandStatus: cmdHandler.ApplyExtensionTracking,
 	}
 	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
 	// same auto eject-on-phone-home hook — a node that reports liveness only over
@@ -258,6 +275,23 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/artifacts/:id/cancel", artifactHandler.Cancel)
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
+	adminGroup.GET("/artifacts/:id/bundle-extensions", artifactHandler.ListBundleExtensions)
+	adminGroup.PUT("/artifacts/:id/bundle-extensions", artifactHandler.SetBundleExtensions)
+	adminGroup.POST("/artifacts/:id/bundle-resolve", artifactHandler.ResolveBundle)
+
+	// Extension routes are registered only when the extension builder is wired
+	// (the in-process builder is constructed in internal/cmd/web.go).
+	if extensionHandler != nil {
+		adminGroup.POST("/extensions", extensionHandler.Create)
+		adminGroup.GET("/extensions", extensionHandler.List)
+		adminGroup.GET("/extensions/:id", extensionHandler.Get)
+		adminGroup.PATCH("/extensions/:id", extensionHandler.Update)
+		adminGroup.DELETE("/extensions/:id", extensionHandler.Delete)
+		adminGroup.GET("/extensions/:id/logs", extensionHandler.GetLogs)
+		adminGroup.POST("/extensions/:id/cancel", extensionHandler.Cancel)
+		adminGroup.GET("/extensions/:id/nodes", extensionHandler.ListNodesForExtension)
+		adminGroup.GET("/nodes/:nodeID/extensions", extensionHandler.ListNodeExtensions)
+	}
 
 	// Artifact downloads (fleet-server hardening, kairos-io/kairos#4117). Scoped so
 	// a node key can't pull arbitrary build artifacts. Registered before the admin
@@ -273,6 +307,13 @@ func New(cfg Config) *echo.Echo {
 	// command actually assigned this artifact to — never an arbitrary artifact.
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage,
 		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
+	// Extension downloads: admin OR any authenticated node. Nodes need to fetch
+	// extensions bundled into an assigned upgrade command; per-command scoping
+	// analogous to ArtifactImageMiddleware is a follow-up.
+	if extensionHandler != nil {
+		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download,
+			auth.AgentOrAdminMiddleware(cfg.AdminPassword, cfg.NodeStore))
+	}
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,
 	// stored on the ArtifactRecord). Used by the operator backend's exporter
