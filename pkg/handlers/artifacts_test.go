@@ -26,7 +26,7 @@ var _ = Describe("ArtifactHandler", func() {
 	BeforeEach(func() {
 		e = echo.New()
 		fb = &fakeBuilder{}
-		handler = handlers.NewArtifactHandler(fb, nil, nil, nil, "", "reg-token", "http://localhost:8080")
+		handler = handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 	})
 
 	Describe("Create", func() {
@@ -92,7 +92,7 @@ var _ = Describe("ArtifactHandler", func() {
 		// invisible to List/Get/Cancel/Delete.
 		It("reaps the builder resource and returns 500 when store.Create fails", func() {
 			as := &fakeArtifactStore{createErr: fmt.Errorf("db write refused")}
-			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 
 			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
@@ -293,7 +293,7 @@ var _ = Describe("ArtifactHandler", func() {
 					{ID: "art-1", Phase: store.ArtifactReady, BaseImage: "img1"},
 				},
 			}
-			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
 		It("should delete the artifact and return 204", func() {
@@ -356,7 +356,7 @@ var _ = Describe("ArtifactHandler", func() {
 					{ID: "art-err2", Phase: store.ArtifactError, BaseImage: "img3"},
 				},
 			}
-			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
 		It("should delete all Error-phase artifacts and return 204", func() {

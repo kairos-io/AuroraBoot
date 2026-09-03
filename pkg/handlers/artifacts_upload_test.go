@@ -50,7 +50,7 @@ var _ = Describe("ArtifactHandler.Upload", func() {
 				{ID: buildID, Phase: store.ArtifactBuilding, UploadToken: sha256Hex(token)},
 			},
 		}
-		handler = handlers.NewArtifactHandler(fb, as, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
+		handler = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
 	})
 
 	AfterEach(func() {
