@@ -106,6 +106,9 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "kubeconfig", Usage: "Path to a kubeconfig file for the operator builder (single file). Empty means try in-cluster config first, then the default client-go loading rules (which honour a multi-file KUBECONFIG env)"},
 		&cli.StringFlag{Name: "builder-namespace", Value: "default", Usage: "Namespace in which OSArtifact CRs are created. Used only when --builder=operator"},
 		&cli.StringFlag{Name: "builder-upload-url", Usage: "URL exporter pods PUT built artifacts to. Only needs cluster-internal reachability, so a Service DNS name is appropriate. Defaults to --url. Used only when --builder=operator", EnvVars: []string{"AURORABOOT_BUILDER_UPLOAD_URL"}},
+		&cli.BoolFlag{Name: "disable-rate-limit", Usage: "Disable per-identity rate limiting of the node-driven endpoints (registration, heartbeat, command polling). Admin/UI/API traffic is never rate-limited regardless. Consider this for a large fleet behind a shared NAT egress IP", EnvVars: []string{"AURORABOOT_DISABLE_RATE_LIMIT"}},
+		&cli.Float64Flag{Name: "node-rate-limit", Usage: "Per-node requests/sec for heartbeat and command polling (0 = generous default). Admin traffic is exempt", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT"}},
+		&cli.Float64Flag{Name: "register-rate-limit", Usage: "Per-client-IP registration requests/sec (0 = generous default)", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT"}},
 	},
 	Action: runWeb,
 }
@@ -349,6 +352,10 @@ func runWeb(c *cli.Context) error {
 		Hub:                   wsHub,
 		ISOServe:              isoServe,
 		RedfishServeURL:       redfishServeURLSeed(isoServe, serveURL),
+
+		DisableRateLimit:     c.Bool("disable-rate-limit"),
+		NodeRateLimitRPS:     c.Float64("node-rate-limit"),
+		RegisterRateLimitRPS: c.Float64("register-rate-limit"),
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
