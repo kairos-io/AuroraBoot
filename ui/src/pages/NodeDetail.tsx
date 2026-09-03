@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 import { useParams, useNavigate } from "react-router";
 import { getNode, sendCommand, setLabels, setGroup, type Node } from "@/api/nodes";
 import { DecommissionDialog } from "@/components/DecommissionDialog";
@@ -66,10 +66,21 @@ export function NodeDetail() {
     }).catch(() => {});
   }, [id]);
 
+  // Read by fetchNode, which polls. A poll must not reseed the label textbox
+  // from the server while someone is typing in it, and fetchNode has to stay
+  // referentially stable or the polling effect below would tear down and
+  // restart its interval every time the Edit button is toggled, hence a ref
+  // rather than editingLabels in the dependency list.
+  const editingLabelsRef = useRef(false);
+  useEffect(() => {
+    editingLabelsRef.current = editingLabels;
+  }, [editingLabels]);
+
   const fetchNode = useCallback(() => {
     if (!id) return;
     getNode(id).then((n) => {
       setNode(n);
+      if (editingLabelsRef.current) return;
       setLabelInput(
         Object.entries(n.labels || {})
           .map(([k, v]) => `${k}=${v}`)
@@ -84,11 +95,20 @@ export function NodeDetail() {
     listGroups().then(setGroups).catch(() => {});
   }, [fetchNode, fetchCommands]);
 
-  // Fallback polling every 10s
+  // Fallback polling every 10s. The node is re-read alongside its commands
+  // because fields the agent reports keep changing after the page is open:
+  // phase, last heartbeat, and the hostname, which a node that registered
+  // before cloud-init applied a templated one only corrects on a later
+  // heartbeat (kairos-io/kairos#4196). Without this the detail page showed the
+  // registration-time value until a manual reload, while the Nodes list, which
+  // polls, showed the new one.
   useEffect(() => {
-    const interval = setInterval(fetchCommands, 10000);
+    const interval = setInterval(() => {
+      fetchCommands();
+      fetchNode();
+    }, 10000);
     return () => clearInterval(interval);
-  }, [fetchCommands]);
+  }, [fetchCommands, fetchNode]);
 
   // Live updates via WebSocket
   useUIWebSocket((msg) => {

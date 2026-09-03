@@ -861,7 +861,7 @@ const docTemplate = `{
                         "NodeAPIKey": []
                     }
                 ],
-                "description": "Transitions the node to Online and records the latest agent version and OS info.",
+                "description": "Transitions the node to Online and records the latest agent version, OS info and hostname.",
                 "consumes": [
                     "application/json"
                 ],
@@ -1590,6 +1590,11 @@ const docTemplate = `{
                     "description": "BootState is the node's current boot state (optional): one of\nactive | passive | recovery | autoreset (unknown values pass through).",
                     "type": "string",
                     "example": "active"
+                },
+                "hostname": {
+                    "description": "Hostname is the node's current hostname (optional). Reported on every\nheartbeat, not only at registration, so a hostname that cloud-init applies\nafter phone-home has registered, or a later rename, reaches the record. When\nomitted the stored hostname is preserved.",
+                    "type": "string",
+                    "example": "kairos-node-01"
                 },
                 "labels": {
                     "type": "object",
