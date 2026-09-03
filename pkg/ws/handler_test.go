@@ -356,6 +356,108 @@ var _ = Describe("WebSocket Handler", func() {
 		})
 	})
 
+	// A node that vanishes without closing its socket (power cut, network
+	// partition, a NAT or load balancer dropping the flow) leaves the server
+	// blocked in ReadMessage forever. Nothing else in AuroraBoot ever writes
+	// PhaseOffline — the deferred write in HandleAgentWS is the only one — so
+	// without a read deadline such a node reports Online for the rest of the
+	// process' life, and the hub keeps pushing commands into a dead socket.
+	// These two specs pin both halves: silent peers get reaped, live ones do not.
+	Describe("Agent keepalive", func() {
+		var (
+			kaServer *httptest.Server
+			// Short enough to keep the suite fast, and far enough apart that a
+			// loaded CI runner cannot reorder them: the server pings 5 times
+			// within one read timeout.
+			readTimeout  = 1500 * time.Millisecond
+			pingInterval = 300 * time.Millisecond
+		)
+
+		BeforeEach(func() {
+			e := echo.New()
+			h := &ws.AgentHandler{
+				Hub:          hub,
+				Nodes:        nodes,
+				Commands:     commands,
+				ReadTimeout:  readTimeout,
+				PingInterval: pingInterval,
+			}
+			e.GET("/api/v1/ws", h.HandleAgentWS)
+			kaServer = httptest.NewServer(e)
+			DeferCleanup(kaServer.Close)
+		})
+
+		It("reaps a peer that stops answering pings but keeps the socket open", func() {
+			conn, _, err := dialWS(kaServer, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			// Swallow pings instead of ponging them. gorilla's default ping
+			// handler replies automatically, so overriding it is what turns a
+			// healthy client into a wedged one. Control frames are only
+			// processed inside ReadMessage, hence the read loop below: without
+			// it the pings would sit unread in the socket buffer and the test
+			// would pass for the wrong reason.
+			conn.SetPingHandler(func(string) error { return nil })
+			go func() {
+				for {
+					if _, _, err := conn.ReadMessage(); err != nil {
+						return
+					}
+				}
+			}()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			// The client never closes, so this can only come from the server's
+			// own read deadline expiring.
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeFalse())
+
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.Phase
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.PhaseOffline))
+		})
+
+		It("keeps a peer that answers pings online well past the read timeout", func() {
+			conn, _, err := dialWS(kaServer, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			// No SetPingHandler override: gorilla pongs for us, which is exactly
+			// what the real agent does (pkg/client/ws.go and the agent's
+			// phonehome client both leave the default handler in place).
+			readErr := make(chan error, 1)
+			go func() {
+				for {
+					if _, _, err := conn.ReadMessage(); err != nil {
+						readErr <- err
+						return
+					}
+				}
+			}()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			// Guards the regression this change could introduce: a read deadline
+			// that is not refreshed on pong would drop healthy agents.
+			Consistently(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 3*readTimeout, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(readErr).NotTo(Receive())
+		})
+	})
+
 	Describe("Hub", func() {
 		It("should send command to online node", func() {
 			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)

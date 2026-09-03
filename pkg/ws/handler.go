@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -48,6 +49,30 @@ var upgrader = websocket.Upgrader{
 // heartbeat, mirroring the REST handlers' budget (pkg/handlers/finalize.go).
 const finalizeTimeout = 2 * time.Minute
 
+// Keepalive timings for the agent connection.
+//
+// A node can disappear without its socket ever being closed: power cut, network
+// partition, or a NAT / load balancer silently dropping an idle flow. TCP does
+// not notice, so a server that only ever blocks in ReadMessage waits forever.
+// That matters here beyond the leaked goroutine, because HandleAgentWS's
+// deferred Unregister + UpdatePhase is the ONLY place in AuroraBoot that writes
+// PhaseOffline: there is no heartbeat-age sweeper. A read that never returns
+// therefore leaves the node reported Online indefinitely, and leaves it
+// registered in the hub, where SendCommand writes into a dead socket and
+// succeeds (the bytes only reach the kernel buffer).
+//
+// Ping every agentPingInterval and require any frame within agentReadTimeout.
+// The timeout is deliberately three times both the ping interval and the
+// agent's own default heartbeat interval (30s, see the phonehome client), so
+// two consecutive misses are tolerated before a live node is dropped.
+const (
+	agentPingInterval = 30 * time.Second
+	agentReadTimeout  = 90 * time.Second
+	// pingWriteWait bounds one ping write so a full socket buffer on a wedged
+	// peer cannot block the ping goroutine forever.
+	pingWriteWait = 10 * time.Second
+)
+
 // AgentHandler handles WebSocket connections from agents.
 type AgentHandler struct {
 	Hub      *Hub
@@ -63,6 +88,12 @@ type AgentHandler struct {
 	// BaseCtx is the server lifecycle context the finalize goroutine derives from
 	// (cancelled on shutdown). Nil means context.Background().
 	BaseCtx context.Context
+
+	// PingInterval and ReadTimeout override agentPingInterval and
+	// agentReadTimeout. Zero or negative means the default. Only tests set
+	// these; production wiring leaves them unset.
+	PingInterval time.Duration
+	ReadTimeout  time.Duration
 }
 
 // triggerFinalize fires the auto eject-on-phone-home hook off the WS read loop so
@@ -120,6 +151,48 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		}
 	}()
 
+	// Keepalive. Without this the read below blocks forever on a peer that
+	// stopped talking without closing, and the deferred offline write above
+	// never runs. The UI handler has had this since it was written; the agent
+	// connection is the one that actually carries fleet liveness.
+	readTimeout := h.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = agentReadTimeout
+	}
+	pingInterval := h.PingInterval
+	if pingInterval <= 0 {
+		pingInterval = agentPingInterval
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+	// gorilla answers our ping from its default ping handler, which both the
+	// agent's phonehome client and pkg/client leave in place, so a healthy
+	// agent needs no change to keep this connection alive.
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(readTimeout))
+	})
+
+	// Ping off a separate goroutine: the read loop below is blocking, so it
+	// cannot drive a ticker itself. Writes go through wc, not conn, because the
+	// hub writes to this same connection concurrently.
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go func() {
+		ticker := time.NewTicker(pingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pingDone:
+				return
+			case <-ticker.C:
+				if err := wc.writeControl(websocket.PingMessage, nil, time.Now().Add(pingWriteWait)); err != nil {
+					// The read loop sees the same failure and tears the
+					// connection down; nothing to do here but stop pinging.
+					return
+				}
+			}
+		}
+	}()
+
 	// Send pending commands on connect.
 	h.sendPendingCommands(node.ID, wc)
 
@@ -127,11 +200,21 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+			switch {
+			case websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure):
 				log.Printf("ws read error for node %s: %v", node.ID, err)
+			case errors.Is(err, os.ErrDeadlineExceeded):
+				// Worth its own line: this is the silent-peer case, and it is
+				// not an abnormal close, so IsUnexpectedCloseError says nothing
+				// about it. Logging it is how an operator learns that a node
+				// reported Offline because it went quiet rather than because it
+				// shut down cleanly.
+				log.Printf("ws: node %s missed keepalive for %s, dropping connection", node.ID, readTimeout)
 			}
 			return nil
 		}
+		// Any frame proves the peer is alive, not just a pong.
+		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
 
 		var msg wsMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
