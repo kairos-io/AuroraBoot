@@ -242,7 +242,7 @@ var _ = Describe("Gorm Store", func() {
 				{Type: "InternalIP", Address: "10.0.10.21"},
 				{Type: "Hostname", Address: "hb1"},
 			}
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active", "hb1-renamed")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
@@ -252,23 +252,53 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.LastHeartbeat).NotTo(BeNil())
 			Expect(found.Addresses).To(Equal(addrs))
 			Expect(found.BootState).To(Equal("active"))
+			Expect(found.Hostname).To(Equal("hb1-renamed"))
 		})
 
-		It("preserves addresses and boot state when a heartbeat omits them", func() {
+		It("preserves addresses, boot state and hostname when a heartbeat omits them", func() {
 			n := &store.ManagedNode{
 				MachineID: "hb2",
+				Hostname:  "hb2-host",
 				Addresses: []store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}},
 				BootState: "active",
 			}
 			Expect(s.Register(ctx, n)).To(Succeed())
 
 			// An older agent (or the WS heartbeat path) sends nil/"" — must not wipe.
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}}))
 			Expect(found.BootState).To(Equal("active"))
+			Expect(found.Hostname).To(Equal("hb2-host"))
+		})
+
+		// The bug this closes: a node registers while cloud-init has not yet
+		// applied `hostname: kairos-{{ trunc 4 .MachineID }}`, so it lands as the
+		// image default and used to stay that way for the node's whole life. The
+		// heartbeat has to be able to move it (kairos-io/kairos#4196).
+		It("moves the hostname a node registered with to the one it now reports", func() {
+			n := &store.ManagedNode{MachineID: "a1b2c3d4", Hostname: "kairos"}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "kairos-a1b2")).To(Succeed())
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Hostname).To(Equal("kairos-a1b2"))
+
+			// Idempotent: the next heartbeat reports the same name and nothing
+			// churns, and a rename later in the node's life still lands.
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "kairos-a1b2")).To(Succeed())
+			found, err = s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Hostname).To(Equal("kairos-a1b2"))
+
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "renamed-later")).To(Succeed())
+			found, err = s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Hostname).To(Equal("renamed-later"))
 		})
 
 		It("updates phase", func() {
