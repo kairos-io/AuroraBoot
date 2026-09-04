@@ -199,7 +199,7 @@ var _ = Describe("ArtifactHandler", func() {
 			// variant, so the record must not fall back to the enabled
 			// default and contradict variant=core (kairos-io/kairos#4354).
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"core","outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
@@ -210,7 +210,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("stores kubernetes as disabled for the core variant even when the client asks for it", func() {
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"core","kubernetesEnabled":true,"outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
@@ -221,7 +221,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("stores kubernetes as enabled for the standard variant when omitted", func() {
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeTrue())
@@ -232,7 +232,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("honours an explicit opt-out on the standard variant", func() {
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
