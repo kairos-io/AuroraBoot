@@ -24,6 +24,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
 import { Trash2, ChevronDown, ChevronRight, Terminal } from "lucide-react";
 import { ansiToHtml } from "@/lib/ansi";
+import { toast } from "@/hooks/useToast";
 
 function timeAgo(dateStr: string): string {
   if (!dateStr) return "Never";
@@ -157,9 +158,16 @@ export function NodeDetail() {
         const [k, v] = pair.split("=");
         if (k) labels[k.trim()] = (v || "").trim();
       });
-    const updated = await setLabels(id, labels);
-    setNode(updated);
+    try {
+      await setLabels(id, labels);
+    } catch (err) {
+      toast(`Failed to save labels: ${(err as Error).message}`, "error");
+      return;
+    }
     setEditingLabels(false);
+    // The PUT does not return the node, so read it back rather than guess at
+    // the new state. This also picks up anything the server normalised.
+    fetchNode();
   }
 
   const [decommissionOpen, setDecommissionOpen] = useState(false);
