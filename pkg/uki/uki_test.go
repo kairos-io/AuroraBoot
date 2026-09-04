@@ -3,7 +3,11 @@ package uki
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -153,5 +157,39 @@ var _ = Describe("absolutizePaths", func() {
 		opts := &Options{TPMPCRPrivateKey: "/data/keys/production/tpm2-pcr-private.pem"}
 		Expect(absolutizePaths(opts)).To(Succeed())
 		Expect(opts.TPMPCRPrivateKey).To(Equal("/data/keys/production/tpm2-pcr-private.pem"))
+	})
+})
+
+var _ = Describe("GetUkiCmdline", func() {
+	// The constant is where rd.neednet=1 has to live: GetUkiCmdline builds every
+	// variant on top of constants.UkiCmdline, and NameFromCmdline derives EFI
+	// file names by trimming that same constant off the front. Adding the option
+	// to the generated cmdlines instead would leak "rd.neednet_1" into the file
+	// names of every extra entry.
+	It("carries rd.neednet=1 on every generated entry", func() {
+		for _, entries := range [][]utils.BootEntry{
+			GetUkiCmdline("", "Kairos", nil, false),
+			GetUkiCmdline("rd.debug", "Kairos", nil, false),
+			GetUkiCmdline("", "Kairos", []string{"selinux=1"}, false),
+			GetUkiSingleCmdlines("Kairos", []string{"Debug: rd.debug"}, logger.KairosLogger{}),
+		} {
+			Expect(entries).ToNot(BeEmpty())
+			for _, entry := range entries {
+				Expect(strings.Fields(entry.Cmdline)).To(
+					ContainElement("rd.neednet=1"),
+					"entry %q is missing rd.neednet=1", entry.FileName,
+				)
+			}
+		}
+	})
+
+	It("keeps rd.neednet=1 out of the generated EFI file names", func() {
+		entries := GetUkiCmdline("", "Kairos", []string{"selinux=1"}, false)
+		Expect(entries).To(HaveLen(2))
+		Expect(entries[0].FileName).To(Equal(constants.ArtifactBaseName))
+		Expect(entries[1].FileName).To(Equal(constants.ArtifactBaseName + "_install-mode_selinux_1"))
+		for _, entry := range entries {
+			Expect(entry.FileName).ToNot(ContainSubstring("neednet"))
+		}
 	})
 })

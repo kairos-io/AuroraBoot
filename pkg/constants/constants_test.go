@@ -1,6 +1,8 @@
 package constants_test
 
 import (
+	"strings"
+
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -53,3 +55,13 @@ func pairedFlagValues(args []string, flag, group string) []string {
 	}
 	return values
 }
+
+var _ = Describe("UkiCmdline", Label("constants"), func() {
+	It("brings the network up inside the initramfs", func() {
+		// A UKI measures its own cmdline, so rd.neednet=1 cannot be added after
+		// the image is built. Without it the dracut network module never
+		// configures an interface and a remote KMS URL cannot be resolved from
+		// the initramfs. See kairos-io/kairos#3758.
+		Expect(strings.Fields(constants.UkiCmdline)).To(ContainElement("rd.neednet=1"))
+	})
+})
