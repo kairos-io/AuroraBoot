@@ -259,11 +259,20 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
 
-	// Artifact downloads — accepts admin password OR node API key.
-	// Registered before the admin group catches them, using inline middleware.
-	dlAuth := auth.DownloadMiddleware(cfg.AdminPassword, cfg.NodeStore)
-	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, dlAuth)
-	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage, dlAuth)
+	// Artifact downloads (fleet-server hardening, kairos-io/kairos#4117). Scoped so
+	// a node key can't pull arbitrary build artifacts. Registered before the admin
+	// group catches them, using inline middleware.
+	//
+	// Raw build files (ISO/UKI/raw disk/netboot) are admin-only: no node flow
+	// consumes them over HTTP (netboot/Redfish read them from disk server-side), so
+	// a node key must not reach them. AdminMiddleware still honours ?token= for the
+	// UI's browser download links.
+	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.AdminMiddleware(cfg.AdminPassword))
+	// The container image is the one artifact a node downloads (to satisfy an
+	// "upgrade from built artifact" command), so it is admin OR a node that such a
+	// command actually assigned this artifact to — never an arbitrary artifact.
+	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage,
+		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,
 	// stored on the ArtifactRecord). Used by the operator backend's exporter

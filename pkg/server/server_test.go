@@ -174,6 +174,27 @@ func (f *fakeBuilder) Status(_ context.Context, _ string) (*builder.BuildStatus,
 func (f *fakeBuilder) List(_ context.Context) ([]*builder.BuildStatus, error) { return nil, nil }
 func (f *fakeBuilder) Cancel(_ context.Context, _ string) error               { return nil }
 
+// fakeArtifactStore is a minimal store.ArtifactStore whose GetByID reports
+// not-found, so ExportImage returns 404 cleanly (rather than nil-dereferencing an
+// absent store) once a request is authorized.
+type fakeArtifactStore struct{}
+
+func (f *fakeArtifactStore) Create(context.Context, *store.ArtifactRecord) error { return nil }
+func (f *fakeArtifactStore) GetByID(context.Context, string) (*store.ArtifactRecord, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeArtifactStore) List(context.Context) ([]*store.ArtifactRecord, error) { return nil, nil }
+func (f *fakeArtifactStore) Update(context.Context, *store.ArtifactRecord) error   { return nil }
+func (f *fakeArtifactStore) UpdatePhaseMessage(context.Context, string, string, string) error {
+	return nil
+}
+func (f *fakeArtifactStore) UpdateFiles(context.Context, string, []string) error { return nil }
+func (f *fakeArtifactStore) ClearUploadToken(context.Context, string) error      { return nil }
+func (f *fakeArtifactStore) Delete(context.Context, string) error                { return nil }
+func (f *fakeArtifactStore) DeleteByPhase(context.Context, string) error         { return nil }
+func (f *fakeArtifactStore) GetLogs(context.Context, string) (string, error)     { return "", nil }
+func (f *fakeArtifactStore) AppendLog(context.Context, string, string) error     { return nil }
+
 var _ = Describe("Server", func() {
 	var (
 		e  *httptest.Server
@@ -358,6 +379,71 @@ var _ = Describe("Server", func() {
 			resp, err := http.DefaultClient.Do(req)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		})
+	})
+})
+
+var _ = Describe("Artifact download scoping", func() {
+	var (
+		e  *httptest.Server
+		ns *fakeNodeStore
+		cs *fakeCommandStore
+	)
+
+	BeforeEach(func() {
+		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "agent-key"}}}
+		cs = &fakeCommandStore{}
+		echoApp := server.New(server.Config{
+			NodeStore:     ns,
+			CommandStore:  cs,
+			GroupStore:    &fakeGroupStore{},
+			ArtifactStore: &fakeArtifactStore{},
+			Builder:       &fakeBuilder{},
+			AdminPassword: "admin-pass",
+			RegToken:      "reg-token",
+			AuroraBootURL: "http://localhost:8080",
+		})
+		e = httptest.NewServer(echoApp)
+	})
+
+	AfterEach(func() { e.Close() })
+
+	get := func(path, bearer string) int {
+		req, _ := http.NewRequest(http.MethodGet, e.URL+path, nil)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	Describe("raw file download (/download/*)", func() {
+		It("rejects a node API key — these files are admin-only", func() {
+			Expect(get("/api/v1/artifacts/art-1/download/kairos.iso", "agent-key")).To(Equal(http.StatusUnauthorized))
+		})
+		It("admits the admin (auth passes; a missing file is a 404, not a 401)", func() {
+			Expect(get("/api/v1/artifacts/art-1/download/kairos.iso", "admin-pass")).NotTo(Equal(http.StatusUnauthorized))
+		})
+	})
+
+	Describe("container image (/image)", func() {
+		It("403s a node not assigned this artifact by any upgrade command", func() {
+			Expect(get("/api/v1/artifacts/art-1/image", "agent-key")).To(Equal(http.StatusForbidden))
+		})
+		It("admits a node assigned this artifact by an upgrade command (auth passes)", func() {
+			cs.cmds = []*store.NodeCommand{
+				{ID: "c1", ManagedNodeID: "node-1", Command: store.CmdUpgrade, Args: map[string]string{"source": "artifact:art-1"}},
+			}
+			code := get("/api/v1/artifacts/art-1/image", "agent-key")
+			Expect(code).NotTo(Equal(http.StatusUnauthorized))
+			Expect(code).NotTo(Equal(http.StatusForbidden))
+		})
+		It("admits the admin (auth passes)", func() {
+			code := get("/api/v1/artifacts/art-1/image", "admin-pass")
+			Expect(code).NotTo(Equal(http.StatusUnauthorized))
+			Expect(code).NotTo(Equal(http.StatusForbidden))
 		})
 	})
 })

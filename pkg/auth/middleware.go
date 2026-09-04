@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"context"
 	"crypto/subtle"
 	"encoding/json"
 	"io"
@@ -127,31 +128,77 @@ func AgentOrAdminMiddleware(password string, nodeStore store.NodeStore) echo.Mid
 	}
 }
 
-// DownloadMiddleware accepts either the admin password or a valid node API key.
-// Checks Authorization header and ?token= query param. Used for artifact downloads
-// so both the UI (admin) and agents (node key) can access them.
-func DownloadMiddleware(password string, nodeStore store.NodeStore) echo.MiddlewareFunc {
+// ArtifactImageMiddleware authorizes GET /api/v1/artifacts/:id/image for either an
+// admin or a node that has been assigned this artifact by an upgrade command.
+//
+// The container image is the one build artifact a node legitimately downloads: an
+// operator queues an upgrade / upgrade-recovery command whose source is
+// "artifact:<id>", the node polls it, and the agent pulls that artifact's image
+// with its node API key. So a node is authorized for exactly the artifacts some
+// command told it to install — never an arbitrary one. This stops a node (or a
+// leaked node API key) from pulling every image the fleet has ever built, which
+// may embed a cloud-config and secrets.
+//
+// Admin access is unchanged and still full, via the Authorization header or the
+// ?token= query param (the latter for the UI's browser download links; the CAPI
+// infra provider authenticates as admin over the header). A NODE API key, by
+// contrast, is accepted ONLY from the Authorization header, never from ?token= —
+// a node credential in a URL would leak through access logs, proxies, browser
+// history and Referer headers, and no node flow supplies its key that way.
+func ArtifactImageMiddleware(password string, nodeStore store.NodeStore, commandStore store.CommandStore) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			token := extractBearer(c.Request().Header.Get("Authorization"))
-			if token == "" {
-				token = c.QueryParam("token")
-			}
-			if token == "" {
+			headerToken := extractBearer(c.Request().Header.Get("Authorization"))
+			queryToken := c.QueryParam("token")
+			if headerToken == "" && queryToken == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
-			// Check admin password
-			if secureCompare(token, password) {
+			// Admin: full access, from either the header or ?token=.
+			if secureCompare(headerToken, password) || secureCompare(queryToken, password) {
 				return next(c)
 			}
-			// Check node API key
-			node, err := nodeStore.GetByAPIKey(c.Request().Context(), token)
-			if err == nil && node != nil {
-				return next(c)
+			// Otherwise the caller must be a node — authenticated ONLY via the
+			// Authorization header — and only for an artifact a command assigned it.
+			if headerToken == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
-			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			node, err := nodeStore.GetByAPIKey(c.Request().Context(), headerToken)
+			if err != nil || node == nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			if !nodeAssignedArtifact(c.Request().Context(), commandStore, node.ID, c.Param("id")) {
+				return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+			}
+			c.Set(ContextKeyNodeID, node.ID)
+			return next(c)
 		}
 	}
+}
+
+// nodeAssignedArtifact reports whether some upgrade / upgrade-recovery command
+// queued for nodeID names this artifact as its source ("artifact:<id>"). It does
+// not filter on command phase: once an operator has told a node to install an
+// artifact, re-fetching that same image (a retry, a resumed upgrade) is not a new
+// exposure — the boundary being enforced is WHICH artifact, not how many times. A
+// store error fails closed (treated as not assigned).
+func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, nodeID, artifactID string) bool {
+	if commandStore == nil || nodeID == "" || artifactID == "" {
+		return false
+	}
+	cmds, err := commandStore.ListByNode(ctx, nodeID)
+	if err != nil {
+		return false
+	}
+	want := "artifact:" + artifactID
+	for _, cmd := range cmds {
+		if cmd == nil {
+			continue
+		}
+		if (cmd.Command == store.CmdUpgrade || cmd.Command == store.CmdUpgradeRecovery) && cmd.Args["source"] == want {
+			return true
+		}
+	}
+	return false
 }
 
 // RegistrationTokenAuth returns an Echo middleware that reads the JSON body,
