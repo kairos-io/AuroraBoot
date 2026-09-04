@@ -71,8 +71,32 @@ If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL`
 | `--url https://…` | External URL of this instance, injected into cloud-configs so nodes know where to phone home |
 | `AURORABOOT_ADMIN_PASSWORD` | Override admin password |
 | `AURORABOOT_REG_TOKEN` | Override registration token |
+| `--disable-rate-limit` | Turn off per-identity rate limiting of the node-driven endpoints |
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
+
+### Rate limiting
+
+The node-driven endpoints — registration, heartbeat and command polling — are
+rate-limited **on by default** so a single misbehaving node, or a leaked
+registration token, can't flood the fleet server. Registration is limited per
+client IP; heartbeat and command polling are limited per node. Admin/UI/API
+traffic (including the CAPI infra provider, which authenticates as admin) is
+**never** rate-limited.
+
+The defaults are generous and only ever bite a runaway or a flood. Tune or
+disable them if needed:
+
+- `--node-rate-limit <rps>` / `AURORABOOT_NODE_RATE_LIMIT` — per-node requests/sec
+- `--register-rate-limit <rps>` / `AURORABOOT_REGISTER_RATE_LIMIT` — per-IP requests/sec
+- `--disable-rate-limit` / `AURORABOOT_DISABLE_RATE_LIMIT` — turn it off entirely
+
+If a whole rack of nodes registers at once from behind a single NAT egress IP,
+they share one per-IP registration bucket; raise `--register-rate-limit` or
+disable rate limiting for that deployment. The per-IP key is the client address
+as the server sees it (honouring `X-Forwarded-For` behind a trusted proxy), so
+it's a flood speed-bump rather than a hard boundary — the registration token
+remains the actual access control.
 
 ### Hadron builds
 
