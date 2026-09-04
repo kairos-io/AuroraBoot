@@ -106,6 +106,7 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "kubeconfig", Usage: "Path to a kubeconfig file for the operator builder (single file). Empty means try in-cluster config first, then the default client-go loading rules (which honour a multi-file KUBECONFIG env)"},
 		&cli.StringFlag{Name: "builder-namespace", Value: "default", Usage: "Namespace in which OSArtifact CRs are created. Used only when --builder=operator"},
 		&cli.StringFlag{Name: "builder-upload-url", Usage: "URL exporter pods PUT built artifacts to. Only needs cluster-internal reachability, so a Service DNS name is appropriate. Defaults to --url. Used only when --builder=operator", EnvVars: []string{"AURORABOOT_BUILDER_UPLOAD_URL"}},
+		&cli.DurationFlag{Name: "reset-timeout", Value: handlers.DefaultResetTimeout, Usage: "Fail pending or in-progress resets that have not returned within this duration; set a negative duration to disable", EnvVars: []string{"AURORABOOT_RESET_TIMEOUT"}},
 	},
 	Action: runWeb,
 }
@@ -132,6 +133,7 @@ func runWeb(c *cli.Context) error {
 	redfishServeTLSCert := c.String("redfish-serve-tls-cert")
 	redfishServeTLSKey := c.String("redfish-serve-tls-key")
 	redfishQuirksDir := c.String("redfish-quirks-dir")
+	resetTimeout := c.Duration("reset-timeout")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -349,6 +351,7 @@ func runWeb(c *cli.Context) error {
 		Hub:                   wsHub,
 		ISOServe:              isoServe,
 		RedfishServeURL:       redfishServeURLSeed(isoServe, serveURL),
+		ResetTimeout:          resetTimeout,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)

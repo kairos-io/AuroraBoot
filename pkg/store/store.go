@@ -211,6 +211,11 @@ type NodeStore interface {
 	// stampLastReset is set (the transition to done), LastReset is set to now in
 	// the same update.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
+	// FailResetBefore atomically marks an in-flight reset failed only when its
+	// request timestamp is at or before the supplied deadline. Including the
+	// timestamp in the compare-and-set prevents an older read from failing a new
+	// reset request that refreshed ResetRequestedAt concurrently.
+	FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error)
 	Delete(ctx context.Context, id string) error
 }
 

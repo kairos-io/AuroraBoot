@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
@@ -17,15 +18,37 @@ type CommandHandler struct {
 	commands store.CommandStore
 	nodes    store.NodeStore
 	hub      *ws.Hub
+	// resetTimeout also bounds delivery: an offline node must not execute a
+	// reset after its node-level lifecycle has already timed out.
+	resetTimeout time.Duration
 }
 
 // NewCommandHandler creates a new CommandHandler.
 func NewCommandHandler(commands store.CommandStore, nodes store.NodeStore, hub *ws.Hub) *CommandHandler {
 	return &CommandHandler{
-		commands: commands,
-		nodes:    nodes,
-		hub:      hub,
+		commands:     commands,
+		nodes:        nodes,
+		hub:          hub,
+		resetTimeout: DefaultResetTimeout,
 	}
+}
+
+// WithResetTimeout configures reset command delivery expiry. Zero keeps the
+// default; a negative duration disables expiry.
+func (h *CommandHandler) WithResetTimeout(timeout time.Duration) *CommandHandler {
+	if timeout == 0 {
+		timeout = DefaultResetTimeout
+	}
+	h.resetTimeout = timeout
+	return h
+}
+
+func (h *CommandHandler) setResetExpiry(cmd *store.NodeCommand) {
+	if cmd.Command != store.CmdReset || h.resetTimeout < 0 {
+		return
+	}
+	expires := time.Now().Add(h.resetTimeout)
+	cmd.ExpiresAt = &expires
 }
 
 // createCommandRequest is the expected body for creating a command.
@@ -63,6 +86,7 @@ func (h *CommandHandler) Create(c echo.Context) error {
 		Args:          req.Args,
 		Phase:         store.CommandPending,
 	}
+	h.setResetExpiry(cmd)
 
 	if err := h.commands.Create(c.Request().Context(), cmd); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
@@ -120,6 +144,7 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 			Args:          req.Args,
 			Phase:         store.CommandPending,
 		}
+		h.setResetExpiry(cmd)
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 		}
@@ -163,6 +188,7 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 			Args:          req.Args,
 			Phase:         store.CommandPending,
 		}
+		h.setResetExpiry(cmd)
 		if err := h.commands.Create(ctx, cmd); err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 		}

@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -83,6 +84,36 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 		got, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(got.ResetState).To(Equal(store.ResetStateFailed))
 		Expect(got.LastReset).To(BeNil())
+	})
+
+	It("does not fail a reset whose request timestamp was refreshed", func() {
+		n := register("n1")
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		first, err := s.NodeGetByID(ctx, n.ID)
+		Expect(err).NotTo(HaveOccurred())
+		oldDeadline := *first.ResetRequestedAt
+
+		time.Sleep(time.Millisecond)
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		matched, err := s.FailResetBefore(ctx, n.ID, oldDeadline)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(matched).To(BeFalse())
+
+		got, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(got.ResetState).To(Equal(store.ResetStatePending))
+		Expect(got.ResetRequestedAt.After(oldDeadline)).To(BeTrue())
+	})
+
+	It("fails an in-flight reset requested before the deadline", func() {
+		n := register("n1")
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+
+		matched, err := s.FailResetBefore(ctx, n.ID, time.Now().Add(time.Minute))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(matched).To(BeTrue())
+
+		got, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(got.ResetState).To(Equal(store.ResetStateFailed))
 	})
 
 	It("does not transition when the current state is not in fromStates", func() {
