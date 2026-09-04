@@ -155,14 +155,15 @@ var _ = Describe("ArtifactHandler", func() {
 	})
 
 	Describe("Create — kubernetes provider cloud-config", func() {
-		post := func(body string) {
+		createWith := func(h *handlers.ArtifactHandler, body string) {
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
-			Expect(handler.Create(c)).To(Succeed())
+			Expect(h.Create(c)).To(Succeed())
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 		}
+		post := func(body string) { createWith(handler, body) }
 
 		It("enables k3s in cloud-config for the standard variant", func() {
 			post(`{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
@@ -191,6 +192,53 @@ var _ = Describe("ArtifactHandler", func() {
 			post(`{"baseImage":"ubuntu:24.04","variant":"core","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k3s:"))
 			Expect(fb.lastOpts.CloudConfig).NotTo(ContainSubstring("k0s:"))
+		})
+
+		It("stores kubernetes as disabled for the core variant", func() {
+			// The UI omits kubernetesEnabled entirely for a non-standard
+			// variant, so the record must not fall back to the enabled
+			// default and contradict variant=core (kairos-io/kairos#4354).
+			as := &fakeArtifactStore{}
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"core","outputs":{"iso":true}}`)
+
+			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
+			Expect(as.records).To(HaveLen(1))
+			Expect(as.records[0].KubernetesEnabled).NotTo(BeNil())
+			Expect(*as.records[0].KubernetesEnabled).To(BeFalse())
+		})
+
+		It("stores kubernetes as disabled for the core variant even when the client asks for it", func() {
+			as := &fakeArtifactStore{}
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"core","kubernetesEnabled":true,"outputs":{"iso":true}}`)
+
+			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
+			Expect(as.records).To(HaveLen(1))
+			Expect(as.records[0].KubernetesEnabled).NotTo(BeNil())
+			Expect(*as.records[0].KubernetesEnabled).To(BeFalse())
+		})
+
+		It("stores kubernetes as enabled for the standard variant when omitted", func() {
+			as := &fakeArtifactStore{}
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
+
+			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeTrue())
+			Expect(as.records).To(HaveLen(1))
+			Expect(as.records[0].KubernetesEnabled).NotTo(BeNil())
+			Expect(*as.records[0].KubernetesEnabled).To(BeTrue())
+		})
+
+		It("honours an explicit opt-out on the standard variant", func() {
+			as := &fakeArtifactStore{}
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
+
+			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
+			Expect(as.records).To(HaveLen(1))
+			Expect(as.records[0].KubernetesEnabled).NotTo(BeNil())
+			Expect(*as.records[0].KubernetesEnabled).To(BeFalse())
 		})
 
 		It("merges extra k3s YAML without duplicating the top-level key", func() {
