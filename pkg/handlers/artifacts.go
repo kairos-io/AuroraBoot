@@ -393,6 +393,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		KubernetesEnabled:  kubernetesEnabled,
 		AllowedCommands:    allowedCommands,
 	}
+	opts.ExtensionHierarchies = builder.ExtensionHierarchies{
+		Sysext:  sysHierarchies,
+		Confext: conHierarchies,
+	}
 
 	// Resolve target group name for cloud-config injection.
 	groupName := ""
@@ -420,6 +424,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		username:           req.Provisioning.Username,
 		password:           req.Provisioning.Password,
 		sshKeys:            req.Provisioning.SSHKeys,
+		sysextHierarchies:  sysHierarchies,
+		confextHierarchies: conHierarchies,
 		extraYAML:          req.CloudConfig,
 	})
 
@@ -1188,6 +1194,14 @@ type cloudConfigParams struct {
 	username        string
 	password        string
 	sshKeys         string // newline-separated public keys
+	// sysextHierarchies and confextHierarchies are the operator-supplied
+	// mount points (already validated and normalized; /usr and /etc stripped).
+	// When either is non-empty the emitted cloud-config includes a systemd
+	// unit drop-in that sets SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES so the
+	// booted image mounts the requested scopes on top of the implicit
+	// /usr and /etc.
+	sysextHierarchies  []string
+	confextHierarchies []string
 	extraYAML       string // optional: appended verbatim after the canonical block
 }
 
@@ -1291,6 +1305,42 @@ func buildCloudConfig(p cloudConfigParams) string {
 		}
 	}
 
+	// Bake SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES drop-ins under stages.boot
+	// when the operator declared extra hierarchies. /usr and /etc are the
+	// implicit scope for sysext and confext respectively; the request-side
+	// validator rejects them upstream, so we prepend them here to match
+	// systemd's default set and the operator's requested extras stay in
+	// their sorted-and-deduped order.
+	if len(p.sysextHierarchies) > 0 || len(p.confextHierarchies) > 0 {
+		var bootEntries []interface{}
+		if len(p.sysextHierarchies) > 0 {
+			paths := append([]string{"/usr"}, p.sysextHierarchies...)
+			bootEntries = append(bootEntries, hierarchyDropIn(
+				"sysext-hierarchies",
+				"/etc/systemd/system/systemd-sysext.service.d/hierarchies.conf",
+				"SYSTEMD_SYSEXT_HIERARCHIES="+strings.Join(paths, ":"),
+			))
+		}
+		if len(p.confextHierarchies) > 0 {
+			paths := append([]string{"/etc"}, p.confextHierarchies...)
+			bootEntries = append(bootEntries, hierarchyDropIn(
+				"confext-hierarchies",
+				"/etc/systemd/system/systemd-confext.service.d/hierarchies.conf",
+				"SYSTEMD_CONFEXT_HIERARCHIES="+strings.Join(paths, ":"),
+			))
+		}
+		stages, _ := doc["stages"].(map[string]interface{})
+		if stages == nil {
+			stages = map[string]interface{}{}
+			doc["stages"] = stages
+		}
+		if existing, ok := stages["boot"].([]interface{}); ok {
+			stages["boot"] = append(existing, bootEntries...)
+		} else {
+			stages["boot"] = bootEntries
+		}
+	}
+
 	// Merge extra YAML (the Advanced field) on top of the canonical doc.
 	// If the user provided their own stages.boot or install: section, it gets
 	// merged under the corresponding top-level key instead of producing a
@@ -1343,6 +1393,22 @@ func mergeYAML(dst, src map[string]interface{}) {
 }
 
 func boolPtr(v bool) *bool { return &v }
+
+// hierarchyDropIn returns a yip stage entry that writes a systemd unit
+// drop-in setting an Environment= line under [Service]. Kairos parses stages
+// via yip; a `files:` entry with permissions 0o644 is written verbatim.
+func hierarchyDropIn(name, path, envLine string) map[string]interface{} {
+	return map[string]interface{}{
+		"name": name,
+		"files": []interface{}{
+			map[string]interface{}{
+				"path":        path,
+				"permissions": 0o644,
+				"content":     "[Service]\nEnvironment=" + envLine + "\n",
+			},
+		},
+	}
+}
 
 // ReconcileOrphanedArtifacts fails every ArtifactRecord still marked Pending or
 // Building. A process restart orphans the goroutine driving an in-flight build,
