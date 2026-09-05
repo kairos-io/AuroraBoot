@@ -239,8 +239,12 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			KubernetesEnabled: &kubernetesEnabled,
 			TargetGroupID:     opts.Provisioning.TargetGroupID,
 			OverlayRootfs:     opts.OverlayRootfs,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+			ExtensionHierarchies: store.ExtensionHierarchies{
+				Sysext:  opts.ExtensionHierarchies.Sysext,
+				Confext: opts.ExtensionHierarchies.Confext,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()
