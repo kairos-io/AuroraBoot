@@ -221,9 +221,16 @@ func generateSysextConfext(ctx *cli.Context) error {
 	if outputDir := ctx.String("output"); outputDir != "" {
 		outputFile = filepath.Join(outputDir, outputFile)
 	}
-	// Call systemd-repart to create the sysext/confext based off the files
+	// Call systemd-repart to create the sysext/confext based off the files.
+	// --offline=yes tells systemd-repart to write partition data directly to
+	// the output file instead of attaching it to a host loop device. The
+	// output is a regular file we own, so a loop attach is unnecessary; more
+	// importantly, on shared CI runners the per-host loop pool can be
+	// exhausted by concurrent jobs and systemd-repart fails with
+	// "Failed to make loopback device: Device or resource busy".
 	cmdArgs := []string{
 		fmt.Sprintf("--make-ddi=%s", buildType),
+		"--offline=yes",
 		"--image-policy=root=verity+signed+absent:usr=verity+signed+absent",
 		fmt.Sprintf("--architecture=%s", arch),
 		// Having a fixed predictable seed makes the Image UUID be always the same if the inputs are the same,
