@@ -119,6 +119,22 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           tags: auroraboot:test
+      - name: Ensure loop device nodes
+        # losetup asks the kernel for a free loop index and then opens
+        # /dev/loopN. On the shared kvm runners the loop pool leaks across
+        # jobs: a previous run can leave the kernel index free while the
+        # /dev/loopN node has been unlinked (LOOP_CTL_DEL, or a container
+        # bind-mounting /dev). losetup then fails with
+        # "device node /dev/loopN is lost. You may use mknod(1) to recover it."
+        # Pre-create the nodes so any recycled index has a matching /dev entry.
+        run: |
+          sudo bash -c '
+            for i in $(seq 0 15); do
+              [ -e /dev/loop$i ] || mknod -m 660 /dev/loop$i b 7 $i
+              chown root:disk /dev/loop$i 2>/dev/null || true
+            done
+          '
+          ls -la /dev/loop*
       - name: Run e2e tests
         run: |
           go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
