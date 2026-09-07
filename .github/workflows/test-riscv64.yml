@@ -84,3 +84,38 @@ jobs:
           platforms: linux/riscv64
           push: false
           load: false
+
+  build-linux-riscv64-emulated:
+    # Timing experiment: same Docker build as build-linux-riscv64 above, on
+    # a stock amd64 runner under QEMU instead of the native
+    # ubuntu-24.04-riscv runner. Only the runner and the QEMU setup step
+    # differ, so the two job durations are directly comparable.
+    # Not wired into image.yml; this job never publishes anything.
+    runs-on: 'ubuntu-24.04'
+    needs: build-ui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ui-dist
+          path: internal/ui/dist
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: riscv64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Test Docker image build for riscv64 (emulated)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile.riscv64
+          platforms: linux/riscv64
+          push: false
+          load: false
