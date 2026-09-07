@@ -117,8 +117,19 @@ var _ = BeforeSuite(func() {
 		Builder:       newMockArtifactBuilder(),
 		AdminPassword: testAdminPassword,
 		RegToken:      testRegToken,
-		AuroraBootURL:   "http://localhost",
+		AuroraBootURL: "http://localhost",
 		Hub:           hub,
+
+		// The whole suite shares this one server, and every spec registers from
+		// 127.0.0.1, so all of them draw on a single per-IP registration bucket
+		// (burst 20 at 0.5 rps by default). The suite registers around 36 nodes
+		// in well under a second, and Ginkgo spreads the specs over its parallel
+		// processes by a random seed, so whenever one process happens to draw
+		// more than 20 registrations its remaining specs get a 429 instead of a
+		// node. Turn the limiters off here: these specs are about the API's
+		// behaviour, and the limiters themselves are covered by
+		// pkg/auth/ratelimit_test.go.
+		DisableRateLimit: true,
 	}
 
 	e := server.New(cfg)
