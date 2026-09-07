@@ -447,3 +447,92 @@ var _ = Describe("Artifact download scoping", func() {
 		})
 	})
 })
+
+var _ = Describe("Rate limiting wiring", func() {
+	var (
+		e  *httptest.Server
+		ns *fakeNodeStore
+	)
+
+	BeforeEach(func() {
+		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "agent-key"}}}
+		// Burst 2 so throttling is observable in a handful of requests (defaults
+		// would need 20+), and a near-zero rate so the bucket refills negligibly
+		// during the test — otherwise a slow CI run could top the bucket back up
+		// mid-loop and no request would ever be throttled.
+		echoApp := server.New(server.Config{
+			NodeStore:              ns,
+			CommandStore:           &fakeCommandStore{},
+			GroupStore:             &fakeGroupStore{},
+			Builder:                &fakeBuilder{},
+			AdminPassword:          "admin-pass",
+			RegToken:               "reg-token",
+			AuroraBootURL:          "http://localhost:8080",
+			NodeRateLimitRPS:       0.001,
+			NodeRateLimitBurst:     2,
+			RegisterRateLimitRPS:   0.001,
+			RegisterRateLimitBurst: 2,
+		})
+		e = httptest.NewServer(echoApp)
+	})
+
+	AfterEach(func() { e.Close() })
+
+	getCommands := func(bearer string) int {
+		req, _ := http.NewRequest(http.MethodGet, e.URL+"/api/v1/nodes/node-1/commands", nil)
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	heartbeat := func(bearer string) int {
+		req, _ := http.NewRequest(http.MethodPost, e.URL+"/api/v1/nodes/node-1/heartbeat", strings.NewReader(`{"agentVersion":"1.0"}`))
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	It("never rate-limits the admin on the shared command route (CAPI provider path)", func() {
+		// Far more than the node burst; the admin sets no node ID, so the node
+		// limiter skips it entirely. This is the guarantee that keeps the CAPI
+		// infra provider's command polling exempt.
+		for i := 0; i < 10; i++ {
+			Expect(getCommands("admin-pass")).NotTo(Equal(http.StatusTooManyRequests))
+		}
+	})
+
+	It("rate-limits a node on the shared command route once its burst is spent", func() {
+		codes := make([]int, 0, 5)
+		for i := 0; i < 5; i++ {
+			codes = append(codes, getCommands("agent-key"))
+		}
+		Expect(codes).To(ContainElement(http.StatusTooManyRequests))
+	})
+
+	It("shares one bucket per node across heartbeat and command polling", func() {
+		// Burst is 2. Spend it with one heartbeat plus one command poll, then
+		// either route is throttled for that node — proving a single shared bucket
+		// rather than one bucket per endpoint group (which would double the rate).
+		Expect(heartbeat("agent-key")).NotTo(Equal(http.StatusTooManyRequests))
+		Expect(getCommands("agent-key")).NotTo(Equal(http.StatusTooManyRequests))
+		Expect(getCommands("agent-key")).To(Equal(http.StatusTooManyRequests))
+		Expect(heartbeat("agent-key")).To(Equal(http.StatusTooManyRequests))
+	})
+
+	It("rate-limits registration per client IP once its burst is spent", func() {
+		body := `{"registrationToken":"reg-token","machineID":"m1","hostname":"h1"}`
+		codes := make([]int, 0, 5)
+		for i := 0; i < 5; i++ {
+			resp, err := http.Post(e.URL+"/api/v1/nodes/register", "application/json", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+			codes = append(codes, resp.StatusCode)
+		}
+		Expect(codes).To(ContainElement(http.StatusTooManyRequests))
+	})
+})

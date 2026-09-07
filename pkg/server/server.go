@@ -58,6 +58,27 @@ type Config struct {
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
 	BaseContext context.Context
+
+	// Rate limiting of the node-driven endpoints (registration, heartbeat, command
+	// polling) — fleet-server hardening, kairos-io/kairos#4117. It is on by
+	// default: zero RPS/Burst values fall back to the auth package defaults.
+	// Admin-authenticated requests (the UI and the CAPI infra provider) are never
+	// limited. DisableRateLimit turns the limiters off entirely.
+	DisableRateLimit       bool
+	NodeRateLimitRPS       float64 // per-node requests/sec for heartbeat + command polling
+	NodeRateLimitBurst     int     // per-node burst
+	RegisterRateLimitRPS   float64 // per-IP requests/sec for registration
+	RegisterRateLimitBurst int     // per-IP burst
+}
+
+// firstPositive returns v if it is positive, otherwise fallback. It lets a zero
+// (unset) config value fall back to a default while still allowing an explicit
+// override.
+func firstPositive(v, fallback float64) float64 {
+	if v > 0 {
+		return v
+	}
+	return fallback
 }
 
 // redactToken returns requestURI with the value of any "token" query parameter
@@ -193,8 +214,27 @@ func New(cfg Config) *echo.Echo {
 	// WebSocket endpoints (agent auth via query param token)
 	e.GET("/api/v1/ws", agentWSHandler.HandleAgentWS)
 
-	// Agent registration (registration token auth)
+	// Rate limits for the node-driven endpoints (fleet-server hardening,
+	// kairos-io/kairos#4117). On by default with generous limits; a zero value
+	// falls back to the auth package default, and DisableRateLimit forces the
+	// limiters off (passing 0 makes them no-ops). Admin-authenticated traffic —
+	// the UI and the CAPI infra provider — is never limited (see NodeRateLimiter).
+	nodeRateRPS := firstPositive(cfg.NodeRateLimitRPS, auth.DefaultNodeRateLimitRPS)
+	registerRateRPS := firstPositive(cfg.RegisterRateLimitRPS, auth.DefaultRegisterRateLimitRPS)
+	if cfg.DisableRateLimit {
+		nodeRateRPS, registerRateRPS = 0, 0
+	}
+	// Build the node limiter ONCE and share it across the heartbeat and shared-
+	// command groups, so a node draws heartbeats and command polls from a single
+	// bucket keyed on its node ID. A separate instance per group would give each
+	// node two independent buckets and an effective ~2x the configured rate.
+	nodeLimiter := auth.NodeRateLimiter(nodeRateRPS, cfg.NodeRateLimitBurst)
+
+	// Agent registration (registration token auth). The per-IP rate limiter runs
+	// BEFORE the token check so it also throttles invalid-token (brute-force)
+	// attempts.
 	regGroup := e.Group("/api/v1/nodes")
+	regGroup.Use(auth.RegistrationRateLimiter(registerRateRPS, cfg.RegisterRateLimitBurst))
 	regGroup.Use(auth.RegistrationTokenAuth(&regToken))
 	regGroup.POST("/register", nodeHandler.Register)
 
@@ -205,6 +245,8 @@ func New(cfg Config) *echo.Echo {
 	agentGroup := e.Group("/api/v1/nodes/:nodeID")
 	agentGroup.Use(auth.NodeAPIKeyMiddleware(cfg.NodeStore))
 	agentGroup.Use(auth.RequireNodeMatch)
+	// After node auth, so the limiter keys on the authenticated node ID.
+	agentGroup.Use(nodeLimiter)
 	agentGroup.POST("/heartbeat", nodeHandler.Heartbeat)
 
 	// Shared command routes used by BOTH the agent (poll/report) and the
@@ -216,6 +258,10 @@ func New(cfg Config) *echo.Echo {
 	// across nodes.
 	sharedCmd := e.Group("/api/v1/nodes/:nodeID")
 	sharedCmd.Use(auth.AgentOrAdminMiddleware(cfg.AdminPassword, cfg.NodeStore))
+	// After auth, so it limits node polls but skips admin (which sets no node ID)
+	// — keeping the CAPI infra provider's command polling exempt. Same instance as
+	// the heartbeat group, so both share one bucket per node.
+	sharedCmd.Use(nodeLimiter)
 	sharedCmd.GET("/commands", nodeHandler.GetCommands)
 	sharedCmd.PUT("/commands/:commandID/status", cmdHandler.UpdateStatus)
 
