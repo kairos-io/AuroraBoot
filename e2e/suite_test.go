@@ -76,7 +76,9 @@ func (e *Auroraboot) Run(aurorabootArgs ...string) (string, error) {
 	return e.ContainerRun("auroraboot", aurorabootArgs...)
 }
 
-// We need --privileged for `mount` to work in the container (used in the build_uki_test.go).
+// --privileged is for auroraboot itself, which reaches for loop devices and
+// device nodes while it builds artifacts. The build_uki_test.go helpers no
+// longer need it: they read the ISO with xorriso and mtools, not by mounting.
 func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, error) {
 	dockerArgs := []string{
 		"run", "--rm", "--privileged",
