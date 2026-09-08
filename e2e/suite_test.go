@@ -75,6 +75,11 @@ func (e *Auroraboot) Run(aurorabootArgs ...string) (string, error) {
 func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, error) {
 	dockerArgs := []string{
 		"run", "--rm", "--privileged",
+		// The container publishes no ports and only needs outbound access to
+		// pull images, so the default bridge buys nothing and costs a veth: on
+		// the CI runners docker fails the run with "bridge port not forwarding
+		// after 200ms" before auroraboot starts.
+		"--network", "host",
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"--entrypoint", entrypoint,
 	}

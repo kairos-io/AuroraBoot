@@ -103,8 +103,13 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+      # docker/setup-qemu-action runs the binfmt container on the default bridge,
+      # which these runners fail with "bridge port not forwarding after 200ms".
+      # binfmt only writes to /proc/sys/fs/binfmt_misc, so give it the host
+      # network and never create a bridge port. Same reason as the network=host
+      # driver-opt on buildx below.
       - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
+        run: docker run --rm --privileged --network host docker.io/tonistiigi/binfmt:latest --install all
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v4
