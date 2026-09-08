@@ -155,6 +155,8 @@ github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29 h1:2XQY2y+CZCLpFj
 github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29/go.mod h1:sqQZKX1X86EAN4C07n6DcbGC/DCN36BNaX/uNvjzmfk=
 github.com/foxboron/sbctl v0.0.0-20250917190250-6b8ed8715652 h1:S4E7w6VTJfMViV/ir1SKH3i+B3WQEqCH/a6Gw2/VHj8=
 github.com/foxboron/sbctl v0.0.0-20250917190250-6b8ed8715652/go.mod h1:J2pqwbOWShauAI0wDI/4zKxk5B300jOcHvGVuUuCRhc=
+github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb h1:yu81HgzxdULvaImBkcnDBOUVKQi3KfML0HOlzK98dmc=
+github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb/go.mod h1:xpWus0WLoaeL7TmiD4knkiVBMSDZaFwAfrF0xll/h+Y=
 github.com/foxboron/swtpm_test v0.0.0-20230726224112-46aaafdf7006 h1:50sW4r0PcvlpG4PV8tYh2RVCapszJgaOLRCS2subvV4=
 github.com/foxboron/swtpm_test v0.0.0-20230726224112-46aaafdf7006/go.mod h1:eIXCMsMYCaqq9m1KSSxXwQG11krpuNPGP3k0uaWrbas=
 github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHkI4W8=
@@ -354,6 +356,8 @@ github.com/kairos-io/kairos/v4 v4.3.0 h1:qgstNBqI6AKF/sXSifPHLmrBhNwQhxrYfqMwJCX
 github.com/kairos-io/kairos/v4 v4.3.0/go.mod h1:unHdMphb5zzfMXeI/ZlZ+tt1cB+Z1TrFucaaQeiAgdU=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872 h1:O9H3QrUNNZJTU+TjM3BPR5lvztYWD57V75WzWhIe1aY=
 github.com/kairos-io/netboot v0.0.0-20260623081620-ddd9ffa00872/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
+github.com/kairos-io/netboot v0.0.0-20260901080757-25854a157f3f h1:bdyWbv8oq1lAqMAyxM7BDM4uWNI1teK9yn2N/Agggbg=
+github.com/kairos-io/netboot v0.0.0-20260901080757-25854a157f3f/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767/go.mod h1:VOfm8h1NySetVlpHDSnbpCMsvCgYaU+YDn4XezUy2+4=
 github.com/kevinburke/ssh_config v1.2.0 h1:x584FjTGwHzMwvHx18PXxbBVzfnxogHaAReU4gf13a4=
@@ -535,6 +539,8 @@ github.com/spectrocloud-labs/herd v0.4.2 h1:90cYZmW0yxNw4PEbqNGSerrtqKSx1nvRbSwA
 github.com/spectrocloud-labs/herd v0.4.2/go.mod h1:WBlMIs1QZ7XtVrt9rAAFZpkh/fZYA4l2gGOCUS1LDHE=
 github.com/spectrocloud/peg v0.0.0-20260123084329-97c9703181cf h1:a+7u0cej2bndaptNr3WBvEca7uEfuylu13BN9bBrv68=
 github.com/spectrocloud/peg v0.0.0-20260123084329-97c9703181cf/go.mod h1:Zn1mquDB6bEGmGwXtvevvY2o0GkTc0Fb3RGJw1BlZBk=
+github.com/spectrocloud/peg v0.0.0-20260813125620-d8627da0983c h1:Ew+J3O2b6ZRCm6X3efhHEI0A9GsZrc/RzEjKtDejnOI=
+github.com/spectrocloud/peg v0.0.0-20260813125620-d8627da0983c/go.mod h1:h3Pm6CUy+5OQu+FAat6JClmALzywFS1al+RyS4ZgPpA=
 github.com/spf13/afero v1.15.0 h1:b/YBCLWAJdFWJTN9cLhiXXcD7mzKn9Dm86dNnfyQw1I=
 github.com/spf13/afero v1.15.0/go.mod h1:NC2ByUVxtQs4b3sIUphxK0NioZnmxgyCrfzeuq8lxMg=
 github.com/spf13/cast v1.10.0 h1:h2x0u2shc1QuLHfxi+cTJvs30+ZAHOGRic8uyGTDWxY=
@@ -675,6 +681,8 @@ golang.org/x/crypto v0.56.0/go.mod h1:OMW5y6CY9l38uPLmxU6l6pwcXp1obtLo3e6gT7gQR2
 golang.org/x/exp v0.0.0-20190121172915-509febef88a4/go.mod h1:CJ0aWSM057203Lf6IL+f9T1iT9GByDxfZKAQTCR3kQA=
 golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297 h1:YXnL44eJ77R+ji4/ooy8UsXIhz+lbi2Qgdlc8iRN0gY=
 golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297/go.mod h1:Mkmymgv+uMpSQ/XxJ/7GpdrdYoqm3u72jEbpCLiJmNk=
+golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa h1:QSyA8ishJCyT21kER9KwNt0b7BM3iRK4x9QXhjN5Fdk=
+golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa/go.mod h1:zeBbvyFKDaLwa7CH/zI8KXt7gTl14SF7sO08Pl5jBCM=
 golang.org/x/lint v0.0.0-20181026193005-c67002cb31c3/go.mod h1:UVdnD1Gm6xHRNCYTkRU2/jEulfH38KcIWyp/GAMgvoE=
 golang.org/x/lint v0.0.0-20190227174305-5b3e6a55c961/go.mod h1:wehouNa3lNwaWXcvxsM5YxQ5yQlVC4a0KAMCusXpPoU=
 golang.org/x/lint v0.0.0-20190313153728-d0100b6bd8b3/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=
