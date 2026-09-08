@@ -31,7 +31,7 @@ require (
 	github.com/spf13/viper v1.21.0 // agent can't use 1.20.0 due to some marshalling changes
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
-	golang.org/x/exp v0.0.0-20260813180055-c1d0aacb2297
+	golang.org/x/exp v0.0.0-20260824195058-e88cd73687aa
 	golang.org/x/mod v0.40.0
 	golang.org/x/net v0.58.0 // indirect
 	golang.org/x/sys v0.47.0
