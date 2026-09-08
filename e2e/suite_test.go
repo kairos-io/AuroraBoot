@@ -59,8 +59,13 @@ func newAurorabootImage() {
 	parentDir := path.Join(testDir, "..")
 	rootDir, err := filepath.Abs(parentDir)
 	Expect(err).ToNot(HaveOccurred())
-	// Build auroraboot image
-	output, err := exec.Command("docker", "build", "--target", "default", "-t", "auroraboot:test", "-f", filepath.Join(rootDir, "Dockerfile"), rootDir).CombinedOutput()
+	// Build auroraboot image. This build runs on the docker driver, so the
+	// network=host driver-opt the workflow gives buildx does not reach it and
+	// every RUN step gets a veth on the default bridge: on the CI runners the
+	// npm and luet steps then fail with "bridge port not forwarding after
+	// 200ms". No RUN step publishes a port, they only fetch, so the host
+	// network is enough.
+	output, err := exec.Command("docker", "build", "--network", "host", "--target", "default", "-t", "auroraboot:test", "-f", filepath.Join(rootDir, "Dockerfile"), rootDir).CombinedOutput()
 	Expect(err).ToNot(HaveOccurred(), string(output))
 }
 
