@@ -15,4 +15,4 @@ reason = "Transitive go-attestation; OSV lists no patched release (Fixed in N/A)
 [[IgnoredVulns]]
 id = "GO-2026-5932"
 ignoreUntil = 2026-11-17
-reason = "golang.org/x/crypto/openpgp is unmaintained upstream; OSV lists no patched release (Fixed in N/A). Now on x/crypto v0.55.0. Re-evaluate before expiry."
+reason = "golang.org/x/crypto/openpgp is unmaintained upstream; OSV lists no patched release (Fixed in N/A). Now on x/crypto v0.56.0. Re-evaluate before expiry."
