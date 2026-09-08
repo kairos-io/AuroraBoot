@@ -32,6 +32,7 @@ type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
+	Hostname     string            `json:"hostname,omitempty"`
 }
 
 type commandData struct {
@@ -219,6 +220,63 @@ var _ = Describe("WebSocket Handler", func() {
 				}
 				return node.AgentVersion
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal("2.0.0"))
+		})
+
+		// The node in BeforeEach is registered as "test-host", standing in for a
+		// node that phoned home before cloud-init applied its real hostname. The
+		// WS heartbeat is the only path that can correct that, because the agent
+		// stops sending registration payloads once its credentials are on disk
+		// (kairos-io/kairos#4196).
+		It("should apply a hostname the heartbeat reports", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(sendMsg(conn, "heartbeat", heartbeatData{
+				AgentVersion: "2.0.0",
+				Hostname:     "kairos-a1b2",
+			})).To(Succeed())
+
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.Hostname
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal("kairos-a1b2"))
+		})
+
+		// An agent older than the field sends no hostname at all. That must read
+		// as "nothing to report", not as "my hostname is empty".
+		It("should keep the stored hostname when the heartbeat omits it", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(sendMsg(conn, "heartbeat", heartbeatData{AgentVersion: "2.0.0"})).To(Succeed())
+
+			// Wait for the heartbeat to have been applied, then assert on the
+			// hostname: waiting on agentVersion is what makes this a real check
+			// rather than a race the empty-hostname case would also pass.
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.AgentVersion
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal("2.0.0"))
+
+			node, err := nodes.GetByID(bg, nodeID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(node.Hostname).To(Equal("test-host"))
 		})
 
 		It("should trigger the auto eject-on-phone-home finalizer on heartbeat", func() {

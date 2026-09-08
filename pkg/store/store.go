@@ -181,7 +181,13 @@ type NodeStore interface {
 	ListByGroup(ctx context.Context, groupID string) ([]*ManagedNode, error)
 	ListByLabels(ctx context.Context, labels map[string]string) ([]*ManagedNode, error)
 	ListBySelector(ctx context.Context, sel CommandSelector) ([]*ManagedNode, error)
-	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string) error
+	// UpdateHeartbeat records a heartbeat: it stamps LastHeartbeat, moves the node
+	// to Online, and applies whatever the report carried. agentVersion and
+	// osRelease are always written; addresses, bootState and hostname are only
+	// written when non-empty, so a caller that does not collect a field (an older
+	// agent, or a transport that does not carry it) preserves the stored value
+	// instead of blanking it.
+	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
 	SetGroup(ctx context.Context, nodeID string, groupID string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error

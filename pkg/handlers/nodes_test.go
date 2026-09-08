@@ -346,6 +346,32 @@ var _ = Describe("NodeHandler", func() {
 			Expect(node.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.21"}}))
 			Expect(node.BootState).To(Equal("active"))
 		})
+
+		// kairos-io/kairos#4196: a node registers before cloud-init applies a
+		// templated hostname, so it lands as the image default. The heartbeat has
+		// to be able to correct it.
+		It("should update the hostname on heartbeat", func() {
+			ns.nodes = []*store.ManagedNode{{
+				ID:       "node-1",
+				Phase:    store.PhaseRegistered,
+				Hostname: "kairos",
+			}}
+			heartbeat(e, handler, "node-1", `{"agentVersion":"1.1","hostname":"kairos-a1b2"}`)
+
+			Expect(getNode(e, handler, "node-1").Hostname).To(Equal("kairos-a1b2"))
+		})
+
+		It("should preserve the hostname when a heartbeat omits it", func() {
+			ns.nodes = []*store.ManagedNode{{
+				ID:       "node-1",
+				Phase:    store.PhaseRegistered,
+				Hostname: "kairos-a1b2",
+			}}
+			// An older agent sends no hostname, which must not wipe the stored one.
+			heartbeat(e, handler, "node-1", `{"agentVersion":"1.1","osRelease":{"ID":"ubuntu"}}`)
+
+			Expect(getNode(e, handler, "node-1").Hostname).To(Equal("kairos-a1b2"))
+		})
 	})
 
 	Describe("GetCommands", func() {

@@ -20,10 +20,21 @@ type wsMessage struct {
 }
 
 // heartbeatData is sent by the agent.
+//
+// It intentionally declares only the fields this handler applies. The agent puts
+// more on the wire than this (addresses, boot state); those ride the REST
+// register/heartbeat contract and are deliberately not read here, see
+// handleHeartbeat.
 type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
+	// Hostname is the node's current hostname (optional). Unlike addresses and
+	// boot state it has to be read here: the agent heartbeats over this socket and
+	// stops sending registration payloads once its credentials are on disk, so
+	// this is the only path a hostname change can arrive on
+	// (kairos-io/kairos#4196).
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // commandData is sent to the agent.
@@ -162,8 +173,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	ctx := context.Background()
 	// The WebSocket heartbeat does not carry network addresses or boot state
 	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
-	// preserves whatever the node reported there.
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, ""); err != nil {
+	// preserves whatever the node reported there. The hostname is passed through:
+	// an agent that reports one is reporting its current one, and an agent that
+	// does not send "" and leaves the stored value alone.
+	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname); err != nil {
 		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {

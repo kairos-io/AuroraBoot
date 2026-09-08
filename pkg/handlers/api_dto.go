@@ -92,6 +92,11 @@ type APIHeartbeatRequest struct {
 	// BootState is the node's current boot state (optional): one of
 	// active | passive | recovery | autoreset (unknown values pass through).
 	BootState string `json:"bootState,omitempty" example:"active"`
+	// Hostname is the node's current hostname (optional). Reported on every
+	// heartbeat, not only at registration, so a hostname that cloud-init applies
+	// after phone-home has registered, or a later rename, reaches the record. When
+	// omitted the stored hostname is preserved.
+	Hostname string `json:"hostname,omitempty" example:"kairos-node-01"`
 }
 
 // APISetLabelsRequest is the JSON body of PUT /api/v1/nodes/:nodeID/labels.

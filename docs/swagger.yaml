@@ -210,6 +210,14 @@ definitions:
           active | passive | recovery | autoreset (unknown values pass through).
         example: active
         type: string
+      hostname:
+        description: |-
+          Hostname is the node's current hostname (optional). Reported on every
+          heartbeat, not only at registration, so a hostname that cloud-init applies
+          after phone-home has registered, or a later rename, reaches the record. When
+          omitted the stored hostname is preserved.
+        example: kairos-node-01
+        type: string
       labels:
         additionalProperties:
           type: string
@@ -1097,8 +1105,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Transitions the node to Online and records the latest agent version
-        and OS info.
+      description: Transitions the node to Online and records the latest agent version,
+        OS info and hostname.
       parameters:
       - description: Node ID
         in: path

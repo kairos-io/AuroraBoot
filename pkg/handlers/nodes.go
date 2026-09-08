@@ -526,12 +526,18 @@ type heartbeatRequest struct {
 	OSRelease    map[string]string   `json:"osRelease"`
 	Addresses    []store.NodeAddress `json:"addresses,omitempty"`
 	BootState    string              `json:"bootState,omitempty"`
+	// Hostname is the node's current hostname (optional). It rides the heartbeat
+	// rather than only the registration payload because a node registers before
+	// cloud-init has applied a templated hostname, and because a node may be
+	// renamed later in its life (kairos-io/kairos#4196). Omitted by older agents,
+	// in which case the stored value is preserved.
+	Hostname string `json:"hostname,omitempty"`
 }
 
 // Heartbeat handles POST /api/v1/nodes/:nodeID/heartbeat.
 //
 //	@Summary		Agent heartbeat
-//	@Description	Transitions the node to Online and records the latest agent version and OS info.
+//	@Description	Transitions the node to Online and records the latest agent version, OS info and hostname.
 //	@Tags			Agent
 //	@Accept			json
 //	@Security		NodeAPIKey
@@ -545,7 +551,7 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState); err != nil {
+	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState, req.Hostname); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update heartbeat"})
 	}
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {
