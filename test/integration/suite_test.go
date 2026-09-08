@@ -12,11 +12,11 @@ import (
 	"testing"
 
 	"github.com/gorilla/websocket"
-	"github.com/kairos-io/AuroraBoot/pkg/builder"
-	"github.com/kairos-io/AuroraBoot/pkg/server"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
-	"github.com/kairos-io/AuroraBoot/pkg/ws"
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/client"
+	"github.com/kairos-io/AuroraBoot/pkg/server"
+	"github.com/kairos-io/AuroraBoot/pkg/ws"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -117,8 +117,15 @@ var _ = BeforeSuite(func() {
 		Builder:       newMockArtifactBuilder(),
 		AdminPassword: testAdminPassword,
 		RegToken:      testRegToken,
-		AuroraBootURL:   "http://localhost",
+		AuroraBootURL: "http://localhost",
 		Hub:           hub,
+		// The whole suite drives one shared server from 127.0.0.1 and registers
+		// dozens of nodes across its specs. With per-IP registration rate limiting
+		// on (the default), those registrations share one bucket and exhaust its
+		// burst, so later specs' registrations flakily 429. This suite exercises
+		// fleet behaviour, not the limiter (which has its own coverage in
+		// pkg/auth/ratelimit_test.go and pkg/server), so turn it off here.
+		DisableRateLimit: true,
 	}
 
 	e := server.New(cfg)

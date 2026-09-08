@@ -258,7 +258,7 @@ func (s *Store) ListBySelector(ctx context.Context, sel store.CommandSelector) (
 	return nodes, nil
 }
 
-func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
+func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string) error {
 	var n store.ManagedNode
 	if err := s.db.WithContext(ctx).First(&n, "id = ?", id).Error; err != nil {
 		return err
@@ -278,6 +278,16 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	}
 	if bootState != "" {
 		n.BootState = bootState
+	}
+	// The hostname a node registered with is the one it had at registration time,
+	// which for a templated hostname (hostname: kairos-{{ trunc 4 .MachineID }})
+	// is the image default, because phone-home can register before cloud-init has
+	// applied the final one. Re-applying it from every heartbeat is what lets the
+	// stored value catch up, here and for any later rename
+	// (kairos-io/kairos#4196). Same non-empty guard as above: an agent that does
+	// not report a hostname must not blank the one already on record.
+	if hostname != "" {
+		n.Hostname = hostname
 	}
 	return s.db.WithContext(ctx).Save(&n).Error
 }

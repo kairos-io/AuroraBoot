@@ -32,6 +32,7 @@ type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
+	Hostname     string            `json:"hostname,omitempty"`
 }
 
 type commandData struct {
@@ -119,12 +120,20 @@ var _ = Describe("WebSocket Handler", func() {
 
 		// Record auto eject-on-phone-home invocations: a WS heartbeat must fire
 		// the same finalize hook as the REST register/heartbeat path.
+		//
+		// The hook closes over a per-spec local, NOT over the shared `finalized`
+		// variable. triggerFinalize dispatches on its own goroutine with a 2
+		// minute budget, so one can still be in flight when the next spec's
+		// BeforeEach runs; closing over the shared variable made that goroutine's
+		// read race the next assignment (caught by -race roughly one run in
+		// three). A fresh local per spec has no writer.
 		finalized = make(chan string, 8)
+		specFinalized := finalized
 		agentHandler := &ws.AgentHandler{
 			Hub:      hub,
 			Nodes:    nodes,
 			Commands: commands,
-			Finalize: func(_ context.Context, id string) { finalized <- id },
+			Finalize: func(_ context.Context, id string) { specFinalized <- id },
 		}
 		uiHandler := &ws.UIHandler{Hub: hub}
 
@@ -219,6 +228,63 @@ var _ = Describe("WebSocket Handler", func() {
 				}
 				return node.AgentVersion
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal("2.0.0"))
+		})
+
+		// The node in BeforeEach is registered as "test-host", standing in for a
+		// node that phoned home before cloud-init applied its real hostname. The
+		// WS heartbeat is the only path that can correct that, because the agent
+		// stops sending registration payloads once its credentials are on disk
+		// (kairos-io/kairos#4196).
+		It("should apply a hostname the heartbeat reports", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(sendMsg(conn, "heartbeat", heartbeatData{
+				AgentVersion: "2.0.0",
+				Hostname:     "kairos-a1b2",
+			})).To(Succeed())
+
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.Hostname
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal("kairos-a1b2"))
+		})
+
+		// An agent older than the field sends no hostname at all. That must read
+		// as "nothing to report", not as "my hostname is empty".
+		It("should keep the stored hostname when the heartbeat omits it", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(sendMsg(conn, "heartbeat", heartbeatData{AgentVersion: "2.0.0"})).To(Succeed())
+
+			// Wait for the heartbeat to have been applied, then assert on the
+			// hostname: waiting on agentVersion is what makes this a real check
+			// rather than a race the empty-hostname case would also pass.
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.AgentVersion
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal("2.0.0"))
+
+			node, err := nodes.GetByID(bg, nodeID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(node.Hostname).To(Equal("test-host"))
 		})
 
 		It("should trigger the auto eject-on-phone-home finalizer on heartbeat", func() {
@@ -345,6 +411,108 @@ var _ = Describe("WebSocket Handler", func() {
 				}
 				return c.Phase
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.CommandDelivered))
+		})
+	})
+
+	// A node that vanishes without closing its socket (power cut, network
+	// partition, a NAT or load balancer dropping the flow) leaves the server
+	// blocked in ReadMessage forever. Nothing else in AuroraBoot ever writes
+	// PhaseOffline — the deferred write in HandleAgentWS is the only one — so
+	// without a read deadline such a node reports Online for the rest of the
+	// process' life, and the hub keeps pushing commands into a dead socket.
+	// These two specs pin both halves: silent peers get reaped, live ones do not.
+	Describe("Agent keepalive", func() {
+		var (
+			kaServer *httptest.Server
+			// Short enough to keep the suite fast, and far enough apart that a
+			// loaded CI runner cannot reorder them: the server pings 5 times
+			// within one read timeout.
+			readTimeout  = 1500 * time.Millisecond
+			pingInterval = 300 * time.Millisecond
+		)
+
+		BeforeEach(func() {
+			e := echo.New()
+			h := &ws.AgentHandler{
+				Hub:          hub,
+				Nodes:        nodes,
+				Commands:     commands,
+				ReadTimeout:  readTimeout,
+				PingInterval: pingInterval,
+			}
+			e.GET("/api/v1/ws", h.HandleAgentWS)
+			kaServer = httptest.NewServer(e)
+			DeferCleanup(kaServer.Close)
+		})
+
+		It("reaps a peer that stops answering pings but keeps the socket open", func() {
+			conn, _, err := dialWS(kaServer, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			// Swallow pings instead of ponging them. gorilla's default ping
+			// handler replies automatically, so overriding it is what turns a
+			// healthy client into a wedged one. Control frames are only
+			// processed inside ReadMessage, hence the read loop below: without
+			// it the pings would sit unread in the socket buffer and the test
+			// would pass for the wrong reason.
+			conn.SetPingHandler(func(string) error { return nil })
+			go func() {
+				for {
+					if _, _, err := conn.ReadMessage(); err != nil {
+						return
+					}
+				}
+			}()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			// The client never closes, so this can only come from the server's
+			// own read deadline expiring.
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeFalse())
+
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.Phase
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.PhaseOffline))
+		})
+
+		It("keeps a peer that answers pings online well past the read timeout", func() {
+			conn, _, err := dialWS(kaServer, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			// No SetPingHandler override: gorilla pongs for us, which is exactly
+			// what the real agent does (pkg/client/ws.go and the agent's
+			// phonehome client both leave the default handler in place).
+			readErr := make(chan error, 1)
+			go func() {
+				for {
+					if _, _, err := conn.ReadMessage(); err != nil {
+						readErr <- err
+						return
+					}
+				}
+			}()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			// Guards the regression this change could introduce: a read deadline
+			// that is not refreshed on pong would drop healthy agents.
+			Consistently(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 3*readTimeout, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(readErr).NotTo(Receive())
 		})
 	})
 
