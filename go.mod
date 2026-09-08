@@ -11,7 +11,7 @@ require (
 	github.com/containerd/containerd/v2 v2.3.4
 	github.com/diskfs/go-diskfs v1.9.4
 	github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29
-	github.com/foxboron/sbctl v0.0.0-20250917190250-6b8ed8715652
+	github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/go-multierror v1.1.1
