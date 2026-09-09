@@ -108,8 +108,11 @@ jobs:
       # binfmt only writes to /proc/sys/fs/binfmt_misc, so give it the host
       # network and never create a bridge port. Same reason as the network=host
       # driver-opt on buildx below.
+      # Pinned by digest: this step installs the emulators every cross-arch
+      # build then depends on, so it must not change under us.
+      # tonistiigi/binfmt:qemu-v9.2.2
       - name: Set up QEMU
-        run: docker run --rm --privileged --network host docker.io/tonistiigi/binfmt:latest --install all
+        run: docker run --rm --privileged --network host docker.io/tonistiigi/binfmt@sha256:1b804311fe87047a4c96d38b4b3ef6f62fca8cd125265917a9e3dc3c996c39e6 --install all
       - name: Set up Docker Buildx
         id: buildx
         uses: docker/setup-buildx-action@v4
