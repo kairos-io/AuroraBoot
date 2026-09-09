@@ -26,12 +26,17 @@ Arguments:
 
 Options:
   --debug             Enable debug logging for troubleshooting.
+  --grub-cfg          Path to the livecd grub config, so the netboot cmdline matches the ISO.
 
 Example:
   start-pixie user-data.yaml rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
 `,
 	ArgsUsage: "<cloud-config-file> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
 	Flags: []cli.Flag{
+		&cli.StringFlag{
+			Name:  "grub-cfg",
+			Usage: "Path to the livecd grub config extracted by the netboot command, to boot with the same cmdline as the ISO",
+		},
 		&cli.BoolFlag{
 			Name:  "debug",
 			Usage: "Enable debug logging",
@@ -69,6 +74,7 @@ Example:
 			func() string { return squashFSfile }, // Wrap squashFSfile in a function
 			func() string { return initrdFile },   // Wrap initrdFile in a function
 			func() string { return kernelFile },   // Wrap kernelFile in a function
+			func() string { return c.String("grub-cfg") },
 			nb,
 		)
 
