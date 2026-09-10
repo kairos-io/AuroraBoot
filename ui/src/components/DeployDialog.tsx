@@ -63,6 +63,12 @@ export function DeployDialog({
   const [pxeLoading, setPxeLoading] = useState(false);
   const [netbootLogs, setNetbootLogs] = useState("");
   const logPaneRef = useRef<HTMLPreElement | null>(null);
+  // Bumped whenever a new netboot session starts, so a getNetbootLogs()
+  // response from before Start (or from a stale reconnect resync) can be
+  // told apart from the current session and dropped instead of overwriting
+  // a freshly-cleared pane (kairos-io/AuroraBoot#806 review).
+  const netbootEpochRef = useRef(0);
+  const netbootStatusRef = useRef<NetbootStatus | null>(null);
 
   // RedFish state
   const [bmcTargets, setBmcTargets] = useState<BMCTarget[]>([]);
@@ -110,7 +116,12 @@ export function DeployDialog({
   useEffect(() => {
     if (hasNetboot) {
       getNetbootStatus().then(setNetbootStatus).catch(() => {});
-      getNetbootLogs().then(setNetbootLogs).catch(() => {});
+      const epoch = netbootEpochRef.current;
+      getNetbootLogs()
+        .then((text) => {
+          if (netbootEpochRef.current === epoch) setNetbootLogs(text);
+        })
+        .catch(() => {});
     }
     if (hasIso) {
       listBMCTargets().then(setBmcTargets).catch(() => {});
@@ -118,16 +129,38 @@ export function DeployDialog({
     }
   }, [hasNetboot, hasIso]);
 
+  useEffect(() => {
+    netbootStatusRef.current = netbootStatus;
+  });
+
   // Live PXE server output (kairos-io/kairos#4596): the snapshot fetch above
   // gets you caught up, this keeps you live while the dialog is open. There
   // is at most one netboot session at a time, so every chunk belongs to the
   // session currently shown here — no id to filter on.
-  useUIWebSocket((msg) => {
+  const { connected: wsConnected } = useUIWebSocket((msg) => {
     if (msg.type !== "netboot-log" || !hasNetboot) return;
     const data = msg.data as { chunk?: string };
     if (!data.chunk) return;
     setNetbootLogs((prev) => prev + data.chunk);
   });
+
+  // Re-sync the log snapshot once per WebSocket (re)connection, the same
+  // pattern ArtifactDetail uses for build logs: a drop that misses live
+  // chunks would otherwise leave the pane silently incomplete. Guarded by
+  // the same epoch as the initial fetch, so a resync racing a fresh Start
+  // can't overwrite it either.
+  const lastWsConnected = useRef(false);
+  useEffect(() => {
+    const justConnected = wsConnected && !lastWsConnected.current;
+    lastWsConnected.current = wsConnected;
+    if (!justConnected || !hasNetboot || !netbootStatusRef.current?.running) return;
+    const epoch = netbootEpochRef.current;
+    getNetbootLogs()
+      .then((text) => {
+        if (netbootEpochRef.current === epoch) setNetbootLogs(text);
+      })
+      .catch(() => {});
+  }, [wsConnected, hasNetboot]);
 
   // Auto-scroll the log pane to the newest line as chunks arrive.
   useEffect(() => {
@@ -186,6 +219,9 @@ export function DeployDialog({
       } else {
         // A fresh session gets a fresh pane: the server resets its own log
         // buffer on Start, so stale text from a previous run must not linger.
+        // Bump the epoch first so any in-flight getNetbootLogs() response
+        // from before this Start is recognized as stale and dropped.
+        netbootEpochRef.current += 1;
         setNetbootLogs("");
         await startNetboot(artifactId);
       }

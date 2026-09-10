@@ -56,7 +56,9 @@ func NewManager(logSink LogSink) *Manager {
 
 // logWriter tees a running command's output to the process's own
 // stdout/stderr (unchanged operational behaviour), into the Manager's bounded
-// snapshot buffer, and — line by line — to the live broadcaster.
+// snapshot buffer, and to the live broadcaster. Each Write() call forwards
+// its raw chunk as one broadcast; chunks are not split into lines, so a
+// broadcast can carry a partial line.
 type logWriter struct {
 	m      *Manager
 	passOn io.Writer
