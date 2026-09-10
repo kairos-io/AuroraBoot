@@ -2,35 +2,120 @@ package netbootmgr
 
 import (
 	"fmt"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 )
+
+// bindAddress is the address the netboot server listens on. It is a wildcard
+// because the server has to answer PXE clients on whichever interface they
+// arrive from, which is also why it can never double as the address to hand
+// out; see AdvertisedAddress.
+const bindAddress = "0.0.0.0"
 
 // Status represents the current state of the netboot server.
 type Status struct {
 	Running    bool   `json:"running"`
 	ArtifactID string `json:"artifactId,omitempty"`
-	Address    string `json:"address"`
-	Port       string `json:"port"`
+	// Address is the address the server binds to, always the wildcard.
+	Address string `json:"address"`
+	// AdvertisedAddress is the host to reach the server on: the host of the
+	// configured external URL, or a local interface address when there is none.
+	AdvertisedAddress string `json:"advertisedAddress"`
+	Port              string `json:"port"`
 }
 
 // Manager manages a PXE/netboot server lifecycle.
 type Manager struct {
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	status  Status
-	address string
-	port    string
+	mu            sync.Mutex
+	cmd           *exec.Cmd
+	status        Status
+	address       string
+	advertisedURL string
+	port          string
 }
 
-// NewManager creates a new netboot Manager with default settings.
-func NewManager() *Manager {
+// NewManager creates a new netboot Manager. advertisedURL is the externally
+// reachable URL of this AuroraBoot instance (--url / AURORABOOT_URL); only its
+// host is used, since the netboot server has its own port. It may be empty.
+func NewManager(advertisedURL string) *Manager {
 	return &Manager{
-		address: "0.0.0.0",
-		port:    "8090",
+		address:       bindAddress,
+		advertisedURL: advertisedURL,
+		port:          "8090",
 	}
+}
+
+// advertisedHost is the host clients should use to reach the netboot server.
+// The configured external URL wins; failing that a local interface address is
+// better than handing out the wildcard, which is reachable from nowhere.
+func advertisedHost(advertisedURL string) string {
+	if h := hostFromURL(advertisedURL); h != "" {
+		return h
+	}
+	if ip := localIPv4(); ip != "" {
+		return ip
+	}
+	return bindAddress
+}
+
+// hostFromURL extracts the host from a URL, tolerating a bare "host" or
+// "host:port" with no scheme, which url.Parse reads as a scheme or a path.
+func hostFromURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	// Once a scheme separator is present url.Parse is authoritative. Falling
+	// through to SplitHostPort would read "http://" as host "http", port "//".
+	if strings.Contains(raw, "//") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return ""
+		}
+		return u.Hostname()
+	}
+	if h, _, err := net.SplitHostPort(raw); err == nil && h != "" {
+		return h
+	}
+	if !strings.ContainsAny(raw, "/:") {
+		return raw
+	}
+	return ""
+}
+
+// localIPv4 returns an IPv4 address of the first up, non-loopback interface.
+// Link-local addresses are skipped: they name an interface nobody can route to.
+func localIPv4() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipNet.IP.To4()
+			if ip4 == nil || ip4.IsLinkLocalUnicast() {
+				continue
+			}
+			return ip4.String()
+		}
+	}
+	return ""
 }
 
 // Start launches the netboot server for the given artifact.
@@ -72,7 +157,10 @@ func (m *Manager) Start(artifactsDir, artifactID string) error {
 		Running:    true,
 		ArtifactID: artifactID,
 		Address:    m.address,
-		Port:       m.port,
+		// Resolved per start, not once in NewManager, so an interface that came
+		// up after the fleet server did is still picked up.
+		AdvertisedAddress: advertisedHost(m.advertisedURL),
+		Port:              m.port,
 	}
 
 	// Wait for the process in the background so we can detect if it exits.
