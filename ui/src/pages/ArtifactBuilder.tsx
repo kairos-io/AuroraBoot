@@ -733,6 +733,7 @@ export function ArtifactBuilder() {
   // Advanced cloud-config
   const [advancedConfig, setAdvancedConfig] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
+  const [showFullCloudConfigPreview, setShowFullCloudConfigPreview] = useState(false);
 
   // Real phonehome values for the Review-step preview, same source Import.tsx
   // uses for its curl command. Kept separate from the submitted form: the
@@ -2848,14 +2849,37 @@ export function ArtifactBuilder() {
                 </div>
 
                 {/* Cloud Config Preview */}
-                {(advancedConfig.trim() || userMode !== "default") && (
-                  <div className="border-t pt-3">
-                    <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Cloud Config Preview</p>
-                    <pre className="text-xs font-mono bg-muted/50 rounded p-3 overflow-x-auto max-h-40 overflow-y-auto whitespace-pre-wrap">
-                      {buildCloudConfig().slice(0, 500)}{buildCloudConfig().length > 500 ? "\n..." : ""}
-                    </pre>
-                  </div>
-                )}
+                {(advancedConfig.trim() || userMode !== "default") && (() => {
+                  const fullCloudConfig = buildCloudConfig();
+                  const isTruncated = fullCloudConfig.length > 500;
+                  const previewText =
+                    !isTruncated || showFullCloudConfigPreview
+                      ? fullCloudConfig
+                      : fullCloudConfig.slice(0, 500) + "\n...";
+                  return (
+                    <div className="border-t pt-3">
+                      <div className="flex items-center justify-between mb-1">
+                        <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cloud Config Preview</p>
+                        {isTruncated && (
+                          <button
+                            type="button"
+                            className="text-xs text-primary hover:underline"
+                            onClick={() => setShowFullCloudConfigPreview(!showFullCloudConfigPreview)}
+                          >
+                            {showFullCloudConfigPreview ? "Show less" : "View full"}
+                          </button>
+                        )}
+                      </div>
+                      <pre
+                        className={`text-xs font-mono bg-muted/50 rounded p-3 overflow-x-auto overflow-y-auto whitespace-pre-wrap ${
+                          showFullCloudConfigPreview ? "max-h-96" : "max-h-40"
+                        }`}
+                      >
+                        {previewText}
+                      </pre>
+                    </div>
+                  );
+                })()}
               </CardContent>
             </Card>
           </div>
