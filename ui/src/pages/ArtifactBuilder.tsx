@@ -1047,6 +1047,11 @@ export function ArtifactBuilder() {
     return buildCloudConfigPreview({
       autoInstall: form.provisioning.autoInstall,
       registerAuroraBoot: form.provisioning.registerAuroraBoot,
+      // Single-URL deployments (the common case) serve the dashboard from
+      // the same external URL nodes register against -- see AURORABOOT_URL
+      // server-side. Good enough for a preview; the backend remains the
+      // source of truth at build time.
+      serverURL: window.location.origin,
       groupName,
       allowedCommands: form.provisioning.allowedCommands ?? [],
       variant: form.variant,

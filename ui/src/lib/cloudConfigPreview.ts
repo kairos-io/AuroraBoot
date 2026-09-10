@@ -6,6 +6,12 @@ type YamlValue = unknown;
 export interface CloudConfigPreviewInput {
   autoInstall: boolean;
   registerAuroraBoot: boolean;
+  // The externally reachable URL this AuroraBoot instance registers nodes
+  // against (AURORABOOT_URL server-side). Shown as-is in the preview -- it's
+  // not a secret, and hiding it made a real http-vs-https misconfiguration
+  // undebuggable from the UI. Falls back to a placeholder only if the caller
+  // couldn't determine it.
+  serverURL: string;
   groupName: string;
   allowedCommands: readonly string[];
   variant: string;
@@ -71,7 +77,7 @@ export function buildCloudConfigPreview(input: CloudConfigPreviewInput): string 
 
   if (input.registerAuroraBoot) {
     doc.phonehome = {
-      url: "<server-url>",
+      url: input.serverURL || "<server-url>",
       registration_token: "<token>",
       group: input.groupName,
       allowed_commands: [...input.allowedCommands],

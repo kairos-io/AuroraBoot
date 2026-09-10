@@ -7,6 +7,7 @@ import { PHONEHOME_SAFE_DEFAULTS } from "./buildConfig";
 const base: Parameters<typeof buildCloudConfigPreview>[0] = {
   autoInstall: true,
   registerAuroraBoot: true,
+  serverURL: "https://fleet.example.com",
   groupName: "production",
   allowedCommands: [...PHONEHOME_SAFE_DEFAULTS],
   variant: "standard",
@@ -87,5 +88,18 @@ describe("buildCloudConfigPreview", () => {
       extraYAML: `${protoKey}:\n  polluted: true\nk3s:\n  enabled: false`,
     });
     expect(Object.prototype).not.toHaveProperty("polluted");
+  });
+
+  it("shows the real server URL in phonehome, but keeps the token masked", () => {
+    const doc = docBody(buildCloudConfigPreview(base));
+    const phonehome = doc.phonehome as Record<string, unknown>;
+    expect(phonehome.url).toBe("https://fleet.example.com");
+    expect(phonehome.registration_token).toBe("<token>");
+  });
+
+  it("falls back to a placeholder URL when the caller couldn't determine one", () => {
+    const doc = docBody(buildCloudConfigPreview({ ...base, serverURL: "" }));
+    const phonehome = doc.phonehome as Record<string, unknown>;
+    expect(phonehome.url).toBe("<server-url>");
   });
 });
