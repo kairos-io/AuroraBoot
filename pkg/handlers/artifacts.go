@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/rand"
@@ -63,6 +64,13 @@ type ArtifactHandler struct {
 	regToken       string
 	aurorabootURL  string
 	artifactsDir   string
+
+	// exportImage is the artifact image export pipeline. Real servers run
+	// dockerFlattenExport; tests swap in a fake so the endpoint's queueing and
+	// error handling can be exercised without a docker daemon.
+	exportImage imageExportFunc
+	// exportLocks serializes exports per artifact ID.
+	exportLocks *exportLocks
 }
 
 // NewArtifactHandler creates a new ArtifactHandler.
@@ -75,6 +83,8 @@ func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactS
 		regToken:       regToken,
 		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
+		exportImage:    dockerFlattenExport,
+		exportLocks:    newExportLocks(),
 	}
 }
 
@@ -1002,9 +1012,82 @@ func extractOverlayTarGz(r io.Reader, destDir string) error {
 	return nil
 }
 
+// imageExportFunc streams a flattened, single-layer OCI tar of containerImage
+// into w. It must not write to w until the export has actually produced output,
+// so a pipeline that dies on its first command can still be answered with a
+// JSON error status rather than a truncated 200. dockerFlattenExport is the
+// production implementation; tests substitute their own.
+type imageExportFunc func(ctx context.Context, containerImage string, w io.Writer) error
+
+// exportNameSuffix returns the random component of the docker object names used
+// by one export.
+func exportNameSuffix() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating export name: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// exportObjectNames returns the container name and flat image tag for a single
+// export.
+//
+// These used to be derived from the artifact ID alone. Two nodes upgrading to
+// the same artifact therefore raced on one container name, and the loser got
+// "container name is already in use" as an HTTP 500 (kairos-io/kairos#4195).
+// Worse, the deferred `docker rmi` of whichever export finished first deleted
+// the tag the other one was still saving from. A per-export random suffix keeps
+// the objects private to their request; the shared prefix keeps them greppable
+// for cleanup after a crash.
+func exportObjectNames() (containerName, imageTag string, err error) {
+	suffix, err := exportNameSuffix()
+	if err != nil {
+		return "", "", err
+	}
+	return "auroraboot-export-" + suffix, "auroraboot-flat:" + suffix, nil
+}
+
+// firstByteResponseWriter defers the 200 and the download headers until the
+// export writes its first byte, and reports afterwards whether anything reached
+// the client.
+//
+// The previous code committed the headers before running `docker save`. A save
+// that failed immediately - flattened image reaped, daemon out of disk - left
+// the node reading an empty body behind a 200, which is indistinguishable from
+// a successful export of nothing. Now that case is a 500 the agent retries.
+type firstByteResponseWriter struct {
+	c        echo.Context
+	filename string
+	wrote    bool
+}
+
+func (w *firstByteResponseWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	w.commit()
+	return w.c.Response().Write(p)
+}
+
+// commit sends the 200 and the download headers, once.
+func (w *firstByteResponseWriter) commit() {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	h := w.c.Response().Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", w.filename))
+	w.c.Response().WriteHeader(http.StatusOK)
+}
+
 // ExportImage handles GET /api/v1/artifacts/:id/image.
 // Flattens multi-layer images via docker export + import + save to avoid
 // symlink ordering issues across OCI layers (e.g. /boot/vmlinuz).
+//
+// Exports of one artifact are serialized: a batch upgrade points the whole
+// fleet at the same artifact at the same moment, and this endpoint is far too
+// expensive to run once per node in parallel (kairos-io/kairos#4195).
 func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
@@ -1017,47 +1100,100 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "no container image"})
 	}
 
-	// Flatten the image to a single layer to avoid symlink ordering issues.
-	// Multi-layer OCI images can have conflicting symlinks across layers
-	// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer).
-	// Pipeline: docker create → docker export (flat tar) → docker import (single-layer image) → docker save (OCI tar)
-	flatImage := fmt.Sprintf("auroraboot-flat:%s", id)
-	cid := fmt.Sprintf("auroraboot-export-%s", id)
-
-	// Create container and export flat tar, pipe into docker import
-	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, rec.ContainerImage, "true")
-	if err := createCmd.Run(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("creating container for export: %v", err)})
+	release, err := h.exportLocks.acquire(ctx, id)
+	if err != nil {
+		// The caller hung up or timed out while queued. 503 rather than a 4xx:
+		// nothing about the request was wrong, and the agent classifies 5xx as
+		// retryable, which is the behavior we want here.
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error": fmt.Sprintf("waiting for an artifact export slot: %v", err),
+		})
 	}
-	defer exec.Command("docker", "rm", cid).Run()
+	defer release()
 
-	// Export flat tar and import as single-layer image
+	w := &firstByteResponseWriter{c: c, filename: id + ".tar"}
+	if err := h.exportImage(ctx, rec.ContainerImage, w); err != nil {
+		if w.wrote {
+			// The 200 and part of the tar are already on the wire. The client
+			// sees a short read, treats it as transient and retries; there is
+			// no status left to change.
+			return err
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("exporting artifact image: %v", err),
+		})
+	}
+	// An export that reported success without writing anything still gets the
+	// download headers, so the response shape does not depend on how much
+	// docker save produced.
+	w.commit()
+	return nil
+}
+
+// dockerFlattenExport runs docker create -> export -> import -> save and streams
+// the resulting single-layer OCI tar into w.
+func dockerFlattenExport(ctx context.Context, containerImage string, w io.Writer) error {
+	cid, flatImage, err := exportObjectNames()
+	if err != nil {
+		return err
+	}
+
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, containerImage, "true")
+	var createErr bytes.Buffer
+	createCmd.Stderr = &createErr
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("creating container for export: %w%s", err, stderrDetail(&createErr))
+	}
+	// Cleanup deliberately runs without ctx: a cancelled request must still
+	// reclaim the container it created.
+	defer func() { _ = exec.Command("docker", "rm", cid).Run() }()
+
 	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
 	importCmd := exec.CommandContext(ctx, "docker", "import", "-", flatImage)
+	var exportErr, importErr bytes.Buffer
+	exportCmd.Stderr = &exportErr
+	importCmd.Stderr = &importErr
+
 	importCmd.Stdin, err = exportCmd.StdoutPipe()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "pipe setup failed"})
+		return fmt.Errorf("pipe setup failed: %w", err)
 	}
-
 	if err := importCmd.Start(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "docker import start failed"})
+		return fmt.Errorf("docker import start failed: %w", err)
 	}
 	if err := exportCmd.Run(); err != nil {
-		importCmd.Process.Kill()
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker export failed: %v", err)})
+		_ = importCmd.Process.Kill()
+		_ = importCmd.Wait()
+		return fmt.Errorf("docker export failed: %w%s", err, stderrDetail(&exportErr))
 	}
 	if err := importCmd.Wait(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker import failed: %v", err)})
+		return fmt.Errorf("docker import failed: %w%s", err, stderrDetail(&importErr))
 	}
-	defer exec.Command("docker", "rmi", flatImage).Run()
+	defer func() { _ = exec.Command("docker", "rmi", flatImage).Run() }()
 
-	c.Response().Header().Set("Content-Type", "application/octet-stream")
-	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", id))
+	saveCmd := exec.CommandContext(ctx, "docker", "save", flatImage)
+	var saveErr bytes.Buffer
+	saveCmd.Stdout = w
+	saveCmd.Stderr = &saveErr
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("docker save failed: %w%s", err, stderrDetail(&saveErr))
+	}
+	return nil
+}
 
-	// Save the single-layer image as proper OCI tar
-	cmd := exec.CommandContext(ctx, "docker", "save", flatImage)
-	cmd.Stdout = c.Response().Writer
-	return cmd.Run()
+// stderrDetail appends a trimmed tail of a docker command's stderr to an error.
+// Without it every failure here reads "exit status 1", which tells an operator
+// staring at a stalled fleet upgrade nothing at all.
+func stderrDetail(buf *bytes.Buffer) string {
+	msg := strings.TrimSpace(buf.String())
+	if msg == "" {
+		return ""
+	}
+	const maxDetail = 512
+	if len(msg) > maxDetail {
+		msg = msg[len(msg)-maxDetail:]
+	}
+	return ": " + msg
 }
 
 // cloudConfigParams collects the inputs needed to assemble a node's cloud-config.
@@ -1069,15 +1205,15 @@ type cloudConfigParams struct {
 	groupName          string
 	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
 	// Callers substitute phonehomeSafeDefaults for nil input before calling.
-	allowedCommands []string
+	allowedCommands   []string
 	variant           string // "core" or "standard"
 	kubernetesDistro  string // "k3s" or "k0s" when variant=standard
 	kubernetesEnabled bool   // cloud-config k3s/k0s.enabled (standard variant only)
 	userMode          string // "default", "custom", "none"
-	username        string
-	password        string
-	sshKeys         string // newline-separated public keys
-	extraYAML       string // optional: appended verbatim after the canonical block
+	username          string
+	password          string
+	sshKeys           string // newline-separated public keys
+	extraYAML         string // optional: appended verbatim after the canonical block
 }
 
 // buildCloudConfig assembles a Kairos cloud-config YAML document from structured
