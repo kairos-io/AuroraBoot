@@ -927,6 +927,7 @@ export function ArtifactBuilder() {
             kubernetesDistro: a.kubernetesDistro || "",
             kubernetesVersion: a.kubernetesVersion || "",
             kubernetesEnabled: a.variant === "standard" ? a.kubernetesEnabled ?? true : true,
+            kairosInitImage: a.kairosInitImage || "",
             outputs: {
               iso: a.iso,
               cloudImage: a.cloudImage,
