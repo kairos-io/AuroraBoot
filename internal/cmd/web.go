@@ -282,7 +282,11 @@ func runWeb(c *cli.Context) error {
 	bmcTargetStore := &gormstore.BMCTargetStoreAdapter{S: store}
 	settingsStore := &gormstore.SettingsStoreAdapter{S: store}
 
-	netbootManager := netbootmgr.NewManager(wsHub.UI)
+	// Read --url again rather than passing externalURL: the fallback above
+	// rewrites externalURL to this container's own hostname, which is exactly
+	// the value nodes cannot resolve. With no --url the manager is better off
+	// finding a local interface address itself.
+	netbootManager := netbootmgr.NewManager(c.String("url"), wsHub.UI)
 
 	// Optional Redfish ISO-serve: serves a local artifact ISO over a tokenized,
 	// BMC-reachable URL so virtual-media (URL-pull) deploys work without an

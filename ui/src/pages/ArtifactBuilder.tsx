@@ -9,11 +9,12 @@ import {
   type SecureBootKeySet,
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
+import { getRegistrationToken } from "@/api/settings";
 import {
   PHONEHOME_SAFE_DEFAULTS,
   PHONEHOME_DESTRUCTIVE_COMMANDS,
 } from "@/lib/buildConfig";
-import { buildCloudConfigPreview } from "@/lib/cloudConfigPreview";
+import { buildCloudConfigPreview, stripPhonehome } from "@/lib/cloudConfigPreview";
 import { renderHadronMiddleContent } from "@/lib/hadronContent";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -733,11 +734,18 @@ export function ArtifactBuilder() {
   const [advancedConfig, setAdvancedConfig] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
 
+  // Real phonehome values for the Review-step preview, same source Import.tsx
+  // uses for its curl command. Kept separate from the submitted form: the
+  // backend re-injects these from live settings at build time, so the
+  // preview only needs to read them, never send them.
+  const [registrationToken, setRegistrationToken] = useState("");
+
   const importInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     listGroups().then(setGroups).catch(() => {});
     listSecureBootKeySets().then(setKeySets).catch(() => {});
+    getRegistrationToken().then((t) => setRegistrationToken(t.token)).catch(() => {});
   }, []);
 
   // After focusFirstError queues a focusTarget and setStep has re-rendered
@@ -927,6 +935,7 @@ export function ArtifactBuilder() {
             kubernetesDistro: a.kubernetesDistro || "",
             kubernetesVersion: a.kubernetesVersion || "",
             kubernetesEnabled: a.variant === "standard" ? a.kubernetesEnabled ?? true : true,
+            kairosInitImage: a.kairosInitImage || "",
             outputs: {
               iso: a.iso,
               cloudImage: a.cloudImage,
@@ -949,7 +958,7 @@ export function ArtifactBuilder() {
             },
           });
           if (a.cloudConfig) {
-            setAdvancedConfig(a.cloudConfig);
+            setAdvancedConfig(stripPhonehome(a.cloudConfig));
             setShowAdvanced(true);
             setUserMode("none");
           }
@@ -998,7 +1007,7 @@ export function ArtifactBuilder() {
         });
         if (a.dockerfile) setBuildMode("dockerfile");
         if (a.cloudConfig) {
-          setAdvancedConfig(a.cloudConfig);
+          setAdvancedConfig(stripPhonehome(a.cloudConfig));
           setShowAdvanced(true);
           setUserMode("none");
         }
@@ -1056,6 +1065,8 @@ export function ArtifactBuilder() {
       password,
       sshKeys,
       extraYAML: advancedConfig,
+      registrationUrl: window.location.origin,
+      registrationToken,
     });
   }
 

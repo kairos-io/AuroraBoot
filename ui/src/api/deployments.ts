@@ -102,7 +102,10 @@ export interface DeployProgress {
 export interface NetbootStatus {
   running: boolean;
   artifactId: string;
+  /** Bind address, always the wildcard. Display advertisedAddress instead. */
   address: string;
+  /** Host clients should reach the netboot server on. */
+  advertisedAddress?: string;
   port: string;
 }
 

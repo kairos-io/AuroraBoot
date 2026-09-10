@@ -315,7 +315,7 @@ export function DeployDialog({
                 </div>
                 {netbootStatus?.running && (
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p>Address: <span className="font-mono">{netbootStatus.address}:{netbootStatus.port}</span></p>
+                    <p>Address: <span className="font-mono">{netbootStatus.advertisedAddress || netbootStatus.address}:{netbootStatus.port}</span></p>
                     <p>Artifact: <span className="font-mono">{netbootStatus.artifactId.slice(0, 12)}</span></p>
                   </div>
                 )}
