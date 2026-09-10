@@ -14,10 +14,14 @@ var StartPixieCmd = cli.Command{
 	Name:    "start-pixie",
 	Aliases: []string{"sp"},
 	Usage:   "Start the Pixiecore netboot server and serve custom PXE files (kernel, initrd, squashfs) with a cloud-config.",
-	Description: `Start a Pixiecore-based PXE server to serve a kernel, initrd, and squashfs image for network booting. 
+	Description: `Start a Pixiecore-based PXE server to serve a kernel, initrd, and squashfs image for network booting.
 
 Arguments:
-  cloud-config-file   Path to the cloud-init or cloud-config YAML file.
+  cloud-config-file   Path to the cloud-init or cloud-config YAML file, or ""
+                       to boot without serving one over config_url. An empty
+                       value is only safe when the booted image already has
+                       everything it needs baked in from build time; a fully
+                       unconfigured image will boot but never install itself.
   squashfs-file       Path to the root filesystem squashfs image.
   address             IP address to bind the server (e.g., 0.0.0.0).
   port                Port for the netboot server (e.g., 8080).
@@ -29,8 +33,9 @@ Options:
 
 Example:
   start-pixie user-data.yaml rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
+  start-pixie "" rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
 `,
-	ArgsUsage: "<cloud-config-file> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
+	ArgsUsage: "<cloud-config-file|\"\"> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
 	Flags: []cli.Flag{
 		&cli.BoolFlag{
 			Name:  "debug",
@@ -62,6 +67,12 @@ Example:
 			loglevel = "debug"
 		}
 		internal.Log = logger.NewKairosLogger("AuroraBoot", loglevel, false)
+
+		if cloudConfigFile == "" {
+			internal.Log.Logger.Warn().Msg("no cloud-config-file given: netbooting without config_url. " +
+				"This is only safe if the image already has everything it needs baked in from build time -- " +
+				"an image with no cloud-config attached at all will boot but never install itself.")
+		}
 
 		// Optionally parse NetBoot from flags here if desired
 		nb := schema.NetBoot{} // Use defaults, or parse from CLI flags
