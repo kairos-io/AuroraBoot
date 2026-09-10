@@ -298,7 +298,11 @@ func runWeb(c *cli.Context) error {
 	bundleStore := &gormstore.ArtifactExtensionBundleStoreAdapter{S: store}
 	nodeExtensionStore := &gormstore.NodeExtensionStoreAdapter{S: store}
 
-	netbootManager := netbootmgr.NewManager()
+	// Read --url again rather than passing externalURL: the fallback above
+	// rewrites externalURL to this container's own hostname, which is exactly
+	// the value nodes cannot resolve. With no --url the manager is better off
+	// finding a local interface address itself.
+	netbootManager := netbootmgr.NewManager(c.String("url"))
 
 	// Optional Redfish ISO-serve: serves a local artifact ISO over a tokenized,
 	// BMC-reachable URL so virtual-media (URL-pull) deploys work without an
