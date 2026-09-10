@@ -1,4 +1,4 @@
-import { apiFetch } from "./client";
+import { apiFetch, apiFetchText } from "./client";
 
 // EjectState is the finalize/eject lifecycle of a deployment. "" means the
 // deployment is not armed for eject (policy off); the rest track the auto/manual
@@ -206,6 +206,12 @@ export const startNetboot = (artifactId: string) =>
     method: "POST",
     body: JSON.stringify({ artifactId }),
   });
+
+// getNetbootLogs fetches a snapshot of the current (or most recent) PXE
+// session's captured output. For live updates, subscribe to the UI
+// WebSocket and filter {type: "netboot-log"} envelopes.
+export const getNetbootLogs = (): Promise<string> =>
+  apiFetchText("/api/v1/netboot/logs");
 
 export const stopNetboot = () =>
   apiFetch("/api/v1/netboot/stop", { method: "POST" });

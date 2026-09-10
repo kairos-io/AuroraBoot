@@ -160,6 +160,21 @@ func (h *UIHub) BroadcastLogChunk(buildID string, chunk string) {
 	})
 }
 
+// BroadcastNetbootLogChunk fans out a chunk of the PXE/netboot server's live
+// output to every connected UI client as a
+// {"type":"netboot-log","data":{"chunk":…}} envelope, so a client watching a
+// PXE boot in progress can see why it stalls or fails (kairos-io/kairos#4596).
+// There is at most one netboot session at a time (internal/netbootmgr.Manager
+// is a singleton), so unlike build-log there is no id to filter on.
+func (h *UIHub) BroadcastNetbootLogChunk(chunk string) {
+	h.Broadcast(map[string]any{
+		"type": "netboot-log",
+		"data": map[string]any{
+			"chunk": chunk,
+		},
+	})
+}
+
 // IsOnline returns true if the node has an active WebSocket connection.
 func (h *Hub) IsOnline(nodeID string) bool {
 	h.mu.RLock()

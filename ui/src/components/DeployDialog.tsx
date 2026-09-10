@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   Dialog,
@@ -31,8 +31,10 @@ import {
   getNetbootStatus,
   startNetboot,
   stopNetboot,
+  getNetbootLogs,
 } from "@/api/deployments";
 import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
+import { useUIWebSocket } from "@/hooks/useUIWebSocket";
 
 // Minimum hardware AuroraBoot wants before deploying. Kept deliberately simple
 // and visible: a node below either threshold raises a warning that the operator
@@ -59,6 +61,8 @@ export function DeployDialog({
   // PXE state
   const [netbootStatus, setNetbootStatus] = useState<NetbootStatus | null>(null);
   const [pxeLoading, setPxeLoading] = useState(false);
+  const [netbootLogs, setNetbootLogs] = useState("");
+  const logPaneRef = useRef<HTMLPreElement | null>(null);
 
   // RedFish state
   const [bmcTargets, setBmcTargets] = useState<BMCTarget[]>([]);
@@ -106,12 +110,30 @@ export function DeployDialog({
   useEffect(() => {
     if (hasNetboot) {
       getNetbootStatus().then(setNetbootStatus).catch(() => {});
+      getNetbootLogs().then(setNetbootLogs).catch(() => {});
     }
     if (hasIso) {
       listBMCTargets().then(setBmcTargets).catch(() => {});
       listQuirkProfiles().then(setProfiles).catch(() => {});
     }
   }, [hasNetboot, hasIso]);
+
+  // Live PXE server output (kairos-io/kairos#4596): the snapshot fetch above
+  // gets you caught up, this keeps you live while the dialog is open. There
+  // is at most one netboot session at a time, so every chunk belongs to the
+  // session currently shown here — no id to filter on.
+  useUIWebSocket((msg) => {
+    if (msg.type !== "netboot-log" || !hasNetboot) return;
+    const data = msg.data as { chunk?: string };
+    if (!data.chunk) return;
+    setNetbootLogs((prev) => prev + data.chunk);
+  });
+
+  // Auto-scroll the log pane to the newest line as chunks arrive.
+  useEffect(() => {
+    const el = logPaneRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [netbootLogs]);
 
   // Poll netboot status while running
   useEffect(() => {
@@ -162,6 +184,9 @@ export function DeployDialog({
       if (netbootStatus?.running) {
         await stopNetboot();
       } else {
+        // A fresh session gets a fresh pane: the server resets its own log
+        // buffer on Start, so stale text from a previous run must not linger.
+        setNetbootLogs("");
         await startNetboot(artifactId);
       }
       const status = await getNetbootStatus();
@@ -250,6 +275,29 @@ export function DeployDialog({
                   {netbootStatus?.running ? "Stop Netboot" : "Start Netboot"}
                 </Button>
               </div>
+
+              {/* Live PXE server log, so a stalled/failed boot is debuggable
+                  instead of just a status badge (kairos-io/kairos#4596). Shown
+                  once a session has produced any output, and kept visible
+                  after Stop so a failure can still be read back. */}
+              {netbootLogs && (
+                <div className="rounded-md border">
+                  <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Netboot Log
+                    </span>
+                    {netbootStatus?.running && (
+                      <span className="text-xs text-muted-foreground">live</span>
+                    )}
+                  </div>
+                  <pre
+                    ref={logPaneRef}
+                    className="text-xs font-mono bg-muted/50 rounded-b-md p-3 max-h-64 overflow-y-auto overflow-x-auto whitespace-pre-wrap"
+                  >
+                    {netbootLogs}
+                  </pre>
+                </div>
+              )}
             </TabsContent>
           )}
 

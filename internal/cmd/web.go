@@ -282,7 +282,7 @@ func runWeb(c *cli.Context) error {
 	bmcTargetStore := &gormstore.BMCTargetStoreAdapter{S: store}
 	settingsStore := &gormstore.SettingsStoreAdapter{S: store}
 
-	netbootManager := netbootmgr.NewManager()
+	netbootManager := netbootmgr.NewManager(wsHub.UI)
 
 	// Optional Redfish ISO-serve: serves a local artifact ISO over a tokenized,
 	// BMC-reachable URL so virtual-media (URL-pull) deploys work without an
