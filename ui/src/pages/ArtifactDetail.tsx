@@ -925,11 +925,12 @@ export function ArtifactDetail() {
             {/* Collapse sits last and behind a divider, so the one control
                 that changes the layout is not mistaken for another log action.
                 Matches the Configuration header, where the chevron is also the
-                rightmost element of the row. */}
+                rightmost element of the row. pr-2 on top of the row's px-4
+                lines the glyph up with that px-6 header, to the pixel. */}
             <button
               type="button"
               onClick={() => setLogsOpen((o) => !o)}
-              className="ml-1 h-7 pl-2 pr-0.5 border-l flex items-center rounded-r-sm hover:bg-muted/60"
+              className="ml-1 h-7 pl-2 pr-2 border-l flex items-center rounded-r-sm hover:bg-muted/60"
               title={logsOpen ? "Collapse logs" : "Expand logs"}
               aria-expanded={logsOpen}
               aria-label={logsOpen ? "Collapse logs" : "Expand logs"}
