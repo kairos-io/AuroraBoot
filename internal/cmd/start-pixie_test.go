@@ -22,13 +22,13 @@ var _ = Describe("start-pixie", Label("pixie", "cmd"), func() {
 	It("errors out if no arguments are provided", func() {
 		err = app.Run([]string{"", "start-pixie"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("all arguments are required"))
+		Expect(err.Error()).To(ContainSubstring("all arguments except cloud-config-file are required"))
 	})
 
 	It("errors out if only some arguments are provided", func() {
 		err = app.Run([]string{"", "start-pixie", "cloud.yaml", "rootfs.squashfs"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("all arguments are required"))
+		Expect(err.Error()).To(ContainSubstring("all arguments except cloud-config-file are required"))
 	})
 
 	It("shows help output", func() {

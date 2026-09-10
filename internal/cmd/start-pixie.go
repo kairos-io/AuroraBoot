@@ -46,11 +46,15 @@ Example:
 		initrdFile := c.Args().Get(4)
 		kernelFile := c.Args().Get(5)
 
-		// Simple argument validation
-		if cloudConfigFile == "" || squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
+		// Simple argument validation. cloudConfigFile is allowed to be empty:
+		// it becomes config_url in the boot cmdline (pkg/ops/netboot.go), and
+		// an empty config_url is valid when the image doesn't need one fetched
+		// at netboot time -- the netboot manager relies on this (see
+		// internal/netbootmgr/manager.go's Start).
+		if squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
 			cli.ShowCommandHelp(c, c.Command.Name)
 			fmt.Println("")
-			return fmt.Errorf("all arguments are required")
+			return fmt.Errorf("all arguments except cloud-config-file are required")
 		}
 
 		loglevel := "info"
