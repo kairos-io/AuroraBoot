@@ -11,6 +11,10 @@ export interface Node {
   osRelease: Record<string, string> | null;
   agentVersion: string;
   lastHeartbeat: string | null;
+  // The IP the server observed the node connect from at register or heartbeat
+  // time. Server-side, not agent-reported, so it tracks a DHCP/NAT change even
+  // when the agent sends no addresses at all.
+  remoteIP?: string;
   createdAt: string;
   updatedAt: string;
 }
