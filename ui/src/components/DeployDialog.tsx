@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   Dialog,
@@ -35,6 +35,16 @@ import {
 } from "@/api/deployments";
 import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
+import { ansiToHtml } from "@/lib/ansi";
+
+// Memoized per-line renderer, same reasoning as ArtifactDetail's build-log
+// LogLine: a live netboot session appends one chunk at a time, and without
+// memo every chunk would re-run ansiToHtml over every prior line.
+const NetbootLogLine = memo(function NetbootLogLine({ line }: { line: string }) {
+  return (
+    <div dangerouslySetInnerHTML={{ __html: ansiToHtml(line) || "&nbsp;" }} />
+  );
+});
 
 // Minimum hardware AuroraBoot wants before deploying. Kept deliberately simple
 // and visible: a node below either threshold raises a warning that the operator
@@ -62,7 +72,7 @@ export function DeployDialog({
   const [netbootStatus, setNetbootStatus] = useState<NetbootStatus | null>(null);
   const [pxeLoading, setPxeLoading] = useState(false);
   const [netbootLogs, setNetbootLogs] = useState("");
-  const logPaneRef = useRef<HTMLPreElement | null>(null);
+  const logPaneRef = useRef<HTMLDivElement | null>(null);
   // Bumped whenever a new netboot session starts, so a getNetbootLogs()
   // response from before Start (or from a stale reconnect resync) can be
   // told apart from the current session and dropped instead of overwriting
@@ -132,6 +142,14 @@ export function DeployDialog({
   useEffect(() => {
     netbootStatusRef.current = netbootStatus;
   });
+
+  // Pre-split once per update so ansiToHtml runs per-line (SGR color state
+  // from one line must not bleed into the next) instead of over the whole
+  // buffer.
+  const netbootLogLines = useMemo(
+    () => (netbootLogs ? netbootLogs.split("\n") : []),
+    [netbootLogs],
+  );
 
   // Live PXE server output (kairos-io/kairos#4596): the snapshot fetch above
   // gets you caught up, this keeps you live while the dialog is open. There
@@ -326,12 +344,14 @@ export function DeployDialog({
                       <span className="text-xs text-muted-foreground">live</span>
                     )}
                   </div>
-                  <pre
+                  <div
                     ref={logPaneRef}
                     className="text-xs font-mono bg-muted/50 rounded-b-md p-3 max-h-64 overflow-y-auto overflow-x-auto whitespace-pre-wrap"
                   >
-                    {netbootLogs}
-                  </pre>
+                    {netbootLogLines.map((line, i) => (
+                      <NetbootLogLine key={i} line={line} />
+                    ))}
+                  </div>
                 </div>
               )}
             </TabsContent>

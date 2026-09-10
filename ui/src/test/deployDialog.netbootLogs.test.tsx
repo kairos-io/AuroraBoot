@@ -100,4 +100,35 @@ describe("DeployDialog: netboot log pane", () => {
     wsOnMessage!({ type: "build-log", data: { id: "x", chunk: "unrelated\n" } });
     expect(screen.queryByText(/unrelated/)).not.toBeInTheDocument();
   });
+
+  it("renders ANSI color codes as terminal output instead of raw escape bytes (kairos-io/AuroraBoot#806)", async () => {
+    render(
+      <MemoryRouter>
+        <DeployDialog
+          artifactId="artifact-1"
+          artifactFiles={["kairos.squashfs"]}
+          hasNetboot={true}
+          onClose={() => {}}
+        />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => {
+      expect(screen.getByText(/dhcp: server started/)).toBeInTheDocument();
+    });
+
+    const ESC = "";
+    wsOnMessage!({
+      type: "netboot-log",
+      data: { chunk: `${ESC}[32mtftp: sent kairos-kernel${ESC}[0m\n` },
+    });
+
+    await waitFor(() => {
+      expect(screen.getByText(/tftp: sent kairos-kernel/)).toBeInTheDocument();
+    });
+    // The raw escape sequence must not land in the DOM as literal text.
+    expect(document.body.textContent).not.toContain(`${ESC}[32m`);
+    // ansiToHtml renders SGR color codes as a styled span, not plain text.
+    expect(document.body.innerHTML).toMatch(/<span style="[^"]*">tftp: sent kairos-kernel<\/span>/);
+  });
 });
