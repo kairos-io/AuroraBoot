@@ -57,9 +57,20 @@ func (m *Manager) Start(artifactsDir, artifactID string) error {
 		}
 	}
 
+	// If the artifact was built with a cloud-config attached, it's saved
+	// alongside it as config.yaml. Serve it as config_url so kairos-agent's
+	// sdk/collector (which reads config_url from /proc/cmdline) can fetch
+	// it at boot -- the /oem datasource path only pulls from cloud-provider
+	// metadata services, never from netboot's own HTTP delivery, so this is
+	// the only way a netbooted bare-metal node gets configured at all.
+	cloudConfig := ""
+	if cfgPath := filepath.Join(artifactsDir, artifactID, "config.yaml"); fileExists(cfgPath) {
+		cloudConfig = cfgPath
+	}
+
 	// AuroraBoot start-pixie args: <cloud-config> <squashfs> <address> <port> <initrd> <kernel>
-	// Use empty string for cloud-config (not required for netboot).
-	cmd := exec.Command("auroraboot", "start-pixie", "", squashfs, m.address, m.port, initrd, kernel)
+	// cloud-config may be empty if the artifact was built with none attached.
+	cmd := exec.Command("auroraboot", "start-pixie", cloudConfig, squashfs, m.address, m.port, initrd, kernel)
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 
@@ -117,4 +128,9 @@ func (m *Manager) GetStatus() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.status
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }
