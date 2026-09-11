@@ -217,12 +217,19 @@ func runWeb(c *cli.Context) error {
 	// handed to server.New below so the HTTP routes share it.
 	wsHub := ws.NewHub()
 
+	// Read --url again rather than passing externalURL: the fallback above
+	// rewrites externalURL to this container's own hostname, which is exactly
+	// the value nodes cannot resolve. With no --url the manager is better off
+	// finding a local interface address itself.
+	netbootManager := netbootmgr.NewManager(c.String("url"))
+
 	var artifactBuilder builder.ArtifactBuilder
 	var systemInfo handlers.APISystemBuilder
 	switch builderKind {
 	case "local":
 		artifactBuilder = auroraboot.New(artifactsDir, nil, artifactStore).
-			WithLogBroadcaster(wsHub.UI)
+			WithLogBroadcaster(wsHub.UI).
+			WithNetbootManager(netbootManager)
 		systemInfo = handlers.APISystemBuilder{
 			Backend:           "local",
 			DownloadSupported: true,
@@ -281,12 +288,6 @@ func runWeb(c *cli.Context) error {
 	deploymentStore := &gormstore.DeploymentStoreAdapter{S: store}
 	bmcTargetStore := &gormstore.BMCTargetStoreAdapter{S: store}
 	settingsStore := &gormstore.SettingsStoreAdapter{S: store}
-
-	// Read --url again rather than passing externalURL: the fallback above
-	// rewrites externalURL to this container's own hostname, which is exactly
-	// the value nodes cannot resolve. With no --url the manager is better off
-	// finding a local interface address itself.
-	netbootManager := netbootmgr.NewManager(c.String("url"))
 
 	// Optional Redfish ISO-serve: serves a local artifact ISO over a tokenized,
 	// BMC-reachable URL so virtual-media (URL-pull) deploys work without an
