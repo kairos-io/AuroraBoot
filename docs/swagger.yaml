@@ -948,6 +948,23 @@ paths:
       summary: Claim a node from a group
       tags:
       - Groups
+  /api/v1/netboot/logs:
+    get:
+      description: Returns the current (or most recent) PXE/netboot session's captured
+        output as text/plain. For real-time updates subscribe to the UI WebSocket
+        and filter {type:"netboot-log"} envelopes.
+      produces:
+      - text/plain
+      responses:
+        "200":
+          description: OK
+          schema:
+            type: string
+      security:
+      - AdminBearer: []
+      summary: Get netboot server log snapshot
+      tags:
+      - Netboot
   /api/v1/nodes:
     get:
       description: Returns every registered node. Optional group/label filters.

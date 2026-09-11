@@ -286,7 +286,7 @@ func runWeb(c *cli.Context) error {
 	// rewrites externalURL to this container's own hostname, which is exactly
 	// the value nodes cannot resolve. With no --url the manager is better off
 	// finding a local interface address itself.
-	netbootManager := netbootmgr.NewManager(c.String("url"))
+	netbootManager := netbootmgr.NewManager(c.String("url"), wsHub.UI)
 
 	// Optional Redfish ISO-serve: serves a local artifact ISO over a tokenized,
 	// BMC-reachable URL so virtual-media (URL-pull) deploys work without an

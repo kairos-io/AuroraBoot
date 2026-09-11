@@ -556,6 +556,31 @@
                 }
             }
         },
+        "/api/v1/netboot/logs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the current (or most recent) PXE/netboot session's captured output as text/plain. For real-time updates subscribe to the UI WebSocket and filter {type:\"netboot-log\"} envelopes.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Netboot"
+                ],
+                "summary": "Get netboot server log snapshot",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nodes": {
             "get": {
                 "security": [
