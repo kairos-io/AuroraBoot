@@ -144,6 +144,11 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	}
 	defer conn.Close()
 
+	// Captured once: the connection's remote address does not change over its
+	// life, and the read loop below no longer has c in scope by the time a
+	// heartbeat frame arrives.
+	remoteIP := c.RealIP()
+
 	// Register in hub and mark node online. wc wraps conn with a per-connection
 	// write lock; all writes to this connection (here and from the hub) must go
 	// through it so they don't race.
@@ -235,7 +240,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 
 		switch msg.Type {
 		case "heartbeat":
-			h.handleHeartbeat(node.ID, msg.Data)
+			h.handleHeartbeat(node.ID, msg.Data, remoteIP)
 		case "command_status":
 			h.handleCommandStatus(node.ID, msg.Data)
 		default:
@@ -244,7 +249,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	}
 }
 
-func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
+func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remoteIP string) {
 	var hb heartbeatData
 	if err := json.Unmarshal(data, &hb); err != nil {
 		log.Printf("ws invalid heartbeat from node %s: %v", nodeID, err)
@@ -258,8 +263,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
 	// preserves whatever the node reported there. The hostname is passed through:
 	// an agent that reports one is reporting its current one, and an agent that
-	// does not send "" and leaves the stored value alone.
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname); err != nil {
+	// does not send "" and leaves the stored value alone. remoteIP, unlike those,
+	// is always known here — it is the live connection's address, not something
+	// the agent reports.
+	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP); err != nil {
 		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {

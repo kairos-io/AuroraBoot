@@ -1989,6 +1989,10 @@ const docTemplate = `{
                 "phase": {
                     "type": "string"
                 },
+                "remoteIP": {
+                    "description": "RemoteIP is the IP the server observed the node connect from at register or\nheartbeat time (kairos-io/kairos#4590), independent of Addresses: the node\ndoes not report it, and it survives even when an agent sends no addresses at\nall (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP\nchanges because every heartbeat re-observes and overwrites it.",
+                    "type": "string"
+                },
                 "resetRequestedAt": {
                     "description": "ResetRequestedAt is when the reset command was issued (ResetState set to\npending); nil when no reset has been requested.",
                     "type": "string"

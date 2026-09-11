@@ -258,7 +258,7 @@ func (s *Store) ListBySelector(ctx context.Context, sel store.CommandSelector) (
 	return nodes, nil
 }
 
-func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string) error {
+func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string, remoteIP string) error {
 	var n store.ManagedNode
 	if err := s.db.WithContext(ctx).First(&n, "id = ?", id).Error; err != nil {
 		return err
@@ -288,6 +288,12 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	// not report a hostname must not blank the one already on record.
 	if hostname != "" {
 		n.Hostname = hostname
+	}
+	// Same non-empty guard: a caller that cannot resolve a remote IP (a unit test,
+	// or a future transport that does not expose one) must not blank a value a
+	// prior heartbeat recorded.
+	if remoteIP != "" {
+		n.RemoteIP = remoteIP
 	}
 	return s.db.WithContext(ctx).Save(&n).Error
 }

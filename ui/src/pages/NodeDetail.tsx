@@ -268,6 +268,11 @@ export function NodeDetail() {
               </div>
               <Separator />
               <div className="flex justify-between">
+                <dt className="text-muted-foreground">IP Address</dt>
+                <dd className="font-mono text-xs">{node.remoteIP || "-"}</dd>
+              </div>
+              <Separator />
+              <div className="flex justify-between">
                 <dt className="text-muted-foreground">Last Heartbeat</dt>
                 <dd>{timeAgo(node.lastHeartbeat || "")}</dd>
               </div>
