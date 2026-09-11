@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import { useNavigate, useSearchParams } from "react-router";
 import {
   createArtifact,
@@ -1050,7 +1050,7 @@ export function ArtifactBuilder() {
   // Frontend cloud-config preview — must match buildCloudConfig in
   // pkg/handlers/artifacts.go. The backend is the source of truth at build
   // time; this function only powers the Review-step preview.
-  function buildCloudConfig(): string {
+  const cloudConfigPreview = useMemo(() => {
     const groupName =
       groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || "";
     return buildCloudConfigPreview({
@@ -1069,7 +1069,29 @@ export function ArtifactBuilder() {
       registrationUrl: window.location.origin,
       registrationToken,
     });
-  }
+  }, [
+    groups,
+    form.provisioning.targetGroupId,
+    form.provisioning.autoInstall,
+    form.provisioning.registerAuroraBoot,
+    form.provisioning.allowedCommands,
+    form.variant,
+    form.kubernetesDistro,
+    form.kubernetesEnabled,
+    userMode,
+    username,
+    password,
+    sshKeys,
+    advancedConfig,
+    registrationToken,
+  ]);
+
+  // The "View full" toggle only makes sense for the content it was opened
+  // against -- reset it whenever the preview's actual content changes, so a
+  // newly truncated preview never starts out expanded from a stale toggle.
+  useEffect(() => {
+    setShowFullCloudConfigPreview(false);
+  }, [cloudConfigPreview]);
 
   // computeErrors produces a structured list: each error knows which wizard
   // step it belongs to and which field ref to focus. The top-of-page red
@@ -2850,12 +2872,11 @@ export function ArtifactBuilder() {
 
                 {/* Cloud Config Preview */}
                 {(advancedConfig.trim() || userMode !== "default") && (() => {
-                  const fullCloudConfig = buildCloudConfig();
-                  const isTruncated = fullCloudConfig.length > 500;
+                  const isTruncated = cloudConfigPreview.length > 500;
                   const previewText =
                     !isTruncated || showFullCloudConfigPreview
-                      ? fullCloudConfig
-                      : fullCloudConfig.slice(0, 500) + "\n...";
+                      ? cloudConfigPreview
+                      : cloudConfigPreview.slice(0, 500) + "\n...";
                   return (
                     <div className="border-t pt-3">
                       <div className="flex items-center justify-between mb-1">
@@ -2864,7 +2885,7 @@ export function ArtifactBuilder() {
                           <button
                             type="button"
                             className="text-xs text-primary hover:underline"
-                            onClick={() => setShowFullCloudConfigPreview(!showFullCloudConfigPreview)}
+                            onClick={() => setShowFullCloudConfigPreview((prev) => !prev)}
                           >
                             {showFullCloudConfigPreview ? "Show less" : "View full"}
                           </button>
