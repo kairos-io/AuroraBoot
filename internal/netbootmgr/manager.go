@@ -1,6 +1,7 @@
 package netbootmgr
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -10,6 +11,27 @@ import (
 	"strings"
 	"sync"
 )
+
+// managerContextKey is unexported so only this package can set or read the
+// value it names -- callers use WithManager/FromContext instead.
+type managerContextKey struct{}
+
+// WithManager returns a copy of ctx carrying m, retrievable with FromContext.
+// The deployer's netboot step (deployer/steps.go's StepStartNetboot) uses
+// this to route an artifact-build-triggered netboot start through the same
+// Manager the dashboard's Start/Stop/Status endpoints use, instead of
+// starting a server the UI has no way to see or stop -- see
+// mission-control's incident notes on the two code paths not sharing state.
+func WithManager(ctx context.Context, m *Manager) context.Context {
+	return context.WithValue(ctx, managerContextKey{}, m)
+}
+
+// FromContext returns the Manager stored by WithManager, or nil if none was
+// set -- the normal case for the CLI, which has no dashboard to keep in sync.
+func FromContext(ctx context.Context) *Manager {
+	m, _ := ctx.Value(managerContextKey{}).(*Manager)
+	return m
+}
 
 // bindAddress is the address the netboot server listens on. It is a wildcard
 // because the server has to answer PXE clients on whichever interface they
@@ -122,13 +144,6 @@ func localIPv4() string {
 // It looks for kairos-kernel, kairos-initrd, and kairos.squashfs
 // in <artifactsDir>/<artifactID>/netboot/.
 func (m *Manager) Start(artifactsDir, artifactID string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if m.status.Running {
-		return fmt.Errorf("netboot server is already running")
-	}
-
 	netbootDir := filepath.Join(artifactsDir, artifactID, "netboot")
 
 	kernel := filepath.Join(netbootDir, "kairos-kernel")
@@ -151,6 +166,23 @@ func (m *Manager) Start(artifactsDir, artifactID string) error {
 	cloudConfig := ""
 	if cfgPath := filepath.Join(artifactsDir, artifactID, "config.yaml"); fileExists(cfgPath) {
 		cloudConfig = cfgPath
+	}
+
+	return m.StartWithPaths(artifactID, cloudConfig, squashfs, initrd, kernel)
+}
+
+// StartWithPaths launches the netboot server from already-resolved file
+// paths, bypassing the <artifactsDir>/<artifactID>/netboot/ convention Start
+// assumes. artifactID is used only for Status.ArtifactID; it need not be a
+// real artifact store ID. Exported so a caller with its own paths in hand
+// (deployer/steps.go's StepStartNetboot, via WithManager/FromContext) can
+// still register with this Manager's shared state -- see WithManager's doc.
+func (m *Manager) StartWithPaths(artifactID, cloudConfig, squashfs, initrd, kernel string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.status.Running {
+		return fmt.Errorf("netboot server is already running")
 	}
 
 	// AuroraBoot start-pixie args: <cloud-config> <squashfs> <address> <port> <initrd> <kernel>

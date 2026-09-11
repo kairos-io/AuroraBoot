@@ -1,11 +1,26 @@
 package netbootmgr
 
 import (
+	"context"
 	"net"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+func TestWithManagerRoundTrips(t *testing.T) {
+	m := NewManager("")
+	ctx := WithManager(context.Background(), m)
+	if got := FromContext(ctx); got != m {
+		t.Errorf("FromContext = %v, want the Manager passed to WithManager", got)
+	}
+}
+
+func TestFromContextWithNoManagerSetReturnsNil(t *testing.T) {
+	if got := FromContext(context.Background()); got != nil {
+		t.Errorf("FromContext on a plain context = %v, want nil", got)
+	}
+}
 
 func TestHostFromURL(t *testing.T) {
 	cases := []struct {
@@ -138,5 +153,46 @@ func TestStartStillBindsTheWildcardWhenAdvertisingALocalAddress(t *testing.T) {
 	}
 	if s.AdvertisedAddress != advertisedHost("") {
 		t.Errorf("AdvertisedAddress = %q, want %q", s.AdvertisedAddress, advertisedHost(""))
+	}
+}
+
+// TestStartWithPathsSharesStateWithStart exists because StepStartNetboot
+// (deployer/steps.go) has its own already-resolved file paths and calls this
+// method directly, bypassing the <artifactsDir>/<artifactID>/netboot/
+// convention Start assumes. The point of StartWithPaths existing at all is
+// that this routes through the same Status/mutex Start does, so a build's
+// auto-started netboot server is visible to, and stoppable from, the same
+// dashboard endpoints a manually-started one is.
+func TestStartWithPathsSharesStateWithStart(t *testing.T) {
+	stubAuroraboot(t)
+	artifactsDir, artifactID := fakeNetbootArtifacts(t)
+	netbootDir := filepath.Join(artifactsDir, artifactID, "netboot")
+
+	m := NewManager("")
+	err := m.StartWithPaths(
+		artifactID,
+		"", // no cloud-config attached
+		filepath.Join(netbootDir, "kairos.squashfs"),
+		filepath.Join(netbootDir, "kairos-initrd"),
+		filepath.Join(netbootDir, "kairos-kernel"),
+	)
+	if err != nil {
+		t.Fatalf("StartWithPaths: %v", err)
+	}
+	defer func() { _ = m.Stop() }()
+
+	s := m.GetStatus()
+	if !s.Running {
+		t.Fatal("Running = false after a successful StartWithPaths")
+	}
+	if s.ArtifactID != artifactID {
+		t.Errorf("ArtifactID = %q, want %q", s.ArtifactID, artifactID)
+	}
+
+	// Same guard Start has: a second start while one is already running is
+	// rejected, not queued or silently collided with -- this is the bug that
+	// prompted StartWithPaths to exist, reproduced directly.
+	if err := m.StartWithPaths(artifactID, "", "x", "y", "z"); err == nil {
+		t.Error("StartWithPaths while already running: got nil error, want one")
 	}
 }
