@@ -2,8 +2,6 @@ package cmd_test
 
 import (
 	"bytes"
-	"context"
-	"time"
 
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
 	. "github.com/onsi/ginkgo/v2"
@@ -35,17 +33,14 @@ var _ = Describe("start-pixie", Label("pixie", "cmd"), func() {
 	})
 
 	It("does not fail validation when cloud-config-file is empty", func() {
-		// A real run would go on to bind the netboot server; bound it with a
-		// short-lived context so the test can't hang, and only assert on
-		// which error came back, not on the server actually starting.
-		ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
-		defer cancel()
-		err = app.RunContext(ctx, []string{
-			"", "start-pixie",
-			"", "rootfs.squashfs", "127.0.0.1", "0", "initrd.img", "vmlinuz",
-		})
-		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).ToNot(ContainSubstring("all arguments except cloud-config-file are required"))
+		// Exercises ValidateStartPixieArgs directly -- cloud-config-file isn't
+		// one of its parameters at all, so there's nothing to pass for it.
+		// Deliberately does NOT go through app.Run/RunContext: past that
+		// point Action binds a real raw socket and blocks on network I/O,
+		// which a context timeout does not reliably interrupt (it didn't on
+		// CI, where the bind succeeds and the test hung for two hours).
+		err := cmdpkg.ValidateStartPixieArgs("rootfs.squashfs", "127.0.0.1", "0", "initrd.img", "vmlinuz")
+		Expect(err).To(BeNil())
 	})
 
 	It("shows help output", func() {
