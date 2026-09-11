@@ -658,6 +658,8 @@ export function ArtifactDetail() {
           type="button"
           onClick={() => setConfigOpen((o) => !o)}
           className="w-full flex items-center justify-between px-6 py-3 hover:bg-muted/40 transition-colors"
+          aria-expanded={configOpen}
+          aria-label={configOpen ? "Collapse configuration" : "Expand configuration"}
         >
           <span className="text-sm font-semibold flex items-center gap-2">
             <Box className="h-4 w-4 text-muted-foreground" />
@@ -834,20 +836,6 @@ export function ArtifactDetail() {
       <Card className="overflow-hidden">
         <div className="flex items-center justify-between gap-3 border-b bg-muted/30 px-4 py-2.5">
           <div className="flex items-center gap-2 min-w-0">
-            {/* Chevron collapses just the log body (toolbar stays visible so
-                the live/reconnect indicator remains reachable at a glance). */}
-            <button
-              type="button"
-              onClick={() => setLogsOpen((o) => !o)}
-              className="p-0.5 rounded hover:bg-muted/60"
-              title={logsOpen ? "Collapse logs" : "Expand logs"}
-            >
-              {logsOpen ? (
-                <ChevronDown className="h-4 w-4 text-muted-foreground" />
-              ) : (
-                <ChevronRight className="h-4 w-4 text-muted-foreground" />
-              )}
-            </button>
             <TerminalIcon className="h-4 w-4 text-muted-foreground shrink-0" />
             <h3
               className="text-sm font-semibold cursor-pointer hover:underline"
@@ -934,6 +922,25 @@ export function ArtifactDetail() {
             >
               <FileDown className="h-3.5 w-3.5 text-muted-foreground" />
             </Button>
+            {/* Collapse sits last and behind a divider, so the one control
+                that changes the layout is not mistaken for another log action.
+                Matches the Configuration header, where the chevron is also the
+                rightmost element of the row. pr-2 on top of the row's px-4
+                lines the glyph up with that px-6 header, to the pixel. */}
+            <button
+              type="button"
+              onClick={() => setLogsOpen((o) => !o)}
+              className="ml-1 h-7 pl-2 pr-2 border-l flex items-center rounded-r-sm hover:bg-muted/60"
+              title={logsOpen ? "Collapse logs" : "Expand logs"}
+              aria-expanded={logsOpen}
+              aria-label={logsOpen ? "Collapse logs" : "Expand logs"}
+            >
+              {logsOpen ? (
+                <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              ) : (
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              )}
+            </button>
           </div>
         </div>
         <div
