@@ -36,6 +36,10 @@ jobs:
           retention-days: 1
 
   build-linux-riscv64:
+    # Native-runner signal for the Go binary itself: builds and runs the
+    # test suite as real riscv64 execution, not emulated. Does not also
+    # build the Docker image any more -- build-linux-riscv64-docker below
+    # covers that on amd64+QEMU, matching image.yml's release job.
     runs-on: 'ubuntu-24.04-riscv'
     needs: build-ui
     steps:
@@ -72,6 +76,29 @@ jobs:
         run: |
           file auroraboot
           ./auroraboot --version || true
+
+  build-linux-riscv64-docker:
+    # Mirrors image.yml's build-linux-riscv64 release job: amd64+QEMU, not
+    # the native riscv64 runner. #779 timed both for this exact build
+    # (including the CGO crypto11/pkcs11 compile) and emulated finished
+    # ~10min faster (54m55s vs 1h05m02s), so this is the CI signal for
+    # what the release actually does now.
+    runs-on: 'ubuntu-24.04'
+    needs: build-ui
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Download UI artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ui-dist
+          path: internal/ui/dist
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: riscv64
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
