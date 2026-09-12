@@ -18,7 +18,7 @@ permissions:
 
 jobs:
   scan-pr:
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.3.8"
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.5.1"
     with:
       # Apply ignores (e.g. unfixed Moby client CVEs) to all scanned manifests under ./ 
       scan-args: |-
