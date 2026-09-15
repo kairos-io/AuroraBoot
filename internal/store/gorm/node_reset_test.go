@@ -56,6 +56,76 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 		got, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(got.ResetState).To(Equal(store.ResetStateInProgress))
 		Expect(got.LastReset).To(BeNil())
+		// Reaching in-progress means the node re-registered, so it re-anchors the
+		// expiry budget (kairos-io/kairos#4287).
+		Expect(got.ResetProgressAt).NotTo(BeNil())
+	})
+
+	It("does not stamp ResetProgressAt on the terminal transitions", func() {
+		for _, to := range []string{store.ResetStateDone, store.ResetStateFailed} {
+			n := register("n-" + to)
+			Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+
+			ok, err := s.AdvanceReset(ctx, n.ID,
+				[]string{store.ResetStatePending, store.ResetStateInProgress}, to, to == store.ResetStateDone)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ok).To(BeTrue())
+
+			got, _ := s.NodeGetByID(ctx, n.ID)
+			Expect(got.ResetProgressAt).To(BeNil(), "transition to %s", to)
+		}
+	})
+
+	// The reset timeout must measure from the last proof the node is alive, not
+	// from the request, or a node that is actively wiping gets reported failed.
+	It("does not fail a reset whose node re-registered after the deadline", func() {
+		n := register("n1")
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		requested, err := s.NodeGetByID(ctx, n.ID)
+		Expect(err).NotTo(HaveOccurred())
+		deadline := requested.ResetRequestedAt.Add(time.Millisecond)
+
+		// The node comes back mid-reset, after the original window closed.
+		time.Sleep(2 * time.Millisecond)
+		ok, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+
+		matched, err := s.FailResetBefore(ctx, n.ID, deadline)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(matched).To(BeFalse())
+
+		got, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(got.ResetState).To(Equal(store.ResetStateInProgress))
+	})
+
+	It("fails a reset whose re-register is itself older than the deadline", func() {
+		n := register("n1")
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		ok, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ok).To(BeTrue())
+
+		matched, err := s.FailResetBefore(ctx, n.ID, time.Now().Add(time.Minute))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(matched).To(BeTrue())
+
+		got, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(got.ResetState).To(Equal(store.ResetStateFailed))
+	})
+
+	It("clears ResetProgressAt when a new reset is requested", func() {
+		n := register("n1")
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		_, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
+		Expect(err).NotTo(HaveOccurred())
+		mid, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(mid.ResetProgressAt).NotTo(BeNil())
+
+		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		got, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(got.ResetState).To(Equal(store.ResetStatePending))
+		Expect(got.ResetProgressAt).To(BeNil())
 	})
 
 	It("advances an in-flight reset -> done and stamps LastReset", func() {
