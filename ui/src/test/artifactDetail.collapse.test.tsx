@@ -94,9 +94,11 @@ describe("ArtifactDetail collapse affordances (kairos#4598)", () => {
     expect(chevron.parentElement).toBe(download.parentElement);
 
     // DOCUMENT_POSITION_FOLLOWING == 4: the chevron follows both actions and
-    // is the last control in the group. Before the fix it preceded the
-    // terminal icon in the left-hand group, which put it right next to the
-    // auto-scroll arrow and gave the row two arrows in one cluster.
+    // is the last control in the group. Before the fix it sat at the head of
+    // the left-hand group while the Configuration chevron sat at the end of
+    // its row, so the same control appeared at opposite ends of two stacked
+    // sections. Moving it here puts it two siblings from the auto-scroll
+    // arrow, which is what the divider asserted below is for.
     expect(copy.compareDocumentPosition(chevron) & 4).toBe(4);
     expect(download.compareDocumentPosition(chevron) & 4).toBe(4);
     expect(chevron.parentElement?.lastElementChild).toBe(chevron);
@@ -106,8 +108,12 @@ describe("ArtifactDetail collapse affordances (kairos#4598)", () => {
     await renderPage();
 
     // The divider is what tells a reader the chevron is not a third icon
-    // action. Without it the fix is only a reordering.
+    // action. Without it the fix is only a reordering. px-2 is the other
+    // half: with the row at px-4 it lines the glyph up with the px-6
+    // Configuration header above, which is the misalignment kairos#4598
+    // reported. Neither can revert without a red spec.
     expect(expandControl(/^Expand logs$/).className).toContain("border-l");
+    expect(expandControl(/^Expand logs$/).className).toContain("px-2");
   });
 
   it("keeps the configuration chevron the last element of its header row", async () => {
