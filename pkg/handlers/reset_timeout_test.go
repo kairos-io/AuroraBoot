@@ -24,6 +24,13 @@ func TestResetExpired(t *testing.T) {
 		{name: "missing request time", node: &store.ManagedNode{ResetState: store.ResetStatePending}, timeout: 30 * time.Minute, want: false},
 		{name: "terminal state", node: &store.ManagedNode{ResetState: store.ResetStateDone, ResetRequestedAt: &old}, timeout: 30 * time.Minute, want: false},
 		{name: "disabled", node: &store.ManagedNode{ResetState: store.ResetStatePending, ResetRequestedAt: &old}, timeout: -1, want: false},
+		// The budget is re-anchored on the last proof the node came back, so an
+		// overdue request plus a recent re-register is not expired
+		// (kairos-io/kairos#4287: fail only with no re-register since).
+		{name: "overdue request, recent re-register", node: &store.ManagedNode{ResetState: store.ResetStateInProgress, ResetRequestedAt: &old, ResetProgressAt: &recent}, timeout: 30 * time.Minute, want: false},
+		{name: "overdue request and overdue re-register", node: &store.ManagedNode{ResetState: store.ResetStateInProgress, ResetRequestedAt: &old, ResetProgressAt: &old}, timeout: 30 * time.Minute, want: true},
+		// A progress stamp older than the request must not shorten the budget.
+		{name: "recent request, stale re-register", node: &store.ManagedNode{ResetState: store.ResetStatePending, ResetRequestedAt: &recent, ResetProgressAt: &old}, timeout: 30 * time.Minute, want: false},
 	}
 
 	for _, tt := range tests {
