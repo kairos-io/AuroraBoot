@@ -56,7 +56,7 @@ var _ = Describe("start-pixie", Label("pixie", "cmd"), func() {
 	It("accepts the grub-cfg flag", Label("flags"), func() {
 		err = app.Run([]string{"", "start-pixie", "--grub-cfg", "/tmp/kairos-grub.cfg"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("all arguments are required"))
+		Expect(err.Error()).To(ContainSubstring("all arguments except cloud-config-file are required"))
 		Expect(err.Error()).ToNot(ContainSubstring("grub-cfg"))
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 	})
