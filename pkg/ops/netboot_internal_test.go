@@ -12,6 +12,7 @@ import (
 	"github.com/diskfs/go-diskfs/filesystem"
 	"github.com/diskfs/go-diskfs/filesystem/iso9660"
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 )
 
@@ -143,4 +144,49 @@ func buildISO(t *testing.T, files map[string]string) string {
 	}
 
 	return isoFile
+}
+
+// A kernel option carrying a % must reach the netbooted node as it was
+// written. The cmdline is assembled with fmt.Sprintf, so merging text into it
+// before formatting turns every % in that text into a format verb and Go
+// replaces it with %!(NOVERB).
+func TestNetbootCmdlineKeepsAPercentSign(t *testing.T) {
+	internal.Log = logger.NewKairosLogger("test", "fatal", false)
+
+	grubCfg := `menuentry "Kairos" --class os --unrestricted {
+    linux ($root)/boot/kernel selinux=0 foo=50% bar=%s
+    initrd ($root)/boot/initrd
+}`
+	grubCfgFile := filepath.Join(t.TempDir(), "kairos-grub.cfg")
+	if err := os.WriteFile(grubCfgFile, []byte(grubCfg), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	got := netbootCmdline("/tmp/kairos.squashfs", "/tmp/config.yaml", func() string { return grubCfgFile }, schema.NetBoot{})
+
+	if strings.Contains(got, "%!") {
+		t.Errorf("cmdline = %q, want no format-verb errors in it", got)
+	}
+	for _, want := range []string{"foo=50%", "bar=%s", `root=live:{{ ID "/tmp/kairos.squashfs" }}`, `config_url={{ ID "/tmp/config.yaml" }}`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("cmdline = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// Same for an explicit --netboot-cmdline override, which is appended to the
+// same template.
+func TestNetbootCmdlineOverrideKeepsAPercentSign(t *testing.T) {
+	internal.Log = logger.NewKairosLogger("test", "fatal", false)
+
+	got := netbootCmdline("/tmp/kairos.squashfs", "/tmp/config.yaml", nil, schema.NetBoot{Cmdline: "foo=50% bar=%s"})
+
+	if strings.Contains(got, "%!") {
+		t.Errorf("cmdline = %q, want no format-verb errors in it", got)
+	}
+	for _, want := range []string{"foo=50%", "bar=%s", `root=live:{{ ID "/tmp/kairos.squashfs" }}`, `config_url={{ ID "/tmp/config.yaml" }}`} {
+		if !strings.Contains(got, want) {
+			t.Errorf("cmdline = %q, want it to contain %q", got, want)
+		}
+	}
 }

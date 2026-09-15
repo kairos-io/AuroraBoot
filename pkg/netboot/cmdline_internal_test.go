@@ -1,10 +1,10 @@
 package netboot
 
 import (
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 )
 
 // netbootBase is the cmdline StartPixiecore serves when the user set no
@@ -132,23 +132,18 @@ menuentry "Kairos (debug)" {
 }
 
 // isoGrubCfg renders the livecd config AuroraBoot ships the way the ISO build
-// does, on amd64. It reads the template from disk so the test follows it when
-// it changes, since a drift between the two is the bug being fixed here.
-// Kept in step with applyGrubTemplate in pkg/ops/iso.go, which cannot be
-// imported from here: pkg/ops already imports this package.
+// does, on amd64. It renders the go:embed'd template itself, so the test
+// follows the template when it changes and a move of it breaks the compile
+// rather than the test run. Kept in step with applyGrubTemplate in
+// pkg/ops/iso.go, which cannot be imported from here: pkg/ops already imports
+// this package. pkg/constants can, it imports nothing from AuroraBoot.
 func isoGrubCfg(t *testing.T, liveConsole, extendCmdline string) string {
 	t.Helper()
-
-	path := filepath.Join("..", "constants", "grub_live_bios.cfg")
-	cfg, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("reading %s: %v", path, err)
-	}
 
 	if liveConsole == "" {
 		liveConsole = "console=ttyS0 console=tty1"
 	}
-	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", " nomodeset")
+	out := strings.ReplaceAll(string(constants.GrubLiveBiosCfg), "{{NOMODESET}}", " nomodeset")
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
 
 	return strings.ReplaceAll(out, "{{LIVE_CONSOLE}}", liveConsole)

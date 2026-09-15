@@ -81,24 +81,32 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 		initrdFile := initrdFileGet()
 		kernelFile := kernelFileGet()
 
-		configFile := cloudConfigFile
-
-		cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
-
-		if nb.Cmdline != "" {
-			cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
-		} else {
-			// Without an explicit override, take the options the ISO itself
-			// boots with instead of leaving this list to drift away from it.
-			// See kairos-io/kairos#2573.
-			cmdLine = withLiveCmdline(cmdLine, grubCfgFileGet)
-		}
-
-		cmdLine = fmt.Sprintf(cmdLine, squashFSfile, configFile)
+		cmdLine := netbootCmdline(squashFSfile, cloudConfigFile, grubCfgFileGet, nb)
 		internal.Log.Logger.Info().Str("cmdline", cmdLine).Msg("Netbooting")
 
 		return netboot.Server(kernelFile, cmdLine, address, netbootPort, initrdFile, true)
 	}
+}
+
+// netbootCmdline builds the cmdline a netbooted node boots with.
+//
+// The pixiecore placeholders are expanded before anything else is merged in.
+// Everything appended afterwards is operator-supplied text, and a % in it
+// would otherwise be read as a format verb: fmt replaces it with %!(NOVERB)
+// and a stray verb can swallow the option that follows it.
+func netbootCmdline(squashFSfile, configFile string, grubCfgFileGet valueGetOnCall, nb schema.NetBoot) string {
+	if nb.Cmdline != "" {
+		base := fmt.Sprintf(`root=live:{{ ID "%s" }} config_url={{ ID "%s" }}`, squashFSfile, configFile)
+
+		return base + " " + nb.Cmdline
+	}
+
+	base := fmt.Sprintf(`rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile)
+
+	// Without an explicit override, take the options the ISO itself boots
+	// with instead of leaving this list to drift away from it.
+	// See kairos-io/kairos#2573.
+	return withLiveCmdline(base, grubCfgFileGet)
 }
 
 // withLiveCmdline merges the livecd grub config extracted by ExtractNetboot
