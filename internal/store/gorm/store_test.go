@@ -242,7 +242,7 @@ var _ = Describe("Gorm Store", func() {
 				{Type: "InternalIP", Address: "10.0.10.21"},
 				{Type: "Hostname", Address: "hb1"},
 			}
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active", "hb1-renamed")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.5.0", osRel, addrs, "active", "hb1-renamed", "203.0.113.5")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
@@ -253,25 +253,28 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.Addresses).To(Equal(addrs))
 			Expect(found.BootState).To(Equal("active"))
 			Expect(found.Hostname).To(Equal("hb1-renamed"))
+			Expect(found.RemoteIP).To(Equal("203.0.113.5"))
 		})
 
-		It("preserves addresses, boot state and hostname when a heartbeat omits them", func() {
+		It("preserves addresses, boot state, hostname and remote IP when a heartbeat omits them", func() {
 			n := &store.ManagedNode{
 				MachineID: "hb2",
 				Hostname:  "hb2-host",
 				Addresses: []store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}},
 				BootState: "active",
+				RemoteIP:  "198.51.100.9",
 			}
 			Expect(s.Register(ctx, n)).To(Succeed())
 
 			// An older agent (or the WS heartbeat path) sends nil/"" — must not wipe.
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "", "")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Addresses).To(Equal([]store.NodeAddress{{Type: "InternalIP", Address: "10.0.10.22"}}))
 			Expect(found.BootState).To(Equal("active"))
 			Expect(found.Hostname).To(Equal("hb2-host"))
+			Expect(found.RemoteIP).To(Equal("198.51.100.9"))
 		})
 
 		// The bug this closes: a node registers while cloud-init has not yet
@@ -282,7 +285,7 @@ var _ = Describe("Gorm Store", func() {
 			n := &store.ManagedNode{MachineID: "a1b2c3d4", Hostname: "kairos"}
 			Expect(s.Register(ctx, n)).To(Succeed())
 
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "kairos-a1b2")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "kairos-a1b2", "")).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
@@ -290,12 +293,12 @@ var _ = Describe("Gorm Store", func() {
 
 			// Idempotent: the next heartbeat reports the same name and nothing
 			// churns, and a rename later in the node's life still lands.
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "kairos-a1b2")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "kairos-a1b2", "")).To(Succeed())
 			found, err = s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Hostname).To(Equal("kairos-a1b2"))
 
-			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "renamed-later")).To(Succeed())
+			Expect(s.UpdateHeartbeat(ctx, n.ID, "v0.6.0", nil, nil, "", "renamed-later", "")).To(Succeed())
 			found, err = s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(found.Hostname).To(Equal("renamed-later"))
