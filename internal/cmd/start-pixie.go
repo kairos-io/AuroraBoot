@@ -51,15 +51,10 @@ Example:
 		initrdFile := c.Args().Get(4)
 		kernelFile := c.Args().Get(5)
 
-		// Simple argument validation. cloudConfigFile is allowed to be empty:
-		// it becomes config_url in the boot cmdline (pkg/ops/netboot.go), and
-		// an empty config_url is valid when the image doesn't need one fetched
-		// at netboot time -- the netboot manager relies on this (see
-		// internal/netbootmgr/manager.go's Start).
-		if squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
+		if err := ValidateStartPixieArgs(squashFSfile, address, netbootPort, initrdFile, kernelFile); err != nil {
 			cli.ShowCommandHelp(c, c.Command.Name)
 			fmt.Println("")
-			return fmt.Errorf("all arguments except cloud-config-file are required")
+			return err
 		}
 
 		loglevel := "info"
@@ -89,4 +84,18 @@ Example:
 
 		return f(c.Context)
 	},
+}
+
+// ValidateStartPixieArgs checks the required positional arguments.
+// cloudConfigFile is deliberately not one of them: it becomes config_url in
+// the boot cmdline (pkg/ops/netboot.go), and an empty config_url is valid
+// when the image doesn't need one fetched at netboot time -- the netboot
+// manager relies on this (see internal/netbootmgr/manager.go's Start).
+// Split out from Action so it can be unit-tested without going anywhere near
+// the real server start, which binds a raw socket and blocks on network I/O.
+func ValidateStartPixieArgs(squashFSfile, address, netbootPort, initrdFile, kernelFile string) error {
+	if squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
+		return fmt.Errorf("all arguments except cloud-config-file are required")
+	}
+	return nil
 }
