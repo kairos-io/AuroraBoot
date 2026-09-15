@@ -52,20 +52,21 @@ func Server(ctx context.Context, kernel, cmdline string, address, httpPort, init
 
 	s.Booter = booter
 
-	return serveUntilDone(ctx, s.Serve, s.Shutdown)
+	return serveUntilDone(ctx, s.Serve, s.Shutdown, shutdownGrace)
 }
 
-// shutdownGrace bounds how long a cancelled run waits for the server to close
-// its listeners. Shutdown is a non-blocking send, so it is a no-op if the
-// server has not finished binding yet; without a bound, waiting for a server
-// that never got the signal would be the same hang again.
+// shutdownGrace is the grace a real run gets. It bounds how long a cancelled
+// run waits for the server to close its listeners. Shutdown is a non-blocking
+// send, so it is a no-op if the server has not finished binding yet; without a
+// bound, waiting for a server that never got the signal would be the same hang
+// again.
 const shutdownGrace = 5 * time.Second
 
 // serveUntilDone runs serve until it returns on its own or ctx is done,
 // whichever happens first. serve blocks until a fatal error or a shutdown, so
 // cancelling the context has to shut the server down explicitly: a context the
 // server never reads is a context that cannot stop it.
-func serveUntilDone(ctx context.Context, serve func() error, shutdown func()) error {
+func serveUntilDone(ctx context.Context, serve func() error, shutdown func(), grace time.Duration) error {
 	errCh := make(chan error, 1)
 	go func() { errCh <- serve() }()
 
@@ -76,7 +77,7 @@ func serveUntilDone(ctx context.Context, serve func() error, shutdown func()) er
 		shutdown()
 		select {
 		case <-errCh:
-		case <-time.After(shutdownGrace):
+		case <-time.After(grace):
 		}
 		return ctx.Err()
 	}
