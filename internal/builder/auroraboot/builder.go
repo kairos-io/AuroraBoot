@@ -277,6 +277,22 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		}
 	}
 
+	// Step 0: A build for a foreign architecture has to execute that
+	// architecture's binaries, so check the builder can before we spend a pull
+	// on it. Reported as kairos-io/kairos#4088.
+	if err := checkBuildPlatform(ctx, opts.Source.Arch); err != nil {
+		msg := err.Error()
+		if logWriter != nil {
+			fmt.Fprintf(logWriter, "=== %s ===\n", msg)
+			logWriter.Flush()
+		}
+		b.setPhase(bs, builder.BuildError, msg)
+		if b.store != nil {
+			_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
+		}
+		return
+	}
+
 	// Step 1: If Dockerfile is provided, build a container image from it.
 	// The Dockerfile takes precedence — BaseImage is only used when no Dockerfile is set.
 	containerImage := opts.BaseImage
