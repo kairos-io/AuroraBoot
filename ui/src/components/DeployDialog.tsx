@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   Dialog,
@@ -31,8 +31,20 @@ import {
   getNetbootStatus,
   startNetboot,
   stopNetboot,
+  getNetbootLogs,
 } from "@/api/deployments";
 import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
+import { useUIWebSocket } from "@/hooks/useUIWebSocket";
+import { ansiToHtml } from "@/lib/ansi";
+
+// Memoized per-line renderer, same reasoning as ArtifactDetail's build-log
+// LogLine: a live netboot session appends one chunk at a time, and without
+// memo every chunk would re-run ansiToHtml over every prior line.
+const NetbootLogLine = memo(function NetbootLogLine({ line }: { line: string }) {
+  return (
+    <div dangerouslySetInnerHTML={{ __html: ansiToHtml(line) || "&nbsp;" }} />
+  );
+});
 
 // Minimum hardware AuroraBoot wants before deploying. Kept deliberately simple
 // and visible: a node below either threshold raises a warning that the operator
@@ -59,6 +71,14 @@ export function DeployDialog({
   // PXE state
   const [netbootStatus, setNetbootStatus] = useState<NetbootStatus | null>(null);
   const [pxeLoading, setPxeLoading] = useState(false);
+  const [netbootLogs, setNetbootLogs] = useState("");
+  const logPaneRef = useRef<HTMLDivElement | null>(null);
+  // Bumped whenever a new netboot session starts, so a getNetbootLogs()
+  // response from before Start (or from a stale reconnect resync) can be
+  // told apart from the current session and dropped instead of overwriting
+  // a freshly-cleared pane (kairos-io/AuroraBoot#806 review).
+  const netbootEpochRef = useRef(0);
+  const netbootStatusRef = useRef<NetbootStatus | null>(null);
 
   // RedFish state
   const [bmcTargets, setBmcTargets] = useState<BMCTarget[]>([]);
@@ -106,12 +126,65 @@ export function DeployDialog({
   useEffect(() => {
     if (hasNetboot) {
       getNetbootStatus().then(setNetbootStatus).catch(() => {});
+      const epoch = netbootEpochRef.current;
+      getNetbootLogs()
+        .then((text) => {
+          if (netbootEpochRef.current === epoch) setNetbootLogs(text);
+        })
+        .catch(() => {});
     }
     if (hasIso) {
       listBMCTargets().then(setBmcTargets).catch(() => {});
       listQuirkProfiles().then(setProfiles).catch(() => {});
     }
   }, [hasNetboot, hasIso]);
+
+  useEffect(() => {
+    netbootStatusRef.current = netbootStatus;
+  });
+
+  // Pre-split once per update so ansiToHtml runs per-line (SGR color state
+  // from one line must not bleed into the next) instead of over the whole
+  // buffer.
+  const netbootLogLines = useMemo(
+    () => (netbootLogs ? netbootLogs.split("\n") : []),
+    [netbootLogs],
+  );
+
+  // Live PXE server output (kairos-io/kairos#4596): the snapshot fetch above
+  // gets you caught up, this keeps you live while the dialog is open. There
+  // is at most one netboot session at a time, so every chunk belongs to the
+  // session currently shown here — no id to filter on.
+  const { connected: wsConnected } = useUIWebSocket((msg) => {
+    if (msg.type !== "netboot-log" || !hasNetboot) return;
+    const data = msg.data as { chunk?: string };
+    if (!data.chunk) return;
+    setNetbootLogs((prev) => prev + data.chunk);
+  });
+
+  // Re-sync the log snapshot once per WebSocket (re)connection, the same
+  // pattern ArtifactDetail uses for build logs: a drop that misses live
+  // chunks would otherwise leave the pane silently incomplete. Guarded by
+  // the same epoch as the initial fetch, so a resync racing a fresh Start
+  // can't overwrite it either.
+  const lastWsConnected = useRef(false);
+  useEffect(() => {
+    const justConnected = wsConnected && !lastWsConnected.current;
+    lastWsConnected.current = wsConnected;
+    if (!justConnected || !hasNetboot || !netbootStatusRef.current?.running) return;
+    const epoch = netbootEpochRef.current;
+    getNetbootLogs()
+      .then((text) => {
+        if (netbootEpochRef.current === epoch) setNetbootLogs(text);
+      })
+      .catch(() => {});
+  }, [wsConnected, hasNetboot]);
+
+  // Auto-scroll the log pane to the newest line as chunks arrive.
+  useEffect(() => {
+    const el = logPaneRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [netbootLogs]);
 
   // Poll netboot status while running
   useEffect(() => {
@@ -162,6 +235,12 @@ export function DeployDialog({
       if (netbootStatus?.running) {
         await stopNetboot();
       } else {
+        // A fresh session gets a fresh pane: the server resets its own log
+        // buffer on Start, so stale text from a previous run must not linger.
+        // Bump the epoch first so any in-flight getNetbootLogs() response
+        // from before this Start is recognized as stale and dropped.
+        netbootEpochRef.current += 1;
+        setNetbootLogs("");
         await startNetboot(artifactId);
       }
       const status = await getNetbootStatus();
@@ -250,6 +329,31 @@ export function DeployDialog({
                   {netbootStatus?.running ? "Stop Netboot" : "Start Netboot"}
                 </Button>
               </div>
+
+              {/* Live PXE server log, so a stalled/failed boot is debuggable
+                  instead of just a status badge (kairos-io/kairos#4596). Shown
+                  once a session has produced any output, and kept visible
+                  after Stop so a failure can still be read back. */}
+              {netbootLogs && (
+                <div className="rounded-md border">
+                  <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Netboot Log
+                    </span>
+                    {netbootStatus?.running && (
+                      <span className="text-xs text-muted-foreground">live</span>
+                    )}
+                  </div>
+                  <div
+                    ref={logPaneRef}
+                    className="text-xs font-mono bg-muted/50 rounded-b-md p-3 max-h-64 overflow-y-auto overflow-x-auto whitespace-pre-wrap"
+                  >
+                    {netbootLogLines.map((line, i) => (
+                      <NetbootLogLine key={i} line={line} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </TabsContent>
           )}
 
