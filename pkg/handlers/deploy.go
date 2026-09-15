@@ -208,6 +208,19 @@ func (h *DeployHandler) NetbootStatus(c echo.Context) error {
 	return c.JSON(http.StatusOK, h.netboot.GetStatus())
 }
 
+// NetbootLogs handles GET /api/v1/netboot/logs.
+//
+//	@Summary		Get netboot server log snapshot
+//	@Description	Returns the current (or most recent) PXE/netboot session's captured output as text/plain. For real-time updates subscribe to the UI WebSocket and filter {type:"netboot-log"} envelopes.
+//	@Tags			Netboot
+//	@Produce		plain
+//	@Security		AdminBearer
+//	@Success		200	{string}	string
+//	@Router			/api/v1/netboot/logs [get]
+func (h *DeployHandler) NetbootLogs(c echo.Context) error {
+	return c.String(http.StatusOK, h.netboot.GetLogs())
+}
+
 // --- RedFish deploy ---
 
 type deployRedfishRequest struct {

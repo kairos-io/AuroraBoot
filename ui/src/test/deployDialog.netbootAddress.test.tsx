@@ -6,6 +6,7 @@ import { type NetbootStatus, getNetbootStatus } from "@/api/deployments";
 
 vi.mock("@/api/deployments", () => ({
   getNetbootStatus: vi.fn(),
+  getNetbootLogs: vi.fn().mockResolvedValue(""),
   startNetboot: vi.fn().mockResolvedValue(undefined),
   stopNetboot: vi.fn().mockResolvedValue(undefined),
   listBMCTargets: vi.fn().mockResolvedValue([]),
