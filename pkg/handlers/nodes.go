@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -137,29 +138,33 @@ func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode,
 // compare-and-set, so concurrent UI/controller reads can safely race. Updating
 // the supplied snapshot after a successful transition ensures this response
 // immediately contains the terminal state.
-func (h *NodeHandler) expireReset(ctx context.Context, node *store.ManagedNode, now time.Time) error {
+//
+// Best-effort, like resolveReset: a store error is logged and discarded rather
+// than failing the read. These endpoints are the UI's node page and the CAPI
+// provider's read path, so one rejected bookkeeping write must not hide the
+// whole fleet — and a lost CAS already returns the stale pending state, so
+// there would be no consistent behaviour to fail for anyway. The next read
+// retries the transition.
+func (h *NodeHandler) expireReset(ctx context.Context, node *store.ManagedNode, now time.Time) {
 	if !resetExpired(node, h.resetTimeout, now) {
-		return nil
+		return
 	}
 
 	advanced, err := h.nodes.FailResetBefore(ctx, node.ID, now.Add(-h.resetTimeout))
 	if err != nil {
-		return err
+		log.Printf("reset expiry: node %s: %v", node.ID, err)
+		return
 	}
 	if advanced {
 		node.ResetState = store.ResetStateFailed
 	}
-	return nil
 }
 
-func (h *NodeHandler) expireResets(ctx context.Context, nodes []*store.ManagedNode) error {
+func (h *NodeHandler) expireResets(ctx context.Context, nodes []*store.ManagedNode) {
 	now := time.Now()
 	for _, node := range nodes {
-		if err := h.expireReset(ctx, node, now); err != nil {
-			return err
-		}
+		h.expireReset(ctx, node, now)
 	}
-	return nil
 }
 
 // registerRequest is the expected body for node registration.
@@ -265,9 +270,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 		}
-		if err := h.expireResets(ctx, nodes); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to expire stale resets"})
-		}
+		h.expireResets(ctx, nodes)
 		return c.JSON(http.StatusOK, nodes)
 	}
 
@@ -281,9 +284,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 		}
-		if err := h.expireResets(ctx, nodes); err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to expire stale resets"})
-		}
+		h.expireResets(ctx, nodes)
 		return c.JSON(http.StatusOK, nodes)
 	}
 
@@ -291,9 +292,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 	}
-	if err := h.expireResets(ctx, nodes); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to expire stale resets"})
-	}
+	h.expireResets(ctx, nodes)
 	return c.JSON(http.StatusOK, nodes)
 }
 
@@ -314,9 +313,7 @@ func (h *NodeHandler) Get(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
 	}
-	if err := h.expireReset(ctx, node, time.Now()); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to expire stale reset"})
-	}
+	h.expireReset(ctx, node, time.Now())
 	return c.JSON(http.StatusOK, node)
 }
 
