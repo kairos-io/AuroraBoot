@@ -32,7 +32,7 @@ var _ = Describe("CommandHandler", func() {
 			},
 		}
 		cs = &fakeCommandStore{}
-		handler = handlers.NewCommandHandler(cs, ns, nil)
+		handler = handlers.NewCommandHandler(cs, ns, nil, nil, nil)
 	})
 
 	Describe("Create", func() {
