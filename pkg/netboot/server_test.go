@@ -27,7 +27,7 @@ var _ = Describe("serveUntilDone", Label("netboot"), func() {
 		defer cancel()
 
 		done := make(chan error, 1)
-		go func() { done <- serveUntilDone(ctx, serve, shutdown) }()
+		go func() { done <- serveUntilDone(ctx, serve, shutdown, shutdownGrace) }()
 
 		var err error
 		Eventually(done, 5*time.Second).Should(Receive(&err))
@@ -40,9 +40,36 @@ var _ = Describe("serveUntilDone", Label("netboot"), func() {
 		var shutdowns atomic.Int32
 
 		err := serveUntilDone(context.Background(), func() error { return boom },
-			func() { shutdowns.Add(1) })
+			func() { shutdowns.Add(1) }, shutdownGrace)
 
 		Expect(err).To(MatchError(boom))
 		Expect(shutdowns.Load()).To(BeZero())
+	})
+
+	It("gives up on the drain once the grace is spent", func() {
+		// Shutdown is a non-blocking send, so a server that has not finished
+		// binding never receives it and serve keeps blocking. The grace is the
+		// only thing standing between that and the original two-hour hang, so
+		// pin it: serveUntilDone must return even though serve never does.
+		var shutdowns atomic.Int32
+		neverReturns := func() error { <-make(chan error); return nil }
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		done := make(chan error, 1)
+		start := time.Now()
+		go func() {
+			done <- serveUntilDone(ctx, neverReturns, func() { shutdowns.Add(1) },
+				30*time.Millisecond)
+		}()
+
+		var err error
+		Eventually(done, 5*time.Second).Should(Receive(&err))
+		Expect(err).To(MatchError(context.Canceled))
+		Expect(shutdowns.Load()).To(Equal(int32(1)))
+		// Waited for the grace rather than returning straight away, and did
+		// not wait on serve, which is still blocked.
+		Expect(time.Since(start)).To(BeNumerically(">=", 30*time.Millisecond))
 	})
 })
