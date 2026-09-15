@@ -16,6 +16,11 @@ export interface CloudConfigPreviewInput {
   password: string;
   sshKeys: string;
   extraYAML: string;
+  // Real values for the phonehome block. Optional because they load
+  // asynchronously (registrationToken) or may be unavailable; fall back to
+  // placeholders so the preview never blocks on them.
+  registrationUrl?: string;
+  registrationToken?: string;
 }
 
 const UNSAFE_MERGE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
@@ -71,8 +76,8 @@ export function buildCloudConfigPreview(input: CloudConfigPreviewInput): string 
 
   if (input.registerAuroraBoot) {
     doc.phonehome = {
-      url: "<server-url>",
-      registration_token: "<token>",
+      url: input.registrationUrl || "<server-url>",
+      registration_token: input.registrationToken || "<token>",
       group: input.groupName,
       allowed_commands: [...input.allowedCommands],
     };
@@ -124,4 +129,35 @@ export function buildCloudConfigPreview(input: CloudConfigPreviewInput): string 
   }
 
   return `#cloud-config\n${stringify(doc)}`;
+}
+
+// A cloned artifact's stored cloudConfig is the full baked document, which
+// includes the real phonehome url/registration_token in effect at clone
+// time. That block must never re-enter the wizard as "extra" YAML: the
+// backend already re-injects phonehome from live settings at build time
+// (buildCloudConfig in pkg/handlers/artifacts.go), and forwarding a stale
+// copy back as extra YAML would let it override those live values with
+// whatever was true when the artifact was cloned.
+export function stripPhonehome(yamlText: string): string {
+  const trimmed = yamlText.trim();
+  if (!trimmed) {
+    return yamlText;
+  }
+  let body = trimmed;
+  const hadHeader = body.startsWith("#cloud-config");
+  if (hadHeader) {
+    body = body.replace(/^#cloud-config\s*\n?/, "");
+  }
+  let doc: YamlValue;
+  try {
+    doc = parse(body);
+  } catch {
+    return yamlText;
+  }
+  if (!isMap(doc) || !("phonehome" in doc)) {
+    return yamlText;
+  }
+  delete doc.phonehome;
+  const rest = stringify(doc);
+  return hadHeader ? `#cloud-config\n${rest}` : rest;
 }

@@ -1,36 +1,174 @@
 package netbootmgr
 
 import (
+	"bytes"
 	"fmt"
+	"io"
+	"net"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"sync"
 )
+
+// bindAddress is the address the netboot server listens on. It is a wildcard
+// because the server has to answer PXE clients on whichever interface they
+// arrive from, which is also why it can never double as the address to hand
+// out; see AdvertisedAddress.
+const bindAddress = "0.0.0.0"
 
 // Status represents the current state of the netboot server.
 type Status struct {
 	Running    bool   `json:"running"`
 	ArtifactID string `json:"artifactId,omitempty"`
-	Address    string `json:"address"`
-	Port       string `json:"port"`
+	// Address is the address the server binds to, always the wildcard.
+	Address string `json:"address"`
+	// AdvertisedAddress is the host to reach the server on: the host of the
+	// configured external URL, or a local interface address when there is none.
+	AdvertisedAddress string `json:"advertisedAddress"`
+	Port              string `json:"port"`
 }
+
+// LogSink receives the netboot server's output as it happens, so a UI client
+// watching a PXE boot in progress can see why it fails instead of only a
+// stalled "Running" badge (kairos-io/kairos#4596). Satisfied by
+// *ws.UIHub.BroadcastNetbootLogChunk; kept as a narrow interface here so this
+// package does not import pkg/ws.
+type LogSink interface {
+	BroadcastNetbootLogChunk(chunk string)
+}
+
+// maxLogBytes bounds the retained log so a long-running or noisy PXE server
+// (a node retrying DHCP forever) cannot grow this without limit; it is an
+// in-memory debugging aid, not a durable log store.
+const maxLogBytes = 256 * 1024
 
 // Manager manages a PXE/netboot server lifecycle.
 type Manager struct {
-	mu      sync.Mutex
-	cmd     *exec.Cmd
-	status  Status
-	address string
-	port    string
+	mu            sync.Mutex
+	cmd           *exec.Cmd
+	status        Status
+	address       string
+	advertisedURL string
+	port          string
+	logSink       LogSink
+	logBuf        bytes.Buffer
 }
 
-// NewManager creates a new netboot Manager with default settings.
-func NewManager() *Manager {
+// NewManager creates a new netboot Manager. advertisedURL is the externally
+// reachable URL of this AuroraBoot instance (--url / AURORABOOT_URL); only its
+// host is used, since the netboot server has its own port. It may be empty.
+// logSink may be nil (e.g. in tests), in which case output is still captured
+// for GetLogs but never broadcast live.
+func NewManager(advertisedURL string, logSink LogSink) *Manager {
 	return &Manager{
-		address: "0.0.0.0",
-		port:    "8090",
+		address:       bindAddress,
+		advertisedURL: advertisedURL,
+		port:          "8090",
+		logSink:       logSink,
 	}
+}
+
+// logWriter tees a running command's output to the process's own
+// stdout/stderr (unchanged operational behaviour), into the Manager's bounded
+// snapshot buffer, and to the live broadcaster. Each Write() call forwards
+// its raw chunk as one broadcast; chunks are not split into lines, so a
+// broadcast can carry a partial line.
+type logWriter struct {
+	m      *Manager
+	passOn io.Writer
+}
+
+func (w *logWriter) Write(p []byte) (int, error) {
+	w.m.mu.Lock()
+	if w.m.logBuf.Len()+len(p) > maxLogBytes {
+		// Drop the oldest bytes rather than the newest: a debugging session
+		// cares about what just happened, not the start of a long-idle server.
+		overflow := w.m.logBuf.Len() + len(p) - maxLogBytes
+		b := w.m.logBuf.Bytes()
+		w.m.logBuf.Reset()
+		if overflow < len(b) {
+			w.m.logBuf.Write(b[overflow:])
+		}
+	}
+	w.m.logBuf.Write(p)
+	sink := w.m.logSink
+	w.m.mu.Unlock()
+
+	if sink != nil {
+		sink.BroadcastNetbootLogChunk(string(p))
+	}
+	return w.passOn.Write(p)
+}
+
+// advertisedHost is the host clients should use to reach the netboot server.
+// The configured external URL wins; failing that a local interface address is
+// better than handing out the wildcard, which is reachable from nowhere.
+func advertisedHost(advertisedURL string) string {
+	if h := hostFromURL(advertisedURL); h != "" {
+		return h
+	}
+	if ip := localIPv4(); ip != "" {
+		return ip
+	}
+	return bindAddress
+}
+
+// hostFromURL extracts the host from a URL, tolerating a bare "host" or
+// "host:port" with no scheme, which url.Parse reads as a scheme or a path.
+func hostFromURL(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return ""
+	}
+	// Once a scheme separator is present url.Parse is authoritative. Falling
+	// through to SplitHostPort would read "http://" as host "http", port "//".
+	if strings.Contains(raw, "//") {
+		u, err := url.Parse(raw)
+		if err != nil {
+			return ""
+		}
+		return u.Hostname()
+	}
+	if h, _, err := net.SplitHostPort(raw); err == nil && h != "" {
+		return h
+	}
+	if !strings.ContainsAny(raw, "/:") {
+		return raw
+	}
+	return ""
+}
+
+// localIPv4 returns an IPv4 address of the first up, non-loopback interface.
+// Link-local addresses are skipped: they name an interface nobody can route to.
+func localIPv4() string {
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		return ""
+	}
+	for _, iface := range ifaces {
+		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, addr := range addrs {
+			ipNet, ok := addr.(*net.IPNet)
+			if !ok {
+				continue
+			}
+			ip4 := ipNet.IP.To4()
+			if ip4 == nil || ip4.IsLinkLocalUnicast() {
+				continue
+			}
+			return ip4.String()
+		}
+	}
+	return ""
 }
 
 // Start launches the netboot server for the given artifact.
@@ -57,11 +195,25 @@ func (m *Manager) Start(artifactsDir, artifactID string) error {
 		}
 	}
 
+	// If the artifact was built with a cloud-config attached, it's saved
+	// alongside it as config.yaml. Serve it as config_url so kairos-agent's
+	// sdk/collector (which reads config_url from /proc/cmdline) can fetch
+	// it at boot -- the /oem datasource path only pulls from cloud-provider
+	// metadata services, never from netboot's own HTTP delivery, so this is
+	// the only way a netbooted bare-metal node gets configured at all.
+	cloudConfig := ""
+	if cfgPath := filepath.Join(artifactsDir, artifactID, "config.yaml"); fileExists(cfgPath) {
+		cloudConfig = cfgPath
+	}
+
 	// AuroraBoot start-pixie args: <cloud-config> <squashfs> <address> <port> <initrd> <kernel>
-	// Use empty string for cloud-config (not required for netboot).
-	cmd := exec.Command("auroraboot", "start-pixie", "", squashfs, m.address, m.port, initrd, kernel)
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	// cloud-config may be empty if the artifact was built with none attached.
+	cmd := exec.Command("auroraboot", "start-pixie", cloudConfig, squashfs, m.address, m.port, initrd, kernel)
+	// A fresh session starts with a clean log: the previous run's output (if
+	// any) is no longer relevant to debugging this one.
+	m.logBuf.Reset()
+	cmd.Stdout = &logWriter{m: m, passOn: os.Stdout}
+	cmd.Stderr = &logWriter{m: m, passOn: os.Stderr}
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start netboot server: %w", err)
@@ -72,7 +224,10 @@ func (m *Manager) Start(artifactsDir, artifactID string) error {
 		Running:    true,
 		ArtifactID: artifactID,
 		Address:    m.address,
-		Port:       m.port,
+		// Resolved per start, not once in NewManager, so an interface that came
+		// up after the fleet server did is still picked up.
+		AdvertisedAddress: advertisedHost(m.advertisedURL),
+		Port:              m.port,
 	}
 
 	// Wait for the process in the background so we can detect if it exits.
@@ -117,4 +272,18 @@ func (m *Manager) GetStatus() Status {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.status
+}
+
+// GetLogs returns a snapshot of the current (or most recently run) netboot
+// session's captured stdout/stderr, bounded to maxLogBytes. Empty before the
+// first Start call.
+func (m *Manager) GetLogs() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.logBuf.String()
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

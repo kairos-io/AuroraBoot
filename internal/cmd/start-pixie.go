@@ -14,10 +14,14 @@ var StartPixieCmd = cli.Command{
 	Name:    "start-pixie",
 	Aliases: []string{"sp"},
 	Usage:   "Start the Pixiecore netboot server and serve custom PXE files (kernel, initrd, squashfs) with a cloud-config.",
-	Description: `Start a Pixiecore-based PXE server to serve a kernel, initrd, and squashfs image for network booting. 
+	Description: `Start a Pixiecore-based PXE server to serve a kernel, initrd, and squashfs image for network booting.
 
 Arguments:
-  cloud-config-file   Path to the cloud-init or cloud-config YAML file.
+  cloud-config-file   Path to the cloud-init or cloud-config YAML file, or ""
+                       to boot without serving one over config_url. An empty
+                       value is only safe when the booted image already has
+                       everything it needs baked in from build time; a fully
+                       unconfigured image will boot but never install itself.
   squashfs-file       Path to the root filesystem squashfs image.
   address             IP address to bind the server (e.g., 0.0.0.0).
   port                Port for the netboot server (e.g., 8080).
@@ -30,8 +34,9 @@ Options:
 
 Example:
   start-pixie user-data.yaml rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
+  start-pixie "" rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
 `,
-	ArgsUsage: "<cloud-config-file> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
+	ArgsUsage: "<cloud-config-file|\"\"> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
 	Flags: []cli.Flag{
 		&cli.StringFlag{
 			Name:  "grub-cfg",
@@ -51,11 +56,10 @@ Example:
 		initrdFile := c.Args().Get(4)
 		kernelFile := c.Args().Get(5)
 
-		// Simple argument validation
-		if cloudConfigFile == "" || squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
+		if err := ValidateStartPixieArgs(squashFSfile, address, netbootPort, initrdFile, kernelFile); err != nil {
 			cli.ShowCommandHelp(c, c.Command.Name)
 			fmt.Println("")
-			return fmt.Errorf("all arguments are required")
+			return err
 		}
 
 		loglevel := "info"
@@ -63,6 +67,12 @@ Example:
 			loglevel = "debug"
 		}
 		internal.Log = logger.NewKairosLogger("AuroraBoot", loglevel, false)
+
+		if cloudConfigFile == "" {
+			internal.Log.Logger.Warn().Msg("no cloud-config-file given: netbooting without config_url. " +
+				"This is only safe if the image already has everything it needs baked in from build time -- " +
+				"an image with no cloud-config attached at all will boot but never install itself.")
+		}
 
 		// Optionally parse NetBoot from flags here if desired
 		nb := schema.NetBoot{} // Use defaults, or parse from CLI flags
@@ -80,4 +90,18 @@ Example:
 
 		return f(c.Context)
 	},
+}
+
+// ValidateStartPixieArgs checks the required positional arguments.
+// cloudConfigFile is deliberately not one of them: it becomes config_url in
+// the boot cmdline (pkg/ops/netboot.go), and an empty config_url is valid
+// when the image doesn't need one fetched at netboot time -- the netboot
+// manager relies on this (see internal/netbootmgr/manager.go's Start).
+// Split out from Action so it can be unit-tested without going anywhere near
+// the real server start, which binds a raw socket and blocks on network I/O.
+func ValidateStartPixieArgs(squashFSfile, address, netbootPort, initrdFile, kernelFile string) error {
+	if squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
+		return fmt.Errorf("all arguments except cloud-config-file are required")
+	}
+	return nil
 }

@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"bytes"
+
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -22,13 +23,24 @@ var _ = Describe("start-pixie", Label("pixie", "cmd"), func() {
 	It("errors out if no arguments are provided", func() {
 		err = app.Run([]string{"", "start-pixie"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("all arguments are required"))
+		Expect(err.Error()).To(ContainSubstring("all arguments except cloud-config-file are required"))
 	})
 
 	It("errors out if only some arguments are provided", func() {
 		err = app.Run([]string{"", "start-pixie", "cloud.yaml", "rootfs.squashfs"})
 		Expect(err).ToNot(BeNil())
-		Expect(err.Error()).To(ContainSubstring("all arguments are required"))
+		Expect(err.Error()).To(ContainSubstring("all arguments except cloud-config-file are required"))
+	})
+
+	It("does not fail validation when cloud-config-file is empty", func() {
+		// Exercises ValidateStartPixieArgs directly -- cloud-config-file isn't
+		// one of its parameters at all, so there's nothing to pass for it.
+		// Deliberately does NOT go through app.Run/RunContext: past that
+		// point Action binds a real raw socket and blocks on network I/O,
+		// which a context timeout does not reliably interrupt (it didn't on
+		// CI, where the bind succeeds and the test hung for two hours).
+		err := cmdpkg.ValidateStartPixieArgs("rootfs.squashfs", "127.0.0.1", "0", "initrd.img", "vmlinuz")
+		Expect(err).To(BeNil())
 	})
 
 	It("shows help output", func() {
