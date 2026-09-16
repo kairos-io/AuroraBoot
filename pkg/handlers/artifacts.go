@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -1013,6 +1015,24 @@ func extractOverlayTarGz(r io.Reader, destDir string) error {
 // production implementation; tests substitute their own.
 type imageExportFunc func(ctx context.Context, containerImage string, w io.Writer) error
 
+// exportQueueWait caps how long one request waits for an artifact's export
+// slot.
+//
+// The request context cannot do this job: net/http cancels it when the client's
+// connection closes, so on its own a queued caller waits for every export ahead
+// of it. Twelve nodes on one artifact at a minute per export means the last one
+// holds an open connection for eleven minutes and then gets a tar it no longer
+// wants. With a deadline it gets a 503 and Retry-After instead, while it is
+// still connected to read them.
+//
+// A var, not a const, so a test can shrink it instead of waiting on it.
+var exportQueueWait = 10 * time.Minute
+
+// exportQueueRetryAfter is the backoff advertised on the 503, in seconds. It is
+// roughly one export, so a requeued caller comes back when a slot has plausibly
+// freed rather than immediately re-joining the same queue.
+const exportQueueRetryAfter = 60
+
 // exportNameSuffix returns the random component of the docker object names used
 // by one export.
 func exportNameSuffix() (string, error) {
@@ -1023,6 +1043,14 @@ func exportNameSuffix() (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
+// exportContainerPrefix and exportFlatImageRepo are the fixed halves of the
+// per-export docker object names. PruneExportLeftovers reclaims by matching
+// them, so the two must stay in one place.
+const (
+	exportContainerPrefix = "auroraboot-export-"
+	exportFlatImageRepo   = "auroraboot-flat"
+)
+
 // exportObjectNames returns the container name and flat image tag for a single
 // export.
 //
@@ -1031,14 +1059,93 @@ func exportNameSuffix() (string, error) {
 // "container name is already in use" as an HTTP 500 (kairos-io/kairos#4195).
 // Worse, the deferred `docker rmi` of whichever export finished first deleted
 // the tag the other one was still saving from. A per-export random suffix keeps
-// the objects private to their request; the shared prefix keeps them greppable
-// for cleanup after a crash.
+// the objects private to their request.
+//
+// The cost of the suffix is that a crash no longer leaves one reusable object
+// per artifact but a uniquely named one per dead export, so the fixed prefix is
+// what PruneExportLeftovers reclaims them by at startup.
 func exportObjectNames() (containerName, imageTag string, err error) {
 	suffix, err := exportNameSuffix()
 	if err != nil {
 		return "", "", err
 	}
-	return "auroraboot-export-" + suffix, "auroraboot-flat:" + suffix, nil
+	return exportContainerPrefix + suffix, exportFlatImageRepo + ":" + suffix, nil
+}
+
+// dockerCapture runs a docker command and returns its stdout. A var so the
+// prune's command construction can be tested without a daemon.
+var dockerCapture = func(ctx context.Context, args ...string) ([]byte, error) {
+	var out, errBuf bytes.Buffer
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker %s: %w%s", strings.Join(args, " "), err, stderrDetail(&errBuf))
+	}
+	return out.Bytes(), nil
+}
+
+// PruneExportLeftovers removes the docker container and flat image an export
+// leaves behind when it dies before its deferred cleanup runs: SIGKILL, OOM, a
+// container restart. Each export's objects carry a random suffix, so without
+// this they accumulate one flat image the size of the OS image per dead export,
+// and nothing ever removes them.
+//
+// Call it once at process start and before serving, which is what makes it
+// safe: no export of this process is in flight yet, so everything carrying the
+// prefix is garbage by construction. It reclaims another live AuroraBoot's
+// in-flight objects if one shares the docker daemon, which the export path
+// already assumed it did not -- the pre-#4195 code removed
+// auroraboot-flat:<artifact-id> globally on every export.
+//
+// Errors are logged, not returned: a missing or busy daemon must not stop the
+// server from coming up, and there is nothing an operator can do about it at
+// this point in startup anyway.
+func PruneExportLeftovers(ctx context.Context) {
+	// --filter name= is a regex match, anchored so a container merely
+	// containing the prefix in its name is left alone.
+	containers, err := dockerLines(ctx, "ps", "-aq", "--filter", "name=^"+exportContainerPrefix)
+	if err != nil {
+		log.Printf("pruning leftover export containers: %v", err)
+	}
+	for _, id := range containers {
+		if _, err := dockerCapture(ctx, "rm", "-f", id); err != nil {
+			log.Printf("removing leftover export container %s: %v", id, err)
+		}
+	}
+
+	// By reference rather than by image ID: `docker images -q` can report one
+	// ID for several tags, and removing by ID would take out tags this prune
+	// never enumerated.
+	images, err := dockerLines(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}", exportFlatImageRepo)
+	if err != nil {
+		log.Printf("pruning leftover export images: %v", err)
+	}
+	for _, ref := range images {
+		if _, err := dockerCapture(ctx, "rmi", ref); err != nil {
+			log.Printf("removing leftover export image %s: %v", ref, err)
+		}
+	}
+
+	if len(containers)+len(images) > 0 {
+		log.Printf("reclaimed %d leftover export container(s) and %d image(s) from a previous run",
+			len(containers), len(images))
+	}
+}
+
+// dockerLines runs a docker command and splits its stdout into non-empty lines.
+func dockerLines(ctx context.Context, args ...string) ([]string, error) {
+	out, err := dockerCapture(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines, nil
 }
 
 // firstByteResponseWriter defers the 200 and the download headers until the
@@ -1094,11 +1201,21 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "no container image"})
 	}
 
-	release, err := h.exportLocks.acquire(ctx, id)
+	// Only the wait is bounded. h.exportImage below keeps the request context,
+	// so a slow transfer of a multi-gigabyte image is never cut off by a
+	// deadline meant for the queue.
+	queueCtx, cancelQueue := context.WithTimeout(ctx, exportQueueWait)
+	defer cancelQueue()
+
+	release, err := h.exportLocks.acquire(queueCtx, id)
 	if err != nil {
-		// The caller hung up or timed out while queued. 503 rather than a 4xx:
-		// nothing about the request was wrong, and the agent classifies 5xx as
-		// retryable, which is the behavior we want here.
+		// The caller hung up, or the queue deadline expired. 503 rather than a
+		// 4xx: nothing about the request was wrong, and the agent classifies
+		// 5xx as retryable. Retry-After gives it a concrete backoff rather
+		// than a guess. In the hang-up case nobody reads either, which is why
+		// the deadline above exists: it is what makes this answer reach a
+		// caller that is still on the other end.
+		c.Response().Header().Set("Retry-After", strconv.Itoa(exportQueueRetryAfter))
 		return c.JSON(http.StatusServiceUnavailable, map[string]string{
 			"error": fmt.Sprintf("waiting for an artifact export slot: %v", err),
 		})

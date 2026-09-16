@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -207,7 +209,48 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 			Expect(h.ExportLockCountForTest()).To(Equal(0))
 		})
 
-		It("gives up with a retryable status when the caller disconnects while queued", func() {
+		It("answers a still-connected caller 503 plus Retry-After when the queue deadline expires", func() {
+			// The point of the deadline: a queued caller that has NOT hung up
+			// gets an answer it can act on. Its request context is never
+			// cancelled, so a recorder status here is one a real client would
+			// actually receive.
+			defer handlers.SetExportQueueWaitForTest(50 * time.Millisecond)()
+
+			fe := &fakeExporter{body: []byte("tar"), block: make(chan struct{}), started: make(chan struct{})}
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+				WithTestImageExporter(fe.export)
+
+			holder := make(chan struct{})
+			go func() {
+				defer GinkgoRecover()
+				defer close(holder)
+				call(h, nil, "art-1")
+			}()
+			Eventually(fe.started, 5*time.Second).Should(BeClosed())
+
+			// Second caller queues behind the held export and waits out the
+			// deadline rather than the export.
+			w := call(h, nil, "art-1")
+			Expect(w.Code).To(Equal(http.StatusServiceUnavailable))
+			Expect(w.Header().Get("Retry-After")).
+				To(Equal(strconv.Itoa(handlers.ExportQueueRetryAfterForTest)),
+					"the agent needs a concrete backoff, not a guess")
+
+			var body map[string]string
+			Expect(json.Unmarshal(w.Body.Bytes(), &body)).To(Succeed())
+			Expect(body["error"]).To(ContainSubstring("export slot"))
+
+			close(fe.block)
+			Eventually(holder, 5*time.Second).Should(BeClosed())
+
+			calls, _ := fe.stats()
+			Expect(calls).To(Equal(1), "the request that timed out waiting must not start an export")
+		})
+
+		It("starts no export and leaks no lock when the caller hangs up while queued", func() {
+			// A disconnected caller reads nothing, so this asserts only what is
+			// observable server-side: the export never ran, and the lock map
+			// drained.
 			fe := &fakeExporter{body: []byte("tar"), block: make(chan struct{}), started: make(chan struct{})}
 			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
@@ -221,26 +264,101 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 			Eventually(fe.started, 5*time.Second).Should(BeClosed())
 
 			ctx, cancel := context.WithCancel(context.Background())
-			queued := make(chan *httptest.ResponseRecorder, 1)
+			returned := make(chan struct{})
 			go func() {
 				defer GinkgoRecover()
-				queued <- call(h, ctx, "art-1")
+				defer close(returned)
+				call(h, ctx, "art-1")
 			}()
 
 			// The second caller is behind the first in the queue. Hang up.
 			time.Sleep(100 * time.Millisecond)
 			cancel()
-
-			var w *httptest.ResponseRecorder
-			Eventually(queued, 5*time.Second).Should(Receive(&w))
-			Expect(w.Code).To(BeNumerically(">=", http.StatusInternalServerError),
-				"a queue give-up must look retryable to the agent, not like a permanent 4xx")
-
-			close(fe.block)
-			Eventually(holder, 5*time.Second).Should(BeClosed())
+			Eventually(returned, 5*time.Second).Should(BeClosed())
 
 			calls, _ := fe.stats()
 			Expect(calls).To(Equal(1), "the request that hung up must not start an export")
+
+			close(fe.block)
+			Eventually(holder, 5*time.Second).Should(BeClosed())
+			Expect(h.ExportLockCountForTest()).To(Equal(0),
+				"a caller that hung up must still drop its lock reference")
+		})
+	})
+
+	Describe("docker stderr detail", func() {
+		// Every endpoint test goes through the injected fake exporter, so this
+		// helper is reached from nowhere else.
+		It("returns nothing for an empty buffer", func() {
+			Expect(handlers.StderrDetailForTest("")).To(BeEmpty())
+			Expect(handlers.StderrDetailForTest("  \n\t ")).To(BeEmpty())
+		})
+
+		It("prefixes a short message and trims surrounding whitespace", func() {
+			Expect(handlers.StderrDetailForTest("\n no space left on device \n")).
+				To(Equal(": no space left on device"))
+		})
+
+		It("keeps the tail of a long message, not the head", func() {
+			// docker puts the line that explains the failure last, so a head
+			// truncation would drop exactly the part worth reading.
+			msg := strings.Repeat("a", 600-len("THE-REASON")) + "THE-REASON"
+			got := handlers.StderrDetailForTest(msg)
+			Expect(got).To(HavePrefix(": "))
+			Expect(len(got) - len(": ")).To(Equal(512))
+			Expect(got).To(HaveSuffix("THE-REASON"))
+			Expect(got).To(Equal(": " + msg[len(msg)-512:]))
+		})
+	})
+
+	Describe("PruneExportLeftovers", func() {
+		It("removes the container and image a dead export left behind", func() {
+			var cmds [][]string
+			defer handlers.SetDockerCaptureForTest(func(ctx context.Context, args ...string) ([]byte, error) {
+				cmds = append(cmds, args)
+				switch args[0] {
+				case "ps":
+					return []byte("c1\nc2\n"), nil
+				case "images":
+					return []byte("auroraboot-flat:aabb\n"), nil
+				}
+				return nil, nil
+			})()
+
+			handlers.PruneExportLeftovers(context.Background())
+
+			Expect(cmds).To(HaveLen(5))
+			Expect(cmds[0]).To(Equal([]string{"ps", "-aq", "--filter", "name=^auroraboot-export-"}))
+			Expect(cmds[1]).To(Equal([]string{"rm", "-f", "c1"}))
+			Expect(cmds[2]).To(Equal([]string{"rm", "-f", "c2"}))
+			Expect(cmds[3]).To(Equal([]string{"images", "--format", "{{.Repository}}:{{.Tag}}", "auroraboot-flat"}))
+			// By reference, not by image ID: one ID can carry several tags, and
+			// removing by ID would take out tags this prune never enumerated.
+			Expect(cmds[4]).To(Equal([]string{"rmi", "auroraboot-flat:aabb"}))
+		})
+
+		It("removes nothing when there is nothing to reclaim", func() {
+			var cmds [][]string
+			defer handlers.SetDockerCaptureForTest(func(ctx context.Context, args ...string) ([]byte, error) {
+				cmds = append(cmds, args)
+				return []byte("\n \n"), nil
+			})()
+
+			handlers.PruneExportLeftovers(context.Background())
+
+			Expect(cmds).To(HaveLen(2), "blank lines must not turn into a docker rm of nothing")
+			Expect(cmds[0][0]).To(Equal("ps"))
+			Expect(cmds[1][0]).To(Equal("images"))
+		})
+
+		It("keeps going when the daemon is unreachable", func() {
+			defer handlers.SetDockerCaptureForTest(func(ctx context.Context, args ...string) ([]byte, error) {
+				return nil, fmt.Errorf("cannot connect to the docker daemon")
+			})()
+
+			// A missing daemon must not stop the server from coming up, so
+			// this is a no-panic, no-return-value assertion by design.
+			Expect(func() { handlers.PruneExportLeftovers(context.Background()) }).NotTo(Panic())
 		})
 	})
 
