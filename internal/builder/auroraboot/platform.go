@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 )
 
-// buildxPlatforms is the buildx probe, replaced in tests.
-var buildxPlatforms = dockerBuildxPlatforms
+// PlatformsFunc reports the platforms the docker builder can build for.
+type PlatformsFunc func(ctx context.Context) ([]string, error)
 
 // dockerBuildxPlatforms asks the active buildx builder which platforms it can
 // build for. buildx lists emulated platforms next to native ones, so a missing
@@ -47,6 +49,22 @@ func parseBuildxPlatforms(out string) []string {
 	return platforms
 }
 
+// normalizeArch spells an architecture the way buildx does.
+//
+// The API takes either spelling: README.md lists x86_64 and aarch64 as
+// accepted, and pkg/handlers/artifacts.go passes the request's arch through
+// untouched. docker resolves both itself, but "docker buildx inspect" only ever
+// reports GOARCH names, so the platform list has to be compared against those.
+func normalizeArch(arch string) string {
+	switch arch {
+	case constants.Archx86:
+		return constants.ArchAmd64
+	case constants.Archaarch64:
+		return constants.ArchArm64
+	}
+	return arch
+}
+
 // checkBuildPlatform refuses a cross-architecture build up front when the
 // docker builder cannot execute the requested architecture.
 //
@@ -56,11 +74,15 @@ func parseBuildxPlatforms(out string) []string {
 // on the daemon host. Without this check the build gets past the manifest and
 // dies much later with an exec format error that names neither the
 // architecture nor the missing emulator. See kairos-io/kairos#4088.
-func checkBuildPlatform(ctx context.Context, arch string) error {
+//
+// It is only called from the two steps that execute target-architecture
+// binaries. A Dockerfile that only COPYs onto an already-kairosified base runs
+// nothing, so it needs no emulation and is never refused.
+func (b *Builder) checkBuildPlatform(ctx context.Context, arch string) error {
 	if arch == "" {
 		return nil
 	}
-	platforms, err := buildxPlatforms(ctx)
+	platforms, err := b.platforms(ctx)
 	// The probe is advisory. Only refuse on positive evidence that the
 	// platform is missing: a docker without buildx, or a daemon that does not
 	// answer, must not block a build that would otherwise have worked.
@@ -68,6 +90,7 @@ func checkBuildPlatform(ctx context.Context, arch string) error {
 		return nil
 	}
 
+	arch = normalizeArch(arch)
 	want := "linux/" + arch
 	for _, platform := range platforms {
 		// A variant counts as support: linux/arm/v7 can build linux/arm.
@@ -81,4 +104,12 @@ func checkBuildPlatform(ctx context.Context, arch string) error {
 		"the docker daemon needs binfmt_misc emulation registered for %s: "+
 		"docker run --privileged --rm tonistiigi/binfmt --install %s",
 		want, strings.Join(platforms, ", "), arch, arch)
+}
+
+// platforms probes the builder, through the injected func when there is one.
+func (b *Builder) platforms(ctx context.Context) ([]string, error) {
+	if b.platformsFn == nil {
+		return dockerBuildxPlatforms(ctx)
+	}
+	return b.platformsFn(ctx)
 }

@@ -111,7 +111,11 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 	// local builds and the cloned form comes up empty.
 	It("persists the Kubernetes fields the clone flow reads from the row", func() {
 		s := newRecStore()
-		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		// Inject the platform probe: without it the cross-arch preflight shells
+		// out to the developer's own docker and the spec depends on the host's
+		// binfmt state.
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).
+			WithPlatformsFunc(func(context.Context) ([]string, error) { return nil, nil })
 
 		_, err := b.Build(context.Background(), builder.BuildOptions{
 			ID:            "clone-k8s",
