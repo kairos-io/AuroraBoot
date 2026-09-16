@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -64,9 +65,18 @@ var _ = Describe("download", Label("network"), func() {
 		Expect(string(content)).To(Equal("payload"))
 	})
 
-	It("stops retrying and reports ctx's error when canceled during backoff", func() {
+	It("stops retrying and reports ctx's error when canceled after an attempt", func() {
 		var gets atomic.Int32
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Cancel through the hook rather than off a wall-clock sleep: this
+		// pins the case where the attempt already failed with a transient
+		// error of its own, which is the one that used to be reported
+		// instead of the cancellation. A sleep raced the in-flight case and
+		// made this spec flaky on a loaded runner.
+		afterDownloadAttempt = cancel
+		DeferCleanup(func() { afterDownloadAttempt = nil })
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if notFoundOnHead(w, r) {
@@ -78,17 +88,44 @@ var _ = Describe("download", Label("network"), func() {
 		defer srv.Close()
 
 		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
+		_, err := download(ctx, srv.URL+"/testfile.bin", dst)
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
+			"a caller checking for cancellation must see it, got %v", err)
+		Expect(err.Error()).To(ContainSubstring("502"),
+			"the attempt's own error must survive in the message, got %v", err)
+		Expect(gets.Load()).To(Equal(int32(1)))
+	})
+
+	It("reports ctx's error when canceled while the transfer is in flight", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// The handler blocks until the test has canceled ctx, so the
+		// cancellation is guaranteed to land while downloadOnce is still
+		// waiting on the transfer rather than between two attempts.
+		canceled := make(chan struct{})
+		inFlight := make(chan struct{})
+		var once sync.Once
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if notFoundOnHead(w, r) {
+				return
+			}
+			once.Do(func() { close(inFlight) })
+			<-canceled
+			w.Write([]byte("payload"))
+		}))
+		defer srv.Close()
 
 		go func() {
 			defer GinkgoRecover()
-			// Give the first attempt's GET time to fail and enter backoff,
-			// then cancel well before the (200ms) backoff elapses.
-			time.Sleep(30 * time.Millisecond)
+			<-inFlight
 			cancel()
+			close(canceled)
 		}()
 
+		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
 		_, err := download(ctx, srv.URL+"/testfile.bin", dst)
-		Expect(errors.Is(err, context.Canceled)).To(BeTrue())
-		Expect(gets.Load()).To(Equal(int32(1)))
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
+			"a caller checking for cancellation must see it, got %v", err)
 	})
 })
