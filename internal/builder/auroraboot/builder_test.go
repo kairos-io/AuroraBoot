@@ -10,11 +10,12 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
-	"github.com/kairos-io/AuroraBoot/pkg/builder"
-	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
 )
 
 func assertError(msg string) error { return errors.New(msg) }
@@ -492,5 +493,80 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(status.Message).To(ContainSubstring("synthetic uki failure"))
 		})
+	})
+})
+
+// The cross-arch preflight is the only thing standing between a user and the
+// exec format error from kairos-io/kairos#4088, so pin what a refusal does:
+// the build ends in BuildError, the row says so too, and the deployer never
+// runs. It also has to reach that verdict without pulling anything.
+var _ = Describe("AuroraBoot Builder cross-arch preflight", func() {
+	It("fails the build and the row when the daemon cannot emulate the arch", func() {
+		s := newRecStore()
+		deployed := make(chan struct{}, 1)
+		deploy := func(_ context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
+			deployed <- struct{}{}
+			return nil
+		}
+
+		b := auroraboot.New(GinkgoT().TempDir(), deploy, s).
+			// A host that can only build for itself.
+			WithPlatformsFunc(func(context.Context) ([]string, error) {
+				return []string{"linux/amd64"}, nil
+			})
+
+		_, err := b.Build(context.Background(), builder.BuildOptions{
+			ID:         "binfmt-refused",
+			Dockerfile: "FROM quay.io/kairos/ubuntu:latest\nRUN echo hi\n",
+			Source:     builder.ImageSource{Arch: "arm64"},
+			Outputs:    builder.OutputOptions{ISO: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() string {
+			st, _ := b.Status(context.Background(), "binfmt-refused")
+			if st == nil {
+				return ""
+			}
+			return st.Phase
+		}, 5*time.Second, 10*time.Millisecond).Should(Equal(builder.BuildError))
+
+		status, err := b.Status(context.Background(), "binfmt-refused")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status.Message).To(And(
+			ContainSubstring("cannot build for linux/arm64"),
+			ContainSubstring("binfmt_misc"),
+		))
+
+		// The artifact row carries the same verdict, so the UI shows it.
+		rec, err := s.GetByID(context.Background(), "binfmt-refused")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.Phase).To(Equal(store.ArtifactError))
+		Expect(rec.Message).To(ContainSubstring("binfmt_misc"))
+
+		// And nothing was built or deployed.
+		Consistently(deployed, 200*time.Millisecond).ShouldNot(Receive())
+	})
+
+	// A Dockerfile that only COPYs onto an already-kairosified base executes no
+	// target-architecture binary, so it needs no emulation. The preflight used
+	// to run at the top of the build and refused these too.
+	It("does not consult the builder when no step runs a target binary", func() {
+		probed := make(chan struct{}, 1)
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, nil).
+			WithPlatformsFunc(func(context.Context) ([]string, error) {
+				probed <- struct{}{}
+				return []string{"linux/amd64"}, nil
+			})
+
+		_, err := b.Build(context.Background(), builder.BuildOptions{
+			ID:        "copy-only",
+			BaseImage: "quay.io/kairos/ubuntu:latest",
+			Source:    builder.ImageSource{Arch: "arm64"},
+			Outputs:   builder.OutputOptions{ISO: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Consistently(probed, 500*time.Millisecond).ShouldNot(Receive())
 	})
 })

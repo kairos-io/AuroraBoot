@@ -77,6 +77,7 @@ type Builder struct {
 	baseDir        string
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
+	platformsFn    PlatformsFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
 	netbootManager *netbootmgr.Manager
@@ -141,11 +142,12 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 		deployFunc = DefaultDeployerFunc
 	}
 	return &Builder{
-		builds:     make(map[string]*buildState),
-		baseDir:    baseDir,
-		deployFunc: deployFunc,
-		ukiBuildFn: DefaultUKIBuildFunc,
-		store:      artifactStore,
+		builds:      make(map[string]*buildState),
+		baseDir:     baseDir,
+		deployFunc:  deployFunc,
+		ukiBuildFn:  DefaultUKIBuildFunc,
+		platformsFn: dockerBuildxPlatforms,
+		store:       artifactStore,
 	}
 }
 
@@ -153,6 +155,14 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 // Tests use this to capture the uki.Options we pass through.
 func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 	b.ukiBuildFn = fn
+	return b
+}
+
+// WithPlatformsFunc swaps the buildx platform probe used by the cross-arch
+// preflight. Tests use this so no unit test shells out to the developer's own
+// docker and depends on the host's binfmt state.
+func (b *Builder) WithPlatformsFunc(fn PlatformsFunc) *Builder {
+	b.platformsFn = fn
 	return b
 }
 
@@ -298,22 +308,6 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 			broadcaster:  b.logBroadcaster,
 			redactValues: opts.LogRedactValues,
 		}
-	}
-
-	// Step 0: A build for a foreign architecture has to execute that
-	// architecture's binaries, so check the builder can before we spend a pull
-	// on it. Reported as kairos-io/kairos#4088.
-	if err := checkBuildPlatform(ctx, opts.Source.Arch); err != nil {
-		msg := err.Error()
-		if logWriter != nil {
-			fmt.Fprintf(logWriter, "=== %s ===\n", msg)
-			logWriter.Flush()
-		}
-		b.setPhase(bs, builder.BuildError, msg)
-		if b.store != nil {
-			_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
-		}
-		return
 	}
 
 	// Step 1: If Dockerfile is provided, build a container image from it.
@@ -602,6 +596,12 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 
 // kairosify builds a per-artifact Kairos image using kairos-init.
 func (b *Builder) kairosify(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	// This step emits "RUN /kairos-init", which executes a target-architecture
+	// binary, so refuse the build now if the daemon host cannot emulate that
+	// architecture. Reported as kairos-io/kairos#4088.
+	if err := b.checkBuildPlatform(ctx, opts.Source.Arch); err != nil {
+		return "", err
+	}
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
 	}
@@ -765,6 +765,13 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 
 // dockerBuild runs `docker build` when a Dockerfile is provided.
 func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	// A custom Dockerfile's RUN steps execute target-architecture binaries, so
+	// refuse the build now rather than letting it die on an exec format error
+	// that names neither the architecture nor the missing emulator.
+	if err := b.checkBuildPlatform(ctx, opts.Source.Arch); err != nil {
+		return "", err
+	}
+
 	// The UI's Hadron composer emits middle content only (no FROM line) so
 	// the operator backend can hand it to the kairos-operator as OCISpec
 	// wrapped by BuildOptions.BaseImage. On the local backend the Dockerfile
