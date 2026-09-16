@@ -1,8 +1,10 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"io"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
@@ -51,3 +53,35 @@ func (h *ArtifactHandler) ExportLockCountForTest() int { return h.exportLocks.co
 // image tag, so their uniqueness - the property whose absence caused the
 // concurrent-export failures - can be asserted directly. Test-only.
 var ExportObjectNamesForTest = exportObjectNames
+
+// SetExportQueueWaitForTest shortens the export queue deadline and returns a
+// function that restores it, so a test can observe the timeout answer on a
+// caller that is still connected instead of waiting ten real minutes.
+// Test-only.
+func SetExportQueueWaitForTest(d time.Duration) func() {
+	prev := exportQueueWait
+	exportQueueWait = d
+	return func() { exportQueueWait = prev }
+}
+
+// ExportQueueRetryAfterForTest is the Retry-After value the 503 advertises, so
+// a test asserts against the constant rather than retyping it. Test-only.
+const ExportQueueRetryAfterForTest = exportQueueRetryAfter
+
+// StderrDetailForTest exposes the docker-stderr formatting helper. The endpoint
+// tests all go through an injected fake exporter, so nothing else reaches it.
+// Test-only.
+func StderrDetailForTest(s string) string {
+	var buf bytes.Buffer
+	buf.WriteString(s)
+	return stderrDetail(&buf)
+}
+
+// SetDockerCaptureForTest replaces the docker exec used by PruneExportLeftovers
+// and returns a function that restores it, so the prune's command construction
+// is testable without a daemon. Test-only.
+func SetDockerCaptureForTest(f func(ctx context.Context, args ...string) ([]byte, error)) func() {
+	prev := dockerCapture
+	dockerCapture = f
+	return func() { dockerCapture = prev }
+}
