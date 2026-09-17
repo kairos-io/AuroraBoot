@@ -175,6 +175,9 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// as received — interface filtering is the agent's responsibility.
 		Addresses: req.Addresses,
 		BootState: req.BootState,
+		// RemoteIP is server-observed, not agent-reported: the request the agent
+		// just made to register is itself the observation.
+		RemoteIP: c.RealIP(),
 	}
 
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
@@ -551,7 +554,7 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState, req.Hostname); err != nil {
+	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState, req.Hostname, c.RealIP()); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update heartbeat"})
 	}
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {

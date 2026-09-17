@@ -58,6 +58,12 @@ type ManagedNode struct {
 	// and backward-compatible: an agent that does not send them leaves the list
 	// empty. Stored as JSON, mirroring OSRelease/Labels.
 	Addresses []NodeAddress `json:"addresses,omitempty" gorm:"serializer:json"`
+	// RemoteIP is the IP the server observed the node connect from at register or
+	// heartbeat time (kairos-io/kairos#4590), independent of Addresses: the node
+	// does not report it, and it survives even when an agent sends no addresses at
+	// all (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP
+	// changes because every heartbeat re-observes and overwrites it.
+	RemoteIP string `json:"remoteIP,omitempty"`
 	// BootState is the node's reported boot state for day-2 lifecycle (e.g. a node
 	// that booted the passive image signals a broken active image). Known values:
 	// active | passive | recovery | autoreset — but unknown values are accepted
@@ -183,11 +189,11 @@ type NodeStore interface {
 	ListBySelector(ctx context.Context, sel CommandSelector) ([]*ManagedNode, error)
 	// UpdateHeartbeat records a heartbeat: it stamps LastHeartbeat, moves the node
 	// to Online, and applies whatever the report carried. agentVersion and
-	// osRelease are always written; addresses, bootState and hostname are only
-	// written when non-empty, so a caller that does not collect a field (an older
-	// agent, or a transport that does not carry it) preserves the stored value
-	// instead of blanking it.
-	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string) error
+	// osRelease are always written; addresses, bootState, hostname and remoteIP are
+	// only written when non-empty, so a caller that does not collect a field (an
+	// older agent, or a transport that does not carry it) preserves the stored
+	// value instead of blanking it.
+	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string, remoteIP string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
 	SetGroup(ctx context.Context, nodeID string, groupID string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
