@@ -123,6 +123,85 @@ var _ = Describe("ExtensionHandler.Create — hierarchies validation", func() {
 		Expect(rec.Code).To(Equal(http.StatusCreated))
 		Expect(fb.lastOpts.Hierarchies).To(BeNil())
 	})
+
+	// `auroraboot confext` declares neither --include-path nor
+	// --service-reload, so forwarding either ended the build in phase Error
+	// with "flag provided but not defined" rather than telling the caller.
+	It("rejects hierarchies on a confext", func() {
+		rec := post(`{"name":"fb","type":"confext","arch":"amd64","source":{"mode":"image","baseImage":"alpine:3"},"hierarchies":["/srv"]}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("sysext-only"))
+		Expect(fb.lastOpts.Name).To(BeEmpty(), "must not reach the builder")
+	})
+
+	It("rejects serviceReload on a confext", func() {
+		rec := post(`{"name":"fb","type":"confext","arch":"amd64","source":{"mode":"image","baseImage":"alpine:3"},"serviceReload":true}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("sysext-only"))
+		Expect(fb.lastOpts.Name).To(BeEmpty(), "must not reach the builder")
+	})
+
+	It("still accepts both on a sysext", func() {
+		rec := post(`{` + base + `,"hierarchies":["/srv"],"serviceReload":true}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(fb.lastOpts.Hierarchies).To(Equal([]string{"/srv"}))
+		Expect(fb.lastOpts.ServiceReload).To(BeTrue())
+	})
+})
+
+var _ = Describe("ExtensionHandler.Create — signing key set linkage", func() {
+	var (
+		e       *echo.Echo
+		fb      *fakeExtensionBuilder
+		es      *fakeExtensionStore
+		sb      *fakeSecureBootKeySetStore
+		handler *handlers.ExtensionHandler
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		fb = &fakeExtensionBuilder{}
+		es = newFakeExtensionStore()
+		sb = &fakeSecureBootKeySetStore{}
+		Expect(sb.Create(context.Background(), &store.SecureBootKeySet{
+			Name: "prod", KeysDir: "/keys/prod",
+		})).To(Succeed())
+		handler = handlers.NewExtensionHandler(fb, es, newFakeBundleStore(), sb, nil, "")
+	})
+
+	post := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/extensions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		Expect(handler.Create(c)).To(Succeed())
+		return rec
+	}
+
+	// The keyset used to be attached by re-reading and re-saving the row after
+	// Build returned. Build's goroutine is already running by then and its
+	// first act is a full-row upsert of the phase, so that second write raced
+	// it and could blank signing_key_set_id for good. The ID now travels in
+	// the build options, which the builder writes into the initial record
+	// before starting the goroutine.
+	It("passes the key set id to the builder instead of re-saving the row", func() {
+		rec := post(`{"name":"signed","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"},"signingKeySetId":"ks-1"}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(fb.lastOpts.SigningKeySetID).To(Equal("ks-1"))
+		Expect(fb.lastOpts.Signing.PrivateKey).To(Equal(filepath.Join("/keys/prod", "db.key")))
+		Expect(fb.lastOpts.Signing.Certificate).To(Equal(filepath.Join("/keys/prod", "db.pem")))
+	})
+
+	It("400s on an unknown key set", func() {
+		rec := post(`{"name":"signed","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"},"signingKeySetId":"nope"}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+
+	It("leaves the options empty when no key set was asked for", func() {
+		rec := post(`{"name":"plain","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"}}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(fb.lastOpts.SigningKeySetID).To(BeEmpty())
+	})
 })
 
 var _ = Describe("ExtensionHandler.Create — source/mode validation", func() {

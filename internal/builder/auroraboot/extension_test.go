@@ -360,6 +360,26 @@ var _ = Describe("ExtensionBuilder.Build — auroraboot CLI invocation", func() 
 		Expect(cliArgs.Certificate).To(Equal("/tmp/db.pem"))
 	})
 
+	// The keyset linkage has to be on the row the synchronous Create writes.
+	// If the handler attached it afterwards instead, the build goroutine's
+	// first phase update (a full-row upsert read before that write) could land
+	// after it and blank the column for good.
+	It("writes SigningKeySetID in the record Build creates, before the goroutine runs", func() {
+		_, err := eb.Build(context.Background(), builder.ExtensionBuildOptions{
+			ID: "e-4", Name: "ts", Type: "sysext", Arch: "amd64",
+			Source:          builder.ExtensionSource{Mode: "image", BaseImage: "ubuntu:24.04"},
+			Signing:         builder.ExtensionSigning{PrivateKey: "/tmp/db.key", Certificate: "/tmp/db.pem"},
+			SigningKeySetID: "ks-1",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		// Read the row without waiting for the build: it is already there.
+		rec, gerr := extStore.GetByID(context.Background(), "e-4")
+		Expect(gerr).ToNot(HaveOccurred())
+		Expect(rec.SigningKeySetID).To(Equal("ks-1"))
+		// And it survives every later phase upsert.
+		Expect(awaitReady("e-4").SigningKeySetID).To(Equal("ks-1"))
+	})
+
 	It("transitions to Error when the CLI fails", func() {
 		eb = eb.WithAurorabootCLIFunc(func(context.Context, auroraboot.AurorabootCLIArgs) error {
 			return fmt.Errorf("systemd-repart: device too small for verity")
@@ -526,3 +546,42 @@ func builderTempDir() string {
 	DeferCleanup(func() { _ = os.RemoveAll(dir) })
 	return dir
 }
+
+var _ = Describe("AurorabootCLIArgv", func() {
+	base := auroraboot.AurorabootCLIArgs{
+		Type: "sysext", Name: "ts", SourceImage: "ubuntu:24.04",
+		Arch: "amd64", OutputDir: "/out",
+	}
+
+	It("puts every flag before the positional pair", func() {
+		a := base
+		a.PrivateKey = "/k/db.key"
+		a.Certificate = "/k/db.pem"
+		argv := auroraboot.AurorabootCLIArgv(a)
+		Expect(argv[len(argv)-2:]).To(Equal([]string{"ts", "ubuntu:24.04"}))
+		Expect(argv).To(ContainElements("--private-key", "/k/db.key", "--certificate", "/k/db.pem"))
+	})
+
+	It("emits --include-path and --service-reload for a sysext", func() {
+		a := base
+		a.IncludePaths = []string{"/opt", "/srv"}
+		a.ServiceReload = true
+		argv := auroraboot.AurorabootCLIArgv(a)
+		Expect(argv).To(ContainElements("--include-path", "/opt", "/srv", "--service-reload"))
+	})
+
+	// ConfextCmd declares neither flag, so urfave/cli rejects the invocation
+	// with "flag provided but not defined" and the build ends in phase Error.
+	It("emits neither flag for a confext, whatever the options say", func() {
+		a := base
+		a.Type = "confext"
+		a.IncludePaths = []string{"/srv"}
+		a.ServiceReload = true
+		argv := auroraboot.AurorabootCLIArgv(a)
+		Expect(argv).ToNot(ContainElement("--include-path"))
+		Expect(argv).ToNot(ContainElement("--service-reload"))
+		Expect(argv).ToNot(ContainElement("/srv"))
+		// The rest of the invocation is unchanged.
+		Expect(argv).To(Equal([]string{"confext", "--arch", "amd64", "--output", "/out", "ts", "ubuntu:24.04"}))
+	})
+})

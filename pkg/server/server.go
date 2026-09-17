@@ -355,10 +355,12 @@ func New(cfg Config) *echo.Echo {
 		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
 	// Extension downloads: admin OR any authenticated node. Nodes need to fetch
 	// extensions bundled into an assigned upgrade command; per-command scoping
-	// analogous to ArtifactImageMiddleware is a follow-up.
+	// analogous to ArtifactImageMiddleware is a follow-up. Admin may use
+	// ?token= here (the UI's download anchor cannot set a header); a node key
+	// is header-only.
 	if extensionHandler != nil {
 		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download,
-			auth.AgentOrAdminMiddleware(cfg.AdminPassword, cfg.NodeStore))
+			auth.ExtensionDownloadMiddleware(cfg.AdminPassword, cfg.NodeStore))
 	}
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,

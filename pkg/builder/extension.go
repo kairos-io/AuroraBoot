@@ -33,6 +33,13 @@ type ExtensionBuildOptions struct {
 	Signing       ExtensionSigning
 	Hierarchies   []string // sysext-only; /usr implicit
 	ServiceReload bool     // sysext-only
+	// SigningKeySetID is the secure-boot key set the caller selected, kept
+	// alongside the resolved Signing file paths so the builder can write it
+	// into the initial record. The handler must not attach it afterwards: the
+	// store's Create is a full-row upsert and the build goroutine starts
+	// before Build returns, so a second read-modify-write races the
+	// goroutine's first phase update and can blank the column for good.
+	SigningKeySetID string
 }
 
 // ExtensionBuildStatus tracks an extension build's state. Phase strings

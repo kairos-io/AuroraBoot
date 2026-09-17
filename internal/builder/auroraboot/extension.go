@@ -122,9 +122,11 @@ var DefaultDockerBuildFunc DockerBuildFunc = func(ctx context.Context, args Dock
 	return nil
 }
 
-// DefaultAurorabootCLIFunc shells out to this binary's sysext|confext
-// subcommand. The command lives in internal/cmd/sysext.go.
-var DefaultAurorabootCLIFunc AurorabootCLIFunc = func(ctx context.Context, a AurorabootCLIArgs) error {
+// AurorabootCLIArgv renders the argv for the `auroraboot sysext|confext`
+// invocation. Split out from DefaultAurorabootCLIFunc so the flag selection is
+// assertable without execing the binary: whether a flag is emitted at all is
+// the part that broke (see the sysext-only guards below).
+func AurorabootCLIArgv(a AurorabootCLIArgs) []string {
 	// urfave/cli v2 only parses flags that appear BEFORE positional args;
 	// flags placed after `<name> <container>` are silently dropped. Keep
 	// every flag in front of the positional pair.
@@ -135,14 +137,25 @@ var DefaultAurorabootCLIFunc AurorabootCLIFunc = func(ctx context.Context, a Aur
 	if a.Certificate != "" {
 		cliArgs = append(cliArgs, "--certificate", a.Certificate)
 	}
-	for _, p := range a.IncludePaths {
-		cliArgs = append(cliArgs, "--include-path", p)
+	// --include-path and --service-reload are declared by SysextCmd only
+	// (internal/cmd/sysext.go); ConfextCmd takes just the common flags. Passing
+	// either to a confext makes urfave/cli reject the whole invocation with
+	// "flag provided but not defined", failing the build.
+	if a.Type == "sysext" {
+		for _, p := range a.IncludePaths {
+			cliArgs = append(cliArgs, "--include-path", p)
+		}
+		if a.ServiceReload {
+			cliArgs = append(cliArgs, "--service-reload")
+		}
 	}
-	if a.ServiceReload && a.Type == "sysext" {
-		cliArgs = append(cliArgs, "--service-reload")
-	}
-	cliArgs = append(cliArgs, a.Name, a.SourceImage)
-	cmd := exec.CommandContext(ctx, "auroraboot", cliArgs...)
+	return append(cliArgs, a.Name, a.SourceImage)
+}
+
+// DefaultAurorabootCLIFunc shells out to this binary's sysext|confext
+// subcommand. The command lives in internal/cmd/sysext.go.
+var DefaultAurorabootCLIFunc AurorabootCLIFunc = func(ctx context.Context, a AurorabootCLIArgs) error {
+	cmd := exec.CommandContext(ctx, "auroraboot", AurorabootCLIArgv(a)...)
 	if a.Logger != nil {
 		cmd.Stdout = a.Logger
 		cmd.Stderr = a.Logger
@@ -198,6 +211,7 @@ func (b *ExtensionBuilder) Build(ctx context.Context, opts builder.ExtensionBuil
 			ExtraSteps:       opts.Source.ExtraSteps,
 			Hierarchies:      opts.Hierarchies,
 			ServiceReload:    opts.ServiceReload,
+			SigningKeySetID:  opts.SigningKeySetID,
 			CreatedAt:        time.Now().UTC(),
 			UpdatedAt:        time.Now().UTC(),
 		}

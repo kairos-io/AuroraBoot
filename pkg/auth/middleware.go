@@ -175,6 +175,50 @@ func ArtifactImageMiddleware(password string, nodeStore store.NodeStore, command
 	}
 }
 
+// ExtensionDownloadMiddleware authorizes GET
+// /api/v1/extensions/:id/download/:filename for either an admin or any
+// authenticated node, and splits the two credentials the same way
+// ArtifactImageMiddleware does.
+//
+// An admin may authenticate over the Authorization header or the ?token= query
+// param: the UI offers the .raw as a plain <a href download> anchor, which
+// cannot set headers, so without the query branch that button always returned
+// {"error":"unauthorized"}. A NODE API key is accepted from the Authorization
+// header ONLY, for the reason spelled out on ArtifactImageMiddleware — a node
+// credential in a URL leaks through access logs, proxies, browser history and
+// Referer headers. Nodes fetch an extension with their own key in the header,
+// so nothing needs it in the URL.
+//
+// Per-command scoping analogous to nodeAssignedArtifact (a node may pull only
+// an extension some assigned command names) is a follow-up; today any
+// registered node may fetch any extension.
+func ExtensionDownloadMiddleware(password string, nodeStore store.NodeStore) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			headerToken := extractBearer(c.Request().Header.Get("Authorization"))
+			queryToken := c.QueryParam("token")
+			if headerToken == "" && queryToken == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			// Admin: full access, from either the header or ?token=.
+			if secureCompare(headerToken, password) || secureCompare(queryToken, password) {
+				return next(c)
+			}
+			// Otherwise the caller must be a node, authenticated over the
+			// header only.
+			if headerToken == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			node, err := nodeStore.GetByAPIKey(c.Request().Context(), headerToken)
+			if err != nil || node == nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			c.Set(ContextKeyNodeID, node.ID)
+			return next(c)
+		}
+	}
+}
+
 // nodeAssignedArtifact reports whether some upgrade / upgrade-recovery command
 // queued for nodeID names this artifact as its source ("artifact:<id>"). It does
 // not filter on command phase: once an operator has told a node to install an

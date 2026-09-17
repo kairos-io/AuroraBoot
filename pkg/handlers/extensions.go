@@ -101,6 +101,25 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
+	// Both fields are sysext-only, and the CLI enforces that: `auroraboot
+	// confext` declares no --include-path or --service-reload flag, so
+	// forwarding either one ends the build in phase Error with
+	// "flag provided but not defined". Reject them here instead, so an API
+	// caller gets the reason rather than a failed build. The UI already only
+	// sends them for sysext, so this is reachable via REST and swagger only.
+	if req.Type == "confext" {
+		if len(req.Hierarchies) > 0 {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "hierarchies are sysext-only; /etc is the implicit confext hierarchy",
+			})
+		}
+		if req.ServiceReload {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": "serviceReload is sysext-only",
+			})
+		}
+	}
+
 	normalized, err := validateHierarchies(req.Hierarchies)
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -137,26 +156,17 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 		Signing:       signing,
 		Hierarchies:   req.Hierarchies,
 		ServiceReload: req.ServiceReload,
+		// Passed to the builder rather than attached to the row afterwards.
+		// Build persists the record and only then starts its goroutine, whose
+		// first act is a full-row upsert of the phase; a second
+		// read-modify-write from here races that write and can drop the
+		// keyset linkage permanently.
+		SigningKeySetID: req.SigningKeySetID,
 	}
 
 	status, err := h.builder.Build(ctx, opts)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
-	}
-	// Builder.Build synchronously created the ExtensionRecord but doesn't know
-	// about the original SigningKeySetID — only the resolved file paths it
-	// received. Mirror what the artifact handler does: write the handler-only
-	// fields after the builder's initial Save so the persisted record carries
-	// the keyset linkage operators expect on GET.
-	if req.SigningKeySetID != "" && h.store != nil {
-		if rec, gerr := h.store.GetByID(ctx, status.ID); gerr == nil && rec != nil {
-			rec.SigningKeySetID = req.SigningKeySetID
-			// ExtensionStore.Create is implemented as a GORM Save (upsert), so
-			// this updates the existing row the builder just created.
-			if err := h.store.Create(ctx, rec); err != nil {
-				c.Logger().Errorf("persist signingKeySetId for %s: %v", status.ID, err)
-			}
-		}
 	}
 	return c.JSON(http.StatusCreated, status)
 }
