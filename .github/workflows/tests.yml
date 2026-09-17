@@ -76,6 +76,16 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+          # BuildKit does not inherit dockerd's --registry-mirror, so without
+          # this it dials Docker Hub directly and hits the AAAA record the ARC
+          # runners have no route to. Same config as kairos'
+          # reusable-qemu-test.yaml. Refs kairos-io/kairos#4686.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry.docker-mirror.svc.cluster.local:5000"]
+            [registry."registry.docker-mirror.svc.cluster.local:5000"]
+              insecure = true
+              http = true
       - name: Build Docker image
         uses: docker/build-push-action@v7
         with:
@@ -118,6 +128,16 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+          # BuildKit does not inherit dockerd's --registry-mirror, so without
+          # this it dials Docker Hub directly and hits the AAAA record the ARC
+          # runners have no route to. Same config as kairos'
+          # reusable-qemu-test.yaml. Refs kairos-io/kairos#4686.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry.docker-mirror.svc.cluster.local:5000"]
+            [registry."registry.docker-mirror.svc.cluster.local:5000"]
+              insecure = true
+              http = true
       - name: Build local image
         uses: docker/build-push-action@v7
         with:
@@ -156,6 +176,16 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+          # BuildKit does not inherit dockerd's --registry-mirror, so without
+          # this it dials Docker Hub directly and hits the AAAA record the ARC
+          # runners have no route to. Same config as kairos'
+          # reusable-qemu-test.yaml. Refs kairos-io/kairos#4686.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry.docker-mirror.svc.cluster.local:5000"]
+            [registry."registry.docker-mirror.svc.cluster.local:5000"]
+              insecure = true
+              http = true
       - name: Download image artifact
         uses: actions/download-artifact@v7
         with:
@@ -214,6 +244,16 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+          # BuildKit does not inherit dockerd's --registry-mirror, so without
+          # this it dials Docker Hub directly and hits the AAAA record the ARC
+          # runners have no route to. Same config as kairos'
+          # reusable-qemu-test.yaml. Refs kairos-io/kairos#4686.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry.docker-mirror.svc.cluster.local:5000"]
+            [registry."registry.docker-mirror.svc.cluster.local:5000"]
+              insecure = true
+              http = true
       - name: Download image artifact
         uses: actions/download-artifact@v7
         with:
@@ -264,6 +304,16 @@ jobs:
         uses: docker/setup-buildx-action@v4
         with:
           driver-opts: network=host
+          # BuildKit does not inherit dockerd's --registry-mirror, so without
+          # this it dials Docker Hub directly and hits the AAAA record the ARC
+          # runners have no route to. Same config as kairos'
+          # reusable-qemu-test.yaml. Refs kairos-io/kairos#4686.
+          buildkitd-config-inline: |
+            [registry."docker.io"]
+              mirrors = ["registry.docker-mirror.svc.cluster.local:5000"]
+            [registry."registry.docker-mirror.svc.cluster.local:5000"]
+              insecure = true
+              http = true
       - name: Download image artifact
         uses: actions/download-artifact@v7
         with:
