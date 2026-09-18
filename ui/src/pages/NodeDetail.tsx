@@ -263,8 +263,13 @@ export function NodeDetail() {
               </div>
               <Separator />
               <div className="flex justify-between">
-                <dt className="text-muted-foreground">Agent Version</dt>
+                <dt className="text-muted-foreground">Kairos Version</dt>
                 <dd className="text-xs">{node.agentVersion || "-"}</dd>
+              </div>
+              <Separator />
+              <div className="flex justify-between">
+                <dt className="text-muted-foreground">IP Address</dt>
+                <dd className="font-mono text-xs">{node.remoteIP || "-"}</dd>
               </div>
               <Separator />
               <div className="flex justify-between">
@@ -335,7 +340,7 @@ export function NodeDetail() {
               )}
               {node.osRelease.KAIROS_VERSION && (
                 <div>
-                  <span className="text-muted-foreground text-xs">Kairos</span>
+                  <span className="text-muted-foreground text-xs">Image Version</span>
                   <p className="mt-0.5">{node.osRelease.KAIROS_VERSION}</p>
                 </div>
               )}

@@ -221,7 +221,7 @@ func runWeb(c *cli.Context) error {
 	// rewrites externalURL to this container's own hostname, which is exactly
 	// the value nodes cannot resolve. With no --url the manager is better off
 	// finding a local interface address itself.
-	netbootManager := netbootmgr.NewManager(c.String("url"))
+	netbootManager := netbootmgr.NewManager(c.String("url"), wsHub.UI)
 
 	var artifactBuilder builder.ArtifactBuilder
 	var systemInfo handlers.APISystemBuilder
