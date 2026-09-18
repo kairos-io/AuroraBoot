@@ -116,51 +116,67 @@ func buildISO(auroraboot *Auroraboot, image, keysDir, resultDir, resultFile stri
 }
 
 func readLoaderConf(auroraboot *Auroraboot, isoFile string) string {
-	return runCommandInIso(auroraboot, isoFile, "cat /tmp/efi/loader/loader.conf")
+	return readEFIPartition(auroraboot, isoFile, `mtype -i "$ESP" ::/loader/loader.conf`)
 }
 
 func listEfiFiles(auroraboot *Auroraboot, isoFile string) string {
-	return runCommandInIso(auroraboot, isoFile, "ls /tmp/efi/EFI/kairos")
+	return readEFIPartition(auroraboot, isoFile, `mdir -b -i "$ESP" ::/EFI/kairos`)
 }
 
 func listConfFiles(auroraboot *Auroraboot, isoFile string) string {
-	return runCommandInIso(auroraboot, isoFile, "ls /tmp/efi/loader/entries")
+	return readEFIPartition(auroraboot, isoFile, `mdir -b -i "$ESP" ::/loader/entries`)
 }
 
-func runCommandInIso(auroraboot *Auroraboot, isoFile, command string) string {
-	By("running command: " + command)
+// readEFIPartition runs an mtools command against the EFI system partition
+// (efiboot.img) of a build-uki ISO and returns its output.
+//
+// The ESP is pulled out of the ISO with xorriso and read with mtools rather
+// than loop-mounted. Loop mounting cannot survive `ginkgo -p`, which runs
+// these specs side by side, each in its own container:
+//
+//   - `losetup --find` is not atomic. It asks the kernel for a free index with
+//     LOOP_CTL_GET_FREE, which reports an index without claiming it, so two
+//     concurrent callers are handed the same one and only one of them wins.
+//   - The container's /dev is a snapshot taken when the container starts. Any
+//     loop device the kernel has to create to satisfy the demand of the other
+//     specs has no node in here, so it is unusable however long we retry.
+//
+// mtools is also how build-uki writes this image in the first place
+// (mformat/mmd/mcopy), so reading it back this way is symmetric, and it needs
+// no mount, no loop device and no privileges.
+func readEFIPartition(auroraboot *Auroraboot, isoFile, mtoolsCommand string) string {
+	By("reading the EFI partition: " + mtoolsCommand)
 	out, err := auroraboot.ContainerRun("/bin/bash", "-c",
 		fmt.Sprintf(`#!/bin/bash
-set -e
-cleanup() {
-	# Clean up only the loop devices we explicitly created
-	if [ -n "$LOOP_EFI" ]; then
-		umount /tmp/efi 2>&1 || true
-		losetup -d "$LOOP_EFI" 2>&1 || true
-	fi
-	if [ -n "$LOOP_ISO" ]; then
-		umount /tmp/iso 2>&1 || true
-		losetup -d "$LOOP_ISO" 2>&1 || true
-	fi
-	# Fallback: try to unmount even if variables are not set
-	umount /tmp/efi 2>&1 || true
-	umount /tmp/iso 2>&1 || true
-}
-trap cleanup EXIT ERR
+set -euo pipefail
 
-mkdir -p /tmp/iso /tmp/efi
+ISO="%[1]s"
 
-# Explicitly create and track loop device for the ISO file
-LOOP_ISO=$(losetup --find --show %[1]s)
-mount -v -t iso9660 "$LOOP_ISO" /tmp/iso
+WORKDIR=$(mktemp -d)
+trap 'rm -rf "$WORKDIR"' EXIT
 
-# Now create a loop device for the efiboot.img file inside the mounted ISO
-LOOP_EFI=$(losetup --find --show /tmp/iso/efiboot.img)
-mount -v "$LOOP_EFI" /tmp/efi
+# Keep xorriso's chatter out of the output unless it actually fails.
+if ! extract_out=$(xorriso -osirrox on -indev "$ISO" -extract / "$WORKDIR/iso" 2>&1); then
+	echo "extracting $ISO with xorriso failed:" >&2
+	echo "$extract_out" >&2
+	exit 1
+fi
 
+# Rock Ridge is not guaranteed, so the recorded name may be EFIBOOT.IMG;1.
+shopt -s nullglob nocaseglob
+candidates=("$WORKDIR"/iso/efiboot.img*)
+shopt -u nocaseglob
+ESP="${candidates[0]:-}"
+if [ -z "$ESP" ]; then
+	echo "no efiboot.img in the root of $ISO, which contains:" >&2
+	ls -la "$WORKDIR/iso" >&2
+	exit 1
+fi
+
+# mformat sizes the image to its contents, so skip mtools' geometry check.
+export MTOOLS_SKIP_CHECK=1
 %[2]s
-cleanup
-`, isoFile, command))
+`, isoFile, mtoolsCommand))
 	Expect(err).ToNot(HaveOccurred(), out)
 
 	return out
