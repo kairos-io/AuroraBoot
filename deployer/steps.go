@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/hashicorp/go-multierror"
+	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -207,9 +208,20 @@ func (d *Deployer) StepStartNetboot() error {
 		herd.EnableIf(d.netbootOption),
 		herd.Background,
 		herd.WithDeps(constants.OpExtractNetboot, constants.OpCopyCloudConfig),
-		herd.WithCallback(
-			ops.StartPixiecore(d.cloudConfigPath(), d.netBootListenAddr(), d.netbootPort(), d.squashFSfile, d.initrdFile, d.kernelFile, d.Config.NetBoot),
-		),
+		herd.WithCallback(func(ctx context.Context) error {
+			// The server threads its netbootmgr.Manager through the context
+			// (see internal/cmd/web.go); the CLI never does. When present,
+			// route through it so this build-triggered start shares the same
+			// state as the dashboard's Start/Stop/Status endpoints -- without
+			// this, a build with the netboot output enabled silently starts a
+			// server the UI has no way to see or stop, and a later manual
+			// "Start Netboot" collides with it on the same port instead of
+			// reporting "already running".
+			if mgr := netbootmgr.FromContext(ctx); mgr != nil {
+				return mgr.StartWithPaths(filepath.Base(d.destination()), d.cloudConfigPath(), d.squashFSfile(), d.initrdFile(), d.kernelFile())
+			}
+			return ops.StartPixiecore(d.cloudConfigPath(), d.netBootListenAddr(), d.netbootPort(), d.squashFSfile, d.initrdFile, d.kernelFile, d.Config.NetBoot)(ctx)
+		}),
 	)
 }
 
