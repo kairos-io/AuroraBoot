@@ -132,3 +132,71 @@ var _ = Describe("ArtifactImageMiddleware", func() {
 		Expect(do("node-1-key", "")).To(Equal(http.StatusForbidden))
 	})
 })
+
+var _ = Describe("ExtensionDownloadMiddleware", func() {
+	const (
+		adminPass = "admin-pass"
+		extID     = "ext-1"
+	)
+
+	var (
+		e  *echo.Echo
+		ns *fakeNodeStore
+		mw echo.MiddlewareFunc
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "node-1-key"}}}
+		mw = auth.ExtensionDownloadMiddleware(adminPass, ns)
+	})
+
+	// do runs GET /api/v1/extensions/:id/download/:filename through the
+	// middleware and returns the status code. header sets a Bearer token;
+	// query sets ?token=.
+	do := func(header, query string) int {
+		target := "/api/v1/extensions/" + extID + "/download/x.sysext.raw"
+		if query != "" {
+			target += "?token=" + query
+		}
+		req := httptest.NewRequest(http.MethodGet, target, nil)
+		if header != "" {
+			req.Header.Set("Authorization", "Bearer "+header)
+		}
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetParamNames("id", "filename")
+		c.SetParamValues(extID, "x.sysext.raw")
+		handler := mw(func(c echo.Context) error { return c.String(http.StatusOK, "raw") })
+		_ = handler(c)
+		return rec.Code
+	}
+
+	It("allows the admin via the Authorization header", func() {
+		Expect(do(adminPass, "")).To(Equal(http.StatusOK))
+	})
+
+	// The regression this middleware exists for: the UI offers the .raw as a
+	// plain <a href download> anchor, which cannot set a header, so the old
+	// header-only guard made that button always return 401.
+	It("allows the admin via ?token= (the UI's download anchor)", func() {
+		Expect(do("", adminPass)).To(Equal(http.StatusOK))
+	})
+
+	It("allows a registered node via the Authorization header", func() {
+		Expect(do("node-1-key", "")).To(Equal(http.StatusOK))
+	})
+
+	It("rejects a node API key supplied via ?token=", func() {
+		Expect(do("", "node-1-key")).To(Equal(http.StatusUnauthorized))
+	})
+
+	It("401s with no credentials", func() {
+		Expect(do("", "")).To(Equal(http.StatusUnauthorized))
+	})
+
+	It("401s an unknown token", func() {
+		Expect(do("bogus", "")).To(Equal(http.StatusUnauthorized))
+		Expect(do("", "bogus")).To(Equal(http.StatusUnauthorized))
+	})
+})

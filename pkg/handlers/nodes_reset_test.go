@@ -30,7 +30,7 @@ var _ = Describe("Reset lifecycle", func() {
 
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
-			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil)
+			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil, nil, nil)
 		})
 
 		create := func(body string) {
@@ -64,7 +64,7 @@ var _ = Describe("Reset lifecycle", func() {
 				{ID: "node-1", GroupID: "grp-1"},
 				{ID: "node-2", GroupID: "grp-1"},
 			}
-			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil)
+			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil, nil, nil)
 		})
 
 		expectAllPending := func() {

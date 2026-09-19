@@ -24,10 +24,17 @@ export const PHONEHOME_SAFE_DEFAULTS: readonly string[] = [
   "unregister",
 ];
 
+// `extension` installs or removes a systemd system/config extension, so it
+// ships code to the node and belongs in the destructive set rather than the
+// safe defaults. It has to be listed here to be reachable at all: an operator
+// can only tick commands this catalogue renders, and the agent refuses any
+// command absent from the baked phonehome.allowed_commands, so without this
+// entry the Install Extension dialog sends a command no node will run.
 export const PHONEHOME_DESTRUCTIVE_COMMANDS: readonly string[] = [
   "exec",
   "reset",
   "apply-cloud-config",
+  "extension",
 ];
 
 export const PHONEHOME_ALL_COMMANDS: readonly string[] = [
