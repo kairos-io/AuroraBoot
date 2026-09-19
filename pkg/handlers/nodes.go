@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -20,6 +21,10 @@ import (
 // into the command's ExpiresAt so the DB reflects the same deadline — a node
 // that comes online after the window is closed will not run the teardown.
 const decommissionTimeout = 30 * time.Second
+
+// DefaultResetTimeout is how long AuroraBoot waits for a node to return after
+// an automatic reset before reporting the lifecycle as failed.
+const DefaultResetTimeout = 30 * time.Minute
 
 // nodeFinalizer is the auto eject-on-phone-home hook: given a node id it ejects the
 // virtual media of that node's pending-eject Redfish deployment (when one can be
@@ -44,6 +49,10 @@ type NodeHandler struct {
 	// the server lifecycle so a shutdown cancels an in-flight eject. Defaults to
 	// context.Background().
 	baseCtx context.Context
+	// resetTimeout bounds the pending/in-progress reset lifecycle. Expiration is
+	// evaluated lazily when nodes are read, which matches the UI and controller
+	// polling paths without adding a process-wide background worker.
+	resetTimeout time.Duration
 }
 
 // NewNodeHandler creates a new NodeHandler.
@@ -56,7 +65,18 @@ func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups s
 		regToken:      regToken,
 		aurorabootURL: aurorabootURL,
 		baseCtx:       context.Background(),
+		resetTimeout:  DefaultResetTimeout,
 	}
+}
+
+// WithResetTimeout configures how long an automatic reset may remain pending or
+// in-progress. Zero keeps the default; a negative duration disables expiration.
+func (h *NodeHandler) WithResetTimeout(timeout time.Duration) *NodeHandler {
+	if timeout == 0 {
+		timeout = DefaultResetTimeout
+	}
+	h.resetTimeout = timeout
+	return h
 }
 
 // WithFinalizer wires the auto eject-on-phone-home hook and the server base context
@@ -111,6 +131,39 @@ func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode,
 		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateDone, true)
 	case store.BootStatePassive, store.BootStateRecovery:
 		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateFailed, false)
+	}
+}
+
+// expireReset marks an overdue reset failed. FailResetBefore provides the atomic
+// compare-and-set, so concurrent UI/controller reads can safely race. Updating
+// the supplied snapshot after a successful transition ensures this response
+// immediately contains the terminal state.
+//
+// Best-effort, like resolveReset: a store error is logged and discarded rather
+// than failing the read. These endpoints are the UI's node page and the CAPI
+// provider's read path, so one rejected bookkeeping write must not hide the
+// whole fleet — and a lost CAS already returns the stale pending state, so
+// there would be no consistent behaviour to fail for anyway. The next read
+// retries the transition.
+func (h *NodeHandler) expireReset(ctx context.Context, node *store.ManagedNode, now time.Time) {
+	if !resetExpired(node, h.resetTimeout, now) {
+		return
+	}
+
+	advanced, err := h.nodes.FailResetBefore(ctx, node.ID, now.Add(-h.resetTimeout))
+	if err != nil {
+		log.Printf("reset expiry: node %s: %v", node.ID, err)
+		return
+	}
+	if advanced {
+		node.ResetState = store.ResetStateFailed
+	}
+}
+
+func (h *NodeHandler) expireResets(ctx context.Context, nodes []*store.ManagedNode) {
+	now := time.Now()
+	for _, node := range nodes {
+		h.expireReset(ctx, node, now)
 	}
 }
 
@@ -217,6 +270,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 		}
+		h.expireResets(ctx, nodes)
 		return c.JSON(http.StatusOK, nodes)
 	}
 
@@ -230,6 +284,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 		}
+		h.expireResets(ctx, nodes)
 		return c.JSON(http.StatusOK, nodes)
 	}
 
@@ -237,6 +292,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 	}
+	h.expireResets(ctx, nodes)
 	return c.JSON(http.StatusOK, nodes)
 }
 
@@ -252,10 +308,12 @@ func (h *NodeHandler) List(c echo.Context) error {
 //	@Router			/api/v1/nodes/{nodeID} [get]
 func (h *NodeHandler) Get(c echo.Context) error {
 	nodeID := c.Param("nodeID")
-	node, err := h.nodes.GetByID(c.Request().Context(), nodeID)
+	ctx := c.Request().Context()
+	node, err := h.nodes.GetByID(ctx, nodeID)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
 	}
+	h.expireReset(ctx, node, time.Now())
 	return c.JSON(http.StatusOK, node)
 }
 

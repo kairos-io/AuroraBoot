@@ -2018,6 +2018,10 @@ const docTemplate = `{
                     "description": "RemoteIP is the IP the server observed the node connect from at register or\nheartbeat time (kairos-io/kairos#4590), independent of Addresses: the node\ndoes not report it, and it survives even when an agent sends no addresses at\nall (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP\nchanges because every heartbeat re-observes and overwrites it.",
                     "type": "string"
                 },
+                "resetProgressAt": {
+                    "description": "ResetProgressAt is when the node last proved it survived the reset reboot,\ni.e. when it re-registered reporting bootState=autoreset and the lifecycle\nmoved from pending to in-progress. The reset timeout is measured from this\ntimestamp when it is set, so the wipe phase gets its own budget instead of\nsharing the one that started at ResetRequestedAt. Nil until such a\nre-register happens, and cleared when a new reset is requested.",
+                    "type": "string"
+                },
                 "resetRequestedAt": {
                     "description": "ResetRequestedAt is when the reset command was issued (ResetState set to\npending); nil when no reset has been requested.",
                     "type": "string"
