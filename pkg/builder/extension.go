@@ -40,6 +40,11 @@ type ExtensionBuildOptions struct {
 	// before Build returns, so a second read-modify-write races the
 	// goroutine's first phase update and can blank the column for good.
 	SigningKeySetID string
+	// DownloadToken is the per-extension download bearer the handler mints.
+	// Threaded through for the same reason as SigningKeySetID: it has to be in
+	// the row the synchronous Create persists, because attaching it afterwards
+	// races the build goroutine's first full-row phase upsert.
+	DownloadToken string
 }
 
 // ExtensionBuildStatus tracks an extension build's state. Phase strings

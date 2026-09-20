@@ -349,6 +349,18 @@ var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered,
 			Expect(resp.StatusCode).To(Equal(http.StatusOK), string(data))
 			Expect(string(data)).To(ContainSubstring("web-bundled"))
 			Expect(string(data)).To(ContainSubstring("/download/"))
+			// The resolved source goes into an upgrade command's `extensions`
+			// arg, which the node fetches with no Authorization header. So it
+			// carries the extension's own download token, and never the admin
+			// password.
+			_, extData := ws.do(http.MethodGet, "/api/v1/extensions/"+extID, nil)
+			var extRec struct {
+				DownloadToken string `json:"downloadToken"`
+			}
+			Expect(json.Unmarshal(extData, &extRec)).To(Succeed())
+			Expect(extRec.DownloadToken).ToNot(BeEmpty(), string(extData))
+			Expect(string(data)).To(ContainSubstring("?token=" + extRec.DownloadToken))
+			Expect(string(data)).ToNot(ContainSubstring(webAdminPassword))
 
 			// Delete blocked → 409.
 			resp, data = ws.do(http.MethodDelete, "/api/v1/extensions/"+extID, nil)
@@ -499,8 +511,21 @@ var _ = Describe("extensions agent flow", Label("extensions-agent", "e2e"), Orde
 
 	It("installs the sysext and records node_extensions", func() {
 		node := nodeID()
+		// The source URL is pushed to every node in the selector and kept in
+		// the commands table, so it carries the extension's own download
+		// token. The admin password must not appear in it -- that is what the
+		// UI used to send.
+		_, data := ws.do(http.MethodGet, "/api/v1/extensions/"+sysextID, nil)
+		var rec struct {
+			DownloadToken string `json:"downloadToken"`
+		}
+		Expect(json.Unmarshal(data, &rec)).To(Succeed())
+		Expect(rec.DownloadToken).ToNot(BeEmpty(), string(data))
+		Expect(rec.DownloadToken).ToNot(Equal(webAdminPassword))
+
 		src := ws.baseURL + "/api/v1/extensions/" + sysextID +
-			"/download/agent-tools.sysext.raw?token=" + webAdminPassword
+			"/download/agent-tools.sysext.raw?token=" + rec.DownloadToken
+		Expect(src).ToNot(ContainSubstring(webAdminPassword))
 		cmdID := sendCmd(node, map[string]string{
 			"type": "sysext", "action": "install", "name": "agent-tools",
 			"source": src, "bootState": "common", "now": "false",

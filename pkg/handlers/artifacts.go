@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -1594,8 +1595,15 @@ func (h *ArtifactHandler) ResolveBundle(c echo.Context) error {
 					i, e.ExtensionType, e.ExtensionName, e.PinnedVersion),
 			})
 		}
-		source := fmt.Sprintf("%s/api/v1/extensions/%s/download/%s",
-			strings.TrimRight(h.aurorabootURL, "/"), ext.ID, ext.RawFilename)
+		// The node fetches this URL itself, and kairos-agent's http source
+		// sends no Authorization header, so the credential has to be in the
+		// URL. It is the extension's own download token: this source is
+		// written into an upgrade command's `extensions` arg, which reaches
+		// every node in the selector and is kept in the commands table, so it
+		// must never be the admin password.
+		source := fmt.Sprintf("%s/api/v1/extensions/%s/download/%s?token=%s",
+			strings.TrimRight(h.aurorabootURL, "/"), ext.ID, ext.RawFilename,
+			url.QueryEscape(ext.DownloadToken))
 		out = append(out, ResolvedBundleEntry{
 			Name:    ext.Name,
 			Type:    ext.Type,

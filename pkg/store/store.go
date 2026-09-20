@@ -333,6 +333,21 @@ type ExtensionRecord struct {
 	ContainerImage string `json:"containerImage"`
 	RawFilename    string `json:"rawFilename"`
 
+	// DownloadToken authorizes GET /extensions/:id/download/:filename for
+	// this one extension and nothing else. It exists so the install command's
+	// "source" URL -- which AuroraBoot pushes to every node in the selector,
+	// stores in the commands table and renders in the UI's command preview --
+	// does not have to carry the admin password. The scope is read-only, one
+	// extension, and revoking it is a rebuild.
+	//
+	// Unlike ArtifactRecord.UploadToken this is the plaintext, not a digest:
+	// the operator may open the Install dialog at any time after the build, so
+	// the value has to be retrievable, and a digest cannot be. Both routes
+	// that return it are admin-authenticated, so it reaches nobody who does
+	// not already hold the admin password. Keep it that way: do not serialize
+	// an ExtensionRecord on a node-facing route.
+	DownloadToken string `json:"downloadToken,omitempty"`
+
 	Logs string `gorm:"type:text" json:"-"`
 
 	CreatedAt time.Time `json:"createdAt"`

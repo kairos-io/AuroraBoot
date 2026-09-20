@@ -212,6 +212,7 @@ func (b *ExtensionBuilder) Build(ctx context.Context, opts builder.ExtensionBuil
 			Hierarchies:      opts.Hierarchies,
 			ServiceReload:    opts.ServiceReload,
 			SigningKeySetID:  opts.SigningKeySetID,
+			DownloadToken:    opts.DownloadToken,
 			CreatedAt:        time.Now().UTC(),
 			UpdatedAt:        time.Now().UTC(),
 		}

@@ -202,6 +202,36 @@ var _ = Describe("ExtensionHandler.Create — signing key set linkage", func() {
 		Expect(rec.Code).To(Equal(http.StatusCreated))
 		Expect(fb.lastOpts.SigningKeySetID).To(BeEmpty())
 	})
+
+	// Every build gets its own download bearer, so the install command's
+	// source URL can name the extension without carrying the admin password.
+	// It travels in the build options for the same reason the keyset does:
+	// the builder must write it into the record its synchronous Create
+	// persists, not a second read-modify-write racing the build goroutine.
+	It("mints a download token and passes it to the builder", func() {
+		rec := post(`{"name":"plain","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"}}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(fb.lastOpts.DownloadToken).To(HaveLen(64),
+			"32 bytes of crypto/rand, hex encoded")
+		Expect(fb.lastOpts.DownloadToken).To(MatchRegexp(`^[0-9a-f]{64}$`))
+	})
+
+	It("mints a different download token for every build", func() {
+		Expect(post(`{"name":"a","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"}}`).Code).
+			To(Equal(http.StatusCreated))
+		first := fb.lastOpts.DownloadToken
+		Expect(post(`{"name":"b","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"}}`).Code).
+			To(Equal(http.StatusCreated))
+		Expect(fb.lastOpts.DownloadToken).ToNot(Equal(first))
+	})
+
+	// The response the UI gets back on Create must not be a place the token
+	// leaks by accident, and neither must the build status type in general.
+	It("does not put the download token in the Create response", func() {
+		rec := post(`{"name":"plain","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04"}}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(rec.Body.String()).ToNot(ContainSubstring(fb.lastOpts.DownloadToken))
+	})
 })
 
 var _ = Describe("ExtensionHandler.Create — source/mode validation", func() {

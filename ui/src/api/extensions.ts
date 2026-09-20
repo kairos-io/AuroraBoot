@@ -29,6 +29,10 @@ export interface Extension {
   serviceReload?: boolean;
   containerImage?: string;
   rawFilename?: string;
+  // Per-extension download bearer, minted server-side at build time. Only the
+  // admin-authenticated extension routes return it. It is what an install
+  // command's source URL carries, so that URL never holds the admin password.
+  downloadToken?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -86,12 +90,33 @@ export function getExtensionLogs(id: string): Promise<string> {
   return apiFetchText(`/api/v1/extensions/${id}/logs`);
 }
 
+// extensionDownloadPath builds the download route with no credential attached.
+// Encode every interpolated component: id/filename can originate from the URL
+// route param (untrusted), so they must not be able to inject path or query
+// separators into the request target.
+export function extensionDownloadPath(id: string, filename: string): string {
+  return `/api/v1/extensions/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}`;
+}
+
+// extensionDownloadUrl authenticates as the admin via ?token=, for the
+// browser's <a href download> anchor, which cannot set a header. Use it only
+// for links the operator's own browser follows. Anything that travels to a
+// node must use extensionSourceUrl instead: this URL carries the admin
+// password.
 export function extensionDownloadUrl(id: string, filename: string): string {
   const token = localStorage.getItem("auroraboot_token") ?? "";
-  // Encode every interpolated component: id/filename can originate from the
-  // URL route param (untrusted), so they must not be able to inject path or
-  // query separators into the request target.
-  return `/api/v1/extensions/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+  return `${extensionDownloadPath(id, filename)}?token=${encodeURIComponent(token)}`;
+}
+
+// extensionSourceUrl builds the URL an install command hands to the agent. It
+// carries the extension's own download token, never the admin password: the
+// command is pushed to every node in the selector, persisted in the commands
+// table and rendered in the dialog's preview. Returns null when the extension
+// has no token, so the caller declines to send a source it knows would 401
+// rather than silently falling back to an admin credential.
+export function extensionSourceUrl(ext: Extension): string | null {
+  if (!ext.rawFilename || !ext.downloadToken) return null;
+  return `${extensionDownloadPath(ext.id, ext.rawFilename)}?token=${encodeURIComponent(ext.downloadToken)}`;
 }
 
 // NodeExtensionRow mirrors store.NodeExtensionRow on the server. Tracks

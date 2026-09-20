@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -13,6 +15,21 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
+
+// extensionDownloadTokenBytes sizes the per-extension download bearer. 32
+// bytes of crypto/rand is the same budget as the artifact upload token.
+const extensionDownloadTokenBytes = 32
+
+// mintExtensionDownloadToken returns the bearer that authorizes downloading
+// one extension's .raw. See store.ExtensionRecord.DownloadToken for why the
+// install command's source URL carries this instead of the admin password.
+func mintExtensionDownloadToken() (string, error) {
+	b := make([]byte, extensionDownloadTokenBytes)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("mint extension download token: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
 
 // ExtensionHandler exposes the REST surface for sysext/confext extension
 // builds: create, get, list, patch, delete, logs, cancel, download.
@@ -139,6 +156,11 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 		signing.Certificate = filepath.Join(ks.KeysDir, "db.pem")
 	}
 
+	downloadToken, err := mintExtensionDownloadToken()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
+	}
+
 	opts := builder.ExtensionBuildOptions{
 		ID:      uuid.New().String(),
 		Name:    req.Name,
@@ -162,6 +184,9 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 		// read-modify-write from here races that write and can drop the
 		// keyset linkage permanently.
 		SigningKeySetID: req.SigningKeySetID,
+		// Minted here, and carried in the record from the first write, so the
+		// install command's source URL never needs the admin password.
+		DownloadToken: downloadToken,
 	}
 
 	status, err := h.builder.Build(ctx, opts)

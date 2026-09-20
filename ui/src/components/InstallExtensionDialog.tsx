@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { listGroups, type Group } from "@/api/groups";
 import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
-import { extensionDownloadUrl, type Extension } from "@/api/extensions";
+import { extensionSourceUrl, type Extension } from "@/api/extensions";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 
 type Action = "install" | "enable" | "disable" | "remove";
@@ -75,14 +75,19 @@ export function InstallExtensionDialog({
     bootState,
     now: now ? "true" : "false",
   };
-  if (action === "install" && extension.rawFilename) {
-    args.source =
-      window.location.origin +
-      extensionDownloadUrl(extension.id, extension.rawFilename);
+  // The source URL travels to every node in the selector and is kept in the
+  // commands table, so it carries the extension's own download token rather
+  // than the admin password. sourcePath is null when the build minted no
+  // token; the install button stays disabled instead of sending a source that
+  // would 401 on every node.
+  const sourcePath = extensionSourceUrl(extension);
+  if (action === "install" && sourcePath) {
+    args.source = window.location.origin + sourcePath;
   }
 
   const canSend =
     !submitting &&
+    (action !== "install" || sourcePath !== null) &&
     ((targetKind === "group" && groupID !== "") ||
       (targetKind === "node" && nodeID !== ""));
 
@@ -256,6 +261,13 @@ export function InstallExtensionDialog({
             {JSON.stringify({ command: "extension", args }, null, 2)}
           </pre>
         </details>
+
+        {action === "install" && sourcePath === null && (
+          <p role="alert" className="text-sm text-red-600 mt-2">
+            This extension has no download token, so nodes could not fetch it.
+            Rebuild it to mint one.
+          </p>
+        )}
 
         {err && (
           <p role="alert" className="text-sm text-red-600 mt-2">

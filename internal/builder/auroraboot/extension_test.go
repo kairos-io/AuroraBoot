@@ -380,6 +380,22 @@ var _ = Describe("ExtensionBuilder.Build — auroraboot CLI invocation", func() 
 		Expect(awaitReady("e-4").SigningKeySetID).To(Equal("ks-1"))
 	})
 
+	// Same reasoning as the keyset, and with a sharper consequence: a blanked
+	// download token makes the install command's source URL 401 on every node
+	// in the selector.
+	It("writes DownloadToken in the record Build creates, and keeps it across phases", func() {
+		_, err := eb.Build(context.Background(), builder.ExtensionBuildOptions{
+			ID: "e-dl", Name: "ts", Type: "sysext", Arch: "amd64",
+			Source:        builder.ExtensionSource{Mode: "image", BaseImage: "ubuntu:24.04"},
+			DownloadToken: "dl-token-1",
+		})
+		Expect(err).ToNot(HaveOccurred())
+		rec, gerr := extStore.GetByID(context.Background(), "e-dl")
+		Expect(gerr).ToNot(HaveOccurred())
+		Expect(rec.DownloadToken).To(Equal("dl-token-1"))
+		Expect(awaitReady("e-dl").DownloadToken).To(Equal("dl-token-1"))
+	})
+
 	It("transitions to Error when the CLI fails", func() {
 		eb = eb.WithAurorabootCLIFunc(func(context.Context, auroraboot.AurorabootCLIArgs) error {
 			return fmt.Errorf("systemd-repart: device too small for verity")

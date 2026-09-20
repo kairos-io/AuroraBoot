@@ -353,14 +353,16 @@ func New(cfg Config) *echo.Echo {
 	// command actually assigned this artifact to — never an arbitrary artifact.
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage,
 		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
-	// Extension downloads: admin OR any authenticated node. Nodes need to fetch
-	// extensions bundled into an assigned upgrade command; per-command scoping
-	// analogous to ArtifactImageMiddleware is a follow-up. Admin may use
-	// ?token= here (the UI's download anchor cannot set a header); a node key
-	// is header-only.
+	// Extension downloads: admin, the extension's own download token, OR any
+	// authenticated node. Nodes need to fetch extensions bundled into an
+	// assigned upgrade command; per-command scoping analogous to
+	// ArtifactImageMiddleware is a follow-up. Admin may use ?token= here (the
+	// UI's download anchor cannot set a header), and so may the per-extension
+	// token, which is what an install command's source URL carries so that URL
+	// never holds the admin password. A node key stays header-only.
 	if extensionHandler != nil {
 		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download,
-			auth.ExtensionDownloadMiddleware(cfg.AdminPassword, cfg.NodeStore))
+			auth.ExtensionDownloadMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.ExtensionStore))
 	}
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,
