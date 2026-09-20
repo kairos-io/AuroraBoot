@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
@@ -154,6 +155,15 @@ var BuildUKICmd = cli.Command{
 		}
 		log := logger.NewKairosLogger("auroraboot", logLevel, false)
 
+		cloudConfig := ""
+		if ccPath := ctx.String("cloud-config"); ccPath != "" {
+			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
+			if err != nil {
+				return err
+			}
+			cloudConfig = cc
+		}
+
 		return uki.Build(uki.Options{
 			Source:                  args.Get(0),
 			OutputDir:               ctx.String("output-dir"),
@@ -176,6 +186,7 @@ var BuildUKICmd = cli.Command{
 			CmdLinesV2:              ctx.Bool("cmd-lines-v2"),
 			SdBootInSource:          ctx.Bool("sdboot-in-source"),
 			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
+			CloudConfig:             cloudConfig,
 			Logger:                  &log,
 		})
 	},

@@ -3,7 +3,11 @@ package uki
 import (
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
+
+	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
@@ -154,4 +158,177 @@ var _ = Describe("absolutizePaths", func() {
 		Expect(absolutizePaths(opts)).To(Succeed())
 		Expect(opts.TPMPCRPrivateKey).To(Equal("/data/keys/production/tpm2-pcr-private.pem"))
 	})
+})
+
+var _ = Describe("parseSelinuxOptions", func() {
+	var log *logger.KairosLogger
+
+	BeforeEach(func() {
+		l := logger.NewKairosLogger("uki-test", "warn", false)
+		log = &l
+	})
+
+	It("returns disabled for an empty cloud config", func() {
+		enabled, mode, err := parseSelinuxOptions(log, "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeFalse())
+		Expect(mode).To(BeEmpty())
+	})
+
+	It("returns disabled when install.selinux is absent", func() {
+		cc := "#cloud-config\nusers:\n  - name: kairos\n"
+		enabled, mode, err := parseSelinuxOptions(log, cc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeFalse())
+		Expect(mode).To(BeEmpty())
+	})
+
+	It("returns disabled when install.selinux.enabled is false", func() {
+		cc := "install:\n  selinux:\n    enabled: false\n    mode: enforcing\n"
+		enabled, mode, err := parseSelinuxOptions(log, cc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeFalse())
+		Expect(mode).To(BeEmpty())
+	})
+
+	It("returns enabled with the given mode", func() {
+		cc := "install:\n  selinux:\n    enabled: true\n    mode: enforcing\n"
+		enabled, mode, err := parseSelinuxOptions(log, cc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeTrue())
+		Expect(mode).To(Equal("enforcing"))
+	})
+
+	It("defaults to permissive when mode is missing", func() {
+		cc := "install:\n  selinux:\n    enabled: true\n"
+		enabled, mode, err := parseSelinuxOptions(log, cc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeTrue())
+		Expect(mode).To(Equal("permissive"))
+	})
+
+	It("falls back to permissive for an invalid mode", func() {
+		cc := "install:\n  selinux:\n    enabled: true\n    mode: bogus\n"
+		enabled, mode, err := parseSelinuxOptions(log, cc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeTrue())
+		Expect(mode).To(Equal("permissive"))
+	})
+
+	It("picks up install.selinux from a later document in a multi-doc config", func() {
+		cc := "#cloud-config\nusers:\n  - name: kairos\n---\ninstall:\n  selinux:\n    enabled: true\n    mode: enforcing\n"
+		enabled, mode, err := parseSelinuxOptions(log, cc)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(enabled).To(BeTrue())
+		Expect(mode).To(Equal("enforcing"))
+	})
+
+	It("returns an error for malformed YAML", func() {
+		_, _, err := parseSelinuxOptions(log, "install: [unclosed\n  bad: yaml:\n")
+		Expect(err).To(HaveOccurred())
+	})
+})
+
+var _ = Describe("UKI cmdlines with SELinux base", func() {
+	var selinuxBase string
+
+	BeforeEach(func() {
+		selinuxBase = strings.Replace(constants.UkiCmdline, " selinux=0", " security=selinux selinux=1 enforcing=0 rd.cos.selinux=permissive", 1)
+		Expect(selinuxBase).NotTo(Equal(constants.UkiCmdline))
+	})
+
+	It("puts the enabled fragment in every entry and never selinux=0", func() {
+		entries := GetUkiCmdline(selinuxBase, "role=agent", "Kairos", []string{}, false)
+		// extend mode → single entry
+		Expect(entries).To(HaveLen(1))
+		Expect(entries[0].Cmdline).To(ContainSubstring("security=selinux selinux=1 enforcing=0 rd.cos.selinux=permissive"))
+		Expect(entries[0].Cmdline).To(ContainSubstring("role=agent"))
+		Expect(entries[0].Cmdline).ToNot(ContainSubstring("selinux=0"))
+	})
+
+	It("adds one entry per extra cmdline with the patched base", func() {
+		entries := GetUkiCmdline(selinuxBase, "", "Kairos", []string{"role=agent", "role=backup"}, false)
+		Expect(entries).To(HaveLen(3))
+		for _, e := range entries {
+			Expect(e.Cmdline).To(ContainSubstring("rd.cos.selinux=permissive"))
+			Expect(e.Cmdline).ToNot(ContainSubstring("selinux=0"))
+		}
+	})
+
+	It("keeps unpatched base byte-identical to today (regression)", func() {
+		entries := GetUkiCmdline(constants.UkiCmdline, "", "Kairos", []string{}, false)
+		Expect(entries).To(HaveLen(1))
+		Expect(entries[0].Cmdline).To(Equal(constants.UkiCmdline + " " + constants.UkiCmdlineInstall))
+	})
+
+	It("single-efi entries carry the patched base", func() {
+		l := logger.NewKairosLogger("uki-test", "warn", false)
+		entries := GetUkiSingleCmdlines(selinuxBase, "Kairos", []string{"My Entry: quiet"}, l)
+		Expect(entries).To(HaveLen(1))
+		Expect(entries[0].Title).To(Equal("Kairos (My Entry)"))
+		Expect(entries[0].Cmdline).To(ContainSubstring("rd.cos.selinux=permissive"))
+		Expect(entries[0].Cmdline).To(ContainSubstring("quiet"))
+		Expect(entries[0].Cmdline).ToNot(ContainSubstring("selinux=0"))
+	})
+
+	It("EFI names stay short when the base is patched", func() {
+		name := NameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall+" quiet")
+		Expect(name).ToNot(ContainSubstring("selinux"))
+		Expect(name).To(HavePrefix("norole_"))
+		Expect(NameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall)).To(Equal(constants.ArtifactBaseName))
+	})
+})
+
+var _ = Describe("isSelinuxSupported", func() {
+	var rootfs string
+
+	BeforeEach(func() {
+		var err error
+		rootfs, err = os.MkdirTemp("", "isSelinuxSupported-test-")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(os.MkdirAll(filepath.Join(rootfs, "etc"), 0o755)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		os.RemoveAll(rootfs)
+	})
+
+	DescribeTable("reports support by flavor, not by family",
+		func(kairosRelease, osRelease string, want bool) {
+			if kairosRelease != "" {
+				Expect(os.WriteFile(filepath.Join(rootfs, "etc/kairos-release"), []byte(kairosRelease), 0o644)).To(Succeed())
+			}
+			if osRelease != "" {
+				Expect(os.WriteFile(filepath.Join(rootfs, "etc/os-release"), []byte(osRelease), 0o644)).To(Succeed())
+			}
+			Expect(isSelinuxSupported(rootfs)).To(Equal(want))
+		},
+		Entry("fedora kairos-release",
+			`KAIROS_FAMILY="redhat"
+KAIROS_FLAVOR="fedora"
+`, "", true),
+		Entry("capitalized fedora kairos-release",
+			`KAIROS_FLAVOR="Fedora"
+`, "", true),
+		Entry("ubuntu kairos-release (ships AppArmor, not SELinux)",
+			`KAIROS_FAMILY="debian"
+KAIROS_FLAVOR="ubuntu"
+`, "", false),
+		Entry("rocky kairos-release (redhat family, not fedora flavor)",
+			`KAIROS_FAMILY="redhat"
+KAIROS_FLAVOR="rockylinux"
+`, "", false),
+		Entry("hadron kairos-release",
+			`KAIROS_FAMILY="hadron"
+KAIROS_FLAVOR="hadron"
+`, "", false),
+		Entry("fedora via rootfs os-release when kairos-release lacks a flavor",
+			`KAIROS_FAMILY="redhat"
+`, `KAIROS_FLAVOR="fedora"
+`, true),
+		Entry("no flavor anywhere",
+			`KAIROS_FAMILY="redhat"
+`, `ID=rocky
+`, false),
+	)
 })

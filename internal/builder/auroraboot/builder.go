@@ -683,6 +683,7 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 		SecureBootEnroll:        signing.UKISecureBootEnroll,
 		OverlayRootfs:           opts.OverlayRootfs,
 		AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
+		CloudConfig:             opts.CloudConfig,
 		Logger:                  &log,
 	}
 
