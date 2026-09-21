@@ -1,0 +1,8 @@
+coverage:
+  status:
+    # Privileged port binds, loop devices, container builds and QEMU boots are
+    # not unit-testable, so the total moves by fractions of a percent on
+    # changes that regress nothing. Only flag a real drop.
+    project:
+      default:
+        threshold: 1%
