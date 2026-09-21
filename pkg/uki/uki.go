@@ -30,6 +30,7 @@ import (
 	goukiuki "github.com/kairos-io/go-ukify/pkg/uki"
 	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
 	sdkImages "github.com/kairos-io/kairos/v4/sdk/types/images"
+	installtypes "github.com/kairos-io/kairos/v4/sdk/types/install"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	imageutils "github.com/kairos-io/kairos/v4/sdk/utils/image"
@@ -1143,32 +1144,36 @@ func parseSelinuxOptions(log *logger.KairosLogger, cloudConfig string) (enabled 
 		return false, "", nil
 	}
 
-	type selinuxCloudConfig struct {
-		Install *struct {
-			Selinux *struct {
-				Enabled bool   `yaml:"enabled"`
-				Mode    string `yaml:"mode"`
-			} `yaml:"selinux"`
-		} `yaml:"install"`
-	}
-
-	var selinux *struct {
-		Enabled bool   `yaml:"enabled"`
-		Mode    string `yaml:"mode"`
-	}
+	var selinux *installtypes.SelinuxOptions
 
 	decoder := yaml.NewDecoder(bytes.NewReader([]byte(cloudConfig)))
 	for {
-		var doc selinuxCloudConfig
-		if err := decoder.Decode(&doc); err != nil {
+		var cc struct {
+			Install *struct {
+				Selinux *installtypes.SelinuxOptions `yaml:"selinux"`
+			} `yaml:"install"`
+		}
+
+		if err := decoder.Decode(&cc); err != nil {
 			if errors.Is(err, io.EOF) {
 				break
 			}
 			return false, "", fmt.Errorf("parsing cloud-config YAML: %w", err)
 		}
-		if doc.Install != nil && doc.Install.Selinux != nil {
-			selinux = doc.Install.Selinux // later docs override earlier ones
+
+		if cc.Install == nil || cc.Install.Selinux == nil {
+			continue // cc without install.selinux: keep looking
 		}
+
+		sel := cc.Install.Selinux
+		if sel.Mode != "" && !sel.Enabled {
+			log.Warn("install.selinux.mode is set but install.selinux.enabled is false; SELinux stays disabled")
+		}
+		if sel.Enabled && sel.Mode != "" && !isSelinuxModeExists(sel.Mode) {
+			log.Warnf("unknown install.selinux.mode %q, using permissive", sel.Mode)
+		}
+
+		selinux = sel
 	}
 
 	if selinux == nil || !selinux.Enabled {
@@ -1236,4 +1241,14 @@ func isSelinuxSupported(rootfs string) bool {
 	default:
 		return false
 	}
+}
+
+func isSelinuxModeExists(m string) bool {
+	availableModes := map[string]struct{}{
+		"permissive": {},
+		"enforcing":  {},
+	}
+
+	_, ok := availableModes[m]
+	return ok
 }
