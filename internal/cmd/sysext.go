@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"sort"
 	"strings"
 
 	"github.com/gofrs/uuid"
@@ -147,8 +148,9 @@ func generateSysextConfext(ctx *cli.Context) error {
 	// boot time (AuroraBoot bakes the drop-in via extensionHierarchies on the
 	// artifact create payload).
 	allowList := regexp.MustCompile(`^usr/*|^/usr/*`)
+	var includes []string
 	if buildType == "sysext" {
-		includes := includePathsFromFlags(ctx)
+		includes = includePathsFromFlags(ctx)
 		if len(includes) > 0 {
 			parts := []string{`^usr/*`, `^/usr/*`}
 			for _, p := range includes {
@@ -228,8 +230,40 @@ func generateSysextConfext(ctx *cli.Context) error {
 	// importantly, on shared CI runners the per-host loop pool can be
 	// exhausted by concurrent jobs and systemd-repart fails with
 	// "Failed to make loopback device: Device or resource busy".
-	cmdArgs := []string{
-		fmt.Sprintf("--make-ddi=%s", buildType),
+	//
+	// --make-ddi=sysext selects systemd's own sysext.repart.d definitions, and
+	// those copy /usr and /opt only. Extracting a third hierarchy into the
+	// staging directory is therefore not enough: repart drops it silently and
+	// the image is packed without it. When the operator asks for a hierarchy
+	// the built-in definitions do not carry, write an equivalent definition
+	// directory of our own and point repart at it instead.
+	extra := extraHierarchies(includes)
+	var ddiFlags []string
+	if buildType == "sysext" && len(extra) > 0 {
+		defDir, derr := writeSysextDefinitions(extra)
+		if derr != nil {
+			logger.Logger.Error().Err(derr).Msg("⛔ writing repart definitions")
+			return derr
+		}
+		defer func(path string) {
+			if rerr := os.RemoveAll(path); rerr != nil {
+				logger.Logger.Error().Str("dir", path).Err(rerr).Msg("⛔ removing dir")
+			}
+		}(defDir)
+		logger.Logger.Debug().Str("dir", defDir).Strs("hierarchies", extra).
+			Msg("packing extra hierarchies with a generated repart definition")
+		// --make-ddi= and --definitions= are mutually exclusive, so replace it
+		// with the two settings it implies: create the output file, size it
+		// from the content.
+		ddiFlags = []string{
+			fmt.Sprintf("--definitions=%s", defDir),
+			"--empty=create",
+			"--size=auto",
+		}
+	} else {
+		ddiFlags = []string{fmt.Sprintf("--make-ddi=%s", buildType)}
+	}
+	cmdArgs := append(ddiFlags,
 		"--offline=yes",
 		"--image-policy=root=verity+signed+absent:usr=verity+signed+absent",
 		fmt.Sprintf("--architecture=%s", arch),
@@ -239,7 +273,7 @@ func generateSysextConfext(ctx *cli.Context) error {
 		fmt.Sprintf("--seed=%s", uuid.NewV5(uuid.NamespaceDNS, fmt.Sprintf("kairos-%s", buildType))),
 		fmt.Sprintf("--copy-source=%s", dir),
 		outputFile, // output file
-	}
+	)
 	// Add signing flags or exclude partitions based on whether key/cert are provided
 	cmdArgs = append(cmdArgs, aurorabootUtils.GetSysextSigningFlags(ctx.String("private-key"), ctx.String("certificate"))...)
 	command := exec.Command("systemd-repart", cmdArgs...)
@@ -255,6 +289,81 @@ func generateSysextConfext(ctx *cli.Context) error {
 
 	logger.Logger.Info().Str("output", outputFile).Msgf("🎉 Done %s creation", buildType)
 	return nil
+}
+
+// builtinSysextHierarchies are the hierarchies systemd's own
+// sysext.repart.d definitions copy into the image. Anything else has to be
+// declared in a definition directory we write ourselves.
+var builtinSysextHierarchies = []string{"/usr", "/opt"}
+
+// extraHierarchies returns the requested hierarchies systemd's built-in
+// sysext definitions do not copy, normalized to a leading slash, deduplicated
+// and sorted so the generated definition is reproducible.
+func extraHierarchies(includes []string) []string {
+	seen := map[string]struct{}{}
+	for _, p := range builtinSysextHierarchies {
+		seen[p] = struct{}{}
+	}
+	var out []string
+	for _, p := range includes {
+		p = "/" + strings.Trim(strings.TrimSpace(p), "/")
+		if p == "/" {
+			continue
+		}
+		if _, ok := seen[p]; ok {
+			continue
+		}
+		seen[p] = struct{}{}
+		out = append(out, p)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// writeSysextDefinitions writes a systemd-repart definition directory that
+// mirrors systemd's sysext.repart.d, with one CopyFiles= line per hierarchy:
+// the two built-in ones plus everything in extra. It returns the directory,
+// which the caller owns and must remove.
+//
+// A CopyFiles= source that is absent from the staging directory is skipped by
+// repart with a notice, so listing a hierarchy the image layer did not carry
+// is harmless.
+func writeSysextDefinitions(extra []string) (string, error) {
+	dir, err := os.MkdirTemp("", "auroraboot-repart-")
+	if err != nil {
+		return "", fmt.Errorf("creating definitions directory: %w", err)
+	}
+
+	var copyFiles strings.Builder
+	for _, p := range append(append([]string(nil), builtinSysextHierarchies...), extra...) {
+		fmt.Fprintf(&copyFiles, "CopyFiles=%s/\n", p)
+	}
+
+	files := map[string]string{
+		"10-root.conf": "[Partition]\n" +
+			"Type=root\n" +
+			"Format=erofs\n" +
+			copyFiles.String() +
+			"Verity=data\n" +
+			"VerityMatchKey=root\n" +
+			"Minimize=best\n",
+		"20-root-verity.conf": "[Partition]\n" +
+			"Type=root-verity\n" +
+			"Verity=hash\n" +
+			"VerityMatchKey=root\n" +
+			"Minimize=best\n",
+		"30-root-verity-sig.conf": "[Partition]\n" +
+			"Type=root-verity-sig\n" +
+			"Verity=signature\n" +
+			"VerityMatchKey=root\n",
+	}
+	for name, content := range files {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(content), 0644); err != nil {
+			_ = os.RemoveAll(dir)
+			return "", fmt.Errorf("writing %s: %w", name, err)
+		}
+	}
+	return dir, nil
 }
 
 // includePathsFromFlags merges --include-path entries with the legacy

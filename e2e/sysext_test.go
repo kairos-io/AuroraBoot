@@ -3,7 +3,9 @@ package e2e_test
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -30,6 +32,63 @@ func buildRaw(aurora *Auroraboot, args ...string) (string, error) {
 		time.Sleep(time.Duration(attempt*3) * time.Second)
 	}
 	return out, err
+}
+
+// hierarchyFixtureImage carries one file in each of the three hierarchies the
+// payload spec checks. alpine ships /opt and /srv empty, so an extension built
+// from it cannot tell "hierarchy dropped" from "hierarchy had nothing in it".
+const hierarchyFixtureImage = "auroraboot-sysext-fixture:test"
+
+func buildHierarchyFixtureImage() string {
+	dockerfile := `FROM alpine:3.21
+RUN mkdir -p /usr/local/bin /opt/qa /srv/qa && \
+    echo usr > /usr/local/bin/qa-usr && \
+    echo opt > /opt/qa/qa-opt && \
+    echo srv > /srv/qa/qa-srv
+`
+	// Pin the platform: GetImage takes the image from the local daemon only
+	// when its architecture matches the one the build asks for, and the specs
+	// build for amd64.
+	cmd := exec.Command("docker", "build", "--network", "host",
+		"--platform", "linux/amd64", "-t", hierarchyFixtureImage, "-")
+	cmd.Stdin = strings.NewReader(dockerfile)
+	out, err := cmd.CombinedOutput()
+	Expect(err).ToNot(HaveOccurred(), string(out))
+	return hierarchyFixtureImage
+}
+
+// listSysextPayload returns the absolute paths of the regular files inside a
+// sysext .raw. It reads the erofs root partition straight out of the DDI
+// rather than mounting it: sfdisk gives the partition offset, dd slices it out
+// and fsck.erofs unpacks it, so the spec needs neither a loop device (which
+// the build deliberately avoids, see --offline=yes) nor an erofs kernel
+// module on the runner. sfdisk, jq and erofs-utils all ship in the auroraboot
+// image already.
+func listSysextPayload(aurora *Auroraboot, raw string) []string {
+	// 4f68bce3-... is the discoverable-partitions GUID for an x86-64 root
+	// partition, which is what sysext.repart.d's 10-root.conf declares.
+	const script = `set -euo pipefail
+raw="$1"
+table=$(sfdisk --json "$raw")
+start=$(echo "$table" | jq -r '.partitiontable.partitions[] | select((.type|ascii_downcase)=="4f68bce3-e8cd-4db1-96e7-fbcaf984b709") | .start')
+size=$(echo "$table" | jq -r '.partitiontable.partitions[] | select((.type|ascii_downcase)=="4f68bce3-e8cd-4db1-96e7-fbcaf984b709") | .size')
+test -n "$start" && test -n "$size"
+dd if="$raw" of=/tmp/root.erofs bs=512 skip="$start" count="$size" status=none
+rm -rf /tmp/payload
+fsck.erofs --extract=/tmp/payload /tmp/root.erofs >/dev/null
+cd /tmp/payload && find . -type f | sed 's|^\.||' | sort
+`
+	out, err := aurora.ContainerRun("bash", "-c", script, "bash", raw)
+	Expect(err).ToNot(HaveOccurred(), out)
+
+	var files []string
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "/") {
+			files = append(files, line)
+		}
+	}
+	return files
 }
 
 // These specs exercise the `auroraboot sysext` / `auroraboot confext`
@@ -106,6 +165,34 @@ var _ = Describe("sysext/confext generation", Label("sysext", "e2e"), Serial, fu
 		Expect(out).To(ContainSubstring("extending sysext allowlist"), out)
 		_, statErr := os.Stat(filepath.Join(resultDir, "e2e-paths.sysext.raw"))
 		Expect(statErr).ToNot(HaveOccurred())
+	})
+
+	// The previous spec only proves the allowlist widened, which is the
+	// extraction half. The packing half is systemd-repart, and
+	// `--make-ddi=sysext` reads systemd's own definitions, which copy /usr and
+	// /opt and nothing else. So `--include-path /srv` used to extract /srv and
+	// then drop it, exit 0, and hand the operator an extension missing its
+	// payload. Assert on what is inside the .raw, not on the log line.
+	It("packs every --include-path hierarchy into the image", func() {
+		fixture := buildHierarchyFixtureImage()
+
+		out, err := buildRaw(aurora, "sysext",
+			"--debug",
+			"--arch", "amd64",
+			"--output", resultDir,
+			"--include-path", "/opt",
+			"--include-path", "/srv",
+			"e2e-payload", fixture,
+		)
+		Expect(err).ToNot(HaveOccurred(), out)
+
+		raw := filepath.Join(resultDir, "e2e-payload.sysext.raw")
+		Expect(raw).To(BeAnExistingFile())
+
+		files := listSysextPayload(aurora, raw)
+		Expect(files).To(ContainElement("/usr/local/bin/qa-usr"), files)
+		Expect(files).To(ContainElement("/opt/qa/qa-opt"), files)
+		Expect(files).To(ContainElement("/srv/qa/qa-srv"), files)
 	})
 
 	It("keeps --with-opt working as a deprecated alias for --include-path=/opt", func() {
