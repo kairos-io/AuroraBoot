@@ -2884,6 +2884,7 @@ export function ArtifactBuilder() {
                         {isTruncated && (
                           <button
                             type="button"
+                            aria-expanded={showFullCloudConfigPreview}
                             className="text-xs text-primary hover:underline"
                             onClick={() => setShowFullCloudConfigPreview((prev) => !prev)}
                           >
