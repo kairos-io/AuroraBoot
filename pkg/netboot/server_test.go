@@ -19,8 +19,11 @@ var _ = Describe("serveUntilDone", Label("netboot"), func() {
 		var shutdowns atomic.Int32
 		serve := func() error { return <-release }
 		shutdown := func() {
-			shutdowns.Add(1)
-			close(release)
+			// serveUntilDone repeats the shutdown while the grace lasts, so
+			// only the first call may close the channel.
+			if shutdowns.Add(1) == 1 {
+				close(release)
+			}
 		}
 
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
@@ -32,7 +35,7 @@ var _ = Describe("serveUntilDone", Label("netboot"), func() {
 		var err error
 		Eventually(done, 5*time.Second).Should(Receive(&err))
 		Expect(err).To(MatchError(context.DeadlineExceeded))
-		Expect(shutdowns.Load()).To(Equal(int32(1)))
+		Expect(shutdowns.Load()).To(BeNumerically(">=", int32(1)))
 	})
 
 	It("keeps asking until the server can take the shutdown", func() {
@@ -45,7 +48,7 @@ var _ = Describe("serveUntilDone", Label("netboot"), func() {
 		var shutdowns atomic.Int32
 		serve := func() error { return <-release }
 		shutdown := func() {
-			if shutdowns.Add(1) > dropped {
+			if shutdowns.Add(1) == dropped+1 {
 				close(release)
 			}
 		}
