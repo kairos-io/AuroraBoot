@@ -10,10 +10,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
-	"github.com/kairos-io/AuroraBoot/pkg/builder"
-	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
 )
 
 func assertError(msg string) error { return errors.New(msg) }
@@ -419,6 +419,32 @@ var _ = Describe("AuroraBoot Builder", func() {
 			status, err := b.Status(context.Background(), "uki-boom")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(status.Message).To(ContainSubstring("synthetic uki failure"))
+		})
+
+		It("passes the cloud config through to uki.Options", func() {
+			cc := "#cloud-config\ninstall:\n  selinux:\n    enabled: true\n    mode: permissive\n"
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:          "uki-cc",
+				BaseImage:   "quay.io/kairos/ubuntu:latest",
+				CloudConfig: cc,
+				Outputs: builder.OutputOptions{
+					ISO: true,
+					UKI: true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:  "/keys/db.key",
+					UKISecureBootCert: "/keys/db.pem",
+					UKITPMPCRKey:      "/keys/tpm.pem",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(deployCalled, 5*time.Second).Should(Receive())
+			Eventually(ukiCalled, 5*time.Second).Should(Receive())
+
+			ukiMu.Lock()
+			defer ukiMu.Unlock()
+			Expect(capturedUKI.CloudConfig).To(Equal(cc))
 		})
 	})
 })
