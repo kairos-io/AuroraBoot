@@ -355,6 +355,8 @@ github.com/kairos-io/go-ukify v0.5.0 h1:cmEauHZ6RdPk/2xkfG2EPxjEYqfSZGuCYIHpnYRL
 github.com/kairos-io/go-ukify v0.5.0/go.mod h1:vUmdBgpj4AyW/0an0ZDfeGE1f6NRDpbQ2MILJtAvy+4=
 github.com/kairos-io/go-ukify v0.5.1 h1:32J4FAwgGgfBPG7gg1bcZJ21uOhxXIns7yB5sVwr29s=
 github.com/kairos-io/go-ukify v0.5.1/go.mod h1:f8ZhTDnrmbUDoJb1wC1DMkSozbXbzjOfdgUBw7O8hh8=
+github.com/kairos-io/go-ukify v0.5.2 h1:Bc5AquNmFz4j9kwhnP5pyiYaV4OpfcmHkctwBLHP0W4=
+github.com/kairos-io/go-ukify v0.5.2/go.mod h1:f8ZhTDnrmbUDoJb1wC1DMkSozbXbzjOfdgUBw7O8hh8=
 github.com/kairos-io/kairos-operator v0.2.2 h1:G05p+FSj5nRqZQRNGU7ovF6liP64smMFfL5Lpgh/rOM=
 github.com/kairos-io/kairos-operator v0.2.2/go.mod h1:4cw0Qwdy5hSUOii08Qd7FFnQcTLPxNfdYqDy9FskrLg=
 github.com/kairos-io/kairos/v4 v4.3.0 h1:qgstNBqI6AKF/sXSifPHLmrBhNwQhxrYfqMwJCX459U=
