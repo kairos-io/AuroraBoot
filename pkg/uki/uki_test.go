@@ -293,7 +293,7 @@ var _ = Describe("isSelinuxSupported", func() {
 		os.RemoveAll(rootfs)
 	})
 
-	DescribeTable("reports support by flavor, not by family",
+	DescribeTable("reports support by family, matching the GRUB gate",
 		func(kairosRelease, osRelease string, want bool) {
 			if kairosRelease != "" {
 				Expect(os.WriteFile(filepath.Join(rootfs, "etc/kairos-release"), []byte(kairosRelease), 0o644)).To(Succeed())
@@ -303,31 +303,35 @@ var _ = Describe("isSelinuxSupported", func() {
 			}
 			Expect(isSelinuxSupported(rootfs)).To(Equal(want))
 		},
-		Entry("fedora kairos-release",
+		Entry("fedora flavor, redhat family",
 			`KAIROS_FAMILY="redhat"
 KAIROS_FLAVOR="fedora"
 `, "", true),
-		Entry("capitalized fedora kairos-release",
-			`KAIROS_FLAVOR="Fedora"
-`, "", true),
-		Entry("ubuntu kairos-release (ships AppArmor, not SELinux)",
-			`KAIROS_FAMILY="debian"
-KAIROS_FLAVOR="ubuntu"
-`, "", false),
-		Entry("rocky kairos-release (redhat family, not fedora flavor)",
+		Entry("rocky flavor, redhat family",
 			`KAIROS_FAMILY="redhat"
 KAIROS_FLAVOR="rockylinux"
+`, "", true),
+		Entry("capitalized family",
+			`KAIROS_FAMILY="RedHat"
+`, "", true),
+		Entry("openSUSE, suse family",
+			`KAIROS_FAMILY="suse"
+KAIROS_FLAVOR="opensuse"
+`, "", true),
+		Entry("ubuntu, debian family(ships apparmor, not selinux)",
+			`KAIROS_FAMILY="debian"
+KAIROS_FLAVOR="ubuntu"
 `, "", false),
 		Entry("hadron kairos-release",
 			`KAIROS_FAMILY="hadron"
 KAIROS_FLAVOR="hadron"
 `, "", false),
-		Entry("fedora via rootfs os-release when kairos-release lacks a flavor",
-			`KAIROS_FAMILY="redhat"
-`, `KAIROS_FLAVOR="fedora"
+		Entry("redhat family via rootfs os-release when kairos-release lacks it",
+			`KAIROS_FLAVOR="fedora"
+`, `KAIROS_FAMILY="redhat"
 `, true),
-		Entry("no flavor anywhere",
-			`KAIROS_FAMILY="redhat"
+		Entry("no family anywhere",
+			`KAIROS_FLAVOR="fedora"
 `, `ID=rocky
 `, false),
 	)

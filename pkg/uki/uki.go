@@ -1222,21 +1222,19 @@ func FindFirstFileInDir(dir, pattern string) (string, error) {
 }
 
 func isSelinuxSupported(rootfs string) bool {
-	flavor, err := sdkutils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/kairos-release"))
+	family, err := sdkutils.OSRelease("FAMILY", filepath.Join(rootfs, "etc/kairos-release"))
 	if err != nil {
 		// fallback to os-release
-		flavor, err = sdkutils.OSRelease("FLAVOR", filepath.Join(rootfs, "etc/os-release"))
+		family, err = sdkutils.OSRelease("FAMILY", filepath.Join(rootfs, "etc/os-release"))
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image flavor")
+			internal.Log.Logger.Error().Err(err).Msg("failed to get image family")
 			return false
 		}
 	}
 
-	// SELinux support for UKI is fedora-specific for now: ubuntu ships
-	// AppArmor by default and hadron is not supported. Add further base
-	// distros here as they are validated for UKI.
-	switch strings.ToLower(flavor) {
-	case "fedora":
+	// Gate on KAIROS_FAMILY
+	switch strings.ToLower(family) {
+	case "redhat", "suse":
 		return true
 	default:
 		return false
