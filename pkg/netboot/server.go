@@ -56,11 +56,16 @@ func Server(ctx context.Context, kernel, cmdline string, address, httpPort, init
 }
 
 // shutdownGrace is the grace a real run gets. It bounds how long a cancelled
-// run waits for the server to close its listeners. Shutdown is a non-blocking
-// send, so it is a no-op if the server has not finished binding yet; without a
-// bound, waiting for a server that never got the signal would be the same hang
-// again.
+// run waits for the server to close its listeners, so a server that never
+// takes the signal cannot hold the caller for the life of the process.
 const shutdownGrace = 5 * time.Second
+
+// shutdownRetry is how often a cancelled run repeats the shutdown while the
+// grace lasts. Shutdown is a non-blocking send on a channel the server only
+// allocates once every listener is bound, so a single shutdown sent inside
+// that window is dropped and the listeners stay up. Asking again lands the
+// signal as soon as the server can read it.
+const shutdownRetry = 100 * time.Millisecond
 
 // serveUntilDone runs serve until it returns on its own or ctx is done,
 // whichever happens first. serve blocks until a fatal error or a shutdown, so
@@ -74,11 +79,20 @@ func serveUntilDone(ctx context.Context, serve func() error, shutdown func(), gr
 	case err := <-errCh:
 		return err
 	case <-ctx.Done():
-		shutdown()
+	}
+
+	shutdown()
+	deadline := time.After(grace)
+	retry := time.NewTicker(shutdownRetry)
+	defer retry.Stop()
+	for {
 		select {
 		case <-errCh:
-		case <-time.After(grace):
+			return ctx.Err()
+		case <-retry.C:
+			shutdown()
+		case <-deadline:
+			return ctx.Err()
 		}
-		return ctx.Err()
 	}
 }
