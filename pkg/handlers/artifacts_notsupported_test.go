@@ -34,7 +34,7 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 	BeforeEach(func() {
 		e = echo.New()
 		fb = &fakeBuilder{}
-		handler = handlers.NewArtifactHandler(fb, nil, nil, nil, "", "reg-token", "http://localhost:8080")
+		handler = handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 	})
 
 	Describe("Create", func() {
@@ -89,7 +89,7 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 					{ID: "art-1", Phase: store.ArtifactBuilding, BaseImage: "img"},
 				},
 			}
-			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
 		// Backends that structurally do not implement Cancel surface as 501
@@ -161,7 +161,7 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 			// reclaiming backend state; the handler drops back to the
 			// builder's error taxonomy for the response.
 			as := &fakeArtifactStore{getErr: errors.New("db temporarily unavailable")}
-			handlerFlaky := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerFlaky := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			fb.cancelErr = nil
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/orphaned/cancel", nil)
@@ -190,7 +190,7 @@ var _ = Describe("ArtifactHandler ErrNotSupported mapping", func() {
 					{ID: "art-pending", Phase: store.ArtifactPending, BaseImage: "img"},
 				},
 			}
-			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
 		It("completes cleanup for a Pending record even when Cancel wraps ErrNotSupported", func() {
