@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
@@ -77,6 +78,7 @@ type Builder struct {
 	ukiBuildFn     UKIBuildFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
+	netbootManager *netbootmgr.Manager
 }
 
 type buildState struct {
@@ -158,6 +160,17 @@ func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 // the builder package doesn't have to import ws.
 func (b *Builder) WithLogBroadcaster(lb builder.LogBroadcaster) *Builder {
 	b.logBroadcaster = lb
+	return b
+}
+
+// WithNetbootManager attaches the server's shared netboot Manager, threaded
+// into the deploy context so a build with the netboot output enabled starts
+// its server through the same state the dashboard's Start/Stop/Status
+// endpoints use, instead of one the UI has no way to see or stop. The CLI
+// never sets this, and StepStartNetboot falls back to its previous
+// behavior when it's absent.
+func (b *Builder) WithNetbootManager(m *netbootmgr.Manager) *Builder {
+	b.netbootManager = m
 	return b
 }
 
@@ -353,6 +366,9 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	var sink io.Writer
 	if logWriter != nil {
 		sink = logWriter
+	}
+	if b.netbootManager != nil {
+		ctx = netbootmgr.WithManager(ctx, b.netbootManager)
 	}
 	if err := b.deployFunc(ctx, config, artifact, outputDir, sink); err != nil {
 		msg := fmt.Sprintf("auroraboot failed: %v", err)
