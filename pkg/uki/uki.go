@@ -68,8 +68,9 @@ type Options struct {
 	// Extensions are named catalog extensions to place in the ISO root.
 	Extensions []extensions.Request
 
-	// ExtensionsCatalog is the path or URL of the extension catalog.
-	ExtensionsCatalog string
+	// ExtensionsCatalogs are the paths or URLs of the extension catalogs,
+	// searched in order: the first one publishing a name wins.
+	ExtensionsCatalogs []string
 
 	// OverlayRootfs is an optional directory whose contents are copied into
 	// the rootfs before the UKI is built.
@@ -371,7 +372,7 @@ func Build(opts Options) (err error) {
 
 	switch outputType {
 	case string(constants.IsoOutput):
-		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalog, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
+		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalogs, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
 			return err
 		}
 	case string(constants.ContainerOutput):
@@ -421,7 +422,7 @@ func (o Options) validate() error {
 		if outputType != string(constants.IsoOutput) {
 			return errors.New("extensions are only supported for iso artifacts")
 		}
-		if o.ExtensionsCatalog == "" {
+		if len(o.ExtensionsCatalogs) == 0 {
 			return errors.New("extensions catalog is required when extensions are requested")
 		}
 	}
@@ -808,14 +809,14 @@ func createSystemdConf(dir, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch, extensionsCatalog string, extensionRequests []extensions.Request, insecure bool) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch string, extensionsCatalogs []string, extensionRequests []extensions.Request, insecure bool) error {
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(isoDir)
 
-	if err := stageExtensions(context.Background(), extensionsCatalog, extensionRequests, arch, isoDir, insecure); err != nil {
+	if err := stageExtensions(context.Background(), extensionsCatalogs, extensionRequests, arch, isoDir, insecure); err != nil {
 		return err
 	}
 
@@ -892,8 +893,8 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 
 var materializeExtensions = extensions.Materialize
 
-func stageExtensions(ctx context.Context, catalog string, requests []extensions.Request, arch, destination string, insecure bool) error {
-	_, err := materializeExtensions(ctx, catalog, requests, arch, destination, insecure)
+func stageExtensions(ctx context.Context, catalogs []string, requests []extensions.Request, arch, destination string, insecure bool) error {
+	_, err := materializeExtensions(ctx, catalogs, requests, arch, destination, insecure)
 	return err
 }
 

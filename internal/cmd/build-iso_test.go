@@ -120,6 +120,13 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err).To(MatchError(ContainSubstring("invalid extension request")))
 	})
 
+	It("accepts repeatable extension catalogs", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extensions-catalog", "first.json", "--extensions-catalog", "second.json", "--extension", "foo", "system/cos"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog is required"))
+	})
+
 	It("accepts repeatable extension flags", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--extensions-catalog", "catalog.yaml", "--extension", "foo", "--extension", "bar@v1", "system/cos"})
 		Expect(err).To(HaveOccurred())

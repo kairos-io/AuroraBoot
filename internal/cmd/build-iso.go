@@ -73,9 +73,9 @@ var BuildISOCmd = cli.Command{
 			Name:  "extension",
 			Usage: "Named system extension to include, optionally with @version (repeatable)",
 		},
-		&cli.StringFlag{
+		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
-			Usage: "System extension catalog URL or file",
+			Usage: "System extension catalog URL or file, repeatable. Searched in order, the first catalog publishing the name wins",
 		},
 		AllowInsecureRegistriesFlag,
 	},
@@ -124,7 +124,7 @@ var BuildISOCmd = cli.Command{
 			ContainerImage: source,
 		}
 		extensionValues := ctx.StringSlice("extension")
-		if len(extensionValues) > 0 && ctx.String("extensions-catalog") == "" {
+		if len(extensionValues) > 0 && len(ctx.StringSlice("extensions-catalog")) == 0 {
 			return errors.New("extensions-catalog is required when extension is used")
 		}
 		extensionRequests := make([]extensions.Request, 0, len(extensionValues))
@@ -137,14 +137,14 @@ var BuildISOCmd = cli.Command{
 		}
 
 		isoOptions := schema.ISO{
-			OverrideName:      ctx.String("override-name"),
-			IncludeDate:       ctx.Bool("date"),
-			OverlayISO:        ctx.String("overlay-iso"),
-			OverlayRootfs:     ctx.String("overlay-rootfs"),
-			ExtendLiveCmdline: ctx.String("extend-live-cmdline"),
-			LiveConsole:       ctx.String("live-console"),
-			ExtensionsCatalog: ctx.String("extensions-catalog"),
-			Extensions:        extensionRequests,
+			OverrideName:       ctx.String("override-name"),
+			IncludeDate:        ctx.Bool("date"),
+			OverlayISO:         ctx.String("overlay-iso"),
+			OverlayRootfs:      ctx.String("overlay-rootfs"),
+			ExtendLiveCmdline:  ctx.String("extend-live-cmdline"),
+			LiveConsole:        ctx.String("live-console"),
+			ExtensionsCatalogs: ctx.StringSlice("extensions-catalog"),
+			Extensions:         extensionRequests,
 		}
 
 		if err := validateISOOptions(isoOptions); err != nil {

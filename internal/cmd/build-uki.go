@@ -134,9 +134,9 @@ var BuildUKICmd = cli.Command{
 			Name:  "extension",
 			Usage: "Add a catalog extension by name or name@version (repeatable)",
 		},
-		&cli.StringFlag{
+		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
-			Usage: "Path or URL of the extension catalog",
+			Usage: "Path or URL of an extension catalog, repeatable. Searched in order, the first catalog publishing the name wins",
 		},
 		AllowInsecureRegistriesFlag,
 	},
@@ -146,7 +146,7 @@ var BuildUKICmd = cli.Command{
 		if len(ctx.StringSlice("extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
 			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
 		}
-		if len(ctx.StringSlice("extension")) > 0 && ctx.String("extensions-catalog") == "" {
+		if len(ctx.StringSlice("extension")) > 0 && len(ctx.StringSlice("extensions-catalog")) == 0 {
 			return errors.New("extensions-catalog is required when extension is set")
 		}
 		for _, value := range ctx.StringSlice("extension") {
@@ -202,7 +202,7 @@ var BuildUKICmd = cli.Command{
 			SdBootInSource:          ctx.Bool("sdboot-in-source"),
 			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
 			Extensions:              extensionRequests,
-			ExtensionsCatalog:       ctx.String("extensions-catalog"),
+			ExtensionsCatalogs:      ctx.StringSlice("extensions-catalog"),
 			Logger:                  &log,
 		})
 	},

@@ -21,7 +21,7 @@ import (
 var _ = Describe("materializeISOExtensions", func() {
 	It("does nothing when no extensions are configured", func() {
 		called := false
-		materializeExtensionArtifacts = func(context.Context, string, []extensions.Request, string, string, bool) ([]string, error) {
+		materializeExtensionArtifacts = func(context.Context, []string, []extensions.Request, string, string, bool) ([]string, error) {
 			called = true
 			return nil, nil
 		}
@@ -34,8 +34,8 @@ var _ = Describe("materializeISOExtensions", func() {
 	It("uses the target architecture and ISO root directory", func() {
 		tmp := GinkgoT().TempDir()
 		requests := []extensions.Request{{Name: "foo", Version: "v1"}}
-		materializeExtensionArtifacts = func(_ context.Context, catalog string, got []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
-			Expect(catalog).To(Equal("catalog.yaml"))
+		materializeExtensionArtifacts = func(_ context.Context, catalogs []string, got []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
+			Expect(catalogs).To(Equal([]string{"catalog.yaml"}))
 			Expect(got).To(Equal(requests))
 			Expect(arch).To(Equal("arm64"))
 			Expect(destination).To(Equal(tmp))
@@ -45,7 +45,7 @@ var _ = Describe("materializeISOExtensions", func() {
 		}
 		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
 
-		iso := schema.ISO{ExtensionsCatalog: "catalog.yaml", Extensions: requests}
+		iso := schema.ISO{ExtensionsCatalogs: []string{"catalog.yaml"}, Extensions: requests}
 		Expect(materializeISOExtensions(context.Background(), iso, "arm64", tmp, true)).To(Succeed())
 		Expect(filepath.Join(tmp, "foo.sysext.raw")).To(BeAnExistingFile())
 	})

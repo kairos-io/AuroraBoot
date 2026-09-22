@@ -14,7 +14,7 @@ var _ = Describe("catalog extensions", func() {
 	It("rejects extension requests for non-ISO output", func() {
 		opts := validTestOptions()
 		opts.Extensions = []extensions.Request{{Name: "tool"}}
-		opts.ExtensionsCatalog = "catalog.yaml"
+		opts.ExtensionsCatalogs = []string{"catalog.yaml"}
 		Expect(opts.validate()).To(MatchError("extensions are only supported for iso artifacts"))
 	})
 
@@ -30,9 +30,9 @@ var _ = Describe("catalog extensions", func() {
 		DeferCleanup(func() { materializeExtensions = original })
 		stagedRoot := tTempDir()
 		called := false
-		materializeExtensions = func(_ context.Context, catalog string, requests []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
+		materializeExtensions = func(_ context.Context, catalogs []string, requests []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
 			called = true
-			Expect(catalog).To(Equal("catalog.yaml"))
+			Expect(catalogs).To(Equal([]string{"catalog.yaml"}))
 			Expect(requests).To(Equal([]extensions.Request{{Name: "tool", Version: "v2"}}))
 			Expect(arch).To(Equal("arm64"))
 			Expect(destination).To(Equal(stagedRoot))
@@ -40,7 +40,7 @@ var _ = Describe("catalog extensions", func() {
 			return []string{filepath.Join(destination, "tool.sysext.raw")}, nil
 		}
 
-		Expect(stageExtensions(context.Background(), "catalog.yaml", []extensions.Request{{Name: "tool", Version: "v2"}}, "arm64", stagedRoot, true)).To(Succeed())
+		Expect(stageExtensions(context.Background(), []string{"catalog.yaml"}, []extensions.Request{{Name: "tool", Version: "v2"}}, "arm64", stagedRoot, true)).To(Succeed())
 		Expect(called).To(BeTrue())
 	})
 })

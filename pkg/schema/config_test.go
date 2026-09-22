@@ -12,22 +12,22 @@ import (
 var _ = Describe("ISO extensions", func() {
 	It("stores a catalog and parsed requests", func() {
 		iso := schema.ISO{
-			ExtensionsCatalog: "catalog.yaml",
-			Extensions:        []extensions.Request{{Name: "foo", Version: "v1"}},
+			ExtensionsCatalogs: []string{"catalog.yaml"},
+			Extensions:         []extensions.Request{{Name: "foo", Version: "v1"}},
 		}
-		Expect(iso.ExtensionsCatalog).To(Equal("catalog.yaml"))
+		Expect(iso.ExtensionsCatalogs).To(Equal([]string{"catalog.yaml"}))
 		Expect(iso.Extensions).To(Equal([]extensions.Request{{Name: "foo", Version: "v1"}}))
 	})
 
 	It("keeps the empty configuration as a no-op", func() {
 		iso := schema.ISO{}
-		Expect(iso.ExtensionsCatalog).To(BeEmpty())
+		Expect(iso.ExtensionsCatalogs).To(BeEmpty())
 		Expect(iso.Extensions).To(BeEmpty())
 	})
 
 	It("requires a catalog when requests are configured", func() {
 		cfg := schema.Config{ISO: schema.ISO{Extensions: []extensions.Request{{Name: "foo"}}}}
-		Expect(cfg.Validate()).To(MatchError(ContainSubstring("extensions_catalog")))
+		Expect(cfg.Validate()).To(MatchError(ContainSubstring("extensions_catalogs")))
 	})
 })
 

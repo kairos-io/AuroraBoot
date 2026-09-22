@@ -55,7 +55,7 @@ func TestMaterialize(t *testing.T) {
 	catalog := writeCatalog(t, repository+"@"+digest)
 	destination := t.TempDir()
 
-	paths, err := Materialize(context.Background(), catalog, []Request{{Name: "tool"}}, "amd64", destination, true)
+	paths, err := Materialize(context.Background(), []string{catalog}, []Request{{Name: "tool"}}, "amd64", destination, true)
 	if err != nil {
 		t.Fatalf("Materialize() error = %v", err)
 	}
@@ -83,7 +83,7 @@ func TestMaterializeLoadsHTTPCatalogAndResolvesVersion(t *testing.T) {
 	t.Cleanup(catalogServer.Close)
 	destination := t.TempDir()
 
-	paths, err := Materialize(context.Background(), catalogServer.URL, []Request{{Name: "tool", Version: "v2"}}, "amd64", destination, true)
+	paths, err := Materialize(context.Background(), []string{catalogServer.URL}, []Request{{Name: "tool", Version: "v2"}}, "amd64", destination, true)
 	if err != nil {
 		t.Fatalf("Materialize() error = %v", err)
 	}
@@ -97,7 +97,7 @@ func TestMaterializeLoadsHTTPCatalogAndResolvesVersion(t *testing.T) {
 }
 
 func TestMaterializeRejectsDuplicateNames(t *testing.T) {
-	_, err := Materialize(context.Background(), "unused", []Request{{Name: "tool"}, {Name: "tool", Version: "v2"}}, "amd64", t.TempDir(), false)
+	_, err := Materialize(context.Background(), []string{"unused"}, []Request{{Name: "tool"}, {Name: "tool", Version: "v2"}}, "amd64", t.TempDir(), false)
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("Materialize() error = %v, want duplicate error", err)
 	}
@@ -113,7 +113,7 @@ func TestMaterializeRejectsUnexpectedLayerCount(t *testing.T) {
 	})
 	catalog := writeCatalog(t, repository+"@"+digest)
 
-	_, err := Materialize(context.Background(), catalog, []Request{{Name: "tool"}}, "amd64", t.TempDir(), true)
+	_, err := Materialize(context.Background(), []string{catalog}, []Request{{Name: "tool"}}, "amd64", t.TempDir(), true)
 	if err == nil || !strings.Contains(err.Error(), "expected exactly one") {
 		t.Fatalf("Materialize() error = %v, want layer count error", err)
 	}
@@ -133,7 +133,7 @@ func TestMaterializeCleansTemporaryFilesOnFailure(t *testing.T) {
 	})
 	destination := t.TempDir()
 
-	_, err := Materialize(context.Background(), catalog, []Request{{Name: "valid"}, {Name: "invalid"}}, "amd64", destination, true)
+	_, err := Materialize(context.Background(), []string{catalog}, []Request{{Name: "valid"}, {Name: "invalid"}}, "amd64", destination, true)
 	if err == nil || !strings.Contains(err.Error(), "media type") {
 		t.Fatalf("Materialize() error = %v, want media type error", err)
 	}
@@ -216,4 +216,61 @@ func catalogJSON(t *testing.T, layers []catalogLayer) []byte {
 		t.Fatal(err)
 	}
 	return data
+}
+
+func TestMaterializeSearchesCatalogsInOrder(t *testing.T) {
+	registry := httptest.NewServer(ggcrregistry.New())
+	t.Cleanup(registry.Close)
+	registryHost := strings.TrimPrefix(registry.URL, "http://")
+	overrideRepository := registryHost + "/extensions/override"
+	defaultRepository := registryHost + "/extensions/default"
+	overrideDigest := pushImage(t, overrideRepository, []layerSpec{{data: "from the first catalog", mediaType: rawMediaType}})
+	defaultDigest := pushImage(t, defaultRepository, []layerSpec{{data: "from the second catalog", mediaType: rawMediaType}})
+
+	// Both catalogs publish "tool", and only the second publishes "extra".
+	override := writeCatalog(t, overrideRepository+"@"+overrideDigest)
+	fallback := writeCatalogLayers(t, []catalogLayer{
+		{name: "tool", latest: "v1", versions: map[string]string{"v1": defaultRepository + "@" + defaultDigest}},
+		{name: "extra", latest: "v1", versions: map[string]string{"v1": defaultRepository + "@" + defaultDigest}},
+	})
+	destination := t.TempDir()
+
+	paths, err := Materialize(context.Background(), []string{override, fallback}, []Request{{Name: "tool"}, {Name: "extra"}}, "amd64", destination, true)
+	if err != nil {
+		t.Fatalf("Materialize() error = %v", err)
+	}
+	if len(paths) != 2 {
+		t.Fatalf("Materialize() paths = %v", paths)
+	}
+	data, err := os.ReadFile(filepath.Join(destination, "tool.sysext.raw"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "from the first catalog" {
+		t.Fatalf("tool came from %q, want the first catalog", data)
+	}
+	if _, err := os.Stat(filepath.Join(destination, "extra.sysext.raw")); err != nil {
+		t.Fatalf("extra should have resolved against the second catalog: %v", err)
+	}
+}
+
+func TestMaterializeFailsWhenOneCatalogCannotBeRead(t *testing.T) {
+	registry := httptest.NewServer(ggcrregistry.New())
+	t.Cleanup(registry.Close)
+	repository := strings.TrimPrefix(registry.URL, "http://") + "/extensions/tool"
+	digest := pushImage(t, repository, []layerSpec{{data: "raw extension", mediaType: rawMediaType}})
+	catalog := writeCatalog(t, repository+"@"+digest)
+	missing := filepath.Join(t.TempDir(), "absent.json")
+
+	_, err := Materialize(context.Background(), []string{catalog, missing}, []Request{{Name: "tool"}}, "amd64", t.TempDir(), true)
+	if err == nil || !strings.Contains(err.Error(), missing) {
+		t.Fatalf("Materialize() error = %v, want the unreadable catalog named", err)
+	}
+}
+
+func TestMaterializeRequiresACatalog(t *testing.T) {
+	_, err := Materialize(context.Background(), nil, []Request{{Name: "tool"}}, "amd64", t.TempDir(), false)
+	if err == nil || !strings.Contains(err.Error(), "no extension catalog") {
+		t.Fatalf("Materialize() error = %v, want a missing catalog error", err)
+	}
 }

@@ -98,10 +98,12 @@ type ISO struct {
 	OverlayISO    string `yaml:"overlay_iso"`
 	OverlayRootfs string `yaml:"overlay_rootfs"`
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO. Does not affect the installed system.
-	ExtendLiveCmdline string               `yaml:"extend-live-cmdline"`
-	LiveConsole       string               `yaml:"live_console"`
-	ExtensionsCatalog string               `yaml:"extensions_catalog"`
-	Extensions        []extensions.Request `yaml:"extensions"`
+	ExtendLiveCmdline string `yaml:"extend-live-cmdline"`
+	LiveConsole       string `yaml:"live_console"`
+	// ExtensionsCatalogs are searched in order when resolving an extension
+	// name: the first catalog publishing the name wins.
+	ExtensionsCatalogs []string             `yaml:"extensions_catalogs"`
+	Extensions         []extensions.Request `yaml:"extensions"`
 }
 
 // HandleDeprecations checks for deprecated ISO options and migrates them.
@@ -151,8 +153,8 @@ func (c *Config) AllowInsecureRegistriesBool() bool {
 // starts, so we fail fast with a clear message instead of deep inside a build
 // step.
 func (c Config) Validate() error {
-	if len(c.ISO.Extensions) > 0 && c.ISO.ExtensionsCatalog == "" {
-		return fmt.Errorf("iso.extensions_catalog is required when iso.extensions is set")
+	if len(c.ISO.Extensions) > 0 && len(c.ISO.ExtensionsCatalogs) == 0 {
+		return fmt.Errorf("iso.extensions_catalogs is required when iso.extensions is set")
 	}
 	// Partition-image output skips the final merge into a single .raw disk, so
 	// the gce/vhd conversions (which operate on that merged disk) have nothing

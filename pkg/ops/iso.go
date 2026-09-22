@@ -200,7 +200,7 @@ func materializeISOExtensions(ctx context.Context, i schema.ISO, architecture, i
 	if len(i.Extensions) == 0 {
 		return nil
 	}
-	_, err := materializeExtensionArtifacts(ctx, i.ExtensionsCatalog, i.Extensions, architecture, isoRoot, insecure)
+	_, err := materializeExtensionArtifacts(ctx, i.ExtensionsCatalogs, i.Extensions, architecture, isoRoot, insecure)
 	return err
 }
 

@@ -45,7 +45,10 @@ func ParseRequest(value string) (Request, error) {
 }
 
 // Materialize resolves requests and writes their raw OCI layers to destination.
-func Materialize(ctx context.Context, catalogSource string, requests []Request, architecture string, destination string, insecure bool) ([]string, error) {
+//
+// The catalogs are searched in order, so the first one publishing a name wins
+// and an operator can put their own index ahead of the default one.
+func Materialize(ctx context.Context, catalogSources []string, requests []Request, architecture string, destination string, insecure bool) ([]string, error) {
 	if len(requests) == 0 {
 		return nil, nil
 	}
@@ -65,12 +68,7 @@ func Materialize(ctx context.Context, catalogSource string, requests []Request, 
 		return nil, fmt.Errorf("extension architecture must not be empty")
 	}
 
-	reader, err := openCatalog(ctx, catalogSource)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-	catalog, err := sdkextensions.Parse(reader)
+	catalogs, err := loadCatalogs(ctx, catalogSources)
 	if err != nil {
 		return nil, err
 	}
@@ -89,7 +87,9 @@ func Materialize(ctx context.Context, catalogSource string, requests []Request, 
 	defer cleanup()
 
 	for _, request := range requests {
-		resolved, resolveErr := catalog.Resolve(request.Name, request.Version, architecture)
+		// Shadowed repositories are the later catalogs publishing the same
+		// name, which a build does not act on: the first one already won.
+		resolved, _, resolveErr := catalogs.Resolve(request.Name, request.Version, architecture)
 		if resolveErr != nil {
 			return nil, fmt.Errorf("resolve extension %q: %w", request.Name, resolveErr)
 		}
@@ -147,6 +147,33 @@ func Materialize(ctx context.Context, catalogSource string, requests []Request, 
 		}
 	}
 	return outputs, nil
+}
+
+// loadCatalogs reads every configured catalog, in the order given. A build
+// states the catalogs it wants, so one that cannot be read is an error rather
+// than a catalog to skip.
+func loadCatalogs(ctx context.Context, sources []string) (sdkextensions.Catalogs, error) {
+	if len(sources) == 0 {
+		return nil, fmt.Errorf("no extension catalog configured")
+	}
+	catalogs := make(sdkextensions.Catalogs, 0, len(sources))
+	for _, source := range sources {
+		catalog, err := loadCatalog(ctx, source)
+		if err != nil {
+			return nil, fmt.Errorf("catalog %s: %w", source, err)
+		}
+		catalogs = append(catalogs, catalog)
+	}
+	return catalogs, nil
+}
+
+func loadCatalog(ctx context.Context, source string) (sdkextensions.Catalog, error) {
+	reader, err := openCatalog(ctx, source)
+	if err != nil {
+		return sdkextensions.Catalog{}, err
+	}
+	defer reader.Close()
+	return sdkextensions.Parse(reader)
 }
 
 func openCatalog(ctx context.Context, source string) (io.ReadCloser, error) {
