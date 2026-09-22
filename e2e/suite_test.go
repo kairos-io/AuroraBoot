@@ -76,7 +76,9 @@ func (e *Auroraboot) Run(aurorabootArgs ...string) (string, error) {
 	return e.ContainerRun("auroraboot", aurorabootArgs...)
 }
 
-// We need --privileged for `mount` to work in the container (used in the build_uki_test.go).
+// --privileged is for auroraboot itself, which reaches for loop devices and
+// device nodes while it builds artifacts. The build_uki_test.go helpers no
+// longer need it: they read the ISO with xorriso and mtools, not by mounting.
 func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, error) {
 	dockerArgs := []string{
 		"run", "--rm", "--privileged",
@@ -106,9 +108,23 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 	return string(out), err
 }
 
+// withOutput folds a command's combined output into its error. Without it a
+// helper that discards the output leaves Ginkgo printing only "exit status 1",
+// which says nothing about why the command failed.
+func withOutput(what, out string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if out = strings.TrimSpace(out); out != "" {
+		return fmt.Errorf("%s: %w\n%s", what, err, out)
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 func PullImage(image string) (string, error) {
 	runCmd := fmt.Sprintf(`docker pull %s`, image)
-	return utils.SH(runCmd)
+	out, err := utils.SH(runCmd)
+	return out, withOutput(runCmd, out, err)
 }
 
 func WriteConfig(config, dir string) error {

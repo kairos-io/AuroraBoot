@@ -43,6 +43,7 @@ export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
           <TableHead>Labels</TableHead>
           <TableHead>Phase</TableHead>
           <TableHead>OS Version</TableHead>
+          <TableHead>IP</TableHead>
           <TableHead>Last Heartbeat</TableHead>
           <TableHead>Status</TableHead>
         </TableRow>
@@ -50,7 +51,7 @@ export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
       <TableBody>
         {nodes.length === 0 ? (
           <TableRow>
-            <TableCell colSpan={7} className="text-center py-12">
+            <TableCell colSpan={8} className="text-center py-12">
               <div className="flex flex-col items-center gap-3 py-16">
                 <Server className="h-12 w-12 text-muted-foreground/30" />
                 <div className="text-center">
@@ -87,6 +88,7 @@ export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
               </TableCell>
               <TableCell>{node.phase}</TableCell>
               <TableCell className="text-xs">{node.agentVersion || "-"}</TableCell>
+              <TableCell className="font-mono text-xs">{node.remoteIP || "-"}</TableCell>
               <TableCell className="text-xs">
                 {timeAgo(node.lastHeartbeat || "")}
               </TableCell>
