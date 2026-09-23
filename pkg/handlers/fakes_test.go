@@ -321,6 +321,23 @@ func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool,
 	for _, cmd := range f.cmds {
 		if cmd.ID == id && cmd.Phase == store.CommandPending {
 			cmd.Phase = store.CommandDelivered
+			// The real store stamps delivered_at in the same UPDATE; keep that
+			// here so a spec can tell a released claim from a claimed one.
+			now := time.Now()
+			cmd.DeliveredAt = &now
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (f *fakeCommandStore) ReleaseClaim(_ context.Context, id string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, cmd := range f.cmds {
+		if cmd.ID == id && cmd.Phase == store.CommandDelivered {
+			cmd.Phase = store.CommandPending
+			cmd.DeliveredAt = nil
 			return true, nil
 		}
 	}

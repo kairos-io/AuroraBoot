@@ -79,6 +79,9 @@ func (a *CommandStoreAdapter) MarkDelivered(ctx context.Context, ids []string) e
 func (a *CommandStoreAdapter) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	return a.S.ClaimForDelivery(ctx, id)
 }
+func (a *CommandStoreAdapter) ReleaseClaim(ctx context.Context, id string) (bool, error) {
+	return a.S.ReleaseClaim(ctx, id)
+}
 func (a *CommandStoreAdapter) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
 	return a.S.UpdateStatus(ctx, id, phase, result)
 }

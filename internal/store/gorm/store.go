@@ -522,6 +522,26 @@ func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	return res.RowsAffected == 1, nil
 }
 
+// ReleaseClaim atomically transitions a single Delivered command back to
+// Pending and clears delivered_at. It is the undo for a ClaimForDelivery whose
+// send then failed: without it the command sits in Delivered forever, because
+// GetPending only ever returns Pending rows and nothing else moves a command
+// out of Delivered. The conditional WHERE (id = ? AND phase = Delivered) keeps
+// it safe against a node that raced us and already reported Running, Completed
+// or Failed — those rows do not match and are left alone.
+func (s *Store) ReleaseClaim(ctx context.Context, id string) (bool, error) {
+	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("id = ? AND phase = ?", id, store.CommandDelivered).
+		Updates(map[string]any{
+			"phase":        store.CommandPending,
+			"delivered_at": nil,
+		})
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
 	updates := map[string]any{
 		"phase":  phase,
