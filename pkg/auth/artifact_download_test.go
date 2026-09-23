@@ -31,6 +31,7 @@ func (f *fakeCommandStore) GetPending(context.Context, string) ([]*store.NodeCom
 }
 func (f *fakeCommandStore) MarkDelivered(context.Context, []string) error          { return nil }
 func (f *fakeCommandStore) ClaimForDelivery(context.Context, string) (bool, error) { return false, nil }
+func (f *fakeCommandStore) ReleaseClaim(context.Context, string) (bool, error)     { return false, nil }
 func (f *fakeCommandStore) UpdateStatus(context.Context, string, string, string) error {
 	return nil
 }
