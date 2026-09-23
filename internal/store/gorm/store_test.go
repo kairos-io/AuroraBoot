@@ -432,6 +432,61 @@ var _ = Describe("Gorm Store", func() {
 			Expect(claimed).To(BeFalse())
 		})
 
+		It("returns a claimed command to the pending queue when delivery failed", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdUpgrade}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+
+			claimed, err := s.ClaimForDelivery(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimed).To(BeTrue())
+
+			// GetPending matches Pending only, so a claimed command the node
+			// never received is invisible to every delivery path until it is
+			// released.
+			pending, err := s.GetPending(ctx, node.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pending).To(BeEmpty())
+
+			released, err := s.ReleaseClaim(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(released).To(BeTrue())
+
+			found, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.Phase).To(Equal(store.CommandPending))
+			Expect(found.DeliveredAt).To(BeNil(), "delivered_at must be cleared, not left from the failed attempt")
+
+			pending, err = s.GetPending(ctx, node.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pending).To(HaveLen(1))
+			Expect(pending[0].ID).To(Equal(cmd.ID))
+		})
+
+		It("does not pull back a command the node already acted on", func() {
+			for _, phase := range []string{store.CommandRunning, store.CommandCompleted, store.CommandFailed} {
+				cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec}
+				Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+				Expect(s.UpdateStatus(ctx, cmd.ID, phase, "")).To(Succeed())
+
+				released, err := s.ReleaseClaim(ctx, cmd.ID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(released).To(BeFalse(), "phase %s must be left alone", phase)
+
+				found, err := s.CommandGetByID(ctx, cmd.ID)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(found.Phase).To(Equal(phase))
+			}
+		})
+
+		It("does not release a command that is already pending", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+
+			released, err := s.ReleaseClaim(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(released).To(BeFalse())
+		})
+
 		It("yields exactly one winner under concurrent claims", func() {
 			// Use a file-backed DB so concurrent goroutines share one SQLite
 			// database with WAL/busy_timeout, rather than the per-connection
