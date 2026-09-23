@@ -16,12 +16,12 @@ require (
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
-	github.com/kairos-io/go-ukify v0.5.0
+	github.com/kairos-io/go-ukify v0.5.2
 	github.com/kairos-io/netboot v0.0.0-20260901080757-25854a157f3f
 	github.com/klauspost/compress v1.19.2
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/mudler/go-processmanager v0.1.1
-	github.com/onsi/ginkgo/v2 v2.32.2
+	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/otiai10/copy v1.14.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect
@@ -69,7 +69,6 @@ require (
 	github.com/Microsoft/go-winio v0.6.3-0.20251027160822-ad3df93bed29 // indirect
 	github.com/Microsoft/hcsshim v0.15.0-rc.1 // indirect
 	github.com/ProtonMail/go-crypto v1.1.6 // indirect
-	github.com/ThalesGroup/crypto11 v1.6.0 // indirect
 	github.com/anchore/go-lzo v0.1.0 // indirect
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/aybabtme/rgbterm v0.0.0-20170906152045-cc83f3b3ce59 // indirect
@@ -98,6 +97,7 @@ require (
 	github.com/docker/go-connections v0.7.0 // indirect
 	github.com/docker/go-units v0.5.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
+	github.com/eclipse-keypont/crypto11 v1.6.8 // indirect
 	github.com/edsrzf/mmap-go v1.2.0 // indirect
 	github.com/elliotwutingfeng/asciiset v0.0.0-20260129054604-cfde2086bc57 // indirect
 	github.com/emicklei/go-restful/v3 v3.13.0 // indirect
@@ -171,7 +171,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.23 // indirect
 	github.com/mattn/go-sqlite3 v1.14.22 // indirect
 	github.com/mauromorales/xpasswd v0.4.8 // indirect
-	github.com/miekg/pkcs11 v1.1.1 // indirect
+	github.com/miekg/pkcs11 v1.1.2 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
