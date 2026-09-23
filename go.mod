@@ -44,7 +44,7 @@ require (
 	github.com/kairos-io/kairos-operator v0.2.2
 	github.com/kairos-io/kairos/v4 v4.3.0
 	github.com/rs/zerolog v1.35.1
-	github.com/stmcginnis/gofish v0.24.0
+	github.com/stmcginnis/gofish v0.26.0
 	github.com/swaggo/swag v1.16.6
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/time v0.15.0
