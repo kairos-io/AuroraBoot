@@ -167,8 +167,6 @@ export function CommandDialog({
     rows: ResolvedBundleEntry[];
   }>({ artifactId: "", rows: [] });
   const [bundlePicks, setBundlePicks] = useState<Record<string, boolean>>({});
-  const [resetOem, setResetOem] = useState(false);
-  const [resetConfig, setResetConfig] = useState("");
 
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
@@ -192,8 +190,6 @@ export function CommandDialog({
       setShellCmd("");
       setUpgradeSourceMode("image");
       setSelectedArtifactId("");
-      setResetOem(false);
-      setResetConfig("");
     }
   } else if (open && defaultCommand !== prevDefaultCommand) {
     setPrevDefaultCommand(defaultCommand);
@@ -266,11 +262,6 @@ export function CommandDialog({
       if (command === "upgrade-recovery") {
         args.recovery = "true";
       }
-    }
-
-    if (command === "reset") {
-      if (resetOem) args["reset-oem"] = "true";
-      if (resetConfig.trim()) args.config = resetConfig.trim();
     }
 
     if (command === "apply-config") {
@@ -504,36 +495,18 @@ export function CommandDialog({
             )}
 
             {command === "reset" && (
-              <>
-                <div className="grid gap-3">
-                  <Label>Reset options</Label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={resetOem}
-                      onChange={(e) => setResetOem(e.target.checked)}
-                      className="rounded border-input"
-                    />
-                    Reset OEM partition
-                  </label>
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    Reset will wipe all persistent data on the node. This action is irreversible.
-                  </p>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Cloud config to apply after reset (optional)</Label>
-                  <Textarea
-                    placeholder={"#cloud-config\ninstall:\n  auto: true"}
-                    value={resetConfig}
-                    onChange={(e) => setResetConfig(e.target.value)}
-                    rows={5}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Written to /oem after reset completes. If OEM is wiped, this becomes the only config.
-                  </p>
-                </div>
-              </>
+              <div className="grid gap-3">
+                <Label>Reset options</Label>
+                <p className="text-sm text-muted-foreground">
+                  Automatic state reset takes no options. The node reboots into
+                  the state-reset entry, resets itself there and comes back on
+                  its active entry. The OEM partition is kept, so the
+                  cloud-config already on the node is what provisions it again.
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Reset will wipe all persistent data on the node. This action is irreversible.
+                </p>
+              </div>
             )}
 
             {command === "apply-config" && (
