@@ -22,4 +22,14 @@ describe("StatusBadge", () => {
     render(<StatusBadge status="" />);
     expect(screen.getByText("unknown")).toBeInTheDocument();
   });
+
+  // Expired is a command phase the server now produces, so it needs a style of
+  // its own rather than the fallback every unrecognised string gets.
+  it("styles Expired differently from an unrecognised status", () => {
+    const { container: expired } = render(<StatusBadge status="Expired" />);
+    const { container: unknown } = render(<StatusBadge status="Wat" />);
+    expect(expired.firstElementChild?.className).not.toEqual(
+      unknown.firstElementChild?.className,
+    );
+  });
 });

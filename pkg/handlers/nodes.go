@@ -582,6 +582,17 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 	ctxNodeID := auth.AuthNodeID(c)
 	isAgent := ctxNodeID != ""
 
+	// Settle overdue commands before anyone reads the queue. This is the same
+	// lazy-expiry-on-read shape the reset lifecycle uses instead of a
+	// process-wide sweeper: every consumer of the Expired phase (the dashboard,
+	// and a CAPI provider polling a command it queued) goes through this
+	// endpoint, so the terminal state lands before it is observed. A failure
+	// here is not fatal to the read: the caller still gets the queue, just with
+	// the stale phases it would have seen before.
+	if err := h.commands.ExpireBefore(c.Request().Context(), nodeID, time.Now()); err != nil {
+		c.Logger().Warnf("expiring overdue commands for node %s: %v", nodeID, err)
+	}
+
 	if isAgent {
 		// Bind the agent to its own identity: the path :nodeID must be the
 		// node the API key belongs to.

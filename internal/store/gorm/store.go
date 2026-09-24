@@ -578,9 +578,28 @@ func (s *Store) CommandDelete(ctx context.Context, id string) error {
 
 func (s *Store) CommandDeleteTerminal(ctx context.Context, nodeID string) error {
 	return s.db.WithContext(ctx).Where(
-		"managed_node_id = ? AND (phase = ? OR phase = ?)",
-		nodeID, store.CommandCompleted, store.CommandFailed,
+		"managed_node_id = ? AND phase IN ?",
+		nodeID, []string{store.CommandCompleted, store.CommandFailed, store.CommandExpired},
 	).Delete(&store.NodeCommand{}).Error
+}
+
+// CommandExpireBefore transitions this node's overdue commands to Expired.
+//
+// The WHERE is the complement of the one GetPending uses to hide them: a
+// non-null expires_at that has passed. Restricting it to the three
+// non-terminal phases is what makes the UPDATE idempotent and safe against a
+// late agent report — a command the node did finish keeps its real outcome,
+// and re-running the statement rewrites nothing. completed_at is stamped for
+// the same reason Completed and Failed stamp it: the row has stopped moving.
+func (s *Store) CommandExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error {
+	now := time.Now()
+	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("managed_node_id = ? AND expires_at IS NOT NULL AND expires_at <= ? AND phase IN ?",
+			nodeID, deadline, []string{store.CommandPending, store.CommandDelivered, store.CommandRunning}).
+		Updates(map[string]any{
+			"phase":        store.CommandExpired,
+			"completed_at": &now,
+		}).Error
 }
 
 // --- ArtifactStore ---

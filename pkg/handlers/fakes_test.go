@@ -289,15 +289,24 @@ func (f *fakeCommandStore) GetByID(_ context.Context, id string) (*store.NodeCom
 func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	now := time.Now()
 	var result []*store.NodeCommand
 	for _, cmd := range f.cmds {
-		if cmd.ManagedNodeID == nodeID && cmd.Phase == store.CommandPending {
-			// Return a copy, not the stored pointer: real gorm GetPending
-			// materializes a fresh struct per query, so callers (e.g. concurrent
-			// polls in GetCommands) must each get their own object to mutate.
-			cp := *cmd
-			result = append(result, &cp)
+		if cmd.ManagedNodeID != nodeID || cmd.Phase != store.CommandPending {
+			continue
 		}
+		// Mirror the real query's deadline clause. Without it the fake hands
+		// back commands the gorm store would never deliver, and any handler
+		// that relies on an overdue command staying undelivered passes here
+		// while failing in production.
+		if cmd.ExpiresAt != nil && !cmd.ExpiresAt.After(now) {
+			continue
+		}
+		// Return a copy, not the stored pointer: real gorm GetPending
+		// materializes a fresh struct per query, so callers (e.g. concurrent
+		// polls in GetCommands) must each get their own object to mutate.
+		cp := *cmd
+		result = append(result, &cp)
 	}
 	return result, nil
 }
@@ -365,6 +374,23 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 	return result, nil
 }
 
+func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadline time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := time.Now()
+	for _, cmd := range f.cmds {
+		if cmd.ManagedNodeID != nodeID || cmd.ExpiresAt == nil || cmd.ExpiresAt.After(deadline) {
+			continue
+		}
+		switch cmd.Phase {
+		case store.CommandPending, store.CommandDelivered, store.CommandRunning:
+			cmd.Phase = store.CommandExpired
+			cmd.CompletedAt = &now
+		}
+	}
+	return nil
+}
+
 func (f *fakeCommandStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -382,7 +408,8 @@ func (f *fakeCommandStore) DeleteTerminal(_ context.Context, nodeID string) erro
 	defer f.mu.Unlock()
 	var remaining []*store.NodeCommand
 	for _, cmd := range f.cmds {
-		if cmd.ManagedNodeID == nodeID && (cmd.Phase == store.CommandCompleted || cmd.Phase == store.CommandFailed) {
+		if cmd.ManagedNodeID == nodeID &&
+			(cmd.Phase == store.CommandCompleted || cmd.Phase == store.CommandFailed || cmd.Phase == store.CommandExpired) {
 			continue
 		}
 		remaining = append(remaining, cmd)
