@@ -15,6 +15,9 @@ const statusStyles: Record<string, string> = {
   completed: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
   ready: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
   failed: "bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400",
+  // A command the server gave up delivering. It is terminal but it is not a
+  // failure the node reported, so it reads muted rather than red.
+  expired: "bg-muted text-muted-foreground border-border",
   error: "bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400",
   active: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
   upgrading: "bg-[#FF7442]/15 text-[#FF7442] border-[#FF7442]/25",
