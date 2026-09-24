@@ -25,9 +25,9 @@ var _ = Describe("ISO extensions", func() {
 		Expect(iso.Extensions).To(BeEmpty())
 	})
 
-	It("requires a catalog when requests are configured", func() {
+	It("accepts requests with no catalog, which reads the default one", func() {
 		cfg := schema.Config{ISO: schema.ISO{Extensions: []extensions.Request{{Name: "foo"}}}}
-		Expect(cfg.Validate()).To(MatchError(ContainSubstring("extensions_catalogs")))
+		Expect(cfg.Validate()).To(Succeed())
 	})
 })
 

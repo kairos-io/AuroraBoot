@@ -18,11 +18,26 @@ var _ = Describe("catalog extensions", func() {
 		Expect(opts.validate()).To(MatchError("extensions are only supported for iso artifacts"))
 	})
 
-	It("requires a catalog when extensions are requested", func() {
+	It("accepts extensions with no catalog, which reads the default one", func() {
 		opts := validTestOptions()
 		opts.OutputType = "iso"
 		opts.Extensions = []extensions.Request{{Name: "tool"}}
-		Expect(opts.validate()).To(MatchError("extensions catalog is required when extensions are requested"))
+		Expect(opts.validate()).To(Succeed())
+	})
+
+	It("passes an empty catalog list through, so the default one is what is read", func() {
+		original := materializeExtensions
+		DeferCleanup(func() { materializeExtensions = original })
+		var got []string
+		called := false
+		materializeExtensions = func(_ context.Context, catalogs []string, _ []extensions.Request, _, _ string, _ bool) ([]string, error) {
+			called = true
+			got = catalogs
+			return nil, nil
+		}
+		Expect(stageExtensions(context.Background(), nil, []extensions.Request{{Name: "tool"}}, "amd64", tTempDir(), false)).To(Succeed())
+		Expect(called).To(BeTrue())
+		Expect(got).To(BeEmpty())
 	})
 
 	It("materializes extensions into the staged ISO root with the target architecture", func() {

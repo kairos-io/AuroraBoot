@@ -20,6 +20,12 @@ import (
 
 const rawMediaType types.MediaType = "application/vnd.kairos.sysext.raw"
 
+// DefaultCatalog is the catalog used when a build names extensions and
+// configures none of its own: the hadron-layers index Kairos publishes, which
+// is also the default the agent reads on the node. A build that wants another
+// index states it, and then this one is not consulted at all.
+const DefaultCatalog = "https://kairos-io.github.io/hadron-layers/releases.json"
+
 var requestPart = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
 // Request identifies a named extension and an optional catalog version.
@@ -42,6 +48,20 @@ func ParseRequest(value string) (Request, error) {
 		request.Version = parts[1]
 	}
 	return request, nil
+}
+
+// ParseRequests parses a list of name or name@version values, reporting the
+// first one that is not a valid request.
+func ParseRequests(values []string) ([]Request, error) {
+	requests := make([]Request, 0, len(values))
+	for _, value := range values {
+		request, err := ParseRequest(value)
+		if err != nil {
+			return nil, err
+		}
+		requests = append(requests, request)
+	}
+	return requests, nil
 }
 
 // Materialize resolves requests and writes their raw OCI layers to destination.
@@ -149,13 +169,21 @@ func Materialize(ctx context.Context, catalogSources []string, requests []Reques
 	return outputs, nil
 }
 
+// Catalogs returns the catalogs to search: the configured ones, or the
+// default one when a build configured none. Callers that report the catalog
+// back to an operator use this, so what they print is what was read.
+func Catalogs(sources []string) []string {
+	if len(sources) == 0 {
+		return []string{DefaultCatalog}
+	}
+	return sources
+}
+
 // loadCatalogs reads every configured catalog, in the order given. A build
 // states the catalogs it wants, so one that cannot be read is an error rather
 // than a catalog to skip.
 func loadCatalogs(ctx context.Context, sources []string) (sdkextensions.Catalogs, error) {
-	if len(sources) == 0 {
-		return nil, fmt.Errorf("no extension catalog configured")
-	}
+	sources = Catalogs(sources)
 	catalogs := make(sdkextensions.Catalogs, 0, len(sources))
 	for _, source := range sources {
 		catalog, err := loadCatalog(ctx, source)
@@ -167,8 +195,12 @@ func loadCatalogs(ctx context.Context, sources []string) (sdkextensions.Catalogs
 	return catalogs, nil
 }
 
+// openCatalogSource is the seam tests use to see which source a build asked
+// for without reaching the network.
+var openCatalogSource = openCatalog
+
 func loadCatalog(ctx context.Context, source string) (sdkextensions.Catalog, error) {
-	reader, err := openCatalog(ctx, source)
+	reader, err := openCatalogSource(ctx, source)
 	if err != nil {
 		return sdkextensions.Catalog{}, err
 	}

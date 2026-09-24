@@ -21,6 +21,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
@@ -123,6 +124,12 @@ type createArtifactRequest struct {
 
 	ExtensionHierarchies *extensionHierarchiesReq `json:"extensionHierarchies,omitempty"`
 	BundledExtensions    []createBundleEntry      `json:"bundledExtensions,omitempty"`
+
+	// Extensions are catalog extension names (name or name@version) to
+	// materialize in the built ISO. ExtensionsCatalogs overrides the catalog
+	// they are resolved against; empty means extensions.DefaultCatalog.
+	Extensions         []string `json:"extensions,omitempty"`
+	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
 }
 
 type extensionHierarchiesReq struct {
@@ -300,6 +307,13 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		}
 	}
 
+	// Catalog extensions: an unusable name is the operator's mistake, so it is
+	// a 400 here rather than a build that dies after the source image has
+	// already been pulled.
+	if _, err := extensions.ParseRequests(req.Extensions); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
 	// Mint the per-build upload token before we hand opts to the builder so
 	// the operator backend's exporter Secret carries a fresh token for every
 	// build, and the store record can validate the incoming PUT /upload.
@@ -334,6 +348,9 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		HadronFirmware:    req.HadronFirmware,
 		HadronLayers:      req.HadronLayers,
 		HadronExtra:       req.HadronExtra,
+
+		Extensions:         req.Extensions,
+		ExtensionsCatalogs: req.ExtensionsCatalogs,
 	}
 	// Set grouped fields.
 	opts.Source = builder.ImageSource{
@@ -486,6 +503,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			HadronFirmware:          req.HadronFirmware,
 			HadronLayers:            req.HadronLayers,
 			HadronExtra:             req.HadronExtra,
+			Extensions:              req.Extensions,
+			ExtensionsCatalogs:      req.ExtensionsCatalogs,
 			CloudConfig:             opts.CloudConfig,
 			KubernetesDistro:        req.KubernetesDistro,
 			KubernetesVersion:       req.KubernetesVersion,

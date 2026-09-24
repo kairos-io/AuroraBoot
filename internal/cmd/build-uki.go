@@ -136,7 +136,7 @@ var BuildUKICmd = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
-			Usage: "Path or URL of an extension catalog, repeatable. Searched in order, the first catalog publishing the name wins",
+			Usage: "Path or URL of an extension catalog, repeatable. Searched in order, the first catalog publishing the name wins. Defaults to the hadron-layers catalog",
 		},
 		AllowInsecureRegistriesFlag,
 	},
@@ -145,9 +145,6 @@ var BuildUKICmd = cli.Command{
 		// https://github.com/urfave/cli/blob/7ec374fe2abd3e9c75369f6bb4191fe7866bd89c/command.go#L128
 		if len(ctx.StringSlice("extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
 			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
-		}
-		if len(ctx.StringSlice("extension")) > 0 && len(ctx.StringSlice("extensions-catalog")) == 0 {
-			return errors.New("extensions-catalog is required when extension is set")
 		}
 		for _, value := range ctx.StringSlice("extension") {
 			if _, err := extensions.ParseRequest(value); err != nil {

@@ -110,9 +110,12 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 	})
 
-	It("requires a catalog when extensions are requested", Label("flags"), func() {
+	It("accepts an extension with no catalog, which reads the default one", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--extension", "foo", "system/cos"})
-		Expect(err).To(MatchError(ContainSubstring("extensions-catalog")))
+		// Still fails, on the source image this box has no way to pull, but
+		// not on a missing catalog any more.
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog"))
 	})
 
 	It("rejects invalid extension requests", Label("flags"), func() {

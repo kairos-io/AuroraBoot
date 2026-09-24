@@ -75,7 +75,7 @@ var BuildISOCmd = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
-			Usage: "System extension catalog URL or file, repeatable. Searched in order, the first catalog publishing the name wins",
+			Usage: "System extension catalog URL or file, repeatable. Searched in order, the first catalog publishing the name wins. Defaults to the hadron-layers catalog",
 		},
 		AllowInsecureRegistriesFlag,
 	},
@@ -124,9 +124,6 @@ var BuildISOCmd = cli.Command{
 			ContainerImage: source,
 		}
 		extensionValues := ctx.StringSlice("extension")
-		if len(extensionValues) > 0 && len(ctx.StringSlice("extensions-catalog")) == 0 {
-			return errors.New("extensions-catalog is required when extension is used")
-		}
 		extensionRequests := make([]extensions.Request, 0, len(extensionValues))
 		for _, value := range extensionValues {
 			request, err := extensions.ParseRequest(value)

@@ -101,7 +101,8 @@ type ISO struct {
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline"`
 	LiveConsole       string `yaml:"live_console"`
 	// ExtensionsCatalogs are searched in order when resolving an extension
-	// name: the first catalog publishing the name wins.
+	// name: the first catalog publishing the name wins. Left empty, the
+	// build reads extensions.DefaultCatalog.
 	ExtensionsCatalogs []string             `yaml:"extensions_catalogs"`
 	Extensions         []extensions.Request `yaml:"extensions"`
 }
@@ -153,9 +154,6 @@ func (c *Config) AllowInsecureRegistriesBool() bool {
 // starts, so we fail fast with a clear message instead of deep inside a build
 // step.
 func (c Config) Validate() error {
-	if len(c.ISO.Extensions) > 0 && len(c.ISO.ExtensionsCatalogs) == 0 {
-		return fmt.Errorf("iso.extensions_catalogs is required when iso.extensions is set")
-	}
 	// Partition-image output skips the final merge into a single .raw disk, so
 	// the gce/vhd conversions (which operate on that merged disk) have nothing
 	// to convert. Reject the combination up front.

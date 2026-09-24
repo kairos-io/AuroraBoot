@@ -33,9 +33,12 @@ var _ = Describe("build-uki", Label("uki", "cmd"), func() {
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 	})
 
-	It("requires a catalog when extensions are requested", Label("flags"), func() {
+	It("accepts an extension with no catalog, which reads the default one", Label("flags"), func() {
 		err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extension", "tool", "some/image:latest"})
-		Expect(err).To(MatchError("extensions-catalog is required when extension is set"))
+		// Fails later in the build (this is not root, and there is no such
+		// image), but no longer on the missing catalog.
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog is required"))
 	})
 
 	It("rejects malformed extension requests", Label("flags"), func() {

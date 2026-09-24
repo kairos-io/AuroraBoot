@@ -422,9 +422,6 @@ func (o Options) validate() error {
 		if outputType != string(constants.IsoOutput) {
 			return errors.New("extensions are only supported for iso artifacts")
 		}
-		if len(o.ExtensionsCatalogs) == 0 {
-			return errors.New("extensions catalog is required when extensions are requested")
-		}
 	}
 
 	if o.OverlayRootfs != "" {

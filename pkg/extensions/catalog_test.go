@@ -3,10 +3,13 @@ package extensions
 import (
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -268,9 +271,36 @@ func TestMaterializeFailsWhenOneCatalogCannotBeRead(t *testing.T) {
 	}
 }
 
-func TestMaterializeRequiresACatalog(t *testing.T) {
+func TestCatalogsDefaultsToTheHadronCatalog(t *testing.T) {
+	if got := Catalogs(nil); len(got) != 1 || got[0] != DefaultCatalog {
+		t.Fatalf("Catalogs(nil) = %v, want [%s]", got, DefaultCatalog)
+	}
+	// A build that states its catalogs never reads the default one: an
+	// operator pointing at their own index must not silently also resolve
+	// names against ours.
+	configured := []string{"first.json", "second.json"}
+	if got := Catalogs(configured); !reflect.DeepEqual(got, configured) {
+		t.Fatalf("Catalogs(%v) = %v, want it unchanged", configured, got)
+	}
+}
+
+func TestMaterializeReadsTheDefaultCatalogWhenNoneIsConfigured(t *testing.T) {
+	// No catalog configured used to be refused outright. It now reads
+	// DefaultCatalog, so what the build asks for is asserted at the opener
+	// rather than by reaching the network.
+	original := openCatalogSource
+	t.Cleanup(func() { openCatalogSource = original })
+	var requested []string
+	openCatalogSource = func(_ context.Context, source string) (io.ReadCloser, error) {
+		requested = append(requested, source)
+		return nil, fmt.Errorf("stub opener")
+	}
+
 	_, err := Materialize(context.Background(), nil, []Request{{Name: "tool"}}, "amd64", t.TempDir(), false)
-	if err == nil || !strings.Contains(err.Error(), "no extension catalog") {
-		t.Fatalf("Materialize() error = %v, want a missing catalog error", err)
+	if err == nil || !strings.Contains(err.Error(), DefaultCatalog) {
+		t.Fatalf("Materialize() error = %v, want the default catalog named", err)
+	}
+	if !reflect.DeepEqual(requested, []string{DefaultCatalog}) {
+		t.Fatalf("opened catalogs = %v, want [%s]", requested, DefaultCatalog)
 	}
 }
