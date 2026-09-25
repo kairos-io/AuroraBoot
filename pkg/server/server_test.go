@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -146,6 +147,19 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 		}
 	}
 	return out, nil
+}
+func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadline time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.cmds {
+		if c.ManagedNodeID != nodeID || c.ExpiresAt == nil || c.ExpiresAt.After(deadline) {
+			continue
+		}
+		if c.Phase == store.CommandPending || c.Phase == store.CommandDelivered || c.Phase == store.CommandRunning {
+			c.Phase = store.CommandExpired
+		}
+	}
+	return nil
 }
 func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }

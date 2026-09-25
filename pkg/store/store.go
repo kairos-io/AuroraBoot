@@ -246,7 +246,16 @@ type CommandStore interface {
 	// instead of silently succeeding on a foreign or missing command.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error
 	ListByNode(ctx context.Context, nodeID string) ([]*NodeCommand, error)
+	// ExpireBefore moves every command of nodeID that carries an ExpiresAt at
+	// or before deadline, and has not reached a terminal phase, into
+	// CommandExpired. GetPending already refuses to deliver such a command, so
+	// without this transition the row is stranded in a phase nothing can ever
+	// advance: DeleteTerminal does not collect it and the dashboard offers no
+	// delete button for a Pending command.
+	ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error
 	Delete(ctx context.Context, id string) error
+	// DeleteTerminal removes every command of nodeID that reached a terminal
+	// phase: Completed, Failed or Expired.
 	DeleteTerminal(ctx context.Context, nodeID string) error
 }
 
