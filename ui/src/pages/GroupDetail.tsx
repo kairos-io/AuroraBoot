@@ -90,7 +90,7 @@ export function GroupDetail() {
             <DropdownMenuItem onClick={() => handleQuickAction("reset")}>
               Reset
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => handleQuickAction("apply-config")}>
+            <DropdownMenuItem onClick={() => handleQuickAction("apply-cloud-config")}>
               Apply Config
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -148,7 +148,7 @@ export function GroupDetail() {
         }}
         onSubmit={handleCommand}
         title={`Send command · ${group.name}`}
-        defaultCommand={quickCommand as "upgrade" | "reset" | "apply-config" | null}
+        defaultCommand={quickCommand as "upgrade" | "reset" | "apply-cloud-config" | null}
       />
     </div>
   );

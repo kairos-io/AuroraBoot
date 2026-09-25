@@ -39,7 +39,7 @@ type CommandKey =
   | "upgrade"
   | "upgrade-recovery"
   | "reset"
-  | "apply-config"
+  | "apply-cloud-config"
   | "reboot"
   | "exec";
 
@@ -74,7 +74,7 @@ const COMMANDS: CommandDef[] = [
     tone: "blue",
   },
   {
-    key: "apply-config",
+    key: "apply-cloud-config",
     label: "Apply config",
     verb: "Send config",
     description:
@@ -273,7 +273,7 @@ export function CommandDialog({
       if (resetConfig.trim()) args.config = resetConfig.trim();
     }
 
-    if (command === "apply-config") {
+    if (command === "apply-cloud-config") {
       if (configArg.trim()) args.config = configArg.trim();
     }
 
@@ -536,7 +536,7 @@ export function CommandDialog({
               </>
             )}
 
-            {command === "apply-config" && (
+            {command === "apply-cloud-config" && (
               <div className="grid gap-2">
                 <Label>Cloud configuration (YAML)</Label>
                 <Textarea
@@ -547,7 +547,7 @@ export function CommandDialog({
                   className="font-mono text-sm"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Written to /oem/99_auroraboot_remote.yaml. Reboot the node to apply.
+                  Written to /oem/99_phonehome_remote.yaml. Reboot the node to apply.
                 </p>
               </div>
             )}
