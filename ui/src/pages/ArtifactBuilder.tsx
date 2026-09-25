@@ -2045,6 +2045,10 @@ export function ArtifactBuilder() {
               arch={form.arch}
               bundled={form.bundledExtensions ?? []}
               onChange={(next) => update("bundledExtensions", next)}
+              // goToStep, not setStep, so that jumping straight to the catalog
+              // picker still triggers the lazy catalog fetch the Output step
+              // depends on.
+              onGoToCatalog={() => goToStep(2)}
             />
 
             {selectedTemplate === HADRON_TEMPLATE_NAME && (
@@ -2495,7 +2499,10 @@ export function ArtifactBuilder() {
                       Extensions are resolved from the catalog and written into the
                       ISO, so the installed system carries them without pulling
                       anything at first boot. Only extensions published for the{" "}
-                      {form.arch} architecture are listed.
+                      {form.arch} architecture are listed. To use an extension
+                      this AuroraBoot instance built itself, and carry it with
+                      every upgrade to the artifact instead, see "Extensions
+                      built on this instance" on the Configure step.
                     </InfoTooltip>
                   </CardTitle>
                 </CardHeader>
@@ -3275,14 +3282,27 @@ interface BundledExtensionEntry {
   order?: number;
 }
 
+// BundledExtensionsCard is one of the two places the builder asks about
+// extensions. This one offers what this AuroraBoot instance built, and the
+// selection rides along with every upgrade to the artifact. The other is
+// System Extensions on the Output step, which resolves names from a catalog
+// and writes them into the artifact itself.
+//
+// Both cards are kept, because they answer different questions (built here or
+// published upstream, carried with upgrades or written in), but each one now
+// names the other. Without that, a fresh instance shows this card empty on the
+// step before, and it reads as "extensions do not work", which is what
+// kairos-io/kairos#4959 reports.
 function BundledExtensionsCard({
   arch,
   bundled,
   onChange,
+  onGoToCatalog,
 }: {
   arch: string;
   bundled: BundledExtensionEntry[];
   onChange: (next: BundledExtensionEntry[]) => void;
+  onGoToCatalog: () => void;
 }) {
   const [available, setAvailable] = useState<Extension[]>([]);
 
@@ -3312,13 +3332,28 @@ function BundledExtensionsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Bundled extensions</CardTitle>
+        <CardTitle className="text-sm">
+          Extensions built on this instance
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-3">
-          Extensions selected here ride along with every upgrade to this
-          artifact. Only <code>Ready</code> extensions matching arch{" "}
-          <code>{arch}</code> are listed.
+          Extensions this AuroraBoot instance built on the Extensions page.
+          What you select here rides along with every upgrade to this artifact.
+          Only <code>Ready</code> extensions matching arch <code>{arch}</code>{" "}
+          are listed.
+        </p>
+        <p className="text-xs text-muted-foreground mb-3">
+          To use an extension published in a catalog, and write it into the
+          artifact itself, see{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={onGoToCatalog}
+          >
+            System Extensions
+          </button>{" "}
+          on the Output step.
         </p>
 
         {bundled.length > 0 && (
@@ -3354,10 +3389,21 @@ function BundledExtensionsCard({
         )}
 
         {available.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No Ready extensions match arch <code>{arch}</code>. Build extensions
-            from the Extensions page first.
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Nothing built on this instance matches arch <code>{arch}</code>.
+              Build one from the Extensions page, or take one from a catalog
+              instead.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onGoToCatalog}
+            >
+              Pick from a catalog
+            </Button>
+          </div>
         ) : (
           <div className="grid gap-1.5 max-h-64 overflow-auto">
             {available.map((e) => {
