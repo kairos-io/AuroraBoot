@@ -136,6 +136,11 @@ catalog, the same index a node reads, and can be pointed at your own. Only
 extensions published for the architecture being built are offered, and each
 one can be pinned to a version or left on the catalog's latest.
 
+On a classic (non-UKI) ISO, the build also writes `extensions.yaml` to the ISO
+root. It declares each image under `install.extensions`, which is what the
+installer stages onto the installed system. This needs a kairos-agent that
+reads `install.extensions`, which is newer than v4.3.0.
+
 ### Cloning Hadron artifacts as templates
 
 Every artifact built from the Hadron composer stores the source composition
