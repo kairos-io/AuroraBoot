@@ -18,16 +18,19 @@ import (
 	"github.com/twpayne/go-vfs/v5"
 
 	"github.com/kairos-io/kairos/v4/agent/pkg/cloudinit"
+	agentconstants "github.com/kairos-io/kairos/v4/agent/pkg/constants"
 	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
 	"github.com/kairos-io/kairos/v4/agent/pkg/implementations/http"
 	"github.com/kairos-io/kairos/v4/agent/pkg/implementations/runner"
 	"github.com/kairos-io/kairos/v4/agent/pkg/implementations/syscall"
 	sdkConfig "github.com/kairos-io/kairos/v4/sdk/types/config"
+	extensiontypes "github.com/kairos-io/kairos/v4/sdk/types/extensions"
 	imagetypes "github.com/kairos-io/kairos/v4/sdk/types/images"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/kairos-io/kairos/v4/sdk/types/platform"
 	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	"github.com/sanity-io/litter"
+	"gopkg.in/yaml.v3"
 )
 
 type LiveISO struct {
@@ -196,12 +199,56 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 
 var materializeExtensionArtifacts = extensions.Materialize
 
+// isoExtensionsConfig is the cloud-config written next to the materialized
+// extensions in the ISO root. The agent reads every config in the live media
+// root, so it merges this one with the user's config.yaml, and a list of maps
+// such as install.extensions is concatenated, not replaced.
+const isoExtensionsConfig = "extensions.yaml"
+
 func materializeISOExtensions(ctx context.Context, i schema.ISO, architecture, isoRoot string, insecure bool) error {
 	if len(i.Extensions) == 0 {
 		return nil
 	}
-	_, err := materializeExtensionArtifacts(ctx, i.ExtensionsCatalogs, i.Extensions, architecture, isoRoot, insecure)
-	return err
+	paths, err := materializeExtensionArtifacts(ctx, i.ExtensionsCatalogs, i.Extensions, architecture, isoRoot, insecure)
+	if err != nil {
+		return err
+	}
+	return declareISOExtensions(isoRoot, paths)
+}
+
+// declareISOExtensions lists the materialized images under install.extensions.
+//
+// Placing an image on the live media is not enough on a classic install: the
+// installer stages only what install.extensions declares, and the image is
+// gone with the live media after the first reboot. The UKI installer copies
+// every *.sysext.raw of the live media on its own, but that is a different
+// build path (pkg/uki), so this only runs for the classic ISO.
+func declareISOExtensions(isoRoot string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	declared := make(extensiontypes.Extensions, 0, len(paths))
+	for _, path := range paths {
+		declared = append(declared, extensiontypes.Extension{
+			// The ISO root is mounted here when the node boots from it.
+			Name: filepath.Join(agentconstants.LiveDir, filepath.Base(path)),
+		})
+	}
+	var config struct {
+		Install struct {
+			Extensions extensiontypes.Extensions `yaml:"extensions"`
+		} `yaml:"install"`
+	}
+	config.Install.Extensions = declared
+	body, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("render the extension declaration: %w", err)
+	}
+	content := append([]byte("#cloud-config\n"), body...)
+	if err := os.WriteFile(filepath.Join(isoRoot, isoExtensionsConfig), content, 0o644); err != nil {
+		return fmt.Errorf("write the extension declaration: %w", err)
+	}
+	return nil
 }
 
 func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
