@@ -35,6 +35,11 @@ export interface Artifact {
   hadronFirmware?: string[];
   hadronLayers?: string[];
   hadronExtra?: string;
+  // Catalog extensions this artifact was built with, and the catalogs they
+  // were resolved against. An empty catalog list means the build read the
+  // server's default catalog.
+  extensions?: string[];
+  extensionsCatalogs?: string[];
   cloudConfig?: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
@@ -109,6 +114,11 @@ export interface CreateArtifactInput {
   hadronFirmware?: string[];
   hadronLayers?: string[];
   hadronExtra?: string;
+  // Catalog extensions to place in the built ISO, as name or name@version.
+  // extensionsCatalogs replaces the catalog they resolve against; leaving it
+  // out means the server resolves them against its default catalog.
+  extensions?: string[];
+  extensionsCatalogs?: string[];
   overlayRootfs?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;

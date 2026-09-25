@@ -1,18 +1,131 @@
 package ops
 
 import (
+	"context"
+	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/kairos-io/kairos/v4/sdk/collector"
 	sdkConfig "github.com/kairos-io/kairos/v4/sdk/types/config"
+	extensiontypes "github.com/kairos-io/kairos/v4/sdk/types/extensions"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
+	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/twpayne/go-vfs/v5/vfst"
+	"gopkg.in/yaml.v3"
 )
+
+var _ = Describe("materializeISOExtensions", func() {
+	It("does nothing when no extensions are configured", func() {
+		called := false
+		materializeExtensionArtifacts = func(context.Context, []string, []extensions.Request, string, string, bool) ([]string, error) {
+			called = true
+			return nil, nil
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		Expect(materializeISOExtensions(context.Background(), schema.ISO{}, "amd64", "/unused", false)).To(Succeed())
+		Expect(called).To(BeFalse())
+	})
+
+	It("uses the target architecture and ISO root directory", func() {
+		tmp := GinkgoT().TempDir()
+		requests := []extensions.Request{{Name: "foo", Version: "v1"}}
+		materializeExtensionArtifacts = func(_ context.Context, catalogs []string, got []extensions.Request, arch, destination string, insecure bool) ([]string, error) {
+			Expect(catalogs).To(Equal([]string{"catalog.yaml"}))
+			Expect(got).To(Equal(requests))
+			Expect(arch).To(Equal("arm64"))
+			Expect(destination).To(Equal(tmp))
+			Expect(insecure).To(BeTrue())
+			path := filepath.Join(destination, "foo.sysext.raw")
+			return []string{path}, os.WriteFile(path, []byte("raw"), 0o644)
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		iso := schema.ISO{ExtensionsCatalogs: []string{"catalog.yaml"}, Extensions: requests}
+		Expect(materializeISOExtensions(context.Background(), iso, "arm64", tmp, true)).To(Succeed())
+		Expect(filepath.Join(tmp, "foo.sysext.raw")).To(BeAnExistingFile())
+	})
+
+	// Regression: a classic (non-UKI) install ignores a raw image that only
+	// sits on the live media. The installer stages only what install.extensions
+	// declares, so without this declaration the node boots with no extension.
+	It("declares every materialized extension under install.extensions", func() {
+		tmp := GinkgoT().TempDir()
+		materializeExtensionArtifacts = func(_ context.Context, _ []string, _ []extensions.Request, _, destination string, _ bool) ([]string, error) {
+			return []string{
+				filepath.Join(destination, "tailscale.sysext.raw"),
+				filepath.Join(destination, "drbd.sysext.raw"),
+			}, nil
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		iso := schema.ISO{Extensions: []extensions.Request{{Name: "tailscale"}, {Name: "drbd"}}}
+		Expect(materializeISOExtensions(context.Background(), iso, "amd64", tmp, false)).To(Succeed())
+
+		declaration, err := os.ReadFile(filepath.Join(tmp, isoExtensionsConfig))
+		Expect(err).ToNot(HaveOccurred())
+		// The collector skips a config without the header, which would drop
+		// the declaration without a word.
+		Expect(collector.HasValidHeader(string(declaration))).To(BeTrue())
+
+		var parsed struct {
+			Install struct {
+				Extensions extensiontypes.Extensions `yaml:"extensions"`
+			} `yaml:"install"`
+		}
+		Expect(yaml.Unmarshal(declaration, &parsed)).To(Succeed())
+		Expect(parsed.Install.Extensions).To(Equal(extensiontypes.Extensions{
+			{Name: "/run/initramfs/live/tailscale.sysext.raw"},
+			{Name: "/run/initramfs/live/drbd.sysext.raw"},
+		}))
+	})
+
+	// What the installer sees is the merge of every config in the live media
+	// root, so check the declaration through the agent's own collector: it
+	// has to add to what the user declared in config.yaml, not replace it.
+	It("adds to the install.extensions of the user's config.yaml", func() {
+		tmp := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(tmp, "config.yaml"),
+			[]byte("#cloud-config\ninstall:\n  auto: true\n  extensions:\n    - name: fwupd\n"), 0o644)).To(Succeed())
+		materializeExtensionArtifacts = func(_ context.Context, _ []string, _ []extensions.Request, _, destination string, _ bool) ([]string, error) {
+			return []string{filepath.Join(destination, "tailscale.sysext.raw")}, nil
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		iso := schema.ISO{Extensions: []extensions.Request{{Name: "tailscale"}}}
+		Expect(materializeISOExtensions(context.Background(), iso, "amd64", tmp, false)).To(Succeed())
+
+		merged, err := collector.Scan(&collector.Options{ScanDir: []string{tmp}, NoLogs: true}, nil)
+		Expect(err).ToNot(HaveOccurred())
+		rendered, err := merged.String()
+		Expect(err).ToNot(HaveOccurred())
+		var parsed struct {
+			Install struct {
+				Auto       bool                      `yaml:"auto"`
+				Extensions extensiontypes.Extensions `yaml:"extensions"`
+			} `yaml:"install"`
+		}
+		Expect(yaml.Unmarshal([]byte(rendered), &parsed)).To(Succeed())
+		Expect(parsed.Install.Auto).To(BeTrue())
+		Expect(parsed.Install.Extensions).To(ConsistOf(
+			extensiontypes.Extension{Name: "fwupd"},
+			extensiontypes.Extension{Name: "/run/initramfs/live/tailscale.sysext.raw"},
+		))
+	})
+
+	It("writes no declaration when no extensions are configured", func() {
+		tmp := GinkgoT().TempDir()
+		Expect(materializeISOExtensions(context.Background(), schema.ISO{}, "amd64", tmp, false)).To(Succeed())
+		Expect(filepath.Join(tmp, isoExtensionsConfig)).ToNot(BeAnExistingFile())
+	})
+})
 
 var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 	const templateWithPlaceholders = "linux ($root)/boot/kernel cdroot root=live:CDLABEL=COS_LIVE {{LIVE_CONSOLE}}{{NOMODESET}} install-mode\nlinux ($root)/boot/kernel cdroot{{EXTEND_CMDLINE}}\nmenuentry debug { linux console=tty0 }\n"

@@ -11,6 +11,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal/config"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
 	"github.com/urfave/cli/v2"
@@ -68,6 +69,14 @@ var BuildISOCmd = cli.Command{
 			Name:  "live-console",
 			Usage: "Replace the console options used when booting from the live/installer ISO",
 		},
+		&cli.StringSliceFlag{
+			Name:  "extension",
+			Usage: "Named system extension to include, optionally with @version (repeatable)",
+		},
+		&cli.StringSliceFlag{
+			Name:  "extensions-catalog",
+			Usage: "System extension catalog URL or file, repeatable. Searched in order, the first catalog publishing the name wins. Defaults to the hadron-layers catalog",
+		},
 		AllowInsecureRegistriesFlag,
 	},
 	ArgsUsage: "<source>",
@@ -114,13 +123,25 @@ var BuildISOCmd = cli.Command{
 		r := schema.ReleaseArtifact{
 			ContainerImage: source,
 		}
+		extensionValues := ctx.StringSlice("extension")
+		extensionRequests := make([]extensions.Request, 0, len(extensionValues))
+		for _, value := range extensionValues {
+			request, err := extensions.ParseRequest(value)
+			if err != nil {
+				return err
+			}
+			extensionRequests = append(extensionRequests, request)
+		}
+
 		isoOptions := schema.ISO{
-			OverrideName:      ctx.String("override-name"),
-			IncludeDate:       ctx.Bool("date"),
-			OverlayISO:        ctx.String("overlay-iso"),
-			OverlayRootfs:     ctx.String("overlay-rootfs"),
-			ExtendLiveCmdline: ctx.String("extend-live-cmdline"),
-			LiveConsole:       ctx.String("live-console"),
+			OverrideName:       ctx.String("override-name"),
+			IncludeDate:        ctx.Bool("date"),
+			OverlayISO:         ctx.String("overlay-iso"),
+			OverlayRootfs:      ctx.String("overlay-rootfs"),
+			ExtendLiveCmdline:  ctx.String("extend-live-cmdline"),
+			LiveConsole:        ctx.String("live-console"),
+			ExtensionsCatalogs: ctx.StringSlice("extensions-catalog"),
+			Extensions:         extensionRequests,
 		}
 
 		if err := validateISOOptions(isoOptions); err != nil {

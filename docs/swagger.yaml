@@ -110,6 +110,18 @@ definitions:
         type: string
       dockerfile:
         type: string
+      extensions:
+        description: |-
+          Extensions are catalog extension names (name or name@version) to place
+          in the built ISO. ExtensionsCatalogs replaces the default catalog they
+          resolve against.
+        items:
+          type: string
+        type: array
+      extensionsCatalogs:
+        items:
+          type: string
+        type: array
       hadronBase:
         type: string
       hadronExtra:
@@ -471,6 +483,19 @@ definitions:
         type: string
       extensionHierarchies:
         $ref: '#/definitions/store.ExtensionHierarchies'
+      extensions:
+        description: |-
+          Extensions and ExtensionsCatalogs record the catalog extensions this
+          artifact was built with, so cloning it rebuilds with the same ones. An
+          empty catalog list means the build read extensions.DefaultCatalog,
+          which keeps a stored build following that default when it moves.
+        items:
+          type: string
+        type: array
+      extensionsCatalogs:
+        items:
+          type: string
+        type: array
       fips:
         type: boolean
       gce:

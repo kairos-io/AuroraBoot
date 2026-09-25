@@ -173,6 +173,11 @@ type APICreateArtifactRequest struct {
 	Signing                 APIArtifactSigning      `json:"signing"`
 	Provisioning            APIArtifactProvisioning `json:"provisioning"`
 	CloudConfig             string                  `json:"cloudConfig"`
+	// Extensions are catalog extension names (name or name@version) to place
+	// in the built ISO. ExtensionsCatalogs replaces the default catalog they
+	// resolve against.
+	Extensions         []string `json:"extensions"`
+	ExtensionsCatalogs []string `json:"extensionsCatalogs"`
 }
 
 // APIArtifactOutputs toggles the build's output formats.

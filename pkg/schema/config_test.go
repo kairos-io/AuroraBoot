@@ -1,12 +1,35 @@
 package schema_test
 
 import (
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 )
+
+var _ = Describe("ISO extensions", func() {
+	It("stores a catalog and parsed requests", func() {
+		iso := schema.ISO{
+			ExtensionsCatalogs: []string{"catalog.yaml"},
+			Extensions:         []extensions.Request{{Name: "foo", Version: "v1"}},
+		}
+		Expect(iso.ExtensionsCatalogs).To(Equal([]string{"catalog.yaml"}))
+		Expect(iso.Extensions).To(Equal([]extensions.Request{{Name: "foo", Version: "v1"}}))
+	})
+
+	It("keeps the empty configuration as a no-op", func() {
+		iso := schema.ISO{}
+		Expect(iso.ExtensionsCatalogs).To(BeEmpty())
+		Expect(iso.Extensions).To(BeEmpty())
+	})
+
+	It("accepts requests with no catalog, which reads the default one", func() {
+		cfg := schema.Config{ISO: schema.ISO{Extensions: []extensions.Request{{Name: "foo"}}}}
+		Expect(cfg.Validate()).To(Succeed())
+	})
+})
 
 var _ = Describe("ISO HandleDeprecations", func() {
 	var (
