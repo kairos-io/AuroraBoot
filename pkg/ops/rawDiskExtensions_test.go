@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -305,4 +306,38 @@ func TestStageOemContentsBundlesTheExtensionsNextToTheResetConfig(t *testing.T) 
 	if _, err := os.Stat(filepath.Join(oem, BundledExtensionsDir, "fwupd.sysext.raw")); err != nil {
 		t.Fatalf("the extension image is not in the OEM partition: %v", err)
 	}
+}
+
+// A build that asked for no extensions must reach neither the registry nor the
+// filesystem. materializeDiskExtensions is the only caller of the pull, so if
+// its guard were dropped every existing raw-disk build would start creating a
+// staging directory and contacting a registry for an empty request list. The
+// returned cleanup has to be callable either way, because the caller defers it
+// before it knows whether anything was staged.
+func TestMaterializeDiskExtensionsWithoutRequestsTouchesNothing(t *testing.T) {
+	tmp := t.TempDir()
+	t.Setenv("TMPDIR", tmp)
+
+	images, cleanup, err := materializeDiskExtensions(context.Background(), DiskExtensions{})
+	if err != nil {
+		t.Fatalf("materializeDiskExtensions: %v", err)
+	}
+	if images != nil {
+		t.Fatalf("images = %v, want nil", images)
+	}
+	if cleanup == nil {
+		t.Fatal("cleanup is nil, so the caller's deferred call would panic")
+	}
+
+	// Read the directory before running cleanup, otherwise cleanup removes
+	// the very staging directory whose absence is the point of the check.
+	entries, err := os.ReadDir(tmp)
+	if err != nil {
+		t.Fatalf("reading the temporary directory: %v", err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("a staging directory was created for an empty request list: %v", entries)
+	}
+
+	cleanup()
 }
