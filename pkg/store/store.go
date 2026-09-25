@@ -303,6 +303,12 @@ type ArtifactRecord struct {
 	UploadToken string    `json:"-"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+	// Extensions and ExtensionsCatalogs record the catalog extensions this
+	// artifact was built with, so cloning it rebuilds with the same ones. An
+	// empty catalog list means the build read extensions.DefaultCatalog,
+	// which keeps a stored build following that default when it moves.
+	Extensions         []string `json:"extensions,omitempty" gorm:"serializer:json"`
+	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty" gorm:"serializer:json"`
 }
 
 // ExtensionHierarchies records the SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES paths

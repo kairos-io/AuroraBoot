@@ -18,6 +18,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
@@ -179,6 +180,11 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	// Reject unsafe admin-supplied values before any work starts. Covers
 	// kairos-init flag interpolation in the Dockerfile RUN line.
 	if err := validateKairosInitOptions(opts); err != nil {
+		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
+	}
+	// An extension name the catalog cannot be asked for is a bad request, not
+	// a build that fails half an hour in with the ISO already half written.
+	if _, err := extensions.ParseRequests(opts.Extensions); err != nil {
 		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
 	}
 
@@ -366,7 +372,18 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		fmt.Fprintf(logWriter, "\n")
 		logWriter.Flush()
 	}
-	config, artifact := b.assembleConfig(opts, containerImage, outputDir)
+	config, artifact, err := b.assembleConfig(opts, containerImage, outputDir)
+	if err != nil {
+		msg := fmt.Sprintf("auroraboot failed: %v", err)
+		b.setPhase(bs, builder.BuildError, msg)
+		if b.store != nil {
+			if logWriter != nil {
+				logWriter.Flush()
+			}
+			_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
+		}
+		return
+	}
 	var sink io.Writer
 	if logWriter != nil {
 		sink = logWriter
@@ -637,7 +654,7 @@ RUN /kairos-init -l debug -s install %s && \
 }
 
 // assembleConfig builds the AuroraBoot schema.Config and schema.ReleaseArtifact from BuildOptions.
-func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outputDir string) (schema.Config, schema.ReleaseArtifact) {
+func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outputDir string) (schema.Config, schema.ReleaseArtifact, error) {
 	config := schema.Config{
 		State:             outputDir,
 		DisableHTTPServer: true,
@@ -667,12 +684,19 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		config.ISO.OverlayRootfs = opts.OverlayRootfs
 	}
 
+	requests, err := extensions.ParseRequests(opts.Extensions)
+	if err != nil {
+		return schema.Config{}, schema.ReleaseArtifact{}, err
+	}
+	config.ISO.Extensions = requests
+	config.ISO.ExtensionsCatalogs = opts.ExtensionsCatalogs
+
 	artifact := schema.ReleaseArtifact{}
 	if containerImage != "" {
 		artifact.ContainerImage = containerImage
 	}
 
-	return config, artifact
+	return config, artifact, nil
 }
 
 // buildUKI invokes AuroraBoot's pkg/uki library to produce a UKI ISO.
@@ -685,6 +709,11 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 	log := sdklogger.NewKairosLogger("auroraboot-uki", "info", false)
 	if logWriter != nil {
 		log.Logger = log.Logger.Output(logWriter)
+	}
+
+	extensionRequests, err := extensions.ParseRequests(opts.Extensions)
+	if err != nil {
+		return err
 	}
 
 	ukiOpts := uki.Options{
@@ -703,6 +732,8 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 		SecureBootEnroll:        signing.UKISecureBootEnroll,
 		OverlayRootfs:           opts.OverlayRootfs,
 		AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
+		Extensions:              extensionRequests,
+		ExtensionsCatalogs:      opts.ExtensionsCatalogs,
 		Logger:                  &log,
 	}
 

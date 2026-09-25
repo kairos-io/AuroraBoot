@@ -1738,6 +1738,19 @@
                 "dockerfile": {
                     "type": "string"
                 },
+                "extensions": {
+                    "description": "Extensions are catalog extension names (name or name@version) to place\nin the built ISO. ExtensionsCatalogs replaces the default catalog they\nresolve against.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extensionsCatalogs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "hadronBase": {
                     "type": "string"
                 },
@@ -2245,6 +2258,19 @@
                 },
                 "extensionHierarchies": {
                     "$ref": "#/definitions/store.ExtensionHierarchies"
+                },
+                "extensions": {
+                    "description": "Extensions and ExtensionsCatalogs record the catalog extensions this\nartifact was built with, so cloning it rebuilds with the same ones. An\nempty catalog list means the build read extensions.DefaultCatalog,\nwhich keeps a stored build following that default when it moves.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extensionsCatalogs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "fips": {
                     "type": "boolean"

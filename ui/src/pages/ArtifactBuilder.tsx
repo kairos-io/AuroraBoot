@@ -19,6 +19,15 @@ import {
 } from "@/lib/buildConfig";
 import { buildCloudConfigPreview, stripPhonehome } from "@/lib/cloudConfigPreview";
 import { renderHadronMiddleContent } from "@/lib/hadronContent";
+import {
+  DEFAULT_EXTENSIONS_CATALOG,
+  LATEST_VERSION,
+  catalogExtensionsForArch,
+  fetchCatalogExtensions,
+  parseExtensionSelection,
+  serializeExtensionSelection,
+  type CatalogExtensionItem,
+} from "@/lib/catalogExtensions";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -246,7 +255,9 @@ type HadronFirmwareItem = { name: string; image: string; version: string; releas
 type HadronLayerItem = { name: string; title?: string; description?: string; image: string; latest?: string };
 
 const HADRON_FIRMWARE_URL = "https://kairos-io.github.io/hadron-firmware/data.json";
-const HADRON_LAYERS_URL = "https://kairos-io.github.io/hadron-layers/releases.json";
+// The composer's software-layer list and the build-time extension picker read
+// the same published index, so the URL lives in one place.
+const HADRON_LAYERS_URL = DEFAULT_EXTENSIONS_CATALOG;
 const HADRON_RELEASES_URL = "https://api.github.com/repos/kairos-io/hadron/releases?per_page=30";
 const HADRON_CUSTOM_TAG_SENTINEL = "__custom__";
 
@@ -624,6 +635,15 @@ export function ArtifactBuilder() {
   const [layersCatalog, setLayersCatalog] = useState<HadronLayerItem[]>([]);
   const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // Catalog extensions materialized into the built ISO. extensionsCatalog is
+  // pre-filled with the default the backend would use anyway, so the field
+  // shows the operator what is being read and is the place to override it.
+  const [extensionsCatalog, setExtensionsCatalog] = useState(DEFAULT_EXTENSIONS_CATALOG);
+  const [extensionsCatalogItems, setExtensionsCatalogItems] = useState<CatalogExtensionItem[]>([]);
+  const [extensionsCatalogState, setExtensionsCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // name -> version, where LATEST_VERSION means "whatever the catalog calls
+  // latest at build time".
+  const [selectedExtensions, setSelectedExtensions] = useState<Record<string, string>>({});
   // Hadron base image: either an official release tag (picked from a dropdown
   // populated by the GH releases API) or a fully custom ref string typed by
   // the operator. hadronBaseTag holds the dropdown value; hadronBaseCustom
@@ -665,6 +685,40 @@ export function ArtifactBuilder() {
     }
   }
 
+  // loadExtensionsCatalog reads the catalog at `url`, which is also what a
+  // build with no catalog of its own reads, so the list the operator picks
+  // from is the list the build resolves against. An unreadable catalog is
+  // surfaced rather than swallowed: silently showing an empty picker would
+  // read as "this catalog publishes nothing".
+  function loadExtensionsCatalog(url: string) {
+    const source = url.trim();
+    if (source === "") {
+      setExtensionsCatalogState("error");
+      return;
+    }
+    setExtensionsCatalogState("loading");
+    fetchCatalogExtensions(source)
+      .then((items) => {
+        setExtensionsCatalogItems(items);
+        setExtensionsCatalogState("ready");
+      })
+      .catch(() => {
+        setExtensionsCatalogItems([]);
+        setExtensionsCatalogState("error");
+      });
+  }
+
+  // goToStep is the one way the wizard changes step, so reaching Output can
+  // start the catalog fetch. Driven from the navigation handlers rather than
+  // an effect, for the same reason startHadronCatalogs is: it keeps the
+  // "start loading" state update off the synchronous render path.
+  function goToStep(next: number) {
+    setStep(next);
+    if (next === 2 && extensionsCatalogState === "idle") {
+      loadExtensionsCatalog(extensionsCatalog);
+    }
+  }
+
   // Fetch the hadron release tag list once the Hadron template is picked.
   // Silent-fallback keeps HADRON_VERSION selectable when the API is rate
   // limited. We splice HADRON_VERSION into the fetched list so the current
@@ -688,6 +742,28 @@ export function ArtifactBuilder() {
       : hadronBaseTag
         ? `ghcr.io/kairos-io/hadron:${hadronBaseTag}`
         : "";
+
+  // The catalog entries that publish an artifact for the architecture being
+  // built, and the request list derived from the operator's picks.
+  const availableExtensions = useMemo(
+    () => catalogExtensionsForArch(extensionsCatalogItems, form.arch),
+    [extensionsCatalogItems, form.arch],
+  );
+  // Serialized over the selection itself, not over the visible list: changing
+  // the architecture must not quietly drop a pick. The card reports the
+  // conflict instead, via unavailableExtensions below.
+  const selectedExtensionNames = serializeExtensionSelection(
+    selectedExtensions,
+    Object.keys(selectedExtensions).sort(),
+  );
+  const unavailableExtensions = Object.keys(selectedExtensions)
+    .filter((name) => {
+      const item = availableExtensions.find((i) => i.name === name);
+      if (!item) return extensionsCatalogState === "ready";
+      const version = selectedExtensions[name];
+      return version !== LATEST_VERSION && !item.versions.some((v) => v.version === version);
+    })
+    .sort();
 
   // Wrapper setters that also push the new ref into form.baseImage. The
   // composer's version selector is the only place users edit the Hadron base
@@ -903,6 +979,16 @@ export function ArtifactBuilder() {
     if (cloneId) {
       getArtifact(cloneId).then((a) => {
         setCloneSource(a.name || a.id.slice(0, 8));
+
+        // Extensions are restored for both branches below: a clone that
+        // silently dropped them would rebuild an ISO missing the extensions
+        // the operator cloned it for.
+        if (a.extensions && a.extensions.length > 0) {
+          setSelectedExtensions(parseExtensionSelection(a.extensions));
+        }
+        if (a.extensionsCatalogs && a.extensionsCatalogs.length > 0) {
+          setExtensionsCatalog(a.extensionsCatalogs[0]);
+        }
 
         // Hadron branch: restore the composer state and land on Source so the
         // operator can edit firmware / layers / base before rebuilding. Auto-
@@ -1228,6 +1314,15 @@ export function ArtifactBuilder() {
         selectedTemplate === HADRON_TEMPLATE_NAME
           ? hadronExtra || undefined
           : undefined,
+      extensions: selectedExtensionNames.length > 0 ? selectedExtensionNames : undefined,
+      // Only sent when the operator pointed the build at another catalog:
+      // leaving it out keeps the server's default as the single source of
+      // that URL, so it can move without every stored build disagreeing.
+      extensionsCatalogs:
+        selectedExtensionNames.length > 0 &&
+        extensionsCatalog.trim() !== DEFAULT_EXTENSIONS_CATALOG
+          ? [extensionsCatalog.trim()]
+          : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
       outputs: { ...form.outputs },
@@ -1297,7 +1392,7 @@ export function ArtifactBuilder() {
             {i > 0 && <div className={`flex-1 h-px ${i <= step ? "bg-[#EE5007]" : "bg-border"}`} />}
             <button
               type="button"
-              onClick={() => setStep(i)}
+              onClick={() => goToStep(i)}
               className={`flex items-center gap-2 text-sm ${i === step ? "text-[#EE5007] font-medium" : i < step ? "text-foreground" : "text-muted-foreground"}`}
             >
               <span className={`h-7 w-7 rounded-full flex items-center justify-center text-xs border ${i === step ? "border-[#EE5007] bg-[#EE5007] text-white" : i < step ? "border-[#EE5007] text-[#EE5007]" : "border-muted-foreground"}`}>
@@ -2390,6 +2485,162 @@ export function ArtifactBuilder() {
                 </CardContent>
               </Card>
 
+              {/* Catalog extensions materialized into the ISO */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-sm flex items-center gap-2">
+                    <Package className="h-4 w-4 text-[#EE5007]" />
+                    System Extensions
+                    <InfoTooltip>
+                      Extensions are resolved from the catalog and written into the
+                      ISO, so the installed system carries them without pulling
+                      anything at first boot. Only extensions published for the{" "}
+                      {form.arch} architecture are listed.
+                    </InfoTooltip>
+                  </CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-1">
+                    <Label className="text-xs">
+                      Catalog
+                      <InfoTooltip>
+                        Defaults to the Kairos hadron-layers catalog, the same index
+                        a node reads. Point it at your own index to publish your own
+                        extensions.
+                      </InfoTooltip>
+                    </Label>
+                    <div className="flex gap-2">
+                      <Input
+                        value={extensionsCatalog}
+                        onChange={(e) => setExtensionsCatalog(e.target.value)}
+                        placeholder={DEFAULT_EXTENSIONS_CATALOG}
+                        className="font-mono text-xs"
+                        aria-label="Extension catalog URL"
+                      />
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="outline"
+                        onClick={() => loadExtensionsCatalog(extensionsCatalog)}
+                      >
+                        {extensionsCatalogState === "loading" ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          "Load"
+                        )}
+                      </Button>
+                    </div>
+                  </div>
+
+                  {extensionsCatalogState === "error" && (
+                    <p className="text-sm text-amber-700">
+                      Could not read that catalog. Check the URL, or that it serves
+                      CORS headers for this browser.
+                    </p>
+                  )}
+
+                  {extensionsCatalogState === "ready" && availableExtensions.length === 0 && (
+                    <p className="text-sm text-muted-foreground">
+                      That catalog publishes no extension for {form.arch}.
+                    </p>
+                  )}
+
+                  {availableExtensions.length > 0 && (
+                    <div className="grid gap-2 md:grid-cols-2">
+                      {availableExtensions.map((item) => {
+                        const selected = selectedExtensions[item.name] !== undefined;
+                        return (
+                          <div
+                            key={item.name}
+                            className="rounded-md border p-2 flex items-start gap-2"
+                          >
+                            <input
+                              type="checkbox"
+                              className="mt-1"
+                              id={`extension-${item.name}`}
+                              checked={selected}
+                              onChange={() =>
+                                setSelectedExtensions((current) => {
+                                  const next = { ...current };
+                                  if (selected) {
+                                    delete next[item.name];
+                                  } else {
+                                    next[item.name] = LATEST_VERSION;
+                                  }
+                                  return next;
+                                })
+                              }
+                            />
+                            <div className="grid gap-1 min-w-0 flex-1">
+                              <Label
+                                htmlFor={`extension-${item.name}`}
+                                className="text-xs font-mono"
+                              >
+                                {item.name}
+                              </Label>
+                              {item.description && (
+                                <p className="text-xs text-muted-foreground truncate">
+                                  {item.description}
+                                </p>
+                              )}
+                              {selected && (
+                                <Select
+                                  value={selectedExtensions[item.name]}
+                                  onValueChange={(v) =>
+                                    setSelectedExtensions((current) => ({
+                                      ...current,
+                                      [item.name]: v,
+                                    }))
+                                  }
+                                >
+                                  <SelectTrigger
+                                    className="h-7 text-xs"
+                                    aria-label={`${item.name} version`}
+                                  >
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    <SelectItem value={LATEST_VERSION}>
+                                      Latest{item.latest ? ` (${item.latest})` : ""}
+                                    </SelectItem>
+                                    {item.versions.map((v) => (
+                                      <SelectItem key={v.version} value={v.version}>
+                                        {v.version}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {unavailableExtensions.length > 0 && (
+                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-700">
+                        This catalog publishes nothing for {form.arch} for{" "}
+                        {unavailableExtensions.join(", ")}. The build will fail
+                        unless you deselect them or pick another architecture.
+                      </p>
+                    </div>
+                  )}
+
+                  {selectedExtensionNames.length > 0 && !form.outputs.iso && !form.outputs.uki && (
+                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-700">
+                        Extensions are written into the ISO, so select the ISO or
+                        UKI output for them to end up anywhere.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* UKI Signing Keys (only when UKI selected) */}
               {form.outputs.uki && (
                 <Card>
@@ -2996,7 +3247,7 @@ export function ArtifactBuilder() {
                     setBuildMode("image");
                   }
                 }
-                setStep(step + 1);
+                goToStep(step + 1);
               }}
               className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
             >

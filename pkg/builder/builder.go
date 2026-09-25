@@ -135,6 +135,14 @@ type BuildOptions struct {
 	HadronLayers   []string
 	HadronExtra    string
 
+	// Extensions are the catalog extensions to materialize in the ISO root,
+	// as name or name@version. The handler validates every entry before the
+	// build starts; the builder resolves them against ExtensionsCatalogs.
+	Extensions []string
+	// ExtensionsCatalogs are the catalog URLs or paths to search, in order.
+	// Empty means the build reads extensions.DefaultCatalog.
+	ExtensionsCatalogs []string
+
 	// ExtensionHierarchies carries the operator-supplied sysext/confext
 	// mount points. The handler validates and normalizes both lists; /usr
 	// (sysext) and /etc (confext) are implicit and never appear here. The

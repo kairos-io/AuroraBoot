@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
@@ -106,6 +107,50 @@ var _ = Describe("AuroraBoot Builder", func() {
 			mu.Lock()
 			defer mu.Unlock()
 			Expect(capturedConfig.ISO.OverlayRootfs).To(Equal("/tmp/overlay"))
+		})
+
+		It("should carry the catalog extensions and the catalog override into the ISO config", func() {
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:                 "test-extensions",
+				BaseImage:          "quay.io/kairos/ubuntu:latest",
+				Extensions:         []string{"nvidia", "tailscale@v1.2.3"},
+				ExtensionsCatalogs: []string{"https://example.test/releases.json"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			waitForBuild()
+
+			mu.Lock()
+			defer mu.Unlock()
+			Expect(capturedConfig.ISO.Extensions).To(Equal([]extensions.Request{
+				{Name: "nvidia"},
+				{Name: "tailscale", Version: "v1.2.3"},
+			}))
+			Expect(capturedConfig.ISO.ExtensionsCatalogs).To(Equal([]string{"https://example.test/releases.json"}))
+		})
+
+		It("should leave the catalog list empty when none is given, so the build reads the default one", func() {
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:         "test-extensions-default",
+				BaseImage:  "quay.io/kairos/ubuntu:latest",
+				Extensions: []string{"nvidia"},
+			})
+			Expect(err).NotTo(HaveOccurred())
+			waitForBuild()
+
+			mu.Lock()
+			defer mu.Unlock()
+			Expect(capturedConfig.ISO.Extensions).To(Equal([]extensions.Request{{Name: "nvidia"}}))
+			Expect(capturedConfig.ISO.ExtensionsCatalogs).To(BeEmpty())
+		})
+
+		It("should refuse an extension name the catalog cannot be asked for", func() {
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:         "test-extensions-invalid",
+				BaseImage:  "quay.io/kairos/ubuntu:latest",
+				Extensions: []string{"nvidia@"},
+			})
+			Expect(err).To(MatchError(builder.ErrInvalidBuildOptions))
+			Expect(err.Error()).To(ContainSubstring("invalid extension request"))
 		})
 
 		It("should set Disk.MAAS and Disk.EFI when the MAAS output is selected", func() {
@@ -326,6 +371,33 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(capturedUKI.PublicKeysDir).To(Equal("/keys"))
 			Expect(capturedUKI.SecureBootEnroll).To(Equal("force"))
 			Expect(capturedUKI.OverlayRootfs).To(Equal("/tmp/my-overlay"))
+		})
+
+		It("passes the catalog extensions through to a UKI build", func() {
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:                 "uki-extensions",
+				BaseImage:          "quay.io/kairos/ubuntu:latest",
+				Extensions:         []string{"nvidia@v1"},
+				ExtensionsCatalogs: []string{"https://example.test/releases.json"},
+				Outputs: builder.OutputOptions{
+					ISO: true,
+					UKI: true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:  "/keys/db.key",
+					UKISecureBootCert: "/keys/db.pem",
+					UKITPMPCRKey:      "/keys/tpm.pem",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(deployCalled, 5*time.Second).Should(Receive())
+			Eventually(ukiCalled, 5*time.Second).Should(Receive())
+
+			ukiMu.Lock()
+			defer ukiMu.Unlock()
+			Expect(capturedUKI.Extensions).To(Equal([]extensions.Request{{Name: "nvidia", Version: "v1"}}))
+			Expect(capturedUKI.ExtensionsCatalogs).To(Equal([]string{"https://example.test/releases.json"}))
 		})
 
 		It("passes a schemed source reference through to UKI unchanged", func() {
