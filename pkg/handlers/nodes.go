@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -348,11 +349,15 @@ func (h *NodeHandler) Decommission(c echo.Context) error {
 			ID:      cmd.ID,
 			Command: cmd.Command,
 		}
-		// Errors from SendCommand are best-effort — the command is already
-		// persisted (and now Delivered), and the WS layer will surface it on
-		// the next reconnect if the agent happens to drop between IsOnline and
-		// the write. The UI has the ExpiresAt to decide when to give up.
-		_ = h.hub.SendCommand(nodeID, payload)
+		// If the agent dropped between IsOnline and the write, nothing was
+		// delivered, so release the claim and let the next poll or reconnect
+		// pick the command up again while it is still inside its ExpiresAt
+		// window. Leaving it Delivered would hide it from GetPending for good.
+		if err := h.hub.SendCommand(nodeID, payload); err != nil {
+			if _, rerr := h.commands.ReleaseClaim(ctx, cmd.ID); rerr != nil {
+				log.Printf("nodes: failed to requeue undelivered unregister command %s for node %s: %v", cmd.ID, nodeID, rerr)
+			}
+		}
 	}
 
 	return c.JSON(http.StatusOK, decommissionResponse{CommandID: cmd.ID, NodeOnline: true})

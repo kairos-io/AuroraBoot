@@ -239,6 +239,12 @@ type CommandStore interface {
 	// or two concurrent polls) wins. A command that is missing or no longer
 	// Pending yields (false, nil).
 	ClaimForDelivery(ctx context.Context, id string) (bool, error)
+	// ReleaseClaim puts a claimed command back to Pending, undoing a
+	// ClaimForDelivery whose delivery then failed. Only a Delivered command is
+	// moved, so a command the node has already started or finished is never
+	// pulled back into the queue. It returns true only if this call performed
+	// the transition.
+	ReleaseClaim(ctx context.Context, id string) (bool, error)
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
 	// UpdateStatusForNode updates a command's status only if it belongs to
 	// nodeID. It returns ErrCommandNotFound when no command matches both the

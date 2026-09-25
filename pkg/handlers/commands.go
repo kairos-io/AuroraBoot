@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -211,7 +212,16 @@ func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand
 		Command: cmd.Command,
 		Args:    cmd.Args,
 	}
-	_ = h.hub.SendCommand(cmd.ManagedNodeID, payload)
+	if err := h.hub.SendCommand(cmd.ManagedNodeID, payload); err != nil {
+		// The node dropped between IsOnline and the write, so nothing was
+		// delivered. Put the claim back: Delivered is a terminal state as far as
+		// delivery goes (GetPending matches Pending only), so leaving it there
+		// would drop the command silently and the UI would show it as delivered
+		// forever.
+		if _, rerr := h.commands.ReleaseClaim(ctx, cmd.ID); rerr != nil {
+			log.Printf("commands: failed to requeue undelivered command %s for node %s: %v", cmd.ID, cmd.ManagedNodeID, rerr)
+		}
+	}
 }
 
 // Delete handles DELETE /api/v1/nodes/:nodeID/commands/:commandID.
