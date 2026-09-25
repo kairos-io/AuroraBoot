@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -131,7 +132,7 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 	const templateWithPlaceholders = "linux ($root)/boot/kernel cdroot root=live:CDLABEL=COS_LIVE {{LIVE_CONSOLE}}{{NOMODESET}} install-mode\nlinux ($root)/boot/kernel cdroot{{EXTEND_CMDLINE}}\nmenuentry debug { linux console=tty0 }\n"
 
 	It("replaces NOMODESET and EXTEND_CMDLINE with provided values", func() {
-		result := applyGrubTemplate([]byte(templateWithPlaceholders), " nomodeset", " rd.debug rd.shell", "")
+		result := applyGrubTemplate([]byte(templateWithPlaceholders), " nomodeset", " rd.debug rd.shell", "", "")
 		Expect(string(result)).To(ContainSubstring(" nomodeset"))
 		Expect(string(result)).To(ContainSubstring(" rd.debug rd.shell"))
 		Expect(string(result)).ToNot(ContainSubstring("{{NOMODESET}}"))
@@ -139,35 +140,171 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 	})
 
 	It("replaces EXTEND_CMDLINE with empty string when not provided", func() {
-		result := applyGrubTemplate([]byte(templateWithPlaceholders), "", "", "")
+		result := applyGrubTemplate([]byte(templateWithPlaceholders), "", "", "", "")
 		Expect(string(result)).ToNot(ContainSubstring("{{EXTEND_CMDLINE}}"))
 		Expect(string(result)).To(ContainSubstring("install-mode\nlinux ($root)/boot/kernel cdroot\n"))
 	})
 
 	It("replaces NOMODESET with empty string when not provided", func() {
-		result := applyGrubTemplate([]byte(templateWithPlaceholders), "", " rd.debug", "")
+		result := applyGrubTemplate([]byte(templateWithPlaceholders), "", " rd.debug", "", "")
 		Expect(string(result)).ToNot(ContainSubstring("{{NOMODESET}}"))
 		Expect(string(result)).To(ContainSubstring(" rd.debug"))
 	})
 
 	It("uses the default live consoles when no override is provided", func() {
-		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "")
+		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", "")
 		Expect(string(result)).To(ContainSubstring("console=ttyS0 console=tty1"))
 		Expect(string(result)).ToNot(ContainSubstring("{{LIVE_CONSOLE}}"))
 	})
 
 	It("replaces live consoles while preserving the debug console", func() {
-		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "console=ttyUSB0,115200")
+		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "console=ttyUSB0,115200", "")
 		Expect(string(result)).ToNot(ContainSubstring("console=ttyS0 console=tty1"))
 		Expect(strings.Count(string(result), "console=ttyUSB0,115200")).To(Equal(6))
 		Expect(string(result)).To(ContainSubstring("console=tty0 rd.debug"))
 	})
 
 	It("strips carriage returns and newlines from a live console override", func() {
-		result := applyGrubTemplate([]byte("linux {{LIVE_CONSOLE}} end"), "", "", "console=ttyS1\r\nconsole=tty1")
+		result := applyGrubTemplate([]byte("linux {{LIVE_CONSOLE}} end"), "", "", "console=ttyS1\r\nconsole=tty1", "")
 		Expect(string(result)).To(Equal("linux console=ttyS1console=tty1 end"))
 	})
+
+	It("defaults to the interactive installer entry", func() {
+		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", "")
+		Expect(string(result)).To(ContainSubstring(
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryInteractive)))
+		Expect(string(result)).ToNot(ContainSubstring("{{DEFAULT_ENTRY}}"))
+	})
+
+	It("boots the entry the build names instead", func() {
+		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", constants.LiveGrubEntryUnattended)
+		Expect(string(result)).To(ContainSubstring(
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryUnattended)))
+	})
+
+	// The title is written inside a quoted grub assignment. A quote or a
+	// newline would close it early and leave the remainder of the value
+	// sitting in the config as grub commands.
+	It("keeps a hostile entry title inside the assignment", func() {
+		result := applyGrubTemplate([]byte(`set default="{{DEFAULT_ENTRY}}"`), "", "", "",
+			"Kairos\"\nset timeout=0")
+		Expect(string(result)).To(Equal(`set default="Kairosset timeout=0"`))
+	})
 })
+
+// The template and the constants are two halves of one fact: grub matches
+// `set default` against an entry id, and silently falls back to the first
+// entry when it matches nothing. Renaming an id in the .cfg without renaming
+// the constant is exactly the regression kairos-io/kairos#4960 is about, and
+// it is invisible to every other test here.
+var _ = Describe("the shipped live grub config", Label("iso"), func() {
+	cfg := string(constants.GrubLiveBiosCfg)
+
+	It("names ids that exist in the template", func() {
+		for _, id := range []string{
+			constants.LiveGrubEntryInteractive,
+			constants.LiveGrubEntryUnattended,
+		} {
+			Expect(cfg).To(ContainSubstring(fmt.Sprintf("--id %s ", id)),
+				"no menuentry with --id %s", id)
+		}
+	})
+
+	// grub truncates the value of `default` at the first space before
+	// matching it against an id, so an id containing one would match a
+	// different entry, or none.
+	It("gives every top-level entry a space-free id", func() {
+		entries := 0
+		for _, line := range strings.Split(cfg, "\n") {
+			if !strings.HasPrefix(line, "menuentry ") {
+				continue
+			}
+			entries++
+			Expect(line).To(MatchRegexp(`--id [^" ]+ `), "menuentry without an id: %s", line)
+		}
+		Expect(entries).To(BeNumerically(">=", 6))
+	})
+
+	It("points the default at the entry that runs the interactive installer", func() {
+		Expect(cfg).To(ContainSubstring(`set default="{{DEFAULT_ENTRY}}"`))
+		Expect(entryCmdline(cfg, constants.LiveGrubEntryInteractive)).
+			To(ContainSubstring(" install-mode-interactive "))
+	})
+
+	// The unattended entry is what an automated build selects once the
+	// default moves off it, so it has to keep working.
+	It("keeps the unattended installer selectable by id", func() {
+		cmdline := entryCmdline(cfg, constants.LiveGrubEntryUnattended)
+		Expect(cmdline).To(ContainSubstring(" install-mode "))
+		Expect(cmdline).ToNot(ContainSubstring("install-mode-interactive"))
+	})
+})
+
+var _ = Describe("newLiveISOSpec", Label("iso"), func() {
+	It("carries every live boot option from the ISO config", func() {
+		spec := newLiveISOSpec("/rootfs", "/isoroot", schema.ISO{
+			ExtendLiveCmdline: "rd.debug",
+			LiveConsole:       "console=ttyUSB0,115200",
+			DefaultGrubEntry:  constants.LiveGrubEntryUnattended,
+		})
+
+		Expect(spec.ExtendLiveCmdline).To(Equal("rd.debug"))
+		Expect(spec.LiveConsole).To(Equal("console=ttyUSB0,115200"))
+		Expect(spec.DefaultGrubEntry).To(Equal(constants.LiveGrubEntryUnattended))
+	})
+
+	It("leaves the default entry to the template when the config names none", func() {
+		Expect(newLiveISOSpec("/rootfs", "/isoroot", schema.ISO{}).DefaultGrubEntry).To(BeEmpty())
+	})
+})
+
+// applyGrubTemplate is only right if the spec reaches it. Without this, the
+// helper keeps its default and the build silently ignores the field.
+var _ = Describe("prepareBootArtifacts", Label("iso"), func() {
+	writeGrubCfg := func(spec *LiveISO) string {
+		isoDir := GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(isoDir, "boot"), 0o755)).To(Succeed())
+
+		cfg := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		Expect(NewBuildISOAction(cfg, spec).prepareBootArtifacts(isoDir)).To(Succeed())
+
+		written, err := os.ReadFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
+		Expect(err).ToNot(HaveOccurred())
+		return string(written)
+	}
+
+	It("boots the interactive installer when the spec names no entry", func() {
+		Expect(writeGrubCfg(&LiveISO{})).To(ContainSubstring(
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryInteractive)))
+	})
+
+	It("boots the entry the spec names", func() {
+		Expect(writeGrubCfg(&LiveISO{DefaultGrubEntry: constants.LiveGrubEntryUnattended})).
+			To(ContainSubstring(fmt.Sprintf("set default=%q", constants.LiveGrubEntryUnattended)))
+	})
+})
+
+// entryCmdline returns the `linux` line of the menuentry carrying the given
+// --id, padded with a space at both ends so callers can match whole cmdline
+// tokens.
+func entryCmdline(cfg, id string) string {
+	lines := strings.Split(cfg, "\n")
+	for i, line := range lines {
+		if !strings.HasPrefix(line, "menuentry ") || !strings.Contains(line, fmt.Sprintf("--id %s ", id)) {
+			continue
+		}
+		for _, body := range lines[i+1:] {
+			if strings.HasPrefix(strings.TrimSpace(body), "linux ") {
+				return " " + strings.TrimSpace(body) + " "
+			}
+			if strings.TrimSpace(body) == "}" {
+				break
+			}
+		}
+	}
+	Fail(fmt.Sprintf("no linux line under the menuentry with --id %s", id))
+	return ""
+}
 
 var _ = Describe("getEfiGrubFilesForArch", Label("iso"), func() {
 	It("prepends the openSUSE riscv64 path before SDK paths", func() {
