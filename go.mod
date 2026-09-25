@@ -22,7 +22,7 @@ require (
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/mudler/go-processmanager v0.1.1
 	github.com/onsi/ginkgo/v2 v2.33.0
-	github.com/onsi/gomega v1.43.1
+	github.com/onsi/gomega v1.44.0
 	github.com/otiai10/copy v1.14.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect
 	github.com/sanity-io/litter v1.5.8
