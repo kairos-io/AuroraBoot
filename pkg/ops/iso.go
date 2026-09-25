@@ -42,6 +42,10 @@ type LiveISO struct {
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO.
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline,omitempty" mapstructure:"extend-live-cmdline"`
 	LiveConsole       string `yaml:"live-console,omitempty" mapstructure:"live-console"`
+	// DefaultGrubEntry is the id (`--id`) of the live menu entry grub boots when
+	// the timeout expires. Left empty, the ISO boots the interactive
+	// installer (constants.LiveGrubEntryInteractive).
+	DefaultGrubEntry string `yaml:"default-grub-entry,omitempty" mapstructure:"default-grub-entry"`
 }
 
 // BuildConfig represents the config we need for building isos, raw images, artifacts
@@ -163,15 +167,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 			return err
 		}
 
-		spec := &LiveISO{
-			RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(src)},
-			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(tmp)},
-			Label:              constants.ISOLabel,
-			GrubEntry:          "Kairos",
-			BootloaderInRootFs: false,
-			ExtendLiveCmdline:  i.ExtendLiveCmdline,
-			LiveConsole:        i.LiveConsole,
-		}
+		spec := newLiveISOSpec(src, tmp, i)
 
 		if i.OverlayRootfs != "" {
 			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
@@ -194,6 +190,22 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
 		}
 		return err
+	}
+}
+
+// newLiveISOSpec carries the ISO options the user gave over to the build spec.
+// A field left out here is parsed from the config and then dropped, which the
+// build has no way to report.
+func newLiveISOSpec(rootfs, isoRoot string, i schema.ISO) *LiveISO {
+	return &LiveISO{
+		RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(rootfs)},
+		Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(isoRoot)},
+		Label:              constants.ISOLabel,
+		GrubEntry:          constants.LiveGrubEntryUnattended,
+		BootloaderInRootFs: false,
+		ExtendLiveCmdline:  i.ExtendLiveCmdline,
+		DefaultGrubEntry:   i.DefaultGrubEntry,
+		LiveConsole:        i.LiveConsole,
 	}
 }
 
@@ -398,14 +410,22 @@ func (b *BuildISOAction) ISORun() (err error) {
 }
 
 // applyGrubTemplate replaces placeholders in the grub config template.
-func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole string) []byte {
+func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole, defaultEntry string) []byte {
 	liveConsole = strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(liveConsole))
 	if liveConsole == "" {
 		liveConsole = "console=ttyS0 console=tty1"
 	}
+	// The entry id is written inside a quoted grub assignment, so a
+	// newline or a double quote in it would end the assignment early and
+	// turn the rest of the value into grub commands.
+	defaultEntry = strings.NewReplacer("\n", "", "\r", "", `"`, "").Replace(strings.TrimSpace(defaultEntry))
+	if defaultEntry == "" {
+		defaultEntry = constants.LiveGrubEntryInteractive
+	}
 	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", nomodeset)
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
 	out = strings.ReplaceAll(out, "{{LIVE_CONSOLE}}", liveConsole)
+	out = strings.ReplaceAll(out, "{{DEFAULT_ENTRY}}", defaultEntry)
 	return []byte(out)
 }
 
@@ -442,7 +462,11 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 		if b.spec != nil {
 			liveConsole = b.spec.LiveConsole
 		}
-		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole)
+		defaultEntry := ""
+		if b.spec != nil {
+			defaultEntry = b.spec.DefaultGrubEntry
+		}
+		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole, defaultEntry)
 		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), grubCfg, constants.FilePerm)
 	} else {
 		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
