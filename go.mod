@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.5.2
-	github.com/kairos-io/netboot v0.0.0-20260921125349-ba8ed34a440d
+	github.com/kairos-io/netboot v0.0.0-20260923193508-f2590943fb41
 	github.com/klauspost/compress v1.20.0
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/mudler/go-processmanager v0.1.1
