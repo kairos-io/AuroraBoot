@@ -37,6 +37,26 @@ var BootHybrid []byte
 //go:embed grub_live_bios.cfg
 var GrubLiveBiosCfg []byte
 
+// Ids of the live menu entries in grub_live_bios.cfg, as given by their
+// `--id`. Grub resolves `set default` against ids before titles, and it
+// truncates the value at the first space while doing so
+// (grub-core/normal/menu.c, get_entry_number_helper), so a title is not
+// usable here: "Kairos (interactive install)" matches an entry whose id is
+// "Kairos" and boots that one instead. Ids carry no spaces for that reason.
+//
+// These strings are part of the template's contract. Renaming an id in the
+// .cfg without renaming the constant leaves `default` naming nothing, and
+// grub silently falls back to the first entry.
+const (
+	// LiveGrubEntryUnattended runs the non-interactive installer
+	// (cmdline `install-mode`), which installs without asking anything.
+	LiveGrubEntryUnattended = "kairos-install"
+	// LiveGrubEntryInteractive runs the interactive installer
+	// (cmdline `install-mode-interactive`). This is what a live ISO boots
+	// when the build does not name another entry.
+	LiveGrubEntryInteractive = "kairos-interactive-install"
+)
+
 type UkiOutput string
 
 const (

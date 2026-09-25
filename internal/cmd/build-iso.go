@@ -11,6 +11,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal/config"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
@@ -68,6 +69,10 @@ var BuildISOCmd = cli.Command{
 		&cli.StringFlag{
 			Name:  "live-console",
 			Usage: "Replace the console options used when booting from the live/installer ISO",
+		},
+		&cli.StringFlag{
+			Name:  "default-grub-entry",
+			Usage: "Title of the live menu entry to boot when the grub timeout expires. Defaults to \"" + constants.LiveGrubEntryInteractive + "\"; pass \"" + constants.LiveGrubEntryUnattended + "\" for the unattended installer",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extension",
@@ -140,6 +145,7 @@ var BuildISOCmd = cli.Command{
 			OverlayRootfs:      ctx.String("overlay-rootfs"),
 			ExtendLiveCmdline:  ctx.String("extend-live-cmdline"),
 			LiveConsole:        ctx.String("live-console"),
+			DefaultGrubEntry:   ctx.String("default-grub-entry"),
 			ExtensionsCatalogs: ctx.StringSlice("extensions-catalog"),
 			Extensions:         extensionRequests,
 		}
