@@ -570,7 +570,15 @@ func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCom
 
 // ListByBatch returns the commands one fan-out created, oldest first, so the
 // batch reads back in the order the nodes were dispatched in.
+//
+// An empty batch id matches nothing, for the same reason CancelPendingInBatch
+// refuses one: a single-node command carries no batch id, so an equality match
+// on the empty string would select every unbatched command in the table and
+// report them as one fan-out.
 func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
+	if batchID == "" {
+		return nil, nil
+	}
 	var cmds []*store.NodeCommand
 	if err := s.db.WithContext(ctx).
 		Where("batch_id = ?", batchID).
