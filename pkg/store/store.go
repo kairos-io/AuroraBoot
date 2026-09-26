@@ -286,6 +286,8 @@ type CommandStore interface {
 	ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error
 	// ListByBatch returns every command created by one fan-out, in the order
 	// they were created, so a caller can report the batch as one operation.
+	// An empty batch id matches nothing: an unbatched single-node command has
+	// no batch id, so matching on it would return the whole table.
 	ListByBatch(ctx context.Context, batchID string) ([]*NodeCommand, error)
 	// CancelPendingInBatch moves every still-Pending command of a batch to
 	// Canceled and records reason as its result, returning how many rows it
