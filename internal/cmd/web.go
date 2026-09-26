@@ -351,6 +351,11 @@ func runWeb(c *cli.Context) error {
 	baseCtx, baseCancel := context.WithCancel(context.Background())
 	defer baseCancel()
 
+	// Reclaim docker objects an artifact export left behind when a previous run
+	// died before its cleanup ran. Done here, before anything is served, so no
+	// export of this process can be in flight while it runs.
+	handlers.PruneExportLeftovers(baseCtx)
+
 	e := server.New(server.Config{
 		BaseContext:                  baseCtx,
 		NodeStore:                    nodeStore,

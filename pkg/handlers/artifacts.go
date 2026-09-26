@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/rand"
@@ -11,11 +12,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -67,6 +70,13 @@ type ArtifactHandler struct {
 	regToken       string
 	aurorabootURL  string
 	artifactsDir   string
+
+	// exportImage is the artifact image export pipeline. Real servers run
+	// dockerFlattenExport; tests swap in a fake so the endpoint's queueing and
+	// error handling can be exercised without a docker daemon.
+	exportImage imageExportFunc
+	// exportLocks serializes exports per artifact ID.
+	exportLocks *exportLocks
 }
 
 // NewArtifactHandler creates a new ArtifactHandler.
@@ -91,6 +101,8 @@ func NewArtifactHandler(
 		regToken:       regToken,
 		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
+		exportImage:    dockerFlattenExport,
+		exportLocks:    newExportLocks(),
 	}
 }
 
@@ -1139,9 +1151,187 @@ func extractOverlayTarGz(r io.Reader, destDir string) error {
 	return nil
 }
 
+// imageExportFunc streams a flattened, single-layer OCI tar of containerImage
+// into w. It must not write to w until the export has actually produced output,
+// so a pipeline that dies on its first command can still be answered with a
+// JSON error status rather than a truncated 200. dockerFlattenExport is the
+// production implementation; tests substitute their own.
+type imageExportFunc func(ctx context.Context, containerImage string, w io.Writer) error
+
+// exportQueueWait caps how long one request waits for an artifact's export
+// slot.
+//
+// The request context cannot do this job: net/http cancels it when the client's
+// connection closes, so on its own a queued caller waits for every export ahead
+// of it. Twelve nodes on one artifact at a minute per export means the last one
+// holds an open connection for eleven minutes and then gets a tar it no longer
+// wants. With a deadline it gets a 503 and Retry-After instead, while it is
+// still connected to read them.
+//
+// A var, not a const, so a test can shrink it instead of waiting on it.
+var exportQueueWait = 10 * time.Minute
+
+// exportQueueRetryAfter is the backoff advertised on the 503, in seconds. It is
+// roughly one export, so a requeued caller comes back when a slot has plausibly
+// freed rather than immediately re-joining the same queue.
+const exportQueueRetryAfter = 60
+
+// exportNameSuffix returns the random component of the docker object names used
+// by one export.
+func exportNameSuffix() (string, error) {
+	b := make([]byte, 8)
+	if _, err := rand.Read(b); err != nil {
+		return "", fmt.Errorf("generating export name: %w", err)
+	}
+	return hex.EncodeToString(b), nil
+}
+
+// exportContainerPrefix and exportFlatImageRepo are the fixed halves of the
+// per-export docker object names. PruneExportLeftovers reclaims by matching
+// them, so the two must stay in one place.
+const (
+	exportContainerPrefix = "auroraboot-export-"
+	exportFlatImageRepo   = "auroraboot-flat"
+)
+
+// exportObjectNames returns the container name and flat image tag for a single
+// export.
+//
+// These used to be derived from the artifact ID alone. Two nodes upgrading to
+// the same artifact therefore raced on one container name, and the loser got
+// "container name is already in use" as an HTTP 500 (kairos-io/kairos#4195).
+// Worse, the deferred `docker rmi` of whichever export finished first deleted
+// the tag the other one was still saving from. A per-export random suffix keeps
+// the objects private to their request.
+//
+// The cost of the suffix is that a crash no longer leaves one reusable object
+// per artifact but a uniquely named one per dead export, so the fixed prefix is
+// what PruneExportLeftovers reclaims them by at startup.
+func exportObjectNames() (containerName, imageTag string, err error) {
+	suffix, err := exportNameSuffix()
+	if err != nil {
+		return "", "", err
+	}
+	return exportContainerPrefix + suffix, exportFlatImageRepo + ":" + suffix, nil
+}
+
+// dockerCapture runs a docker command and returns its stdout. A var so the
+// prune's command construction can be tested without a daemon.
+var dockerCapture = func(ctx context.Context, args ...string) ([]byte, error) {
+	var out, errBuf bytes.Buffer
+	cmd := exec.CommandContext(ctx, "docker", args...)
+	cmd.Stdout = &out
+	cmd.Stderr = &errBuf
+	if err := cmd.Run(); err != nil {
+		return nil, fmt.Errorf("docker %s: %w%s", strings.Join(args, " "), err, stderrDetail(&errBuf))
+	}
+	return out.Bytes(), nil
+}
+
+// PruneExportLeftovers removes the docker container and flat image an export
+// leaves behind when it dies before its deferred cleanup runs: SIGKILL, OOM, a
+// container restart. Each export's objects carry a random suffix, so without
+// this they accumulate one flat image the size of the OS image per dead export,
+// and nothing ever removes them.
+//
+// Call it once at process start and before serving, which is what makes it
+// safe: no export of this process is in flight yet, so everything carrying the
+// prefix is garbage by construction. It reclaims another live AuroraBoot's
+// in-flight objects if one shares the docker daemon, which the export path
+// already assumed it did not -- the pre-#4195 code removed
+// auroraboot-flat:<artifact-id> globally on every export.
+//
+// Errors are logged, not returned: a missing or busy daemon must not stop the
+// server from coming up, and there is nothing an operator can do about it at
+// this point in startup anyway.
+func PruneExportLeftovers(ctx context.Context) {
+	// --filter name= is a regex match, anchored so a container merely
+	// containing the prefix in its name is left alone.
+	containers, err := dockerLines(ctx, "ps", "-aq", "--filter", "name=^"+exportContainerPrefix)
+	if err != nil {
+		log.Printf("pruning leftover export containers: %v", err)
+	}
+	for _, id := range containers {
+		if _, err := dockerCapture(ctx, "rm", "-f", id); err != nil {
+			log.Printf("removing leftover export container %s: %v", id, err)
+		}
+	}
+
+	// By reference rather than by image ID: `docker images -q` can report one
+	// ID for several tags, and removing by ID would take out tags this prune
+	// never enumerated.
+	images, err := dockerLines(ctx, "images", "--format", "{{.Repository}}:{{.Tag}}", exportFlatImageRepo)
+	if err != nil {
+		log.Printf("pruning leftover export images: %v", err)
+	}
+	for _, ref := range images {
+		if _, err := dockerCapture(ctx, "rmi", ref); err != nil {
+			log.Printf("removing leftover export image %s: %v", ref, err)
+		}
+	}
+
+	if len(containers)+len(images) > 0 {
+		log.Printf("reclaimed %d leftover export container(s) and %d image(s) from a previous run",
+			len(containers), len(images))
+	}
+}
+
+// dockerLines runs a docker command and splits its stdout into non-empty lines.
+func dockerLines(ctx context.Context, args ...string) ([]string, error) {
+	out, err := dockerCapture(ctx, args...)
+	if err != nil {
+		return nil, err
+	}
+	var lines []string
+	for _, l := range strings.Split(string(out), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+	}
+	return lines, nil
+}
+
+// firstByteResponseWriter defers the 200 and the download headers until the
+// export writes its first byte, and reports afterwards whether anything reached
+// the client.
+//
+// The previous code committed the headers before running `docker save`. A save
+// that failed immediately - flattened image reaped, daemon out of disk - left
+// the node reading an empty body behind a 200, which is indistinguishable from
+// a successful export of nothing. Now that case is a 500 the agent retries.
+type firstByteResponseWriter struct {
+	c        echo.Context
+	filename string
+	wrote    bool
+}
+
+func (w *firstByteResponseWriter) Write(p []byte) (int, error) {
+	if len(p) == 0 {
+		return 0, nil
+	}
+	w.commit()
+	return w.c.Response().Write(p)
+}
+
+// commit sends the 200 and the download headers, once.
+func (w *firstByteResponseWriter) commit() {
+	if w.wrote {
+		return
+	}
+	w.wrote = true
+	h := w.c.Response().Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", w.filename))
+	w.c.Response().WriteHeader(http.StatusOK)
+}
+
 // ExportImage handles GET /api/v1/artifacts/:id/image.
 // Flattens multi-layer images via docker export + import + save to avoid
 // symlink ordering issues across OCI layers (e.g. /boot/vmlinuz).
+//
+// Exports of one artifact are serialized: a batch upgrade points the whole
+// fleet at the same artifact at the same moment, and this endpoint is far too
+// expensive to run once per node in parallel (kairos-io/kairos#4195).
 func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
@@ -1154,47 +1344,110 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "no container image"})
 	}
 
-	// Flatten the image to a single layer to avoid symlink ordering issues.
-	// Multi-layer OCI images can have conflicting symlinks across layers
-	// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer).
-	// Pipeline: docker create → docker export (flat tar) → docker import (single-layer image) → docker save (OCI tar)
-	flatImage := fmt.Sprintf("auroraboot-flat:%s", id)
-	cid := fmt.Sprintf("auroraboot-export-%s", id)
+	// Only the wait is bounded. h.exportImage below keeps the request context,
+	// so a slow transfer of a multi-gigabyte image is never cut off by a
+	// deadline meant for the queue.
+	queueCtx, cancelQueue := context.WithTimeout(ctx, exportQueueWait)
+	defer cancelQueue()
 
-	// Create container and export flat tar, pipe into docker import
-	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, rec.ContainerImage, "true")
-	if err := createCmd.Run(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("creating container for export: %v", err)})
+	release, err := h.exportLocks.acquire(queueCtx, id)
+	if err != nil {
+		// The caller hung up, or the queue deadline expired. 503 rather than a
+		// 4xx: nothing about the request was wrong, and the agent classifies
+		// 5xx as retryable. Retry-After gives it a concrete backoff rather
+		// than a guess. In the hang-up case nobody reads either, which is why
+		// the deadline above exists: it is what makes this answer reach a
+		// caller that is still on the other end.
+		c.Response().Header().Set("Retry-After", strconv.Itoa(exportQueueRetryAfter))
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{
+			"error": fmt.Sprintf("waiting for an artifact export slot: %v", err),
+		})
 	}
-	defer exec.Command("docker", "rm", cid).Run()
+	defer release()
 
-	// Export flat tar and import as single-layer image
+	w := &firstByteResponseWriter{c: c, filename: id + ".tar"}
+	if err := h.exportImage(ctx, rec.ContainerImage, w); err != nil {
+		if w.wrote {
+			// The 200 and part of the tar are already on the wire. The client
+			// sees a short read, treats it as transient and retries; there is
+			// no status left to change.
+			return err
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": fmt.Sprintf("exporting artifact image: %v", err),
+		})
+	}
+	// An export that reported success without writing anything still gets the
+	// download headers, so the response shape does not depend on how much
+	// docker save produced.
+	w.commit()
+	return nil
+}
+
+// dockerFlattenExport runs docker create -> export -> import -> save and streams
+// the resulting single-layer OCI tar into w.
+func dockerFlattenExport(ctx context.Context, containerImage string, w io.Writer) error {
+	cid, flatImage, err := exportObjectNames()
+	if err != nil {
+		return err
+	}
+
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, containerImage, "true")
+	var createErr bytes.Buffer
+	createCmd.Stderr = &createErr
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("creating container for export: %w%s", err, stderrDetail(&createErr))
+	}
+	// Cleanup deliberately runs without ctx: a cancelled request must still
+	// reclaim the container it created.
+	defer func() { _ = exec.Command("docker", "rm", cid).Run() }()
+
 	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
 	importCmd := exec.CommandContext(ctx, "docker", "import", "-", flatImage)
+	var exportErr, importErr bytes.Buffer
+	exportCmd.Stderr = &exportErr
+	importCmd.Stderr = &importErr
+
 	importCmd.Stdin, err = exportCmd.StdoutPipe()
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "pipe setup failed"})
+		return fmt.Errorf("pipe setup failed: %w", err)
 	}
-
 	if err := importCmd.Start(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "docker import start failed"})
+		return fmt.Errorf("docker import start failed: %w", err)
 	}
 	if err := exportCmd.Run(); err != nil {
-		importCmd.Process.Kill()
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker export failed: %v", err)})
+		_ = importCmd.Process.Kill()
+		_ = importCmd.Wait()
+		return fmt.Errorf("docker export failed: %w%s", err, stderrDetail(&exportErr))
 	}
 	if err := importCmd.Wait(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker import failed: %v", err)})
+		return fmt.Errorf("docker import failed: %w%s", err, stderrDetail(&importErr))
 	}
-	defer exec.Command("docker", "rmi", flatImage).Run()
+	defer func() { _ = exec.Command("docker", "rmi", flatImage).Run() }()
 
-	c.Response().Header().Set("Content-Type", "application/octet-stream")
-	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", id))
+	saveCmd := exec.CommandContext(ctx, "docker", "save", flatImage)
+	var saveErr bytes.Buffer
+	saveCmd.Stdout = w
+	saveCmd.Stderr = &saveErr
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("docker save failed: %w%s", err, stderrDetail(&saveErr))
+	}
+	return nil
+}
 
-	// Save the single-layer image as proper OCI tar
-	cmd := exec.CommandContext(ctx, "docker", "save", flatImage)
-	cmd.Stdout = c.Response().Writer
-	return cmd.Run()
+// stderrDetail appends a trimmed tail of a docker command's stderr to an error.
+// Without it every failure here reads "exit status 1", which tells an operator
+// staring at a stalled fleet upgrade nothing at all.
+func stderrDetail(buf *bytes.Buffer) string {
+	msg := strings.TrimSpace(buf.String())
+	if msg == "" {
+		return ""
+	}
+	const maxDetail = 512
+	if len(msg) > maxDetail {
+		msg = msg[len(msg)-maxDetail:]
+	}
+	return ": " + msg
 }
 
 // cloudConfigParams collects the inputs needed to assemble a node's cloud-config.

@@ -1,6 +1,11 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
+	"io"
+	"time"
+
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
 
@@ -29,3 +34,54 @@ var ImageURLUsesHTTPS = imageURLUsesHTTPS
 // the per-deploy > per-BMC > global-default selection can be unit-tested
 // directly, without driving the async deploy goroutine.
 var ResolveOperatorImageURL = resolveOperatorImageURL
+
+// WithTestImageExporter substitutes the docker create/export/import/save
+// pipeline behind GET /api/v1/artifacts/:id/image, so the endpoint's queueing,
+// header and error behavior can be tested without a docker daemon. It returns
+// the handler for chaining. Test-only.
+func (h *ArtifactHandler) WithTestImageExporter(f func(ctx context.Context, containerImage string, w io.Writer) error) *ArtifactHandler {
+	h.exportImage = imageExportFunc(f)
+	return h
+}
+
+// ExportLockCountForTest reports how many artifacts currently hold an export
+// lock entry, so a test can prove the map is emptied as requests finish rather
+// than growing for the life of the server. Test-only.
+func (h *ArtifactHandler) ExportLockCountForTest() int { return h.exportLocks.count() }
+
+// ExportObjectNamesForTest exposes the per-export docker container name and flat
+// image tag, so their uniqueness - the property whose absence caused the
+// concurrent-export failures - can be asserted directly. Test-only.
+var ExportObjectNamesForTest = exportObjectNames
+
+// SetExportQueueWaitForTest shortens the export queue deadline and returns a
+// function that restores it, so a test can observe the timeout answer on a
+// caller that is still connected instead of waiting ten real minutes.
+// Test-only.
+func SetExportQueueWaitForTest(d time.Duration) func() {
+	prev := exportQueueWait
+	exportQueueWait = d
+	return func() { exportQueueWait = prev }
+}
+
+// ExportQueueRetryAfterForTest is the Retry-After value the 503 advertises, so
+// a test asserts against the constant rather than retyping it. Test-only.
+const ExportQueueRetryAfterForTest = exportQueueRetryAfter
+
+// StderrDetailForTest exposes the docker-stderr formatting helper. The endpoint
+// tests all go through an injected fake exporter, so nothing else reaches it.
+// Test-only.
+func StderrDetailForTest(s string) string {
+	var buf bytes.Buffer
+	buf.WriteString(s)
+	return stderrDetail(&buf)
+}
+
+// SetDockerCaptureForTest replaces the docker exec used by PruneExportLeftovers
+// and returns a function that restores it, so the prune's command construction
+// is testable without a daemon. Test-only.
+func SetDockerCaptureForTest(f func(ctx context.Context, args ...string) ([]byte, error)) func() {
+	prev := dockerCapture
+	dockerCapture = f
+	return func() { dockerCapture = prev }
+}
