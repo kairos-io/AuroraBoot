@@ -311,6 +311,22 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 		}
 	}
 
+	// A fail-fast batch stops here: this is the path a real agent reports a
+	// failed upgrade on, so the rule has to be applied on it and not only on
+	// the REST status endpoint. The command is re-read so the batch identity
+	// and the fail-fast flag come from the server's own row rather than from
+	// the frame the node sent.
+	if status.Phase == store.CommandFailed {
+		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
+			cmd.Phase = status.Phase
+			if canceled, err := store.CancelBatchAfterFailure(ctx, h.Commands, cmd); err != nil {
+				log.Printf("ws: failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, status.ID, err)
+			} else if canceled > 0 {
+				log.Printf("ws: batch %s stopped after node %s failed; %d pending command(s) canceled", cmd.BatchID, nodeID, canceled)
+			}
+		}
+	}
+
 	if h.Hub != nil && h.Hub.UI != nil {
 		h.Hub.UI.Broadcast(wsMessage{
 			Type: "command_update",

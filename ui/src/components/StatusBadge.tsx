@@ -18,6 +18,9 @@ const statusStyles: Record<string, string> = {
   error: "bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400",
   active: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
   upgrading: "bg-[#FF7442]/15 text-[#FF7442] border-[#FF7442]/25",
+  // A command a fail-fast batch stopped before it was delivered. It is not a
+  // failure of this node, which is why it does not read red.
+  canceled: "bg-muted text-muted-foreground border-border",
 };
 
 // A node whose phase is missing must not be able to throw out of render and

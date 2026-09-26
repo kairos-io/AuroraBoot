@@ -22,4 +22,16 @@ describe("StatusBadge", () => {
     render(<StatusBadge status="" />);
     expect(screen.getByText("unknown")).toBeInTheDocument();
   });
+
+  // Canceled is the phase a fail-fast batch leaves on the nodes it stopped.
+  // It has to carry a style of its own, or a stopped rollout renders as the
+  // same neutral fallback an unrecognised string gets.
+  it("styles a canceled command distinctly from an unrecognised status", () => {
+    const { container } = render(<StatusBadge status="Canceled" />);
+    const canceled = container.firstElementChild?.className ?? "";
+    const { container: other } = render(<StatusBadge status="Wat" />);
+    const unknown = other.firstElementChild?.className ?? "";
+    expect(canceled).not.toEqual(unknown);
+    expect(screen.getByText("Canceled")).toBeInTheDocument();
+  });
 });

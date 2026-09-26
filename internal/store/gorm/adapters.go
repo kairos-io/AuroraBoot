@@ -88,6 +88,12 @@ func (a *CommandStoreAdapter) UpdateStatusForNode(ctx context.Context, id string
 func (a *CommandStoreAdapter) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	return a.S.ListByNode(ctx, nodeID)
 }
+func (a *CommandStoreAdapter) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
+	return a.S.ListByBatch(ctx, batchID)
+}
+func (a *CommandStoreAdapter) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
+	return a.S.CancelPendingInBatch(ctx, batchID, reason)
+}
 func (a *CommandStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.CommandDelete(ctx, id)
 }
