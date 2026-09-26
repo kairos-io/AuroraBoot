@@ -179,7 +179,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: auroraboot-image
           path: /tmp/
@@ -239,7 +239,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: auroraboot-image
           path: /tmp/
@@ -291,7 +291,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: auroraboot-image
           path: /tmp/
@@ -329,7 +329,7 @@ jobs:
        with:
          driver-opts: network=host
      - name: Download image artifact
-       uses: actions/download-artifact@v7
+       uses: actions/download-artifact@v8
        with:
          name: auroraboot-image
          path: /tmp/
