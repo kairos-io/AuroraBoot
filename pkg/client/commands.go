@@ -27,6 +27,16 @@ func (s *CommandsService) CreateBulk(ctx context.Context, req BulkCommandRequest
 	return out, nil
 }
 
+// BatchStatus reports one fan-out as a single operation: its overall phase and
+// the per-node commands behind it.
+func (s *CommandsService) BatchStatus(ctx context.Context, batchID string) (*BatchOutcome, error) {
+	var out BatchOutcome
+	if err := s.c.do(ctx, http.MethodGet, "/api/v1/commands/batches/"+batchID, nil, nil, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // UpdateStatus updates a command's phase and/or result. Used by
 // agents to report progress after executing a command received on
 // the WebSocket; admins can also use it to force a status transition.
