@@ -640,6 +640,15 @@ definitions:
           all (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP
           changes because every heartbeat re-observes and overwrites it.
         type: string
+      resetProgressAt:
+        description: |-
+          ResetProgressAt is when the node last proved it survived the reset reboot,
+          i.e. when it re-registered reporting bootState=autoreset and the lifecycle
+          moved from pending to in-progress. The reset timeout is measured from this
+          timestamp when it is set, so the wipe phase gets its own budget instead of
+          sharing the one that started at ResetRequestedAt. Nil until such a
+          re-register happens, and cleared when a new reset is requested.
+        type: string
       resetRequestedAt:
         description: |-
           ResetRequestedAt is when the reset command was issued (ResetState set to
