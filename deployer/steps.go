@@ -220,7 +220,7 @@ func (d *Deployer) StepStartNetboot() error {
 			if mgr := netbootmgr.FromContext(ctx); mgr != nil {
 				return mgr.StartWithPaths(filepath.Base(d.destination()), d.cloudConfigPath(), d.squashFSfile(), d.initrdFile(), d.kernelFile())
 			}
-			return ops.StartPixiecore(d.cloudConfigPath(), d.netBootListenAddr(), d.netbootPort(), d.squashFSfile, d.initrdFile, d.kernelFile, d.Config.NetBoot)(ctx)
+			return ops.StartPixiecore(d.cloudConfigPath(), d.netBootListenAddr(), d.netbootPort(), d.squashFSfile, d.initrdFile, d.kernelFile, d.netbootGrubCfgFile, d.Config.NetBoot)(ctx)
 		}),
 	)
 }
@@ -314,6 +314,13 @@ func (d *Deployer) kernelFile() string {
 
 func (d *Deployer) squashFSfile() string {
 	return filepath.Join(d.dstNetboot(), "kairos.squashfs")
+}
+
+// netbootGrubCfgFile is where ExtractNetboot leaves the livecd grub
+// config. Like the three artifacts above it, the name is the one the
+// extraction writes when the ISO name is left at its default.
+func (d *Deployer) netbootGrubCfgFile() string {
+	return filepath.Join(d.dstNetboot(), "kairos-grub.cfg")
 }
 
 func (d *Deployer) isoOption() bool {
