@@ -58,6 +58,11 @@ type RawImage struct {
 	// such as Nvidia Jetson AGX Orin. Only valid together with an EFI build.
 	SeparatePartitionsImages bool
 	maas                     bool // if true, add the curtin-landing partition (COS_CURTIN) carrying /curtin/curtin-hooks (MAAS deploy)
+	// ExtensionFiles are paths to already downloaded .sysext.raw images to bake
+	// into the disk. They are staged in the OEM partition and installed onto
+	// the persistent one by the first-boot reset, because the disk is assembled
+	// here rather than installed, so the agent's install hooks never run.
+	ExtensionFiles []string
 }
 
 // NewEFIRawImage creates a new RawImage struct
@@ -105,23 +110,56 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	err = fsutils.MkdirAll(r.config.Fs, tmpDirOemMount, 0755)
 	defer r.config.Fs.RemoveAll(tmpDirOemMount)
 
+	// Everything the partition carries is written into tmpDirOem first, so the
+	// image below is sized against the contents it has to hold.
+	stagedExtensions, err := r.stageOemContents(tmpDirOem, recoveryImagePath)
+	if err != nil {
+		return "", err
+	}
+
+	OemPartitionImage := sdkImage.Image{
+		File:       filepath.Join(r.TempDir(), "oem.img"),
+		FS:         sdkConstants.LinuxImgFs,
+		Label:      sdkConstants.OEMLabel,
+		Size:       oemPartitionSize(stagedExtensions),
+		Source:     sdkImage.NewDirSrc(tmpDirOem),
+		MountPoint: tmpDirOemMount,
+	}
+
+	// Deploy the source to the image
+	_, err = r.elemental.DeployImageNodirs(&OemPartitionImage, false)
+	if err != nil {
+		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", OemPartitionImage).Msg("failed to create oem image")
+		return "", err
+	}
+
+	// return the created image file
+	return OemPartitionImage.File, nil
+}
+
+// stageOemContents writes everything the OEM partition carries into tmpDirOem:
+// the cloud config, the grubenv that sends the first boot into recovery, the
+// cloud config that expands the disk layout and resets, and the extensions the
+// build bundled in. It returns the bytes the extensions take, so the caller
+// can size the partition against what has to fit in it.
+func (r *RawImage) stageOemContents(tmpDirOem, recoveryImagePath string) (int64, error) {
 	// Copy the cloud config to the oem partition if there is any
 	ccContent, err := r.config.Fs.ReadFile(r.CloudConfig)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Msg("failed to read cloud config")
-		return "", err
+		return 0, err
 	}
 	if r.CloudConfig != "" && len(ccContent) > 0 {
 		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Copying cloud config to oem partition")
 		f, err := r.config.Fs.ReadFile(r.CloudConfig)
 		if err != nil {
-			return "", err
+			return 0, err
 		}
 		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Str("content", string(f)).Interface("s", f).Msg("Copying cloud config to oem partition")
 		err = fsutils.Copy(r.config.Fs, r.CloudConfig, filepath.Join(tmpDirOem, "90_custom.yaml"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to copy cloud config")
-			return "", err
+			return 0, err
 		}
 	} else if !r.NoDefaultCloudConfig {
 		// Create a default cloud config yaml with at least a user
@@ -129,14 +167,14 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 		err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, "90_custom.yaml"), []byte(constants.DefaultCloudConfig), 0o644)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to write cloud config")
-			return "", err
+			return 0, err
 		}
 	}
 
 	// Set the grubenv to boot into recovery
 	err = agentUtils.SetPersistentVariables(filepath.Join(tmpDirOem, "grubenv"), map[string]string{"next_entry": "recovery"}, r.config)
 	if err != nil {
-		return "", err
+		return 0, err
 	}
 
 	resetCloudInit := "01_reset.yaml"
@@ -145,7 +183,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 	info, err := r.config.Fs.Stat(recoveryImagePath)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("source", recoveryImagePath).Msg("failed to stat recovery image")
-		return "", err
+		return 0, err
 	}
 
 	var stateSize int64
@@ -209,27 +247,18 @@ stages:
 	err = r.config.Fs.WriteFile(filepath.Join(tmpDirOem, resetCloudInit), []byte(conf), 0o644)
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("target", filepath.Join(tmpDirOem, resetCloudInit)).Msg("failed to write cloud config")
-		return "", err
+		return 0, err
 	}
 
-	OemPartitionImage := sdkImage.Image{
-		File:       filepath.Join(r.TempDir(), "oem.img"),
-		FS:         sdkConstants.LinuxImgFs,
-		Label:      sdkConstants.OEMLabel,
-		Size:       sdkConstants.OEMSize,
-		Source:     sdkImage.NewDirSrc(tmpDirOem),
-		MountPoint: tmpDirOemMount,
-	}
-
-	// Deploy the source to the image
-	_, err = r.elemental.DeployImageNodirs(&OemPartitionImage, false)
+	// Stage the bundled extensions last, so the partition is sized against
+	// everything that has to fit in it.
+	stagedExtensions, err := r.stageBundledExtensions(tmpDirOem)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Str("source", r.Source).Interface("image", OemPartitionImage).Msg("failed to create oem image")
-		return "", err
+		internal.Log.Logger.Error().Err(err).Msg("failed to stage the bundled extensions")
+		return 0, err
 	}
 
-	// return the created image file
-	return OemPartitionImage.File, nil
+	return stagedExtensions, nil
 }
 
 // createCurtinLandingPartitionImage builds a tiny ext2 partition that curtin
