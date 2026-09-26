@@ -336,6 +336,61 @@ var _ = Describe("WebSocket Handler", func() {
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.CommandCompleted))
 		})
 
+		// A real agent reports a failed upgrade over this frame, not over the
+		// REST status endpoint, so the fail-fast rule has to be applied here
+		// too (kairos-io/kairos#4267).
+		It("stops the rest of a fail-fast batch when a node reports a failure", func() {
+			batchID := fmt.Sprintf("batch-%d", testCounter.Add(1))
+			mine := &store.NodeCommand{
+				ManagedNodeID: nodeID, Command: "upgrade",
+				BatchID: batchID, FailFast: true,
+			}
+			Expect(commands.Create(bg, mine)).To(Succeed())
+			Expect(commands.UpdateStatus(bg, mine.ID, store.CommandDelivered, "")).To(Succeed())
+
+			// A sibling of the same batch, still waiting for its node, and one
+			// already handed to its node. Only the first may be canceled.
+			sibling := &store.NodeCommand{
+				ManagedNodeID: "some-other-node", Command: "upgrade",
+				BatchID: batchID, FailFast: true,
+			}
+			Expect(commands.Create(bg, sibling)).To(Succeed())
+			delivered := &store.NodeCommand{
+				ManagedNodeID: "a-third-node", Command: "upgrade",
+				BatchID: batchID, FailFast: true,
+			}
+			Expect(commands.Create(bg, delivered)).To(Succeed())
+			Expect(commands.UpdateStatus(bg, delivered.ID, store.CommandRunning, "")).To(Succeed())
+
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(sendMsg(conn, "command_status", commandStatusData{
+				ID:     mine.ID,
+				Phase:  store.CommandFailed,
+				Result: "downloading artifact image: HTTP 500",
+			})).To(Succeed())
+
+			phaseOf := func(id string) func() string {
+				return func() string {
+					c, _ := commands.GetByID(bg, id)
+					if c == nil {
+						return ""
+					}
+					return c.Phase
+				}
+			}
+			Eventually(phaseOf(sibling.ID), 10*time.Second, 100*time.Millisecond).
+				Should(Equal(store.CommandCanceled))
+			Expect(phaseOf(mine.ID)()).To(Equal(store.CommandFailed))
+			Expect(phaseOf(delivered.ID)()).To(Equal(store.CommandRunning))
+		})
+
 		It("should reject a command_status for a command owned by another node", func() {
 			// Register a second node and queue a command for IT.
 			otherNum := testCounter.Add(1000)

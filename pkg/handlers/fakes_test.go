@@ -365,6 +365,41 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 	return result, nil
 }
 
+func (f *fakeCommandStore) ListByBatch(_ context.Context, batchID string) ([]*store.NodeCommand, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []*store.NodeCommand
+	for _, cmd := range f.cmds {
+		if batchID != "" && cmd.BatchID == batchID {
+			result = append(result, cmd)
+		}
+	}
+	return result, nil
+}
+
+// CancelPendingInBatch mirrors the gorm store: only the rows still Pending are
+// moved, so a command another path already claimed for delivery is left to
+// report its own result. A fake that moved every row regardless of phase would
+// pass a handler that cancels a running upgrade.
+func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, batchID string, reason string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if batchID == "" {
+		return 0, nil
+	}
+	now := time.Now()
+	n := 0
+	for _, cmd := range f.cmds {
+		if cmd.BatchID == batchID && cmd.Phase == store.CommandPending {
+			cmd.Phase = store.CommandCanceled
+			cmd.Result = reason
+			cmd.CompletedAt = &now
+			n++
+		}
+	}
+	return n, nil
+}
+
 func (f *fakeCommandStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

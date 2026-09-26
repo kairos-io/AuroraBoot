@@ -568,6 +568,45 @@ func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCom
 	return cmds, nil
 }
 
+// ListByBatch returns the commands one fan-out created, oldest first, so the
+// batch reads back in the order the nodes were dispatched in.
+func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
+	var cmds []*store.NodeCommand
+	if err := s.db.WithContext(ctx).
+		Where("batch_id = ?", batchID).
+		Order("created_at asc").
+		Find(&cmds).Error; err != nil {
+		return nil, err
+	}
+	return cmds, nil
+}
+
+// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled.
+//
+// The WHERE clause carries `phase = Pending` for the same reason
+// ClaimForDelivery does: a command another goroutine is claiming for delivery
+// right now must be won by exactly one of the two. A claim that lands first
+// leaves no Pending row for this UPDATE to match, so the command is delivered
+// and will report its own result; a cancel that lands first leaves no Pending
+// row for the claim's compare-and-set, so it is never pushed.
+func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
+	if batchID == "" {
+		return 0, nil
+	}
+	now := time.Now()
+	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
+		Updates(map[string]any{
+			"phase":        store.CommandCanceled,
+			"result":       reason,
+			"completed_at": &now,
+		})
+	if res.Error != nil {
+		return 0, res.Error
+	}
+	return int(res.RowsAffected), nil
+}
+
 func (s *Store) CommandDelete(ctx context.Context, id string) error {
 	result := s.db.WithContext(ctx).Delete(&store.NodeCommand{}, "id = ?", id)
 	if result.RowsAffected == 0 {
@@ -577,9 +616,12 @@ func (s *Store) CommandDelete(ctx context.Context, id string) error {
 }
 
 func (s *Store) CommandDeleteTerminal(ctx context.Context, nodeID string) error {
+	// Canceled is history exactly like Completed and Failed: the node will
+	// never run the command, so a row left behind would sit in the node's
+	// list forever after the operator asked for it to be cleared.
 	return s.db.WithContext(ctx).Where(
-		"managed_node_id = ? AND (phase = ? OR phase = ?)",
-		nodeID, store.CommandCompleted, store.CommandFailed,
+		"managed_node_id = ? AND phase IN ?",
+		nodeID, []string{store.CommandCompleted, store.CommandFailed, store.CommandCanceled},
 	).Delete(&store.NodeCommand{}).Error
 }
 
