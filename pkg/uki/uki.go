@@ -1066,25 +1066,50 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, log 
 	return utils.CreateTar(log, temp.Name(), finalImage, tarName, arch, "linux")
 }
 
+// interactiveInstallEntry returns the boot entry that starts the installer TUI,
+// the UKI counterpart of the "interactive install" menuentry the GRUB live
+// media carries. Its file name is derived from the bare interactive cmdline so
+// it stays the same whether or not the caller extended the default one.
+func interactiveInstallEntry(bootBranding, cmdlineExtend string) utils.BootEntry {
+	cmdline := constants.UkiCmdline + " " + constants.UkiCmdlineInstallInteractive
+	fileName := NameFromCmdline(constants.ArtifactBaseName, cmdline)
+	if cmdlineExtend != "" {
+		cmdline = cmdline + " " + cmdlineExtend
+	}
+
+	return utils.BootEntry{
+		Cmdline:  cmdline,
+		Title:    fmt.Sprintf("%s (interactive install)", bootBranding),
+		FileName: fileName,
+	}
+}
+
 // GetUkiCmdline returns the set of boot entries (one per cmdline variant) used
 // to generate UKI EFI files. Extend mode appends to the default cmdline and
 // produces a single entry; extra mode produces one entry per extra cmdline.
+// Both modes also carry the interactive install entry.
 func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
 	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
 
 	if cmdlineExtend != "" {
-		return []utils.BootEntry{{
-			Cmdline:  defaultCmdLine + " " + cmdlineExtend,
-			Title:    bootBranding,
-			FileName: constants.ArtifactBaseName,
-		}}
+		return []utils.BootEntry{
+			{
+				Cmdline:  defaultCmdLine + " " + cmdlineExtend,
+				Title:    bootBranding,
+				FileName: constants.ArtifactBaseName,
+			},
+			interactiveInstallEntry(bootBranding, cmdlineExtend),
+		}
 	}
 
-	result := []utils.BootEntry{{
-		Cmdline:  defaultCmdLine,
-		Title:    bootBranding,
-		FileName: constants.ArtifactBaseName,
-	}}
+	result := []utils.BootEntry{
+		{
+			Cmdline:  defaultCmdLine,
+			Title:    bootBranding,
+			FileName: constants.ArtifactBaseName,
+		},
+		interactiveInstallEntry(bootBranding, ""),
+	}
 
 	if !cmdLinesV2 {
 		for _, extra := range extraCmdlines {

@@ -57,6 +57,26 @@ var _ = Describe("build-uki", Label("build-uki", "e2e"), func() {
 		})
 	})
 
+	Describe("live media install entries", func() {
+		BeforeEach(func() {
+			By("pulling the container image")
+			_, err := PullImage(image)
+			Expect(err).ToNot(HaveOccurred())
+			By("building the iso with no cmdline flags set")
+			buildISO(auroraboot, image, keysDir, resultDir, resultFile)
+		})
+
+		It("offers an interactive install entry next to the unattended one", func() {
+			content := listEfiFiles(auroraboot, resultFile)
+			Expect(content).To(MatchRegexp(`kairos\.efi`))
+			Expect(content).To(MatchRegexp(`kairos_install-mode-interactive\.efi`))
+
+			content = listConfFiles(auroraboot, resultFile)
+			Expect(content).To(MatchRegexp(`kairos\.conf`))
+			Expect(content).To(MatchRegexp(`kairos_install-mode-interactive\.conf`))
+		})
+	})
+
 	Describe("secure-boot-enroll setting in loader.conf", func() {
 		When("secure-boot-enroll is not set", func() {
 			BeforeEach(func() {

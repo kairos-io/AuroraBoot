@@ -89,6 +89,7 @@ const (
 
 	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
 	UkiCmdlineInstall             = "install-mode"
+	UkiCmdlineInstallInteractive  = "install-mode-interactive"
 	UkiSystemdBootx86Name         = "systemd-bootx64.efi"
 	UkiSystemdBootx86Path         = "/amd/systemd-boot/" + UkiSystemdBootx86Name
 	UkiSystemdBootStubx86Name     = "linuxx64.efi.stub"
