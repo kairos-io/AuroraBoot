@@ -45,6 +45,17 @@ var _ = Describe("build-uki", Label("uki", "cmd"), func() {
 	It("rejects malformed extension requests", Label("flags"), func() {
 		err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extension", "tool@", "--extensions-catalog", "catalog.yaml", "some/image:latest"})
 		Expect(err).To(MatchError(ContainSubstring("invalid extension request")))
+	})
+
+	It("rejects a missing required flag before the root check", Label("flags"), func() {
+		err = app.Run([]string{"", "build-uki", "--sb-key", "/tmp/sb.key", "--sb-cert", "/tmp/sb.pem", "some/image:latest"})
+
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).To(ContainSubstring("Required flag \"tpm-pcr-private-key\" not set"))
+		Expect(err.Error()).ToNot(ContainSubstring("this command requires root privileges"))
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+	})
+
 	It("accepts the app-level --cloud-config flag before the subcommand", Label("flags"), func() {
 		cc := GinkgoT().TempDir() + "/cc.yaml"
 		Expect(os.WriteFile(cc, []byte("#cloud-config\nusers:\n  - name: kairos\n"), 0o644)).To(Succeed())
@@ -54,5 +65,37 @@ var _ = Describe("build-uki", Label("uki", "cmd"), func() {
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 		Expect(err.Error()).ToNot(ContainSubstring("unknown flag"))
+	})
+
+	It("accepts the subcommand --cloud-config flag after build-uki", Label("flags"), func() {
+		cc := GinkgoT().TempDir() + "/cc.yaml"
+		Expect(os.WriteFile(cc, []byte("#cloud-config\nusers:\n  - name: kairos\n"), 0o644)).To(Succeed())
+
+		err = app.Run([]string{"", "build-uki", "--cloud-config", cc, "some/image:latest"})
+
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+		Expect(err.Error()).ToNot(ContainSubstring("unknown flag"))
+	})
+
+	It("passes the post-subcommand --cloud-config value to ReadCloudConfig", Label("flags"), func() {
+		if os.Geteuid() != 0 {
+			Skip("the build-uki Action (and thus the cloud-config read) only runs as root; run this test as root to exercise the wiring")
+		}
+
+		missing := "/nonexistent/cc.yaml"
+		err = app.Run([]string{
+			"",
+			"build-uki",
+			"--tpm-pcr-private-key", "/nonexistent/key.pem",
+			"--sb-key", "/nonexistent/sb.key",
+			"--sb-cert", "/nonexistent/sb.pem",
+			"--cloud-config", missing,
+			"some/image:latest",
+		})
+
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).To(ContainSubstring("reading cloud config"))
+		Expect(err.Error()).To(ContainSubstring("file '" + missing + "' not found"))
 	})
 })

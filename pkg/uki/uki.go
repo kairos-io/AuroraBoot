@@ -24,17 +24,16 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	goukiuki "github.com/kairos-io/go-ukify/pkg/uki"
+	agentConstants "github.com/kairos-io/kairos/v4/agent/pkg/constants"
 	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
 	sdkImages "github.com/kairos-io/kairos/v4/sdk/types/images"
 	installtypes "github.com/kairos-io/kairos/v4/sdk/types/install"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
-	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	imageutils "github.com/kairos-io/kairos/v4/sdk/utils/image"
 	"github.com/klauspost/compress/zstd"
 	"github.com/u-root/u-root/pkg/cpio"
@@ -311,29 +310,37 @@ func Build(opts Options) (err error) {
 		return err
 	}
 
+	enabled, selinuxMode, err := parseSelinuxOptions(log, opts.CloudConfig)
+	if err != nil {
+		return err
+	}
+
 	// Build the base cmdline from cloud config: enabled install.selinux
 	// replaces the hardcoded selinux=0, otherwise the base stays
 	// identical to constants.UkiCmdline.
 	baseCmdline := constants.UkiCmdline
-
-	if ok := isSelinuxSupported(sourceDir); ok {
-		if opts.CloudConfig != "" {
-			enabled, selinuxMode, err := parseSelinuxOptions(log, opts.CloudConfig)
-			if err != nil {
-				return err
-			}
-			if enabled {
-				selinuxParams := fmt.Sprintf("security=selinux selinux=1 enforcing=0 rd.cos.selinux=%s", selinuxMode)
-				baseCmdline = strings.Replace(baseCmdline, " selinux=0", " "+selinuxParams, 1)
-				log.Infof("SELinux enabled in cloud-config, mode: %s", selinuxMode)
-			}
+	supported, family := isSelinuxSupported(sourceDir, log)
+	if !supported && enabled {
+		log.Warnf("install.selinux.enabled is set but image family %q does not support SELinux; booting with selinux=0", family)
+	}
+	if supported && enabled {
+		selinuxParams := fmt.Sprintf("security=selinux selinux=1 enforcing=0 rd.cos.selinux=%s", selinuxMode)
+		patched := strings.Replace(baseCmdline, " selinux=0", " "+selinuxParams, 1)
+		if patched == baseCmdline {
+			log.Logger.Error().Msg("SELinux fragment splice failed: base cmdline does not contain ' selinux=0'")
+			return fmt.Errorf("SELinux enablement requires the base cmdline to contain ' selinux=0'")
 		}
+		baseCmdline = patched
+		log.Infof("SELinux enabled in cloud-config, mode: %s", selinuxMode)
 	}
 
 	entries := append(
-		GetUkiCmdline(baseCmdline, opts.ExtendCmdline, bootBranding, opts.ExtraCmdlines, opts.CmdLinesV2),
-		GetUkiSingleCmdlines(baseCmdline, bootBranding, opts.SingleEfiCmdlines, *log)...,
+		getUkiCmdline(baseCmdline, opts.ExtendCmdline, bootBranding, opts.ExtraCmdlines, opts.CmdLinesV2),
+		getUkiSingleCmdlines(baseCmdline, bootBranding, opts.SingleEfiCmdlines, *log)...,
 	)
+	if supported && enabled {
+		entries = append(entries, recoveryEntry(bootBranding))
+	}
 
 	stub, systemdBoot, outputSystemdBootEfi, err := resolveSdBootFiles(sourceDir, config.Arch, opts.SdBootInSource)
 	if err != nil {
@@ -1092,9 +1099,15 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, log 
 }
 
 // GetUkiCmdline returns the set of boot entries (one per cmdline variant) used
-// to generate UKI EFI files. Extend mode appends to the default cmdline and
-// produces a single entry; extra mode produces one entry per extra cmdline.
-func GetUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
+// to generate UKI EFI files, using the standard UKI base cmdline. Extend mode
+// appends to the default cmdline and produces a single entry; extra mode
+// produces one entry per extra cmdline.
+func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
+	return getUkiCmdline(constants.UkiCmdline, cmdlineExtend, bootBranding, extraCmdlines, cmdLinesV2)
+}
+
+// getUkiCmdline is GetUkiCmdline with an explicit base cmdline
+func getUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
 	defaultCmdLine := baseCmdline + " " + constants.UkiCmdlineInstall
 
 	if cmdlineExtend != "" {
@@ -1117,7 +1130,7 @@ func GetUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdline
 			result = append(result, utils.BootEntry{
 				Cmdline:  cmdline,
 				Title:    bootBranding,
-				FileName: NameFromCmdline(baseCmdline, constants.ArtifactBaseName, cmdline),
+				FileName: nameFromCmdline(baseCmdline, constants.ArtifactBaseName, cmdline),
 			})
 		}
 	}
@@ -1125,8 +1138,14 @@ func GetUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdline
 }
 
 // GetUkiSingleCmdlines returns boot entries for the `single-efi-cmdline` flag
-// values. Each user value may optionally include a "Title: cmdline" prefix.
-func GetUkiSingleCmdlines(baseCmdline, bootBranding string, cmdlines []string, _ logger.KairosLogger) []utils.BootEntry {
+// values, using the standard UKI base cmdline. Each user value may optionally
+// include a "Title: cmdline" prefix.
+func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, l logger.KairosLogger) []utils.BootEntry {
+	return getUkiSingleCmdlines(constants.UkiCmdline, bootBranding, cmdlines, l)
+}
+
+// getUkiSingleCmdlines is GetUkiSingleCmdlines with an explicit base cmdline.
+func getUkiSingleCmdlines(baseCmdline, bootBranding string, cmdlines []string, _ logger.KairosLogger) []utils.BootEntry {
 	result := []utils.BootEntry{}
 	defaultCmdLine := baseCmdline
 
@@ -1140,7 +1159,7 @@ func GetUkiSingleCmdlines(baseCmdline, bootBranding string, cmdlines []string, _
 		} else {
 			bootEntry.Title = bootBranding
 			bootEntry.Cmdline = defaultCmdLine + " " + before
-			bootEntry.FileName = NameFromCmdline(baseCmdline, "single_entry", before)
+			bootEntry.FileName = nameFromCmdline(baseCmdline, "single_entry", before)
 		}
 		result = append(result, bootEntry)
 	}
@@ -1148,13 +1167,27 @@ func GetUkiSingleCmdlines(baseCmdline, bootBranding string, cmdlines []string, _
 }
 
 // NameFromCmdline returns a filesystem-safe basename derived from cmdline,
-// used for the per-entry EFI and .conf file names.
-func NameFromCmdline(baseCmdline, basename, cmdline string) string {
+// used for the per-entry EFI and .conf file names, using the standard UKI
+// base cmdline.
+func NameFromCmdline(basename, cmdline string) string {
+	return nameFromCmdline(constants.UkiCmdline, basename, cmdline)
+}
+
+// nameFromCmdline is NameFromCmdline with an explicit base cmdline.
+func nameFromCmdline(baseCmdline, basename, cmdline string) string {
 	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, baseCmdline))
 	allowedChars := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 	cleanCmdline := allowedChars.ReplaceAllString(cmdlineForEfi, "_")
 	name := basename + "_" + cleanCmdline
 	return strings.ToLower(strings.TrimSuffix(name, "_"))
+}
+
+func recoveryEntry(bootBranding string) utils.BootEntry {
+	return utils.BootEntry{
+		FileName: "recovery",
+		Title:    bootBranding + agentConstants.RecoveryBootSuffix,
+		Cmdline:  constants.UkiCmdline,
+	}
 }
 
 // parseSelinuxOptions extracts install.selinux from a cloud-config.
@@ -1188,9 +1221,6 @@ func parseSelinuxOptions(log *logger.KairosLogger, cloudConfig string) (enabled 
 		if sel.Mode != "" && !sel.Enabled {
 			log.Warn("install.selinux.mode is set but install.selinux.enabled is false; SELinux stays disabled")
 		}
-		if sel.Enabled && sel.Mode != "" && !isSelinuxModeExists(sel.Mode) {
-			log.Warnf("unknown install.selinux.mode %q, using permissive", sel.Mode)
-		}
 
 		selinux = sel
 	}
@@ -1205,7 +1235,6 @@ func parseSelinuxOptions(log *logger.KairosLogger, cloudConfig string) (enabled 
 		mode = "permissive"
 	case "permissive", "enforcing":
 	default:
-		log.Warnf("invalid selinux mode %q in cloud-config, falling back to permissive", mode)
 		mode = "permissive"
 	}
 	return true, mode, nil
@@ -1240,32 +1269,17 @@ func FindFirstFileInDir(dir, pattern string) (string, error) {
 	return foundFile, nil
 }
 
-func isSelinuxSupported(rootfs string) bool {
-	family, err := sdkutils.OSRelease("FAMILY", filepath.Join(rootfs, "etc/kairos-release"))
+// isSelinuxSupported reports whether the rootfs image family supports SELinux
+func isSelinuxSupported(rootfs string, log *logger.KairosLogger) (bool, string) {
+	family, err := utils.GetKairosFamily(rootfs)
 	if err != nil {
-		// fallback to os-release
-		family, err = sdkutils.OSRelease("FAMILY", filepath.Join(rootfs, "etc/os-release"))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("failed to get image family")
-			return false
-		}
+		log.Logger.Error().Err(err).Msg("failed to get image family")
+		return false, ""
 	}
-
-	// Gate on KAIROS_FAMILY
 	switch strings.ToLower(family) {
 	case "redhat", "suse":
-		return true
+		return true, family
 	default:
-		return false
+		return false, family
 	}
-}
-
-func isSelinuxModeExists(m string) bool {
-	availableModes := map[string]struct{}{
-		"permissive": {},
-		"enforcing":  {},
-	}
-
-	_, ok := availableModes[m]
-	return ok
 }

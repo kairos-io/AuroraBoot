@@ -310,7 +310,7 @@ var _ = Describe("UKI cmdlines with SELinux base", func() {
 	})
 
 	It("puts the enabled fragment in every entry and never selinux=0", func() {
-		entries := GetUkiCmdline(selinuxBase, "role=agent", "Kairos", []string{}, false)
+		entries := getUkiCmdline(selinuxBase, "role=agent", "Kairos", []string{}, false)
 		// extend mode → single entry
 		Expect(entries).To(HaveLen(1))
 		Expect(entries[0].Cmdline).To(ContainSubstring("security=selinux selinux=1 enforcing=0 rd.cos.selinux=permissive"))
@@ -319,7 +319,7 @@ var _ = Describe("UKI cmdlines with SELinux base", func() {
 	})
 
 	It("adds one entry per extra cmdline with the patched base", func() {
-		entries := GetUkiCmdline(selinuxBase, "", "Kairos", []string{"role=agent", "role=backup"}, false)
+		entries := getUkiCmdline(selinuxBase, "", "Kairos", []string{"role=agent", "role=backup"}, false)
 		Expect(entries).To(HaveLen(3))
 		for _, e := range entries {
 			Expect(e.Cmdline).To(ContainSubstring("rd.cos.selinux=permissive"))
@@ -328,14 +328,14 @@ var _ = Describe("UKI cmdlines with SELinux base", func() {
 	})
 
 	It("keeps unpatched base byte-identical to today (regression)", func() {
-		entries := GetUkiCmdline(constants.UkiCmdline, "", "Kairos", []string{}, false)
+		entries := GetUkiCmdline("", "Kairos", []string{}, false)
 		Expect(entries).To(HaveLen(1))
 		Expect(entries[0].Cmdline).To(Equal(constants.UkiCmdline + " " + constants.UkiCmdlineInstall))
 	})
 
 	It("single-efi entries carry the patched base", func() {
 		l := logger.NewKairosLogger("uki-test", "warn", false)
-		entries := GetUkiSingleCmdlines(selinuxBase, "Kairos", []string{"My Entry: quiet"}, l)
+		entries := getUkiSingleCmdlines(selinuxBase, "Kairos", []string{"My Entry: quiet"}, l)
 		Expect(entries).To(HaveLen(1))
 		Expect(entries[0].Title).To(Equal("Kairos (My Entry)"))
 		Expect(entries[0].Cmdline).To(ContainSubstring("rd.cos.selinux=permissive"))
@@ -344,21 +344,24 @@ var _ = Describe("UKI cmdlines with SELinux base", func() {
 	})
 
 	It("EFI names stay short when the base is patched", func() {
-		name := NameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall+" quiet")
+		name := nameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall+" quiet")
 		Expect(name).ToNot(ContainSubstring("selinux"))
 		Expect(name).To(HavePrefix("norole_"))
-		Expect(NameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall)).To(Equal(constants.ArtifactBaseName))
+		Expect(nameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall)).To(Equal(constants.ArtifactBaseName))
 	})
 })
 
 var _ = Describe("isSelinuxSupported", func() {
 	var rootfs string
+	var log *logger.KairosLogger
 
 	BeforeEach(func() {
 		var err error
 		rootfs, err = os.MkdirTemp("", "isSelinuxSupported-test-")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(os.MkdirAll(filepath.Join(rootfs, "etc"), 0o755)).To(Succeed())
+		l := logger.NewKairosLogger("uki-test", "warn", false)
+		log = &l
 	})
 
 	AfterEach(func() {
@@ -373,7 +376,8 @@ var _ = Describe("isSelinuxSupported", func() {
 			if osRelease != "" {
 				Expect(os.WriteFile(filepath.Join(rootfs, "etc/os-release"), []byte(osRelease), 0o644)).To(Succeed())
 			}
-			Expect(isSelinuxSupported(rootfs)).To(Equal(want))
+			ok, _ := isSelinuxSupported(rootfs, log)
+			Expect(ok).To(Equal(want))
 		},
 		Entry("fedora flavor, redhat family",
 			`KAIROS_FAMILY="redhat"
@@ -398,13 +402,35 @@ KAIROS_FLAVOR="ubuntu"
 			`KAIROS_FAMILY="hadron"
 KAIROS_FLAVOR="hadron"
 `, "", false),
-		Entry("redhat family via rootfs os-release when kairos-release lacks it",
-			`KAIROS_FLAVOR="fedora"
-`, `KAIROS_FAMILY="redhat"
+		Entry("bare legacy FAMILY key without the KAIROS_ prefix",
+			`FAMILY="redhat"
+KAIROS_FLAVOR="fedora"
+`, "", true),
+		Entry("kairos-release wins over a hostile rootfs os-release",
+			`KAIROS_FAMILY="redhat"
+`, `KAIROS_FAMILY="debian"
+ID=debian
 `, true),
+		Entry("no family in kairos-release: no os-release fallback",
+			`KAIROS_FLAVOR="fedora"
+`, "", false),
 		Entry("no family anywhere",
 			`KAIROS_FLAVOR="fedora"
 `, `ID=rocky
 `, false),
 	)
+})
+
+var _ = Describe("recoveryEntry", func() {
+	It("is named recovery, titled with the recovery suffix, and rides the unpatched base cmdline", func() {
+		e := recoveryEntry("Kairos")
+		Expect(e.FileName).To(Equal("recovery"))
+		Expect(e.Title).To(Equal("Kairos recovery"))
+		Expect(e.Cmdline).To(Equal(constants.UkiCmdline))
+		// The unpatched base already carries selinux=0 and none of the
+		// install-mode/SELinux fragment tokens.
+		Expect(e.Cmdline).To(ContainSubstring("selinux=0"))
+		Expect(e.Cmdline).ToNot(ContainSubstring("install-mode"))
+		Expect(e.Cmdline).ToNot(ContainSubstring("security=selinux"))
+	})
 })

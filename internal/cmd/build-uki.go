@@ -82,6 +82,10 @@ var BuildUKICmd = cli.Command{
 			Aliases: []string{"x"},
 			Usage:   "Extend the default cmdline for the default 'norole' artifacts. This creates efi files with the default+provided cmdline.",
 		},
+		&cli.StringFlag{
+			Name:  "cloud-config",
+			Usage: "The cloud config to embed in the UKI",
+		},
 		&cli.StringSliceFlag{
 			Name:    "single-efi-cmdline",
 			Aliases: []string{"s"},
@@ -181,7 +185,7 @@ var BuildUKICmd = cli.Command{
 		if ccPath := ctx.String("cloud-config"); ccPath != "" {
 			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
 			if err != nil {
-				return err
+				return fmt.Errorf("reading cloud config: %w", err)
 			}
 			cloudConfig = cc
 		}
