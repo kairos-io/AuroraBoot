@@ -28,14 +28,62 @@ const DefaultCatalog = "https://kairos-io.github.io/hadron-layers/releases.json"
 
 var requestPart = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._+-]*$`)
 
-// Request identifies a named extension and an optional catalog version.
+// FileScheme marks an extension request that names a local .raw image instead
+// of a catalog entry. A build that already has the image on disk, such as a
+// test fixture living next to the spec that reads it, then needs no registry
+// and no catalog to bake it in.
+const FileScheme = "file://"
+
+// Request identifies an extension to bake into an artifact: either a named
+// catalog entry with an optional catalog version, or, when Name carries the
+// FileScheme prefix, a local .raw image to copy as it is.
 type Request struct {
 	Name    string
 	Version string
 }
 
-// ParseRequest parses name or name@version.
+// FilePath returns the local image path of a file request. The second result
+// reports whether this is one, so a caller can tell an unset path from a
+// catalog entry.
+func (r Request) FilePath() (string, bool) {
+	path, found := strings.CutPrefix(r.Name, FileScheme)
+	return path, found
+}
+
+// fileOutputName is the name a file request's image is written under, which is
+// the base name of the source. Keeping it means the build stages the file the
+// spec pointed at, under the name the spec used.
+func (r Request) fileOutputName() (string, error) {
+	path, isFile := r.FilePath()
+	if !isFile {
+		return "", fmt.Errorf("extension request %q is not a %s request", formatRequest(r), FileScheme)
+	}
+	base := filepath.Base(filepath.Clean(path))
+	if filepath.Ext(base) != ".raw" {
+		// immucore merges only .raw entries, and both the ISO and the disk
+		// paths stage whatever comes back from here, so accepting another
+		// suffix would put a file on the image that never gets merged.
+		return "", fmt.Errorf("extension %q is not a .raw image", base)
+	}
+	return base, nil
+}
+
+// ParseRequest parses name, name@version, or file://<path to a .raw image>.
 func ParseRequest(value string) (Request, error) {
+	if strings.HasPrefix(value, FileScheme) {
+		// A local image has no catalog version to select, so the whole value
+		// is the path. That also keeps an @ inside a path from being read as
+		// a version separator.
+		if strings.TrimPrefix(value, FileScheme) == "" {
+			return Request{}, fmt.Errorf("invalid extension request %q", value)
+		}
+		request := Request{Name: value}
+		if _, err := request.fileOutputName(); err != nil {
+			return Request{}, err
+		}
+		return request, nil
+	}
+
 	parts := strings.Split(value, "@")
 	if len(parts) > 2 || len(parts) == 0 || !requestPart.MatchString(parts[0]) {
 		return Request{}, fmt.Errorf("invalid extension request %q", value)
@@ -64,33 +112,67 @@ func ParseRequests(values []string) ([]Request, error) {
 	return requests, nil
 }
 
-// Materialize resolves requests and writes their raw OCI layers to destination.
+// Materialize resolves requests and writes their raw images to destination.
 //
 // The catalogs are searched in order, so the first one publishing a name wins
-// and an operator can put their own index ahead of the default one.
+// and an operator can put their own index ahead of the default one. A
+// FileScheme request names an image that is already on disk and is copied
+// instead, so a build made up of those alone reads no catalog at all.
 func Materialize(ctx context.Context, catalogSources []string, requests []Request, architecture string, destination string, insecure bool) ([]string, error) {
 	if len(requests) == 0 {
 		return nil, nil
 	}
 
+	names := make([]string, 0, len(requests))
 	seen := make(map[string]struct{}, len(requests))
+	fromCatalog := false
 	for _, request := range requests {
 		parsed, err := ParseRequest(request.Name)
+		_, isFile := request.FilePath()
+		if err != nil && isFile {
+			// A rejected path says what is wrong with it, which the generic
+			// message below would throw away.
+			return nil, err
+		}
 		if err != nil || parsed.Version != "" || (request.Version != "" && !requestPart.MatchString(request.Version)) {
 			return nil, fmt.Errorf("invalid extension request %q", formatRequest(request))
 		}
-		if _, exists := seen[request.Name]; exists {
-			return nil, fmt.Errorf("duplicate extension name %q", request.Name)
+
+		outputName := request.Name + ".sysext.raw"
+		if isFile {
+			if request.Version != "" {
+				return nil, fmt.Errorf("extension request %q must not set a version: a local image has none to select", formatRequest(request))
+			}
+			if outputName, err = request.fileOutputName(); err != nil {
+				return nil, err
+			}
+		} else {
+			fromCatalog = true
 		}
-		seen[request.Name] = struct{}{}
+
+		// Two requests that land on one file name would overwrite each other
+		// in destination, whether they collide by catalog name or by the base
+		// name of two different paths.
+		if _, exists := seen[outputName]; exists {
+			return nil, fmt.Errorf("duplicate extension name %q", outputName)
+		}
+		seen[outputName] = struct{}{}
+		names = append(names, outputName)
 	}
-	if architecture == "" {
+
+	// Architecture selects a catalog entry, so it is only required when there
+	// is a catalog entry to select. A local image is taken as it is.
+	if fromCatalog && architecture == "" {
 		return nil, fmt.Errorf("extension architecture must not be empty")
 	}
 
-	catalogs, err := loadCatalogs(ctx, catalogSources)
-	if err != nil {
-		return nil, err
+	var catalogs sdkextensions.Catalogs
+	if fromCatalog {
+		loaded, err := loadCatalogs(ctx, catalogSources)
+		if err != nil {
+			return nil, err
+		}
+		catalogs = loaded
 	}
 
 	if err := os.MkdirAll(destination, 0o755); err != nil {
@@ -106,7 +188,21 @@ func Materialize(ctx context.Context, catalogSources []string, requests []Reques
 	}
 	defer cleanup()
 
-	for _, request := range requests {
+	for index, request := range requests {
+		output := filepath.Join(destination, names[index])
+
+		if path, isFile := request.FilePath(); isFile {
+			temp, copyErr := copyLocalImage(destination, names[index], path)
+			if temp != "" {
+				temporary = append(temporary, temp)
+			}
+			if copyErr != nil {
+				return nil, copyErr
+			}
+			outputs = append(outputs, output)
+			continue
+		}
+
 		// Shadowed repositories are the later catalogs publishing the same
 		// name, which a build does not act on: the first one already won.
 		resolved, _, resolveErr := catalogs.Resolve(request.Name, request.Version, architecture)
@@ -155,7 +251,7 @@ func Materialize(ctx context.Context, catalogSources []string, requests []Reques
 		if copyErr != nil || streamErr != nil || closeErr != nil {
 			return nil, fmt.Errorf("write extension %q: %w", request.Name, firstError(copyErr, streamErr, closeErr))
 		}
-		outputs = append(outputs, filepath.Join(destination, request.Name+".sysext.raw"))
+		outputs = append(outputs, output)
 	}
 
 	for index, path := range temporary {
@@ -230,6 +326,41 @@ func openCatalog(ctx context.Context, source string) (io.ReadCloser, error) {
 		return nil, fmt.Errorf("load extension catalog: %w", openErr)
 	}
 	return file, nil
+}
+
+// copyLocalImage copies a FileScheme request's image into destination under a
+// temporary name, which the caller renames into place once every request has
+// been materialized. It returns that temporary name even on failure, so a
+// partial copy is cleaned up with the rest.
+//
+// The file is copied rather than linked or referenced: destination is staged
+// into an artifact and then thrown away, and a build must not be able to
+// modify the image the spec pointed at.
+func copyLocalImage(destination, name, path string) (string, error) {
+	source, openErr := os.Open(path)
+	if openErr != nil {
+		return "", fmt.Errorf("read extension %q: %w", name, openErr)
+	}
+	defer source.Close()
+
+	info, statErr := source.Stat()
+	if statErr != nil {
+		return "", fmt.Errorf("read extension %q: %w", name, statErr)
+	}
+	if info.IsDir() {
+		return "", fmt.Errorf("extension %q is a directory, expected a .raw image", path)
+	}
+
+	temp, tempErr := os.CreateTemp(destination, "."+name+"-*")
+	if tempErr != nil {
+		return "", fmt.Errorf("create temporary file for extension %q: %w", name, tempErr)
+	}
+	_, copyErr := io.Copy(temp, source)
+	closeErr := temp.Close()
+	if copyErr != nil || closeErr != nil {
+		return temp.Name(), fmt.Errorf("write extension %q: %w", name, firstError(copyErr, closeErr))
+	}
+	return temp.Name(), nil
 }
 
 func formatRequest(request Request) string {

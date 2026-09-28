@@ -103,8 +103,12 @@ type ISO struct {
 	// ExtensionsCatalogs are searched in order when resolving an extension
 	// name: the first catalog publishing the name wins. Left empty, the
 	// build reads extensions.DefaultCatalog.
-	ExtensionsCatalogs []string             `yaml:"extensions_catalogs"`
-	Extensions         []extensions.Request `yaml:"extensions"`
+	ExtensionsCatalogs []string `yaml:"extensions_catalogs"`
+	// Extensions are the system extensions every artifact this build produces
+	// carries. A name is resolved against the catalogs; a name carrying the
+	// extensions.FileScheme prefix is a .raw image on the build host, which is
+	// copied in as it is and needs no catalog.
+	Extensions []extensions.Request `yaml:"extensions"`
 }
 
 // HandleDeprecations checks for deprecated ISO options and migrates them.
