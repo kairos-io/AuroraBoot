@@ -141,6 +141,13 @@ root. It declares each image under `install.extensions`, which is what the
 installer stages onto the installed system. This needs a kairos-agent that
 reads `install.extensions`, which is newer than v4.3.0.
 
+The same `iso.extensions` and `iso.extensions_catalogs` keys drive a raw disk
+or cloud image build, so an artifact spec names its extensions once and each
+artifact type decides where they go. A raw disk is assembled rather than
+installed, so the images ride in the OEM partition and the first-boot reset
+moves them onto the persistent one. Either way the extension is merged with no
+network access at install time.
+
 ### Cloning Hadron artifacts as templates
 
 Every artifact built from the Hadron composer stores the source composition

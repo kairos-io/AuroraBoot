@@ -148,14 +148,14 @@ func (d *Deployer) StepGenRawDisk() error {
 			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 		}),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS)))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS, d.diskExtensions())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig)))
+		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.diskExtensions())))
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -363,6 +363,19 @@ func (d *Deployer) netBootListenAddr() string {
 func (d *Deployer) netbootOption() bool {
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	return !d.Config.DisableNetboot
+}
+
+// diskExtensions is the extension payload a raw-disk build bakes into the
+// image. A build names its extensions once, under `iso.extensions`, and the
+// artifact type decides where they land: the ISO root for an ISO, the OEM
+// partition and then the persistent one here.
+func (d *Deployer) diskExtensions() ops.DiskExtensions {
+	return ops.DiskExtensions{
+		Requests:     d.Config.ISO.Extensions,
+		Catalogs:     d.Config.ISO.ExtensionsCatalogs,
+		Architecture: d.Config.Arch,
+		Insecure:     d.Config.AllowInsecureRegistriesBool(),
+	}
 }
 
 func (d *Deployer) rawDiskSize() uint64 {

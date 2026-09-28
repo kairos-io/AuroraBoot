@@ -43,6 +43,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.2.2
 	github.com/kairos-io/kairos/v4 v4.3.1-0.20260921115150-170bfbb891c4
+	github.com/mudler/yip v1.26.2
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.26.0
 	github.com/swaggo/swag v1.16.6
@@ -181,7 +182,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/mudler/entities v0.8.3 // indirect
-	github.com/mudler/yip v1.26.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
