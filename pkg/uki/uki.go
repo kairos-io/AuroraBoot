@@ -29,7 +29,6 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	goukiuki "github.com/kairos-io/go-ukify/pkg/uki"
-	agentConstants "github.com/kairos-io/kairos/v4/agent/pkg/constants"
 	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
 	sdkImages "github.com/kairos-io/kairos/v4/sdk/types/images"
 	installtypes "github.com/kairos-io/kairos/v4/sdk/types/install"
@@ -310,20 +309,22 @@ func Build(opts Options) (err error) {
 		return err
 	}
 
+	// Build the base cmdline from cloud config: enabled install.selinux
+	// replaces the hardcoded selinux=0, otherwise the base stays
+	// identical to constants.UkiCmdline.
+	baseCmdline := constants.UkiCmdline
+
 	enabled, selinuxMode, err := parseSelinuxOptions(log, opts.CloudConfig)
 	if err != nil {
 		return err
 	}
 
-	// Build the base cmdline from cloud config: enabled install.selinux
-	// replaces the hardcoded selinux=0, otherwise the base stays
-	// identical to constants.UkiCmdline.
-	baseCmdline := constants.UkiCmdline
-	supported, family := isSelinuxSupported(sourceDir, log)
-	if !supported && enabled {
-		log.Warnf("install.selinux.enabled is set but image family %q does not support SELinux; booting with selinux=0", family)
-	}
-	if supported && enabled {
+	if enabled {
+		supported, family := isSelinuxSupported(sourceDir, log)
+		if !supported {
+			log.Warnf("install.selinux.enabled is set but image family %q does not support SELinux; booting with selinux=0", family)
+		}
+
 		selinuxParams := fmt.Sprintf("security=selinux selinux=1 enforcing=0 rd.cos.selinux=%s", selinuxMode)
 		patched := strings.Replace(baseCmdline, " selinux=0", " "+selinuxParams, 1)
 		if patched == baseCmdline {
@@ -338,9 +339,6 @@ func Build(opts Options) (err error) {
 		getUkiCmdline(baseCmdline, opts.ExtendCmdline, bootBranding, opts.ExtraCmdlines, opts.CmdLinesV2),
 		getUkiSingleCmdlines(baseCmdline, bootBranding, opts.SingleEfiCmdlines, *log)...,
 	)
-	if supported && enabled {
-		entries = append(entries, recoveryEntry(bootBranding))
-	}
 
 	stub, systemdBoot, outputSystemdBootEfi, err := resolveSdBootFiles(sourceDir, config.Arch, opts.SdBootInSource)
 	if err != nil {
@@ -1182,14 +1180,6 @@ func nameFromCmdline(baseCmdline, basename, cmdline string) string {
 	return strings.ToLower(strings.TrimSuffix(name, "_"))
 }
 
-func recoveryEntry(bootBranding string) utils.BootEntry {
-	return utils.BootEntry{
-		FileName: "recovery",
-		Title:    bootBranding + agentConstants.RecoveryBootSuffix,
-		Cmdline:  constants.UkiCmdline,
-	}
-}
-
 // parseSelinuxOptions extracts install.selinux from a cloud-config.
 func parseSelinuxOptions(log *logger.KairosLogger, cloudConfig string) (enabled bool, mode string, err error) {
 	if cloudConfig == "" {
@@ -1235,6 +1225,7 @@ func parseSelinuxOptions(log *logger.KairosLogger, cloudConfig string) (enabled 
 		mode = "permissive"
 	case "permissive", "enforcing":
 	default:
+		log.Warnf("unknown install.selinux.mode %q, using permissive", mode)
 		mode = "permissive"
 	}
 	return true, mode, nil

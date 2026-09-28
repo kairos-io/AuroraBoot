@@ -6,8 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	. "github.com/onsi/ginkgo/v2"
@@ -100,7 +100,7 @@ var _ = Describe("sumFileSizes", func() {
 	It("should account for filesystem overhead", func() {
 		// Create a file that is 1 MB (1048576 bytes)
 		file1 := filepath.Join(tempDir, "file1")
-		err := os.WriteFile(file1, make([]byte, 1048576), 0644)
+		err := os.WriteFile(file1, make([]byte, 1048576), 0o644)
 		Expect(err).ToNot(HaveOccurred())
 
 		filesMap := map[string][]string{
@@ -116,7 +116,7 @@ var _ = Describe("sumFileSizes", func() {
 	It("should handle larger files with overhead", func() {
 		// Create a file that is exactly 5 MB (5242880 bytes)
 		file1 := filepath.Join(tempDir, "file1")
-		err := os.WriteFile(file1, make([]byte, 5*1024*1024), 0644)
+		err := os.WriteFile(file1, make([]byte, 5*1024*1024), 0o644)
 		Expect(err).ToNot(HaveOccurred())
 
 		filesMap := map[string][]string{
@@ -132,12 +132,12 @@ var _ = Describe("sumFileSizes", func() {
 	It("should sum multiple files with overhead", func() {
 		// Create file1: 1.5 MB
 		file1 := filepath.Join(tempDir, "file1")
-		err := os.WriteFile(file1, make([]byte, 1536*1024), 0644) // 1.5 MB
+		err := os.WriteFile(file1, make([]byte, 1536*1024), 0o644) // 1.5 MB
 		Expect(err).ToNot(HaveOccurred())
 
 		// Create file2: 2.25 MB
 		file2 := filepath.Join(tempDir, "file2")
-		err = os.WriteFile(file2, make([]byte, 2355200), 0644) // ~2.25 MB
+		err = os.WriteFile(file2, make([]byte, 2355200), 0o644) // ~2.25 MB
 		Expect(err).ToNot(HaveOccurred())
 
 		filesMap := map[string][]string{
@@ -154,7 +154,7 @@ var _ = Describe("sumFileSizes", func() {
 	It("should handle fractional megabytes with overhead", func() {
 		// Create a file that is 50.5 MB (52953088 bytes)
 		file1 := filepath.Join(tempDir, "file1")
-		err := os.WriteFile(file1, make([]byte, 52953088), 0644)
+		err := os.WriteFile(file1, make([]byte, 52953088), 0o644)
 		Expect(err).ToNot(HaveOccurred())
 
 		filesMap := map[string][]string{
@@ -368,7 +368,8 @@ var _ = Describe("isSelinuxSupported", func() {
 		os.RemoveAll(rootfs)
 	})
 
-	DescribeTable("reports support by family, matching the GRUB gate",
+	DescribeTable(
+		"reports support by family, matching the GRUB gate",
 		func(kairosRelease, osRelease string, want bool) {
 			if kairosRelease != "" {
 				Expect(os.WriteFile(filepath.Join(rootfs, "etc/kairos-release"), []byte(kairosRelease), 0o644)).To(Succeed())
@@ -419,18 +420,4 @@ ID=debian
 `, `ID=rocky
 `, false),
 	)
-})
-
-var _ = Describe("recoveryEntry", func() {
-	It("is named recovery, titled with the recovery suffix, and rides the unpatched base cmdline", func() {
-		e := recoveryEntry("Kairos")
-		Expect(e.FileName).To(Equal("recovery"))
-		Expect(e.Title).To(Equal("Kairos recovery"))
-		Expect(e.Cmdline).To(Equal(constants.UkiCmdline))
-		// The unpatched base already carries selinux=0 and none of the
-		// install-mode/SELinux fragment tokens.
-		Expect(e.Cmdline).To(ContainSubstring("selinux=0"))
-		Expect(e.Cmdline).ToNot(ContainSubstring("install-mode"))
-		Expect(e.Cmdline).ToNot(ContainSubstring("security=selinux"))
-	})
 })
