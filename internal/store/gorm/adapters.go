@@ -2,6 +2,7 @@ package gorm
 
 import (
 	"context"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
@@ -87,6 +88,9 @@ func (a *CommandStoreAdapter) UpdateStatusForNode(ctx context.Context, id string
 }
 func (a *CommandStoreAdapter) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	return a.S.ListByNode(ctx, nodeID)
+}
+func (a *CommandStoreAdapter) ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error {
+	return a.S.CommandExpireBefore(ctx, nodeID, deadline)
 }
 func (a *CommandStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.CommandDelete(ctx, id)
