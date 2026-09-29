@@ -375,9 +375,11 @@ var _ = Describe("Reset lifecycle", func() {
 
 	// The store gates both GetPending and ClaimForDelivery on expires_at, so a
 	// node that comes back after its reset lifecycle failed must not be handed the
-	// stale reset command.
+	// stale reset command. GetCommands also settles overdue commands before it
+	// reads the queue (#860), so the command the agent does not get is left in the
+	// terminal Expired phase rather than dangling as Pending forever.
 	Describe("an expired reset command is not delivered", func() {
-		It("omits it from the agent poll and leaves it pending", func() {
+		It("omits it from the agent poll and settles it as expired", func() {
 			expired := time.Now().Add(-time.Minute)
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
 			cs := &fakeCommandStore{cmds: []*store.NodeCommand{{
@@ -400,7 +402,8 @@ var _ = Describe("Reset lifecycle", func() {
 
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			Expect(rec.Body.String()).NotTo(ContainSubstring("cmd-1"))
-			Expect(cs.cmds[0].Phase).To(Equal(store.CommandPending))
+			Expect(cs.cmds[0].Phase).To(Equal(store.CommandExpired),
+				"the agent must not receive it, and lazy expiry on read must not leave it Pending")
 		})
 
 		It("still delivers an unexpired one", func() {
