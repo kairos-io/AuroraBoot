@@ -12,24 +12,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Server, Plus } from "lucide-react";
+import { timeAgo } from "@/lib/time";
 
 interface NodeTableProps {
   nodes: Node[];
   emptyAction?: () => void;
 }
 
-function timeAgo(dateStr: string): string {
-  if (!dateStr) return "Never";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
   const navigate = useNavigate();
@@ -90,7 +79,7 @@ export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
               <TableCell className="text-xs">{node.agentVersion || "-"}</TableCell>
               <TableCell className="font-mono text-xs">{node.remoteIP || "-"}</TableCell>
               <TableCell className="text-xs">
-                {timeAgo(node.lastHeartbeat || "")}
+                {timeAgo(node.lastHeartbeat)}
               </TableCell>
               <TableCell>
                 <StatusBadge status={node.phase} />

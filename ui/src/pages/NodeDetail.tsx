@@ -28,19 +28,8 @@ import { useUIWebSocket } from "@/hooks/useUIWebSocket";
 import { Trash2, ChevronDown, ChevronRight, Terminal } from "lucide-react";
 import { ansiToHtml } from "@/lib/ansi";
 import { toast } from "@/hooks/useToast";
+import { timeAgo } from "@/lib/time";
 
-function timeAgo(dateStr: string): string {
-  if (!dateStr) return "Never";
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const seconds = Math.floor(diff / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
-}
 
 export function NodeDetail() {
   const { id } = useParams<{ id: string }>();
@@ -288,7 +277,7 @@ export function NodeDetail() {
               <Separator />
               <div className="flex justify-between">
                 <dt className="text-muted-foreground">Last Heartbeat</dt>
-                <dd>{timeAgo(node.lastHeartbeat || "")}</dd>
+                <dd>{timeAgo(node.lastHeartbeat)}</dd>
               </div>
             </dl>
           </CardContent>
