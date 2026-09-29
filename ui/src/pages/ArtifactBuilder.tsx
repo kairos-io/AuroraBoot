@@ -827,7 +827,7 @@ export function ArtifactBuilder() {
   useEffect(() => {
     listGroups().then(setGroups).catch(() => {});
     listSecureBootKeySets().then(setKeySets).catch(() => {});
-    getRegistrationToken().then((t) => setRegistrationToken(t.token)).catch(() => {});
+    getRegistrationToken().then((t) => setRegistrationToken(t.registrationToken)).catch(() => {});
   }, []);
 
   // After focusFirstError queues a focusTarget and setStep has re-rendered

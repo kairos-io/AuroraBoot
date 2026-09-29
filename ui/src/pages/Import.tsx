@@ -27,7 +27,7 @@ export function Import() {
   useEffect(() => {
     listGroups().then(setGroups).catch(() => {});
     getRegistrationToken()
-      .then((t) => setToken(t.token))
+      .then((t) => setToken(t.registrationToken))
       .catch(() => {});
   }, []);
 

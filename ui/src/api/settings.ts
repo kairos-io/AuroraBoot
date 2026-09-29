@@ -1,7 +1,7 @@
 import { apiFetch } from "./client";
 
 export interface RegistrationToken {
-  token: string;
+  registrationToken: string;
 }
 
 export function getRegistrationToken(): Promise<RegistrationToken> {
