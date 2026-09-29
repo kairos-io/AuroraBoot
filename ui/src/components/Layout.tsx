@@ -22,6 +22,7 @@ import { getSystemBuilder, type SystemBuilder } from "@/api/system";
 import { cn } from "@/lib/utils";
 import { KairosLogo } from "@/components/KairosLogo";
 import { Toaster } from "@/components/ui/toaster";
+import { ThemeToggle } from "@/components/ThemeToggle";
 
 // NavItem is either a client-side route (the common case) or an
 // `external: true` link that renders as a plain <a target="_blank">
@@ -188,7 +189,8 @@ export function Layout() {
         </nav>
         {builder && <BuilderChip info={builder} />}
         <div className="mx-4 border-t border-white/10" />
-        <div className="p-3 pb-5">
+        <div className="space-y-2 p-3 pb-5">
+          <ThemeToggle />
           <Button
             variant="ghost"
             className="w-full justify-start gap-3 text-sidebar-fg opacity-70 hover:opacity-100 hover:bg-sidebar-muted hover:text-sidebar-fg"

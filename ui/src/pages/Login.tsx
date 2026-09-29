@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { login, validateToken } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -6,12 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KairosLogo } from "@/components/KairosLogo";
+import { applyTheme, getStoredTheme } from "@/lib/theme";
 
 export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Match the theme the operator chose in the app shell.
+  useEffect(() => {
+    applyTheme(getStoredTheme());
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
