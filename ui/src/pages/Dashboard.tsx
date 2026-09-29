@@ -7,6 +7,11 @@ import { GetStartedHero } from "@/components/GetStartedHero";
 import { StatTile } from "@/components/fleet/StatTile";
 import { StackBar, type StackBarCount } from "@/components/fleet/StackBar";
 import { toneText } from "@/components/fleet/tones";
+import { Gauge } from "@/components/fleet/Gauge";
+import { MeterBar } from "@/components/fleet/MeterBar";
+import { useLatestMetrics } from "@/hooks/useMetrics";
+import { cpuPercent, maxDiskPercent, memPercent } from "@/lib/metrics";
+import type { NodeMetrics } from "@/api/metrics";
 import { isBuilding, isFailed, isOffline, isOnline, isReady, phaseTone, type Tone } from "@/lib/phase";
 import { timeAgo } from "@/lib/time";
 import { imageVersion } from "@/lib/nodeInfo";
@@ -38,6 +43,9 @@ import {
   Rocket,
   ShieldAlert,
   Move,
+  Activity,
+  Cpu,
+  HardDrive,
   type LucideIcon,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -61,6 +69,8 @@ const activityIcons: Record<ActivityKind, LucideIcon> = {
 const attentionIcons: Record<AttentionKind, LucideIcon> = {
   boot: ShieldAlert,
   offline: Server,
+  cpu: Cpu,
+  disk: HardDrive,
   build: Package,
   extension: Puzzle,
   ungrouped: Move,
@@ -104,6 +114,78 @@ function isDeploymentRunning(d: Deployment): boolean {
   return s === "active" || s === "running";
 }
 
+function average(values: (number | null)[]): number | null {
+  const known = values.filter((v): v is number => v !== null);
+  if (known.length === 0) return null;
+  return Math.round(known.reduce((a, b) => a + b, 0) / known.length);
+}
+
+type Busy = { node: Node; kind: "CPU" | "memory" | "disk"; value: number };
+
+// busiestNodes ranks nodes by their highest usage of CPU, memory or disk.
+function busiestNodes(nodes: Node[], metrics: Record<string, NodeMetrics>, limit = 3): Busy[] {
+  const rows: Busy[] = [];
+  for (const node of nodes) {
+    const m = metrics[node.id];
+    if (!m) continue;
+    const options: [Busy["kind"], number | null][] = [
+      ["CPU", cpuPercent(m)],
+      ["memory", memPercent(m)],
+      ["disk", maxDiskPercent(m)],
+    ];
+    let best: Busy | null = null;
+    for (const [kind, value] of options) {
+      if (value !== null && (!best || value > best.value)) best = { node, kind, value };
+    }
+    if (best) rows.push(best);
+  }
+  return rows.sort((a, b) => b.value - a.value).slice(0, limit);
+}
+
+function FleetResources({ nodes, metrics }: { nodes: Node[]; metrics: Record<string, NodeMetrics> }) {
+  const reporting = nodes.filter((n) => metrics[n.id]);
+  const avgCpu = average(reporting.map((n) => cpuPercent(metrics[n.id])));
+  const avgMem = average(reporting.map((n) => memPercent(metrics[n.id])));
+  const busy = busiestNodes(reporting, metrics);
+  return (
+    <Card className="mb-6">
+      <CardHeader className="pb-3">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold">
+            <Activity className="h-4 w-4 text-muted-foreground" aria-hidden="true" />
+            Fleet resources
+          </CardTitle>
+          <span className="text-xs text-muted-foreground">
+            {reporting.length} node{reporting.length === 1 ? "" : "s"} reporting metrics
+          </span>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <div className="flex flex-wrap items-center gap-6">
+          {avgCpu !== null && <Gauge value={avgCpu} label="Average CPU" sub="avg CPU" />}
+          {avgMem !== null && <Gauge value={avgMem} label="Average memory" sub="avg memory" />}
+          {busy.length > 0 && (
+            <div className="min-w-0 flex-1 basis-56">
+              <p className="mb-2 text-xs font-semibold text-muted-foreground">Busiest nodes</p>
+              <ul className="space-y-1.5">
+                {busy.map((b) => (
+                  <li key={b.node.id} className="flex items-center justify-between gap-3 text-sm">
+                    <Link to={`/nodes/${b.node.id}`} className="min-w-0 truncate hover:underline">
+                      {b.node.hostname || b.node.id}
+                      {b.kind !== "CPU" && <span className="ml-1 text-xs text-muted-foreground">{b.kind}</span>}
+                    </Link>
+                    <MeterBar value={b.value} />
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 function IconBubble({ icon: Icon, tone }: { icon: LucideIcon; tone: Tone }) {
   return (
     <span
@@ -126,6 +208,7 @@ export function Dashboard() {
   const [deployments, setDeployments] = useState<Deployment[]>([]);
   const [extensions, setExtensions] = useState<Extension[]>([]);
   const [filter, setFilter] = useState<ActivityFilter>("all");
+  const { byNode } = useLatestMetrics();
   // The reference time for "in the last 24 h", taken once per mount.
   const [now] = useState(() => Date.now());
   // We must not render anything until BOTH nodes and artifacts have been
@@ -203,7 +286,9 @@ export function Dashboard() {
   const extBuilding = extensions.filter((e) => isBuilding(e.phase)).length;
   const extError = extensions.filter((e) => isFailed(e.phase)).length;
 
-  const attention = needsAttention({ nodes, artifacts, extensions });
+  // Metrics add to the page only once a node reports them.
+  const metrics = nodes.some((n) => byNode[n.id]) ? byNode : undefined;
+  const attention = needsAttention({ nodes, artifacts, extensions, metrics });
   const activity = buildActivity({ nodes, artifacts, deployments, extensions }).filter((e) =>
     matchesFilter(e, filter),
   );
@@ -356,6 +441,8 @@ export function Dashboard() {
           }
         />
       </div>
+
+      {metrics && <FleetResources nodes={nodes} metrics={metrics} />}
 
       <div className="grid gap-6 lg:grid-cols-5">
         <div className="space-y-6 lg:col-span-3 min-w-0">

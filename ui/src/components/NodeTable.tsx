@@ -1,6 +1,7 @@
 import { Fragment, useState } from "react";
 import { useNavigate } from "react-router";
 import type { Node } from "@/api/nodes";
+import type { NodeMetrics } from "@/api/metrics";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -20,6 +21,8 @@ import { phaseCounts } from "@/lib/nodeFilter";
 import { StatusDot } from "@/components/fleet/StatusDot";
 import { StackBar } from "@/components/fleet/StackBar";
 import { EmptyState } from "@/components/fleet/EmptyState";
+import { MeterBar } from "@/components/fleet/MeterBar";
+import { cpuPercent, maxDiskPercent, memPercent } from "@/lib/metrics";
 
 export interface NodeTableGroup {
   key: string;
@@ -36,6 +39,9 @@ interface NodeTableProps {
   selected?: Set<string>;
   onSelectedChange?(next: Set<string>): void;
   emptyAction?: () => void;
+  // Latest agent metrics by node ID. When set, the CPU, Memory and Disk
+  // columns replace Kairos and Hardware.
+  metrics?: Record<string, NodeMetrics>;
 }
 
 function hardware(node: Node): string {
@@ -79,11 +85,12 @@ export function NodeTable({
   selected,
   onSelectedChange,
   emptyAction,
+  metrics,
 }: NodeTableProps) {
   const navigate = useNavigate();
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const sel = selected ?? new Set<string>();
-  const columns = 7 + (selectable ? 1 : 0) + (showGroupColumn ? 1 : 0);
+  const columns = (metrics ? 8 : 7) + (selectable ? 1 : 0) + (showGroupColumn ? 1 : 0);
   const allNodes = groups ? groups.flatMap((g) => g.nodes) : nodes;
 
   function setMany(ids: string[], on: boolean) {
@@ -155,8 +162,24 @@ export function NodeTable({
         <TableCell className="font-mono text-xs">
           {image || <span className="text-muted-foreground">—</span>}
         </TableCell>
-        <TableCell className="font-mono text-xs text-muted-foreground">{node.agentVersion || "—"}</TableCell>
-        <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{hardware(node)}</TableCell>
+        {metrics ? (
+          <>
+            <TableCell className="text-xs">
+              <MeterBar value={cpuPercent(metrics[node.id])} />
+            </TableCell>
+            <TableCell className="text-xs">
+              <MeterBar value={memPercent(metrics[node.id])} />
+            </TableCell>
+            <TableCell className="text-xs">
+              <MeterBar value={maxDiskPercent(metrics[node.id])} />
+            </TableCell>
+          </>
+        ) : (
+          <>
+            <TableCell className="font-mono text-xs text-muted-foreground">{node.agentVersion || "—"}</TableCell>
+            <TableCell className="whitespace-nowrap text-xs text-muted-foreground">{hardware(node)}</TableCell>
+          </>
+        )}
         <TableCell className="whitespace-nowrap text-xs">{timeAgo(node.lastHeartbeat)}</TableCell>
         <TableCell>
           {labels.length === 0 ? (
@@ -244,8 +267,18 @@ export function NodeTable({
           <TableHead>Node</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Image</TableHead>
-          <TableHead>Kairos</TableHead>
-          <TableHead>Hardware</TableHead>
+          {metrics ? (
+            <>
+              <TableHead>CPU</TableHead>
+              <TableHead>Memory</TableHead>
+              <TableHead>Disk</TableHead>
+            </>
+          ) : (
+            <>
+              <TableHead>Kairos</TableHead>
+              <TableHead>Hardware</TableHead>
+            </>
+          )}
           <TableHead>Last heartbeat</TableHead>
           <TableHead>Labels</TableHead>
           {showGroupColumn && <TableHead>Group</TableHead>}

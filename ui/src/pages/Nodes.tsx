@@ -20,7 +20,8 @@ import { FilterChip } from "@/components/fleet/FilterChip";
 import { NodeSummary } from "@/components/fleet/NodeSummary";
 import { EmptyState } from "@/components/fleet/EmptyState";
 import { SelectionBar } from "@/components/fleet/SelectionBar";
-import { NodeTiles } from "@/components/fleet/NodeTiles";
+import { NodeTiles, type TileColorBy } from "@/components/fleet/NodeTiles";
+import { useLatestMetrics } from "@/hooks/useMetrics";
 import { MoveToGroupDialog } from "@/components/fleet/MoveToGroupDialog";
 import { AddLabelDialog } from "@/components/fleet/AddLabelDialog";
 import { cn } from "@/lib/utils";
@@ -43,6 +44,42 @@ const views = [
   { value: "list", label: "List", icon: List },
   { value: "tiles", label: "Tiles", icon: LayoutGrid },
 ] as const;
+
+const colorOptions: { value: TileColorBy; label: string }[] = [
+  { value: "status", label: "Status" },
+  { value: "cpu", label: "CPU" },
+  { value: "memory", label: "Memory" },
+  { value: "disk", label: "Disk" },
+];
+
+function parseColorBy(v: string | null): TileColorBy {
+  return colorOptions.find((o) => o.value === v)?.value ?? "status";
+}
+
+function ColorByToggle({ value, onChange }: { value: TileColorBy; onChange(v: TileColorBy): void }) {
+  return (
+    <div className="mb-3 flex items-center gap-2">
+      <span className="text-xs text-muted-foreground">Color by</span>
+      <div role="radiogroup" aria-label="Color by" className="inline-flex rounded-md border border-input p-0.5">
+        {colorOptions.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              "rounded px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground",
+              value === o.value && "bg-muted text-foreground",
+            )}
+          >
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function ViewToggle({ value, onChange }: { value: "list" | "tiles"; onChange(v: "list" | "tiles"): void }) {
   return (
@@ -81,6 +118,23 @@ export function Nodes() {
 
   const query = parseQuery(searchParams);
   const view = searchParams.get("view") === "tiles" ? "tiles" : "list";
+  const colorBy = parseColorBy(searchParams.get("color"));
+  const { byNode } = useLatestMetrics();
+  // Usage columns and tile colors only appear once a node reports metrics, so
+  // a fleet on older agents sees the page as before.
+  const metrics = nodes.some((n) => byNode[n.id]) ? byNode : undefined;
+
+  function setColorBy(next: TileColorBy) {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (next === "status") sp.delete("color");
+        else sp.set("color", next);
+        return sp;
+      },
+      { replace: true },
+    );
+  }
 
   function setView(next: "list" | "tiles") {
     setSearchParams(
@@ -289,7 +343,14 @@ export function Nodes() {
           }
         />
       ) : view === "tiles" && filteredNodes.length > 0 ? (
-        <NodeTiles groups={buckets ?? [{ key: "", label: "", nodes: filteredNodes }]} />
+        <>
+          {metrics && <ColorByToggle value={colorBy} onChange={setColorBy} />}
+          <NodeTiles
+            groups={buckets ?? [{ key: "", label: "", nodes: filteredNodes }]}
+            colorBy={metrics ? colorBy : "status"}
+            metrics={metrics}
+          />
+        </>
       ) : (
         <NodeTable
           nodes={filteredNodes}
@@ -299,6 +360,7 @@ export function Nodes() {
           selected={selected}
           onSelectedChange={setSelected}
           emptyAction={() => navigate("/import")}
+          metrics={metrics}
         />
       )}
 

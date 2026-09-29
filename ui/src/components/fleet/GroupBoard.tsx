@@ -3,6 +3,8 @@ import { useNavigate } from "react-router";
 import { FolderTree, GripVertical, Inbox, MoreHorizontal, Plus } from "lucide-react";
 import type { Group } from "@/api/groups";
 import type { Node } from "@/api/nodes";
+import type { NodeMetrics } from "@/api/metrics";
+import { cpuPercent, maxDiskPercent, memPercent, usageTone } from "@/lib/metrics";
 import { isOnline, phaseTone } from "@/lib/phase";
 import { imageVersion, nodeAddress } from "@/lib/nodeInfo";
 import { phaseCounts } from "@/lib/nodeFilter";
@@ -18,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { StackBar } from "./StackBar";
 import { StatusDot } from "./StatusDot";
+import { toneBg } from "./tones";
 
 interface GroupBoardProps {
   groups: Group[];
@@ -26,6 +29,9 @@ interface GroupBoardProps {
   onCreate(): void;
   onRename(g: Group): void;
   onDelete(g: Group): void;
+  // Latest agent metrics by node ID. Cards of nodes with an entry show small
+  // CPU, memory and disk bars.
+  metrics?: Record<string, NodeMetrics>;
 }
 
 // The "Not in a group" column. setGroup takes "" to clear a node's group.
@@ -37,14 +43,46 @@ interface Target {
   name: string;
 }
 
+// MiniMeters shows CPU, memory and disk as three short vertical bars.
+function MiniMeters({ metrics }: { metrics: NodeMetrics }) {
+  const items: [string, number | null][] = [
+    ["CPU", cpuPercent(metrics)],
+    ["Memory", memPercent(metrics)],
+    ["Disk", maxDiskPercent(metrics)],
+  ];
+  return (
+    <span className="ml-auto flex h-5 shrink-0 items-end gap-0.5">
+      {items.map(([label, v]) => (
+        <span
+          key={label}
+          role="meter"
+          aria-label={label}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={v ?? 0}
+          aria-valuetext={v === null ? "no data" : `${v}%`}
+          title={`${label} ${v === null ? "—" : `${v}%`}`}
+          className="flex h-full w-1.5 items-end overflow-hidden rounded-sm bg-muted"
+        >
+          {v !== null && (
+            <span className={cn("block w-full", toneBg[usageTone(v)])} style={{ height: `${Math.max(15, v)}%` }} />
+          )}
+        </span>
+      ))}
+    </span>
+  );
+}
+
 function NodeCard({
   node,
+  metrics,
   targets,
   onMove,
   onDragStart,
   onDragEnd,
 }: {
   node: Node;
+  metrics?: NodeMetrics;
   targets: Target[];
   onMove(nodeId: string, groupId: string): void;
   onDragStart(nodeId: string): void;
@@ -92,6 +130,7 @@ function NodeCard({
           <span className="truncate font-medium">{name}</span>
           <span className="truncate font-mono text-xs text-muted-foreground">{sub}</span>
         </span>
+        {metrics && <MiniMeters metrics={metrics} />}
       </div>
       <DropdownMenu open={menuOpen} onOpenChange={setMenuOpen}>
         <DropdownMenuTrigger asChild>
@@ -148,7 +187,7 @@ function GroupActions({ group, onRename, onDelete }: { group: Group; onRename(g:
 // are dragged between columns, or moved with the m key or the card's ⋯ menu.
 // The parent owns the move: it updates the nodes at once and rolls back on
 // failure.
-export function GroupBoard({ groups, nodes, onMove, onCreate, onRename, onDelete }: GroupBoardProps) {
+export function GroupBoard({ groups, nodes, onMove, onCreate, onRename, onDelete, metrics }: GroupBoardProps) {
   const dragging = useRef<string | null>(null);
   const [over, setOver] = useState<string | null>(null);
 
@@ -232,6 +271,7 @@ export function GroupBoard({ groups, nodes, onMove, onCreate, onRename, onDelete
                 <NodeCard
                   key={n.id}
                   node={n}
+                  metrics={metrics?.[n.id]}
                   targets={allTargets.filter((t) => t.id !== col.id)}
                   onMove={move}
                   onDragStart={(id) => {

@@ -5,9 +5,11 @@ import type { Node } from "@/api/nodes";
 import type { Artifact } from "@/api/artifacts";
 import type { Deployment } from "@/api/deployments";
 import type { Extension } from "@/api/extensions";
+import type { NodeMetrics } from "@/api/metrics";
 import { hasBootIssue } from "@/lib/nodeInfo";
 import { isBuilding, isFailed, isOffline, isReady, type Tone } from "@/lib/phase";
 import { timeAgo } from "@/lib/time";
+import { cpuPercent, diskPercent, DANGER_PERCENT } from "@/lib/metrics";
 
 export type ActivityKind = "build" | "node" | "deploy" | "extension";
 
@@ -21,7 +23,7 @@ export type ActivityEvent = {
   link: string;
 };
 
-export type AttentionKind = "boot" | "offline" | "build" | "extension" | "ungrouped";
+export type AttentionKind = "boot" | "offline" | "cpu" | "disk" | "build" | "extension" | "ungrouped";
 
 export type AttentionItem = {
   id: string;
@@ -170,6 +172,8 @@ export function needsAttention(input: {
   nodes: Node[];
   artifacts: Artifact[];
   extensions: Extension[];
+  // Latest agent metrics by node ID. Nodes without an entry add no rows.
+  metrics?: Record<string, NodeMetrics>;
 }): AttentionItem[] {
   const rows: AttentionItem[] = [];
 
@@ -198,6 +202,37 @@ export function needsAttention(input: {
         actionLabel: "View node",
         link: `/nodes/${n.id}`,
       });
+    }
+  }
+  if (input.metrics) {
+    for (const n of input.nodes) {
+      const m = input.metrics[n.id];
+      if (!m) continue;
+      const cpu = cpuPercent(m);
+      if (cpu !== null && cpu >= DANGER_PERCENT) {
+        rows.push({
+          id: `cpu-${n.id}`,
+          kind: "cpu",
+          tone: "danger",
+          title: `${nodeName(n)} CPU at ${cpu}%`,
+          detail: m.load?.length ? `Load ${m.load[0].toFixed(1)}` : "High CPU usage",
+          actionLabel: "View node",
+          link: `/nodes/${n.id}`,
+        });
+      }
+      const fullest = [...(m.disks ?? [])].sort((a, b) => diskPercent(b) - diskPercent(a))[0];
+      if (fullest && diskPercent(fullest) >= DANGER_PERCENT) {
+        const gib = (b: number) => (b / 1024 ** 3).toFixed(1);
+        rows.push({
+          id: `disk-${n.id}`,
+          kind: "disk",
+          tone: "danger",
+          title: `${nodeName(n)} disk at ${diskPercent(fullest)}%`,
+          detail: `${fullest.label || fullest.mount} · ${gib(fullest.usedBytes)} of ${gib(fullest.totalBytes)} GiB`,
+          actionLabel: "View node",
+          link: `/nodes/${n.id}`,
+        });
+      }
     }
   }
   for (const a of input.artifacts) {

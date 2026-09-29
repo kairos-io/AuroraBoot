@@ -29,6 +29,7 @@ import {
 } from "@/components/ui/table";
 import { Plus, FolderTree, Trash2 } from "lucide-react";
 import { toast } from "@/hooks/useToast";
+import { useLatestMetrics } from "@/hooks/useMetrics";
 
 type View = "board" | "table";
 
@@ -71,6 +72,8 @@ export function Groups() {
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
   const view: View = searchParams.get("view") === "table" ? "table" : "board";
+  const { byNode } = useLatestMetrics();
+  const metrics = nodes.some((n) => byNode[n.id]) ? byNode : undefined;
 
   function load() {
     listGroups().then(setGroups).catch(() => {});
@@ -173,10 +176,12 @@ export function Groups() {
             onCreate={openCreate}
             onRename={openRename}
             onDelete={setConfirmTarget}
+            metrics={metrics}
           />
           <p className="mt-3 text-xs text-muted-foreground">
             Keyboard: focus a card, press <kbd className="rounded border border-border bg-muted px-1 font-mono">m</kbd> and
             choose the target group. Enter opens the node.
+            {metrics && " Bars on each card: CPU, memory, disk."}
           </p>
         </>
       ) : (
