@@ -365,7 +365,7 @@ export function DeployDialog({
                   <Label>BMC Target</Label>
                   <Link
                     to="/bmc"
-                    className="text-xs text-[#EE5007] hover:underline"
+                    className="text-xs text-primary hover:underline"
                     onClick={onClose}
                   >
                     Manage BMCs →
@@ -387,7 +387,7 @@ export function DeployDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-[#EE5007]"
+                    className="text-xs text-primary"
                     onClick={() => setShowNewTarget(!showNewTarget)}
                   >
                     {showNewTarget ? "Cancel" : "+ Add new target"}

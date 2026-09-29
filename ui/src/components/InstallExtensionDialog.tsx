@@ -192,7 +192,7 @@ export function InstallExtensionDialog({
                 onClick={() => setAction(a)}
                 className={`px-2.5 py-2 border rounded-md text-xs ${
                   action === a
-                    ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
+                    ? "border-primary bg-primary-soft ring-1 ring-primary"
                     : "hover:bg-muted/30"
                 }`}
               >
@@ -214,7 +214,7 @@ export function InstallExtensionDialog({
                     onClick={() => setBootState(s)}
                     className={`px-2.5 py-1 text-xs rounded-md border ${
                       bootState === s
-                        ? "bg-[#EE5007] text-white border-[#EE5007]"
+                        ? "bg-primary text-primary-foreground border-primary"
                         : "hover:bg-muted/30"
                     }`}
                   >
@@ -319,7 +319,7 @@ function TargetTab({
       onClick={onClick}
       className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
         active
-          ? "bg-[#EE5007] text-white"
+          ? "bg-primary text-primary-foreground"
           : "border hover:bg-muted/30"
       }`}
     >

@@ -473,7 +473,7 @@ function TypeCard({
       aria-pressed={active}
       className={`text-left rounded-md border p-3 transition-colors ${
         active
-          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
+          ? "border-primary bg-primary-soft ring-1 ring-primary"
           : "hover:bg-muted/30"
       }`}
     >
@@ -583,13 +583,13 @@ function StepIndicator({ current }: { current: number }) {
           key={label}
           className={`inline-flex items-center gap-1.5 ${
             i === current
-              ? "text-[#EE5007] font-semibold"
+              ? "text-primary font-semibold"
               : "text-muted-foreground"
           }`}
         >
           <span
             className={`h-6 w-6 rounded-full border inline-flex items-center justify-center text-xs ${
-              i === current ? "bg-[#EE5007] text-white border-[#EE5007]" : ""
+              i === current ? "bg-primary text-primary-foreground border-primary" : ""
             }`}
           >
             {i + 1}

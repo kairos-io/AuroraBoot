@@ -248,7 +248,7 @@ function DeleteBlockedDialog({
               <span className="truncate font-medium">{a.name}</span>
               <Link
                 to={`/artifacts/${a.id}`}
-                className="text-xs text-[#EE5007] hover:underline shrink-0"
+                className="text-xs text-primary hover:underline shrink-0"
               >
                 Open →
               </Link>

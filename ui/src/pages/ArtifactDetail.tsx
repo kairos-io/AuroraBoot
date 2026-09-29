@@ -88,7 +88,7 @@ function formatDuration(totalSeconds: number): string {
 
 // Color classes for the three output category tones.
 const TONE_CLASSES: Record<"orange" | "blue" | "neutral", string> = {
-  orange: "border-[#EE5007]/30 bg-[#EE5007]/10 text-[#C73F00]",
+  orange: "border-primary/30 bg-primary/10 text-primary",
   blue: "border-sky-500/30 bg-sky-500/10 text-sky-700",
   neutral: "border-border bg-muted/60 text-foreground",
 };
@@ -447,9 +447,8 @@ export function ArtifactDetail() {
           </div>
         </div>
         <Button
-          variant={artifact.saved ? "default" : "outline"}
+          variant="outline"
           size="sm"
-          className={artifact.saved ? "bg-[#EE5007] hover:bg-[#FF7442] text-white" : ""}
           onClick={async () => {
             await updateArtifact(id!, { saved: !artifact.saved });
             fetchArtifact();
@@ -473,7 +472,6 @@ export function ArtifactDetail() {
         {!isActive && artifact.phase === "Ready" && (
           <Button
             size="sm"
-            className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
             onClick={() => setShowDeploy(true)}
           >
             <Rocket className="h-4 w-4 mr-2" /> Deploy
@@ -481,7 +479,7 @@ export function ArtifactDetail() {
         )}
         {isActive && (
           <Button
-            variant="destructive"
+            variant="destructive-outline"
             size="sm"
             onClick={handleCancel}
             disabled={cancelling}
@@ -492,7 +490,7 @@ export function ArtifactDetail() {
         )}
         {!isActive && (
           <Button
-            variant="destructive"
+            variant="destructive-outline"
             size="sm"
             onClick={() => setConfirmOpen(true)}
             disabled={deleting}
@@ -518,10 +516,10 @@ export function ArtifactDetail() {
           </div>
         )}
         {isActive && (
-          <span className="inline-flex items-center gap-1.5 text-sm text-[#EE5007]">
+          <span className="inline-flex items-center gap-1.5 text-sm text-primary">
             <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EE5007] opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-[#EE5007]" />
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-primary" />
             </span>
             Building · {durationText}
           </span>
@@ -556,7 +554,6 @@ export function ArtifactDetail() {
               <div className="mt-4 flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
                   onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
                 >
                   <Copy className="h-4 w-4 mr-2" />
@@ -602,7 +599,6 @@ export function ArtifactDetail() {
             </div>
             <Button
               size="sm"
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
               onClick={() => setShowDeploy(true)}
             >
               <Rocket className="h-4 w-4 mr-2" />
@@ -636,7 +632,7 @@ export function ArtifactDetail() {
                 <a
                   href={`/api/v1/artifacts/${encodeURIComponent(id!)}/image?token=${encodeURIComponent(localStorage.getItem("auroraboot_token") || "")}`}
                   download
-                  className="inline-flex items-center gap-2 text-xs font-mono text-[#EE5007] hover:underline break-all"
+                  className="inline-flex items-center gap-2 text-xs font-mono text-primary hover:underline break-all"
                 >
                   <Download className="h-3.5 w-3.5" />
                   {artifact.containerImage}
@@ -850,10 +846,10 @@ export function ArtifactDetail() {
               )}
             </h3>
             {isActive && wsConnected && (
-              <span className="inline-flex items-center gap-1.5 text-[11px] text-[#EE5007]">
+              <span className="inline-flex items-center gap-1.5 text-[11px] text-primary">
                 <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#EE5007] opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-[#EE5007]" />
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75" />
+                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-primary" />
                 </span>
                 Live
               </span>
@@ -882,7 +878,7 @@ export function ArtifactDetail() {
               title={wrapLogs ? "Disable wrap" : "Enable wrap"}
               onClick={() => setWrapLogs((v) => !v)}
             >
-              <WrapText className={`h-3.5 w-3.5 ${wrapLogs ? "text-[#EE5007]" : "text-muted-foreground"}`} />
+              <WrapText className={`h-3.5 w-3.5 ${wrapLogs ? "text-primary" : "text-muted-foreground"}`} />
             </Button>
             <Button
               type="button"
@@ -898,7 +894,7 @@ export function ArtifactDetail() {
                 }
               }}
             >
-              <ArrowDown className={`h-3.5 w-3.5 ${followLogs ? "text-[#EE5007]" : "text-muted-foreground"}`} />
+              <ArrowDown className={`h-3.5 w-3.5 ${followLogs ? "text-primary" : "text-muted-foreground"}`} />
             </Button>
             <Button
               type="button"
@@ -997,7 +993,7 @@ export function ArtifactDetail() {
                     <Download className="h-4 w-4 text-muted-foreground" />
                     <a
                       href={artifactDownloadUrl(id!, filename)}
-                      className="text-sm font-mono hover:underline text-[#EE5007]"
+                      className="text-sm font-mono hover:underline text-primary"
                       download
                     >
                       {filename}

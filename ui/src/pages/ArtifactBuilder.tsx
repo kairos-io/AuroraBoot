@@ -87,7 +87,7 @@ type OutputCardDef = {
 // Kept in sync with ArtifactDetail.tsx's outputCategories tones so a build
 // looks the same wherever you see it.
 const OUTPUT_TONE_CLASSES: Record<OutputTone, string> = {
-  install: "border-[#EE5007]/30 bg-[#EE5007]/10 text-[#C73F00]",
+  install: "border-primary/30 bg-primary/10 text-primary",
   disk: "border-sky-500/30 bg-sky-500/10 text-sky-700",
   archive: "border-border bg-muted/60 text-foreground",
 };
@@ -1389,13 +1389,13 @@ export function ArtifactBuilder() {
       <div className="flex items-center gap-2 mb-4">
         {STEPS.map((name, i) => (
           <React.Fragment key={name}>
-            {i > 0 && <div className={`flex-1 h-px ${i <= step ? "bg-[#EE5007]" : "bg-border"}`} />}
+            {i > 0 && <div className={`flex-1 h-px ${i <= step ? "bg-primary" : "bg-border"}`} />}
             <button
               type="button"
               onClick={() => goToStep(i)}
-              className={`flex items-center gap-2 text-sm ${i === step ? "text-[#EE5007] font-medium" : i < step ? "text-foreground" : "text-muted-foreground"}`}
+              className={`flex items-center gap-2 text-sm ${i === step ? "text-primary font-medium" : i < step ? "text-foreground" : "text-muted-foreground"}`}
             >
-              <span className={`h-7 w-7 rounded-full flex items-center justify-center text-xs border ${i === step ? "border-[#EE5007] bg-[#EE5007] text-white" : i < step ? "border-[#EE5007] text-[#EE5007]" : "border-muted-foreground"}`}>
+              <span className={`h-7 w-7 rounded-full flex items-center justify-center text-xs border ${i === step ? "border-primary bg-primary text-primary-foreground" : i < step ? "border-primary text-primary" : "border-muted-foreground"}`}>
                 {i < step ? "\u2713" : i + 1}
               </span>
               <span className="hidden md:inline">{name}</span>
@@ -1465,8 +1465,8 @@ export function ArtifactBuilder() {
                       key={t.name}
                       className={`cursor-pointer transition-colors ${
                         selectedTemplate === t.name
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]/20"
-                          : "hover:border-[#FF7442]/40"
+                          ? "border-primary bg-primary-soft ring-1 ring-primary/20"
+                          : "hover:border-primary/40"
                       }`}
                       onClick={() => {
                         setSelectedTemplate(t.name);
@@ -1611,16 +1611,16 @@ export function ArtifactBuilder() {
                       onClick={() => handleArchChange(a.value)}
                       className={`text-left rounded-lg border p-4 transition-colors ${
                         selected
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
-                          : "border-border hover:border-[#EE5007]/50 hover:bg-muted/40"
+                          ? "border-primary bg-primary-soft ring-1 ring-primary"
+                          : "border-border hover:border-primary/50 hover:bg-muted/40"
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-[#EE5007]" : "text-muted-foreground"}`} />
+                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-primary" : "text-muted-foreground"}`} />
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{a.label}</span>
-                            {selected && <Check className="h-4 w-4 text-[#EE5007]" />}
+                            {selected && <Check className="h-4 w-4 text-primary" />}
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
                         </div>
@@ -1678,16 +1678,16 @@ export function ArtifactBuilder() {
                           onClick={() => update("model", m.value)}
                           className={`text-left rounded-lg border p-4 transition-colors ${
                             selected
-                              ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
-                              : "border-border hover:border-[#EE5007]/50 hover:bg-muted/40"
+                              ? "border-primary bg-primary-soft ring-1 ring-primary"
+                              : "border-border hover:border-primary/50 hover:bg-muted/40"
                           }`}
                         >
                           <div className="flex items-start gap-3">
-                            <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-[#EE5007]" : "text-muted-foreground"}`} />
+                            <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-primary" : "text-muted-foreground"}`} />
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{m.label}</span>
-                                {selected && <Check className="h-4 w-4 text-[#EE5007]" />}
+                                {selected && <Check className="h-4 w-4 text-primary" />}
                               </div>
                               <p className="text-xs text-muted-foreground mt-1">{m.desc}</p>
                             </div>
@@ -1738,16 +1738,16 @@ export function ArtifactBuilder() {
                       }}
                       className={`text-left rounded-lg border p-4 transition-colors ${
                         selected
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
-                          : "border-border hover:border-[#EE5007]/50 hover:bg-muted/40"
+                          ? "border-primary bg-primary-soft ring-1 ring-primary"
+                          : "border-border hover:border-primary/50 hover:bg-muted/40"
                       }`}
                     >
                       <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-[#EE5007]" : "text-muted-foreground"}`} />
+                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-primary" : "text-muted-foreground"}`} />
                         <div className="flex-1">
                           <div className="flex items-center gap-2">
                             <span className="font-medium">{v.label}</span>
-                            {selected && <Check className="h-4 w-4 text-[#EE5007]" />}
+                            {selected && <Check className="h-4 w-4 text-primary" />}
                           </div>
                           <p className="text-xs text-muted-foreground mt-1">{v.desc}</p>
                         </div>
@@ -2190,7 +2190,7 @@ export function ArtifactBuilder() {
                                   return (
                                     <label
                                       key={ref}
-                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-primary/10" : ""}`}
                                     >
                                       <input
                                         type="checkbox"
@@ -2346,7 +2346,7 @@ export function ArtifactBuilder() {
                                   return (
                                     <label
                                       key={l.name}
-                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-primary/10" : ""}`}
                                     >
                                       <input
                                         type="checkbox"
@@ -2455,18 +2455,18 @@ export function ArtifactBuilder() {
                               onClick={() => updateOutput(item.field, !checked)}
                               className={`relative text-left rounded-lg border p-3 transition-colors ${
                                 checked
-                                  ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]/20"
-                                  : "border-border hover:border-[#FF7442]/40"
+                                  ? "border-primary bg-primary-soft ring-1 ring-primary/20"
+                                  : "border-border hover:border-primary/40"
                               }`}
                             >
                               {checked && (
-                                <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-[#EE5007] text-white flex items-center justify-center">
+                                <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
                                   <Check className="h-3 w-3" strokeWidth={3} />
                                 </span>
                               )}
                               <Icon
                                 className={`h-5 w-5 mb-2 ${
-                                  checked ? "text-[#EE5007]" : "text-muted-foreground"
+                                  checked ? "text-primary" : "text-muted-foreground"
                                 }`}
                               />
                               <p className="font-medium text-sm">{item.label}</p>
@@ -2493,7 +2493,7 @@ export function ArtifactBuilder() {
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Package className="h-4 w-4 text-[#EE5007]" />
+                    <Package className="h-4 w-4 text-primary" />
                     System Extensions
                     <InfoTooltip>
                       Extensions are resolved from the catalog and written into the
@@ -2653,7 +2653,7 @@ export function ArtifactBuilder() {
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-[#EE5007]" />
+                      <ShieldCheck className="h-4 w-4 text-primary" />
                       UKI Signing Keys
                     </CardTitle>
                   </CardHeader>
@@ -2930,7 +2930,7 @@ export function ArtifactBuilder() {
                       setOverlayUploading(false);
                     }}
                     className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors ${
-                      dragOver ? "border-[#EE5007] bg-[#EE5007]/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                      dragOver ? "border-primary bg-primary-soft" : "border-muted-foreground/25 hover:border-muted-foreground/50"
                     }`}
                     onClick={() => overlayInputRef.current?.click()}
                   >
@@ -3139,7 +3139,7 @@ export function ArtifactBuilder() {
                   {selectedOutputs.length > 0 ? (
                     <div className="flex flex-wrap gap-1.5">
                       {selectedOutputs.map((o) => (
-                        <span key={o} className="inline-flex items-center rounded-full bg-[#EE5007]/10 px-2.5 py-0.5 text-xs font-medium text-[#EE5007]">
+                        <span key={o} className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
                           {o}
                         </span>
                       ))}
@@ -3256,7 +3256,6 @@ export function ArtifactBuilder() {
                 }
                 goToStep(step + 1);
               }}
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
             >
               Next
             </Button>
@@ -3264,7 +3263,6 @@ export function ArtifactBuilder() {
             <Button
               type="button"
               onClick={() => { void handleSubmit({ preventDefault: () => {} } as FormEvent); }}
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
             >
               Start Build
             </Button>
