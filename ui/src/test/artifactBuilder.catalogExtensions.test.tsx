@@ -90,9 +90,21 @@ function renderBuilder() {
   );
 }
 
-async function gotoOutputStep() {
+// The catalog picker is on the Extensions step. The Base step needs a name
+// before Next moves on.
+async function gotoExtensionsStep() {
   fireEvent.click(await screen.findByText(/^Hadron v/));
-  fireEvent.click(screen.getByRole("button", { name: /Output/i }));
+  fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
+    target: { value: "edge" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next: Extensions" }));
+}
+
+function gotoReviewStep() {
+  fireEvent.click(screen.getByRole("button", { name: "Next: Access" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next: Output" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 }
 
 describe("catalog extension helpers", () => {
@@ -137,7 +149,7 @@ describe("catalog extension helpers", () => {
 describe("ArtifactBuilder: catalog extension picker", () => {
   it("reads the default catalog and offers only what it publishes for the selected arch", async () => {
     renderBuilder();
-    await gotoOutputStep();
+    await gotoExtensionsStep();
 
     expect(await screen.findByText("nvidia")).toBeInTheDocument();
     // The Hadron template builds amd64, and rpi-firmware publishes arm64
@@ -152,10 +164,10 @@ describe("ArtifactBuilder: catalog extension picker", () => {
 
   it("sends the selection with no catalog override when the default catalog is used", async () => {
     renderBuilder();
-    await gotoOutputStep();
+    await gotoExtensionsStep();
 
     fireEvent.click(await screen.findByLabelText("nvidia"));
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    gotoReviewStep();
     fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
 
     await waitFor(() => expect(createArtifact).toHaveBeenCalled());
@@ -168,13 +180,13 @@ describe("ArtifactBuilder: catalog extension picker", () => {
 
   it("sends the catalog when the operator points the build at another one", async () => {
     renderBuilder();
-    await gotoOutputStep();
+    await gotoExtensionsStep();
 
     fireEvent.click(await screen.findByLabelText("nvidia"));
     fireEvent.change(screen.getByLabelText(/Extension catalog URL/i), {
       target: { value: "https://example.test/mine/releases.json" },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    gotoReviewStep();
     fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
 
     await waitFor(() => expect(createArtifact).toHaveBeenCalled());
@@ -185,10 +197,10 @@ describe("ArtifactBuilder: catalog extension picker", () => {
 
   it("sends nothing when no extension is selected", async () => {
     renderBuilder();
-    await gotoOutputStep();
+    await gotoExtensionsStep();
     await screen.findByText("nvidia");
 
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    gotoReviewStep();
     fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
 
     await waitFor(() => expect(createArtifact).toHaveBeenCalled());
@@ -209,7 +221,7 @@ describe("ArtifactBuilder: catalog extension picker", () => {
     );
 
     renderBuilder();
-    await gotoOutputStep();
+    await gotoExtensionsStep();
 
     expect(await screen.findByText(/Could not read that catalog/i)).toBeInTheDocument();
   });

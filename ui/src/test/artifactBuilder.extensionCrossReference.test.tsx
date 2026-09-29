@@ -75,9 +75,15 @@ function renderBuilder() {
   );
 }
 
+// Both extension sections are on the Extensions step. The Base step needs a
+// name before Next moves on.
 async function gotoConfigureStep() {
   fireEvent.click(await screen.findByText(/^Hadron v/));
-  fireEvent.click(screen.getByRole("button", { name: /Configure/i }));
+  fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
+    target: { value: "edge" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
+  fireEvent.click(screen.getByRole("button", { name: "Next: Extensions" }));
 }
 
 describe("ArtifactBuilder: the two extension sections point at each other", () => {
@@ -94,15 +100,10 @@ describe("ArtifactBuilder: the two extension sections point at each other", () =
       screen.getByText(/Nothing built on this instance matches arch/i),
     ).toBeTruthy();
 
-    // Assert on the catalog URL field rather than on the words "System
-    // Extensions", which now also appear in the Configure step copy that
-    // points here. Matching the text would pass without ever leaving the step.
-    expect(screen.queryByLabelText("Extension catalog URL")).toBeNull();
-
     fireEvent.click(jump);
 
-    // Landing on Output means the catalog picker is reachable in one click,
-    // and going through goToStep means the lazy catalog fetch fired.
+    // The catalog picker is on the same step, and reaching the step through
+    // goToStep means the lazy catalog fetch fired.
     await waitFor(() => {
       expect(screen.getByLabelText("Extension catalog URL")).toBeTruthy();
     });
