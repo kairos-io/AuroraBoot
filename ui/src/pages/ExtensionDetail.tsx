@@ -1,17 +1,30 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, useLocation, useNavigate, useParams } from "react-router";
 import {
   getExtension,
   getExtensionLogs,
   deleteExtension,
   cancelExtension,
   extensionDownloadUrl,
+  listNodesForExtension,
   type Extension,
+  type NodeExtensionRow,
 } from "@/api/extensions";
-import { getArtifact } from "@/api/artifacts";
+import { getArtifact, listSecureBootKeySets } from "@/api/artifacts";
+import { listNodes, type Node } from "@/api/nodes";
 import { ApiError } from "@/api/client";
+import { MoreHorizontal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { StatusBadge } from "@/components/StatusBadge";
+import { isBuilding, isFailed, isReady } from "@/lib/phase";
+import { timeAgo } from "@/lib/time";
 import { PageHeader } from "@/components/PageHeader";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -20,11 +33,16 @@ import { InstallExtensionDialog } from "@/components/InstallExtensionDialog";
 export function ExtensionDetail() {
   const { id = "" } = useParams();
   const navigate = useNavigate();
+  const { hash } = useLocation();
   const [ext, setExt] = useState<Extension | null>(null);
   const [logs, setLogs] = useState("");
   const [err, setErr] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [installOpen, setInstallOpen] = useState(false);
+  const [installs, setInstalls] = useState<NodeExtensionRow[] | null>(null);
+  const [nodesByID, setNodesByID] = useState<Record<string, Node>>({});
+  const [artifactName, setArtifactName] = useState<string | null>(null);
+  const [keySetName, setKeySetName] = useState<string | null>(null);
   // When delete is blocked by a 409, we look up the names of the referencing
   // artifacts and surface a proper banner instead of the raw error string.
   const [deleteBlocker, setDeleteBlocker] = useState<
@@ -61,6 +79,56 @@ export function ExtensionDetail() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id]);
+
+  // Where the extension is installed, with each node's hostname and phase.
+  useEffect(() => {
+    if (!id) return;
+    let cancelled = false;
+    listNodesForExtension(id)
+      .then((rows) => !cancelled && setInstalls(rows))
+      .catch(() => !cancelled && setInstalls([]));
+    listNodes()
+      .then((ns) => !cancelled && setNodesByID(Object.fromEntries(ns.map((n) => [n.id, n]))))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [id]);
+
+  // "View log" on the list links to #logs; the router does not scroll to a
+  // hash on its own, so do it once the card exists.
+  const loaded = ext !== null;
+  useEffect(() => {
+    if (!loaded || hash !== "#logs") return;
+    document.getElementById("logs")?.scrollIntoView?.({ block: "start" });
+  }, [loaded, hash]);
+
+  // Show the source artifact and the key set by name rather than by UUID.
+  const sourceArtifactId = ext?.sourceArtifactId;
+  const signingKeySetId = ext?.signingKeySetId;
+  useEffect(() => {
+    if (!sourceArtifactId) return;
+    let cancelled = false;
+    getArtifact(sourceArtifactId)
+      .then((a) => !cancelled && setArtifactName(a.name || null))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceArtifactId]);
+  useEffect(() => {
+    if (!signingKeySetId) return;
+    let cancelled = false;
+    listSecureBootKeySets()
+      .then((ks) => {
+        if (cancelled) return;
+        setKeySetName(ks.find((k) => k.id === signingKeySetId)?.name ?? null);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [signingKeySetId]);
 
   async function onDelete() {
     try {
@@ -104,7 +172,7 @@ export function ExtensionDetail() {
   }
 
   if (err) {
-    return <div className="text-red-600 p-4">Failed: {err}</div>;
+    return <div className="text-danger-foreground p-4">Failed: {err}</div>;
   }
   if (!ext) {
     return <div className="p-4 text-muted-foreground text-sm">Loading…</div>;
@@ -112,39 +180,57 @@ export function ExtensionDetail() {
 
   return (
     <div>
-      <PageHeader title={ext.name} description={ext.message || `Extension ${ext.id}`}>
-        <div className="flex gap-2 items-center">
-          <ExtensionTypeChip type={ext.type} />
-          <PhasePill phase={ext.phase} />
-          {ext.phase === "Building" && (
-            <Button variant="outline" size="sm" onClick={onCancel}>
-              Cancel
-            </Button>
-          )}
-          {ext.phase === "Ready" && ext.rawFilename && (
-            <a
-              href={extensionDownloadUrl(ext.id, ext.rawFilename)}
-              className="text-sm underline"
-              download
-            >
+      <PageHeader
+        title={ext.name}
+        description={`${ext.name} · ${ext.type}`}
+        breadcrumb={[{ label: "Extensions", to: "/extensions" }, { label: ext.name }]}
+        status={
+          <span className="flex items-center gap-2">
+            <ExtensionTypeChip type={ext.type} />
+            <StatusBadge status={ext.phase} />
+          </span>
+        }
+      >
+        {isBuilding(ext.phase) && (
+          <Button variant="outline" onClick={onCancel}>
+            Cancel build
+          </Button>
+        )}
+        {isReady(ext.phase) && ext.rawFilename && (
+          <Button asChild variant="outline">
+            <a href={extensionDownloadUrl(ext.id, ext.rawFilename)} download>
               Download .raw
             </a>
-          )}
-          <Button
-            disabled={ext.phase !== "Ready"}
-            onClick={() => setInstallOpen(true)}
-          >
-            Install on group…
           </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => setConfirmDelete(true)}
-          >
-            Delete
-          </Button>
-        </div>
+        )}
+        <Button disabled={!isReady(ext.phase)} onClick={() => setInstallOpen(true)}>
+          Install
+        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="outline" size="icon" aria-label="More actions">
+              <MoreHorizontal aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem
+              className="text-danger focus:text-danger"
+              onSelect={() => setConfirmDelete(true)}
+            >
+              Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </PageHeader>
+
+      {isFailed(ext.phase) && ext.message && (
+        <div
+          role="alert"
+          className="mb-4 rounded-md border border-danger/25 bg-danger/10 px-3 py-2 text-sm text-danger-foreground whitespace-pre-wrap"
+        >
+          {ext.message}
+        </div>
+      )}
 
       <div className="grid md:grid-cols-2 gap-4 mb-6">
         <Card>
@@ -158,7 +244,7 @@ export function ExtensionDetail() {
             <KV k="Source mode" v={ext.sourceMode} />
             {ext.sourceImage && <KV k="Source image" v={ext.sourceImage} />}
             {ext.sourceArtifactId && (
-              <KV k="Source artifact" v={ext.sourceArtifactId} />
+              <KV k="Source artifact" v={artifactName ?? ext.sourceArtifactId} />
             )}
             {ext.containerImage && (
               <KV k="Container image" v={ext.containerImage} />
@@ -169,13 +255,48 @@ export function ExtensionDetail() {
             )}
             {ext.serviceReload && <KV k="Service reload" v="yes" />}
             {ext.signingKeySetId && (
-              <KV k="Signing key set" v={ext.signingKeySetId} />
+              <KV k="Signing key set" v={keySetName ?? ext.signingKeySetId} />
+            )}
+          </CardContent>
+        </Card>
+
+        <Card data-slot="installed-on">
+          <CardHeader>
+            <CardTitle className="text-sm">Installed on</CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            {installs === null ? (
+              <p className="text-muted-foreground">Loading…</p>
+            ) : installs.length === 0 ? (
+              <p className="text-muted-foreground">Not installed on any node.</p>
+            ) : (
+              <ul className="divide-y">
+                {groupByNode(installs).map((g) => {
+                  const node = nodesByID[g.nodeId];
+                  return (
+                    <li
+                      key={g.nodeId}
+                      className="flex flex-wrap items-center justify-between gap-2 py-2"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <Link to={`/nodes/${g.nodeId}`} className="truncate font-medium hover:underline">
+                          {node?.hostname || g.nodeId.slice(0, 8)}
+                        </Link>
+                        {node?.phase && <StatusBadge status={node.phase} />}
+                      </span>
+                      <span className="text-xs text-muted-foreground">
+                        {g.bootStates.join(", ")} · v{g.version} · installed {timeAgo(g.installedAt)}
+                      </span>
+                    </li>
+                  );
+                })}
+              </ul>
             )}
           </CardContent>
         </Card>
       </div>
 
-      <Card>
+      <Card id="logs">
         <CardHeader>
           <CardTitle className="text-sm">Build logs</CardTitle>
         </CardHeader>
@@ -234,7 +355,7 @@ function DeleteBlockedDialog({
         onClick={(e) => e.stopPropagation()}
       >
         <h2 className="text-base font-semibold flex items-center gap-2">
-          <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
+          <span className="inline-block h-2 w-2 rounded-full bg-warning" />
           Can&apos;t delete <code className="text-sm font-mono">{extensionName}</code> yet
         </h2>
         <p className="text-sm text-muted-foreground mt-2">
@@ -265,20 +386,23 @@ function DeleteBlockedDialog({
   );
 }
 
-function PhasePill({ phase }: { phase: string }) {
-  const cls =
-    phase === "Ready"
-      ? "bg-emerald-500/15 text-emerald-700"
-      : phase === "Building"
-      ? "bg-amber-500/15 text-amber-700"
-      : phase === "Error"
-      ? "bg-red-500/15 text-red-700"
-      : "bg-muted text-foreground/70";
-  return (
-    <span className={`text-[11px] px-2 py-0.5 rounded-full ${cls}`}>
-      {phase}
-    </span>
-  );
+// groupByNode folds the per-boot-scope install rows into one entry per node,
+// keeping the latest version and install time.
+function groupByNode(rows: NodeExtensionRow[]) {
+  const byNode = new Map<string, { nodeId: string; bootStates: string[]; version: string; installedAt: string }>();
+  for (const r of rows) {
+    const g = byNode.get(r.nodeId);
+    if (!g) {
+      byNode.set(r.nodeId, { nodeId: r.nodeId, bootStates: [r.bootState], version: r.version, installedAt: r.installedAt });
+      continue;
+    }
+    g.bootStates.push(r.bootState);
+    if (r.installedAt > g.installedAt) {
+      g.installedAt = r.installedAt;
+      g.version = r.version;
+    }
+  }
+  return [...byNode.values()];
 }
 
 function KV({ k, v }: { k: string; v: string }) {
