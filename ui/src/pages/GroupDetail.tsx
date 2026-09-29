@@ -110,8 +110,8 @@ export function GroupDetail() {
         onOpenChange={setConfirmDelete}
         title="Delete Group"
         description={
-          group.node_count > 0
-            ? `Delete "${group.name}"? ${group.node_count} node(s) will be moved out of this group (they stay registered).`
+          (group.node_count ?? 0) > 0
+            ? `Delete "${group.name}"? ${group.node_count ?? 0} node(s) will be moved out of this group (they stay registered).`
             : `Delete "${group.name}"? This group has no nodes.`
         }
         confirmLabel="Delete"
@@ -131,7 +131,7 @@ export function GroupDetail() {
             </div>
             <div>
               <dt className="text-muted-foreground">Node Count</dt>
-              <dd>{group.node_count}</dd>
+              <dd>{group.node_count ?? 0}</dd>
             </div>
           </dl>
         </CardContent>

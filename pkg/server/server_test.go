@@ -176,6 +176,9 @@ func (f *fakeGroupStore) GetByName(_ context.Context, _ string) (*store.NodeGrou
 func (f *fakeGroupStore) List(_ context.Context) ([]*store.NodeGroup, error) { return nil, nil }
 func (f *fakeGroupStore) Update(_ context.Context, _ *store.NodeGroup) error { return nil }
 func (f *fakeGroupStore) Delete(_ context.Context, _ string) error           { return nil }
+func (f *fakeGroupStore) NodeCounts(_ context.Context) (map[string]int, error) {
+	return map[string]int{}, nil
+}
 
 type fakeBuilder struct{}
 

@@ -720,6 +720,12 @@ definitions:
         type: string
       name:
         type: string
+      node_count:
+        description: |-
+          NodeCount is the number of nodes in the group. It is not stored. List and
+          Get always set it (0 included); a group embedded in a node payload leaves
+          it nil, so it is omitted there.
+        type: integer
       updatedAt:
         type: string
     type: object

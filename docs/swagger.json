@@ -2564,6 +2564,10 @@
                 "name": {
                     "type": "string"
                 },
+                "node_count": {
+                    "description": "NodeCount is the number of nodes in the group. It is not stored. List and\nGet always set it (0 included); a group embedded in a node payload leaves\nit nil, so it is omitted there.",
+                    "type": "integer"
+                },
                 "updatedAt": {
                     "type": "string"
                 }

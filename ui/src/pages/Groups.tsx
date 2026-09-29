@@ -108,7 +108,7 @@ export function Groups() {
               >
                 <TableCell className="font-medium">{group.name}</TableCell>
                 <TableCell>{group.description || "-"}</TableCell>
-                <TableCell>{group.node_count}</TableCell>
+                <TableCell>{group.node_count ?? 0}</TableCell>
                 <TableCell onClick={(e) => e.stopPropagation()}>
                   <Button
                     variant="ghost"
@@ -133,8 +133,8 @@ export function Groups() {
         description={
           confirmTarget
             ? `Delete "${confirmTarget.name}"? ${
-                confirmTarget.node_count > 0
-                  ? `${confirmTarget.node_count} node(s) will be moved out of this group (they stay registered).`
+                (confirmTarget.node_count ?? 0) > 0
+                  ? `${confirmTarget.node_count ?? 0} node(s) will be moved out of this group (they stay registered).`
                   : "This group has no nodes."
               }`
             : ""

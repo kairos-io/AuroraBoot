@@ -159,6 +159,9 @@ func (a *GroupStoreAdapter) Update(ctx context.Context, group *store.NodeGroup) 
 func (a *GroupStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.Delete(ctx, id)
 }
+func (a *GroupStoreAdapter) NodeCounts(ctx context.Context) (map[string]int, error) {
+	return a.S.GroupNodeCounts(ctx)
+}
 
 // SecureBootKeySetStoreAdapter adapts Store to the store.SecureBootKeySetStore interface.
 type SecureBootKeySetStoreAdapter struct{ S *Store }
