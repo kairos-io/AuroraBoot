@@ -304,6 +304,9 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
 	adminGroup.POST("/nodes/:nodeID/release", nodeHandler.Release)
+	metricsHandler := handlers.NewMetricsHandler(metricsBuf)
+	adminGroup.GET("/nodes/:nodeID/metrics", metricsHandler.GetNode)
+	adminGroup.GET("/metrics/latest", metricsHandler.GetLatest)
 	// GET /nodes/:nodeID/commands and PUT .../commands/:commandID/status are
 	// served by the shared agent-or-admin group above (single registration to
 	// avoid Echo route shadowing); they branch on the caller's identity.

@@ -790,6 +790,40 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/metrics/latest": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the latest resource sample of every node that has one, keyed by node ID. Samples are kept in memory only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get the latest metrics of every node",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/store.NodeMetrics"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/netboot/logs": {
             "get": {
                 "security": [
@@ -1220,6 +1254,46 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the latest resource sample of a node and its recent samples, oldest first. Samples are kept in memory only. A node without samples returns a null latest and an empty samples list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get node metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APINodeMetricsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1923,10 +1997,32 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "metrics": {
+                    "description": "Metrics is an optional resource sample. The server keeps recent samples in\nmemory. A sample that does not decode is ignored and does not fail the\nheartbeat.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/store.NodeMetrics"
+                        }
+                    ]
+                },
                 "osRelease": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.APINodeMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "latest": {
+                    "$ref": "#/definitions/store.NodeMetrics"
+                },
+                "samples": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeMetrics"
                     }
                 }
             }
@@ -2377,6 +2473,31 @@ const docTemplate = `{
                 }
             }
         },
+        "store.CPUMetrics": {
+            "type": "object",
+            "properties": {
+                "usedPercent": {
+                    "type": "number"
+                }
+            }
+        },
+        "store.DiskMetrics": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "mount": {
+                    "type": "string"
+                },
+                "totalBytes": {
+                    "type": "integer"
+                },
+                "usedBytes": {
+                    "type": "integer"
+                }
+            }
+        },
         "store.ExtensionHierarchies": {
             "type": "object",
             "properties": {
@@ -2473,6 +2594,17 @@ const docTemplate = `{
                 },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "store.MemoryMetrics": {
+            "type": "object",
+            "properties": {
+                "availableBytes": {
+                    "type": "integer"
+                },
+                "totalBytes": {
+                    "type": "integer"
                 }
             }
         },
@@ -2577,6 +2709,38 @@ const docTemplate = `{
                 },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "store.NodeMetrics": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "$ref": "#/definitions/store.CPUMetrics"
+                },
+                "disks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.DiskMetrics"
+                    }
+                },
+                "load": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "memory": {
+                    "$ref": "#/definitions/store.MemoryMetrics"
+                },
+                "sampledAt": {
+                    "type": "string"
+                },
+                "temperatureC": {
+                    "type": "number"
+                },
+                "uptimeSeconds": {
+                    "type": "integer"
                 }
             }
         },
