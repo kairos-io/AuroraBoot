@@ -57,34 +57,33 @@ export function Nodes() {
     (n) => !hostnameSearch || n.hostname.toLowerCase().includes(hostnameSearch.toLowerCase())
   );
 
+  // The bulk command targets exactly the nodes on screen: the server-side
+  // filters (group, label, phase) and the client-side hostname search are
+  // already applied to filteredNodes, so we always send their IDs instead of
+  // a selector the server would resolve without the hostname/phase filter.
+  const targetCount = filteredNodes.length;
+  const anyFilterActive =
+    !!hostnameSearch ||
+    (!!groupFilter && groupFilter !== "__all__") ||
+    !!labelFilter ||
+    (!!phaseFilter && phaseFilter !== "__all__");
+  const [confirmCommand, setConfirmCommand] = useState("");
+
   function handleBulkSubmit(command: string, args: Record<string, unknown>) {
-    const selector: { groupID?: string; labels?: Record<string, string> } = {};
+    const nodeIDs = filteredNodes.map((n) => n.id);
+    const send = () => {
+      sendBulkCommand({ nodeIDs }, command, args).catch(() => {});
+      setBulkCmdOpen(false);
+    };
 
-    if (groupFilter && groupFilter !== "__all__") {
-      selector.groupID = groupFilter;
-    }
-    if (labelFilter) {
-      const [k, v] = labelFilter.split("=");
-      if (k) {
-        selector.labels = { [k.trim()]: (v || "").trim() };
-      }
-    }
-
-    // If no filters active, require confirmation
-    if (!selector.groupID && !selector.labels) {
-      setConfirmState({
-        open: true,
-        action: () => {
-          const nodeIDs = nodes.map((n) => n.id);
-          sendBulkCommand({ nodeIDs }, command, args).catch(() => {});
-          setBulkCmdOpen(false);
-        },
-      });
+    // With no filter the command reaches the whole fleet, so ask first.
+    if (!anyFilterActive) {
+      setConfirmCommand(command);
+      setConfirmState({ open: true, action: send });
       return;
     }
 
-    sendBulkCommand(selector, command, args).catch(() => {});
-    setBulkCmdOpen(false);
+    send();
   }
 
   return (
@@ -92,11 +91,11 @@ export function Nodes() {
       <PageHeader title="Nodes" description="Manage your registered machines">
         <Button
           className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
-          disabled={nodes.length === 0}
+          disabled={targetCount === 0}
           onClick={() => setBulkCmdOpen(true)}
         >
           <Terminal className="h-4 w-4 mr-2" />
-          Send Command{nodes.length > 0 ? ` to ${nodes.length} nodes` : ""}
+          Send Command{targetCount > 0 ? ` to ${targetCount} node${targetCount !== 1 ? "s" : ""}` : ""}
         </Button>
       </PageHeader>
 
@@ -155,15 +154,15 @@ export function Nodes() {
         open={bulkCmdOpen}
         onOpenChange={setBulkCmdOpen}
         onSubmit={handleBulkSubmit}
-        title={`Send Command to ${nodes.length} node${nodes.length !== 1 ? "s" : ""}`}
+        title={`Send Command to ${targetCount} node${targetCount !== 1 ? "s" : ""}`}
       />
 
       <ConfirmDialog
         open={confirmState.open}
         onOpenChange={(open) => setConfirmState(prev => ({ ...prev, open }))}
-        title="Send to All Nodes"
-        description={`This will send the command to ALL ${nodes.length} nodes. Are you sure you want to continue?`}
-        confirmLabel="Send to All"
+        title="Send to all nodes"
+        description={`Send ${confirmCommand} to all ${targetCount} nodes?`}
+        confirmLabel="Send to all"
         onConfirm={confirmState.action}
       />
     </div>
