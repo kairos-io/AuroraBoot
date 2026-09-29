@@ -124,7 +124,8 @@ export function NodeTable({
         onClick={() => navigate(`/nodes/${node.id}`)}
       >
         {selectable && (
-          <TableCell className="w-8">
+          // A click near the checkbox must not open the node either.
+          <TableCell className="w-8" onClick={(e) => e.stopPropagation()}>
             <SelectBox
               label={`Select ${node.hostname || node.id}`}
               checked={sel.has(node.id)}

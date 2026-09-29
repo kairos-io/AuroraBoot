@@ -15,10 +15,15 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Activity, Folder, Search, SearchX, Tag, Terminal } from "lucide-react";
+import { Activity, Folder, FolderInput, LayoutGrid, List, Search, SearchX, Tag, Terminal } from "lucide-react";
 import { FilterChip } from "@/components/fleet/FilterChip";
 import { NodeSummary } from "@/components/fleet/NodeSummary";
 import { EmptyState } from "@/components/fleet/EmptyState";
+import { SelectionBar } from "@/components/fleet/SelectionBar";
+import { NodeTiles } from "@/components/fleet/NodeTiles";
+import { MoveToGroupDialog } from "@/components/fleet/MoveToGroupDialog";
+import { AddLabelDialog } from "@/components/fleet/AddLabelDialog";
+import { cn } from "@/lib/utils";
 import {
   filterNodes,
   groupNodes,
@@ -34,6 +39,35 @@ import {
 const defaultPhases = ["Online", "Offline", "Pending"];
 const defaultGroupKey = "site";
 
+const views = [
+  { value: "list", label: "List", icon: List },
+  { value: "tiles", label: "Tiles", icon: LayoutGrid },
+] as const;
+
+function ViewToggle({ value, onChange }: { value: "list" | "tiles"; onChange(v: "list" | "tiles"): void }) {
+  return (
+    <div role="radiogroup" aria-label="View" className="inline-flex rounded-md border border-input p-0.5">
+      {views.map(({ value: v, label, icon: Icon }) => (
+        <button
+          key={v}
+          type="button"
+          role="radio"
+          aria-checked={value === v}
+          aria-label={label}
+          title={label}
+          onClick={() => onChange(v)}
+          className={cn(
+            "inline-flex h-7 w-7 items-center justify-center rounded text-muted-foreground hover:text-foreground",
+            value === v && "bg-muted text-foreground",
+          )}
+        >
+          <Icon className="h-4 w-4" aria-hidden="true" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
 export function Nodes() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
@@ -41,8 +75,24 @@ export function Nodes() {
   const [confirmState, setConfirmState] = useState<{ open: boolean; action: () => void }>({ open: false, action: () => {} });
   const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [moveOpen, setMoveOpen] = useState(false);
+  const [labelOpen, setLabelOpen] = useState(false);
 
   const query = parseQuery(searchParams);
+  const view = searchParams.get("view") === "tiles" ? "tiles" : "list";
+
+  function setView(next: "list" | "tiles") {
+    setSearchParams(
+      (prev) => {
+        const sp = new URLSearchParams(prev);
+        if (next === "tiles") sp.set("view", "tiles");
+        else sp.delete("view");
+        return sp;
+      },
+      { replace: true },
+    );
+  }
 
   // Write the query to the URL, keeping keys this page does not own (such as
   // `view`) so a shared link keeps them.
@@ -101,22 +151,37 @@ export function Nodes() {
     return [...keys].sort();
   }, [nodes, query.groupBy]);
 
-  // The bulk command targets exactly the nodes on screen: every filter is
-  // applied to filteredNodes, so we always send their IDs instead of a
-  // selector the server would resolve differently.
-  const targetCount = filteredNodes.length;
+  // Only visible rows count as selected: a node that a filter hides, or the
+  // tile view (which has no checkboxes), never receives a bulk action.
+  const selectedNodes = useMemo(
+    () => (view === "list" ? filteredNodes.filter((n) => selected.has(n.id)) : []),
+    [view, filteredNodes, selected],
+  );
+  const hasSelection = selectedNodes.length > 0;
+
+  // The bulk command targets the selected rows, or else exactly the nodes on
+  // screen: every filter is applied to filteredNodes, so we always send their
+  // IDs instead of a selector the server would resolve differently.
+  const targetNodes = hasSelection ? selectedNodes : filteredNodes;
+  const targetCount = targetNodes.length;
   const anyFilterActive = hasActiveFilter(query);
   const [confirmCommand, setConfirmCommand] = useState("");
 
+  function afterBulkEdit() {
+    setSelected(new Set());
+    load();
+  }
+
   function handleBulkSubmit(command: string, args: Record<string, unknown>) {
-    const nodeIDs = filteredNodes.map((n) => n.id);
+    const nodeIDs = targetNodes.map((n) => n.id);
     const send = () => {
       sendBulkCommand({ nodeIDs }, command, args).catch(() => {});
       setBulkCmdOpen(false);
     };
 
-    // With no filter the command reaches the whole fleet, so ask first.
-    if (!anyFilterActive) {
+    // With no filter and no selection the command reaches the whole fleet, so
+    // ask first.
+    if (!anyFilterActive && !hasSelection) {
       setConfirmCommand(command);
       setConfirmState({ open: true, action: send });
       return;
@@ -191,8 +256,26 @@ export function Nodes() {
               ))}
             </SelectContent>
           </Select>
+          <ViewToggle value={view} onChange={setView} />
         </div>
       </div>
+
+      {view === "list" && (
+        <SelectionBar count={selectedNodes.length} onClear={() => setSelected(new Set())}>
+          <Button size="sm" onClick={() => setBulkCmdOpen(true)}>
+            <Terminal className="h-4 w-4" aria-hidden="true" />
+            Send command
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setMoveOpen(true)}>
+            <FolderInput className="h-4 w-4" aria-hidden="true" />
+            Move to group
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setLabelOpen(true)}>
+            <Tag className="h-4 w-4" aria-hidden="true" />
+            Add label
+          </Button>
+        </SelectionBar>
+      )}
 
       {nodes.length > 0 && filteredNodes.length === 0 ? (
         <EmptyState
@@ -205,14 +288,29 @@ export function Nodes() {
             </Button>
           }
         />
+      ) : view === "tiles" && filteredNodes.length > 0 ? (
+        <NodeTiles groups={buckets ?? [{ key: "", label: "", nodes: filteredNodes }]} />
       ) : (
         <NodeTable
           nodes={filteredNodes}
           groups={buckets}
           showGroupColumn={query.groupBy !== "group"}
+          selectable
+          selected={selected}
+          onSelectedChange={setSelected}
           emptyAction={() => navigate("/import")}
         />
       )}
+
+      <MoveToGroupDialog
+        open={moveOpen}
+        onOpenChange={setMoveOpen}
+        nodeIds={selectedNodes.map((n) => n.id)}
+        groups={groups}
+        onDone={afterBulkEdit}
+      />
+
+      <AddLabelDialog open={labelOpen} onOpenChange={setLabelOpen} nodes={selectedNodes} onDone={afterBulkEdit} />
 
       <CommandDialog
         open={bulkCmdOpen}
