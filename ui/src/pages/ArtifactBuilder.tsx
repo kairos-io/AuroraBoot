@@ -35,6 +35,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { WizardShell, type WizardStep } from "@/components/wizard/WizardShell";
 import { BuildSummary, type BuildSummaryData } from "@/components/wizard/BuildSummary";
+import { SegmentedControl } from "@/components/wizard/SegmentedControl";
+import { CommandPresets } from "@/components/wizard/CommandPresets";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -587,19 +589,7 @@ function AllowedCommandsPicker({
 
   return (
     <div>
-      <Label className="text-xs">
-        Allowed remote commands
-        <InfoTooltip>
-          Baked into <code className="font-mono">phonehome.allowed_commands</code> in the
-          node's cloud-config. Commands not ticked here are refused by the
-          node, even if AuroraBoot requests them.
-        </InfoTooltip>
-      </Label>
-      <p className="text-xs text-muted-foreground mt-1">
-        Commands not listed here will be denied by the node.
-      </p>
-
-      <div className="mt-3 space-y-3">
+      <div className="space-y-3">
         {PHONEHOME_SAFE_DEFAULTS.map(commandRow)}
       </div>
 
@@ -1742,34 +1732,13 @@ export function ArtifactBuilder() {
                   </InfoTooltip>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                {ARCHES.map((a) => {
-                  const Icon = a.icon;
-                  const selected = form.arch === a.value;
-                  return (
-                    <button
-                      key={a.value}
-                      type="button"
-                      onClick={() => handleArchChange(a.value)}
-                      className={`text-left rounded-lg border p-4 transition-colors ${
-                        selected
-                          ? "border-primary bg-primary-soft ring-1 ring-primary"
-                          : "border-border hover:border-primary/50 hover:bg-muted/40"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-primary" : "text-muted-foreground"}`} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{a.label}</span>
-                            {selected && <Check className="h-4 w-4 text-primary" />}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <CardContent>
+                <SegmentedControl
+                  ariaLabel="Architecture"
+                  value={form.arch}
+                  onChange={handleArchChange}
+                  options={ARCHES.map((a) => ({ value: a.value, label: a.label, hint: a.desc }))}
+                />
               </CardContent>
             </Card>
 
@@ -1852,51 +1821,30 @@ export function ArtifactBuilder() {
                   </InfoTooltip>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                {VARIANTS.map((v) => {
-                  const Icon = v.icon;
-                  const selected = form.variant === v.value;
-                  return (
-                    <button
-                      key={v.value}
-                      type="button"
-                      onClick={() => {
-                        if (v.value === "standard") {
-                          setForm((prev) => ({
-                            ...prev,
-                            variant: "standard",
-                            kubernetesDistro: prev.kubernetesDistro || "k3s",
-                            kubernetesEnabled: prev.kubernetesEnabled ?? true,
-                          }));
-                        } else {
-                          setForm((prev) => ({
-                            ...prev,
-                            variant: "core",
-                            kubernetesDistro: "",
-                            kubernetesVersion: "",
-                            kubernetesEnabled: true,
-                          }));
-                        }
-                      }}
-                      className={`text-left rounded-lg border p-4 transition-colors ${
-                        selected
-                          ? "border-primary bg-primary-soft ring-1 ring-primary"
-                          : "border-border hover:border-primary/50 hover:bg-muted/40"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-primary" : "text-muted-foreground"}`} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{v.label}</span>
-                            {selected && <Check className="h-4 w-4 text-primary" />}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">{v.desc}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <CardContent>
+                <SegmentedControl
+                  ariaLabel="Variant"
+                  value={form.variant}
+                  onChange={(value) => {
+                    if (value === "standard") {
+                      setForm((prev) => ({
+                        ...prev,
+                        variant: "standard",
+                        kubernetesDistro: prev.kubernetesDistro || "k3s",
+                        kubernetesEnabled: prev.kubernetesEnabled ?? true,
+                      }));
+                    } else {
+                      setForm((prev) => ({
+                        ...prev,
+                        variant: "core",
+                        kubernetesDistro: "",
+                        kubernetesVersion: "",
+                        kubernetesEnabled: true,
+                      }));
+                    }
+                  }}
+                  options={VARIANTS.map((v) => ({ value: v.value, label: v.label, hint: v.desc }))}
+                />
               </CardContent>
             </Card>
 
@@ -2656,26 +2604,33 @@ export function ArtifactBuilder() {
                       </a>
                     </InfoTooltip>
                   </Label>
-                  <div className="flex gap-2">
-                    {(["default", "custom", "none"] as const).map((mode) => (
-                      <Button
-                        key={mode}
-                        type="button"
-                        size="sm"
-                        variant={userMode === mode ? "default" : "outline"}
-                        onClick={() => {
-                          setUserMode(mode);
-                          if (mode === "default") {
-                            setUsername("kairos");
-                            setPassword("kairos");
-                          }
-                        }}
-                      >
-                        {mode === "default" ? "Default User" : mode === "custom" ? "Custom User" : "No User"}
-                      </Button>
-                    ))}
-                  </div>
+                  <SegmentedControl<UserMode>
+                    ariaLabel="User setup"
+                    value={userMode}
+                    onChange={(mode) => {
+                      setUserMode(mode);
+                      if (mode === "default") {
+                        setUsername("kairos");
+                        setPassword("kairos");
+                      }
+                    }}
+                    options={[
+                      { value: "default", label: "Default user" },
+                      { value: "custom", label: "Custom user" },
+                      { value: "none", label: "No user" },
+                    ]}
+                  />
                 </div>
+
+                {userMode === "default" && (
+                  <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+                    <p className="text-sm text-warning-foreground">
+                      The default user is <code className="font-mono">kairos</code> and its password is{" "}
+                      <code className="font-mono">kairos</code>. Change it before you put the node on a network you
+                      do not trust, or pick a custom user.
+                    </p>
+                  </div>
+                )}
 
                 {userMode !== "none" && (
                   <div className="grid grid-cols-2 gap-3">
@@ -2827,9 +2782,15 @@ export function ArtifactBuilder() {
                   )}
 
                   {form.provisioning.registerAuroraBoot && (
-                    <AllowedCommandsPicker
+                    <CommandPresets
                       value={form.provisioning.allowedCommands ?? []}
                       onChange={(next) => updateProvisioning("allowedCommands", next)}
+                      renderCustom={() => (
+                        <AllowedCommandsPicker
+                          value={form.provisioning.allowedCommands ?? []}
+                          onChange={(next) => updateProvisioning("allowedCommands", next)}
+                        />
+                      )}
                     />
                   )}
                 </CardContent>
