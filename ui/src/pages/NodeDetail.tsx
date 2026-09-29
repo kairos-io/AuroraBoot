@@ -31,7 +31,9 @@ import { StatTile } from "@/components/fleet/StatTile";
 import { CommandTimeline } from "@/components/fleet/CommandTimeline";
 import { LabelChips } from "@/components/fleet/LabelChips";
 import { toneText } from "@/components/fleet/tones";
+import { ResourcesCard } from "@/components/fleet/ResourcesCard";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
+import { useNodeMetrics } from "@/hooks/useMetrics";
 import {
   Activity,
   ArrowUpCircle,
@@ -49,12 +51,14 @@ import {
   Zap,
   Puzzle,
   CircuitBoard,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "@/hooks/useToast";
 import { timeAgo } from "@/lib/time";
 import { cpuCount, imageVersion, memGiB } from "@/lib/nodeInfo";
 import { phaseTone, type Tone } from "@/lib/phase";
 import { cn } from "@/lib/utils";
+import { sustainedHighCpu } from "@/lib/metrics";
 
 // The node record also carries its claim, which the Node type does not model.
 type NodeWithClaim = Node & { claimKey?: string | null; claimedAt?: string | null };
@@ -119,6 +123,9 @@ export function NodeDetail() {
   const [pickedForInstall, setPickedForInstall] = useState<Extension | null>(null);
   const [extPickerOpen, setExtPickerOpen] = useState(false);
   const [decommissionOpen, setDecommissionOpen] = useState(false);
+  // A failed or missing metrics endpoint leaves latest null, and the page
+  // keeps the Hardware card.
+  const metrics = useNodeMetrics(id ?? "", 10000);
 
   const fetchCommands = useCallback(() => {
     if (!id) return;
@@ -252,6 +259,8 @@ export function NodeDetail() {
     { icon: Terminal, value: kernel, label: "Kernel", mono: true },
   ];
   const hasHardware = hardware.some((h) => h.value);
+  const highCpu = metrics.latest !== null && sustainedHighCpu(metrics.samples);
+  const load1 = metrics.latest?.load?.[0];
 
   return (
     <div>
@@ -296,6 +305,19 @@ export function NodeDetail() {
         </DropdownMenu>
       </PageHeader>
 
+      {highCpu && (
+        <div
+          role="alert"
+          className="mb-6 flex items-start gap-2 rounded-md border border-warning bg-warning/10 px-4 py-3 text-sm"
+        >
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-warning" aria-hidden="true" />
+          <span>
+            <b>CPU above 85%</b> for the last 10 samples
+            {load1 !== undefined && cpus !== null ? `. Load ${load1.toFixed(1)} on ${cpus} vCPU.` : "."}
+          </span>
+        </div>
+      )}
+
       {/* Health strip */}
       <section aria-label="Health" className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
         <StatTile
@@ -332,36 +354,40 @@ export function NodeDetail() {
         />
       </section>
 
-      <Card className="mb-6">
-        <CardHeader className="flex-row items-center justify-between space-y-0">
-          <CardTitle className="flex items-center gap-2 text-sm font-medium">
-            <Cpu className="h-4 w-4" aria-hidden="true" />
-            Hardware
-          </CardTitle>
-          <span className="text-xs text-muted-foreground">Reported by the agent</span>
-        </CardHeader>
-        <CardContent>
-          {hasHardware ? (
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-              {hardware.map((h) => (
-                <div key={h.label} className="flex items-center gap-3 rounded-md border p-3">
-                  <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
-                    <h.icon className="h-4 w-4" aria-hidden="true" />
-                  </span>
-                  <div className="min-w-0">
-                    <p className={cn("truncate text-sm font-semibold", h.mono && "font-mono text-xs")} title={h.value}>
-                      {h.value || "—"}
-                    </p>
-                    <p className="text-xs text-muted-foreground">{h.label}</p>
+      {metrics.latest ? (
+        <ResourcesCard latest={metrics.latest} samples={metrics.samples} />
+      ) : (
+        <Card role="region" aria-labelledby="hardware-title" className="mb-6">
+          <CardHeader className="flex-row items-center justify-between space-y-0">
+            <CardTitle id="hardware-title" className="flex items-center gap-2 text-sm font-medium">
+              <Cpu className="h-4 w-4" aria-hidden="true" />
+              Hardware
+            </CardTitle>
+            <span className="text-xs text-muted-foreground">Reported by the agent</span>
+          </CardHeader>
+          <CardContent>
+            {hasHardware ? (
+              <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                {hardware.map((h) => (
+                  <div key={h.label} className="flex items-center gap-3 rounded-md border p-3">
+                    <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md bg-muted text-muted-foreground">
+                      <h.icon className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className={cn("truncate text-sm font-semibold", h.mono && "font-mono text-xs")} title={h.value}>
+                        {h.value || "—"}
+                      </p>
+                      <p className="text-xs text-muted-foreground">{h.label}</p>
+                    </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">The agent has not reported hardware details yet.</p>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">The agent has not reported hardware details yet.</p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="min-w-0">

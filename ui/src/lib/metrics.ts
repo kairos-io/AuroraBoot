@@ -46,3 +46,18 @@ export function usageTone(p: number): Tone {
   if (p >= WARNING_PERCENT) return "warning";
   return "success";
 }
+
+// sustainedHighCpu is true when each of the last `window` samples has a CPU at
+// or above threshold. Fewer samples than the window, or a sample without CPU,
+// is not enough to call it sustained.
+export function sustainedHighCpu(
+  samples: NodeMetrics[],
+  threshold = 85,
+  window = 10,
+): boolean {
+  if (samples.length < window) return false;
+  return samples.slice(-window).every((s) => {
+    const c = cpuPercent(s);
+    return c !== null && c >= threshold;
+  });
+}
