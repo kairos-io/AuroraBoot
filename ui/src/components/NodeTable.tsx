@@ -61,7 +61,7 @@ export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
                   </p>
                 </div>
                 {emptyAction && (
-                  <Button className="mt-2 bg-[#EE5007] hover:bg-[#FF7442] text-white" onClick={emptyAction}>
+                  <Button className="mt-2" onClick={emptyAction}>
                     <Plus className="h-4 w-4 mr-2" /> Import First Node
                   </Button>
                 )}
@@ -72,7 +72,7 @@ export function NodeTable({ nodes, emptyAction }: NodeTableProps) {
           nodes.map((node) => (
             <TableRow
               key={node.id}
-              className="cursor-pointer hover:bg-[#EE5007]/5"
+              className="cursor-pointer hover:bg-primary-soft"
               onClick={() => navigate(`/nodes/${node.id}`)}
             >
               <TableCell className="font-medium">{node.hostname}</TableCell>

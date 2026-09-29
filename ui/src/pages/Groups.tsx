@@ -103,7 +103,7 @@ export function Groups() {
             groups.map((group) => (
               <TableRow
                 key={group.id}
-                className="cursor-pointer hover:bg-[#EE5007]/5"
+                className="cursor-pointer hover:bg-primary-soft"
                 onClick={() => navigate(`/groups/${group.id}`)}
               >
                 <TableCell className="font-medium">{group.name}</TableCell>

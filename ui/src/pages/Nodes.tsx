@@ -90,7 +90,6 @@ export function Nodes() {
     <div>
       <PageHeader title="Nodes" description="Manage your registered machines">
         <Button
-          className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
           disabled={targetCount === 0}
           onClick={() => setBulkCmdOpen(true)}
         >

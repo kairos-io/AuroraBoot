@@ -78,7 +78,7 @@ export function GroupDetail() {
         </Button>
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button className="bg-[#EE5007] hover:bg-[#FF7442] text-white">
+            <Button>
               Bulk Actions
               <ChevronDown className="h-4 w-4 ml-2" />
             </Button>

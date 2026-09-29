@@ -50,7 +50,7 @@ function artifactStatusBadge(phase: string) {
     return <Badge className="bg-green-600 text-white border-0">Ready</Badge>;
   }
   if (isBuilding(phase)) {
-    return <Badge className="bg-[#EE5007] text-white border-0">Building</Badge>;
+    return <Badge className="bg-primary text-primary-foreground border-0">Building</Badge>;
   }
   if (isFailed(phase)) {
     return <Badge variant="destructive">Failed</Badge>;
@@ -175,9 +175,9 @@ export function Dashboard() {
           yet. Only rendered when there's at least one artifact and zero
           nodes. */}
       {hasArtifactsButNoNodes && (
-        <div className="mb-8 rounded-xl border border-[#EE5007]/30 bg-[#EE5007]/5 p-5 animate-fade-up">
+        <div className="mb-8 rounded-xl border border-primary/30 bg-primary-soft p-5 animate-fade-up">
           <div className="flex items-start gap-4">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EE5007]/15 text-[#EE5007]">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
               <Rocket className="h-5 w-5" />
             </div>
             <div className="flex-1 min-w-0">
@@ -195,7 +195,6 @@ export function Dashboard() {
                 {readyArtifact ? (
                   <Button
                     size="sm"
-                    className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
                     onClick={() => navigate(`/artifacts/${readyArtifact.id}`)}
                   >
                     Deploy "{readyArtifact.name || readyArtifact.id.slice(0, 8)}"
@@ -204,7 +203,6 @@ export function Dashboard() {
                 ) : (
                   <Button
                     size="sm"
-                    className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
                     onClick={() => navigate("/artifacts")}
                   >
                     View artifacts
@@ -244,13 +242,13 @@ export function Dashboard() {
           {groupCount} groups
         </span>
         {activeBuilds.length > 0 && (
-          <span className="flex items-center gap-2 text-[#EE5007]">
+          <span className="flex items-center gap-2 text-primary">
             <Loader2 className="h-3 w-3 animate-spin" />
             {activeBuilds.length} building
           </span>
         )}
         {activeDeployments > 0 && (
-          <span className="flex items-center gap-2 text-[#FF7442]">
+          <span className="flex items-center gap-2 text-primary">
             <Activity className="h-3 w-3" />
             {activeDeployments} deploying
           </span>
@@ -261,7 +259,6 @@ export function Dashboard() {
       <div className="flex flex-wrap gap-3 mb-8">
         <Button
           size="sm"
-          className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
           onClick={() => navigate("/artifacts/new")}
         >
           <Plus className="h-4 w-4 mr-2" /> Build Artifact
@@ -300,9 +297,9 @@ export function Dashboard() {
                   onClick={() => navigate(item.link)}
                 >
                   {item.type === "artifact" ? (
-                    <Package className="h-4 w-4 shrink-0 text-[#EE5007]" />
+                    <Package className="h-4 w-4 shrink-0 text-primary" />
                   ) : (
-                    <Server className="h-4 w-4 shrink-0 text-[#03153A] dark:text-slate-300" />
+                    <Server className="h-4 w-4 shrink-0 text-foreground" />
                   )}
                   <span className="truncate flex-1">
                     {item.type === "artifact" ? "Artifact built" : "Node registered"}:{" "}
@@ -327,7 +324,7 @@ export function Dashboard() {
             <Card>
               <CardHeader className="pb-3">
                 <CardTitle className="text-sm font-semibold flex items-center gap-2">
-                  <Loader2 className="h-4 w-4 animate-spin text-[#EE5007]" />
+                  <Loader2 className="h-4 w-4 animate-spin text-primary" />
                   Active Builds
                 </CardTitle>
               </CardHeader>
@@ -338,7 +335,7 @@ export function Dashboard() {
                     className="w-full flex items-center gap-3 text-left text-sm hover:bg-muted/50 rounded-md px-2 py-1.5 transition-colors"
                     onClick={() => navigate(`/artifacts/${build.id}`)}
                   >
-                    <Package className="h-4 w-4 shrink-0 text-[#EE5007]" />
+                    <Package className="h-4 w-4 shrink-0 text-primary" />
                     <div className="flex-1 min-w-0">
                       <p className="font-medium truncate">
                         {build.name || build.id.slice(0, 8)}
@@ -347,7 +344,7 @@ export function Dashboard() {
                         Started {timeAgo(build.createdAt)}
                       </p>
                     </div>
-                    <Loader2 className="h-3 w-3 animate-spin text-[#EE5007]" />
+                    <Loader2 className="h-3 w-3 animate-spin text-primary" />
                   </button>
                 ))}
               </CardContent>

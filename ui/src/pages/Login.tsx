@@ -32,7 +32,7 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#03153A] to-[#051d52]">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-navy to-navy">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2">
           <KairosLogo className="h-12 w-12" />
@@ -66,7 +66,7 @@ export function Login() {
               </div>
               <Button
                 type="submit"
-                className="w-full bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                className="w-full"
                 disabled={loading}
               >
                 {loading ? "Signing in..." : "Sign In"}

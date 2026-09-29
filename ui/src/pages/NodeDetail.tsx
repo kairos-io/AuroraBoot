@@ -221,7 +221,7 @@ export function NodeDetail() {
 
       <PageHeader title={node.hostname}>
         <StatusBadge status={node.phase} />
-        <Button className="bg-[#EE5007] hover:bg-[#FF7442] text-white" onClick={() => setCmdOpen(true)}>
+        <Button onClick={() => setCmdOpen(true)}>
           Send Command
         </Button>
         <Button
@@ -507,7 +507,7 @@ export function NodeDetail() {
           <div className="flex items-center justify-between">
             <CardTitle className="text-sm font-medium">Commands</CardTitle>
             <div className="flex gap-2">
-              <Button size="sm" className="bg-[#EE5007] hover:bg-[#FF7442] text-white" onClick={() => setCmdOpen(true)}>
+              <Button size="sm" onClick={() => setCmdOpen(true)}>
                 Send New
               </Button>
             </div>
