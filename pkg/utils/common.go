@@ -73,7 +73,7 @@ func GolangArchToArch(arch string) (string, error) {
 // extend-cmdline will just extend the default cmdline so we only create one efi file
 // extra-cmdline will create a new efi file for each cmdline passed
 func GetUkiCmdline() []BootEntry {
-	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+	defaultCmdLine := constants.UkiCmdline
 
 	// Extend only
 	cmdlineExtend := viper.GetString("extend-cmdline")
@@ -110,7 +110,7 @@ func GetUkiCmdline() []BootEntry {
 func GetUkiSingleCmdlines(_ logger.KairosLogger) []BootEntry {
 	result := []BootEntry{}
 	// extra
-	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+	defaultCmdLine := constants.UkiCmdline
 
 	cmdlines := viper.GetStringSlice("single-efi-cmdline")
 	for _, userValue := range cmdlines {
@@ -296,10 +296,9 @@ func IsRiscv64(arch string) bool {
 
 // NameFromCmdline returns the name of the efi/conf file based on the cmdline
 // we want to have at least 1 efi file that its the default, that is the one we ship with the iso/media/whatever install medium
-// that one has the default cmdline + the install cmdline
-// For that one, we use it as the BASE one, configs will only trigger for that install stanza if we are on install media
-// so we dont have to worry about it, but we want to provide a clean name for it
-// so in that case we dont add anything to the efi name/conf name/cmdline inside the config
+// That one is built from the default cmdline and nothing else, so it adds
+// nothing to the efi name/conf name/cmdline inside the config and we get a
+// clean name for it.
 // For the other ones, we add the cmdline to the efi name and the cmdline to the conf file
 // so you get
 // - norole.efi
@@ -308,13 +307,11 @@ func IsRiscv64(arch string) bool {
 // - norole_interactive-install.conf
 // This is mostly for convenience in generating the names as the real data is stored in the config file
 // but it can easily be used to identify the efi file and the conf file.
+// Naming every non-default entry after what it adds is also what keeps two
+// entries from claiming the same .efi and .conf.
 func NameFromCmdline(basename, cmdline string) string {
 	// Remove the default cmdline from the current cmdline
 	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
-	// For the default install entry, do not add anything on the efi name
-	if cmdlineForEfi == constants.UkiCmdlineInstall {
-		cmdlineForEfi = ""
-	}
 	// Although only slashes are truly forbidden, we also replace other characters,
 	// as they can be problematic when interpreted by the shell (e.g. &, |, etc.)
 	allowedChars := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)

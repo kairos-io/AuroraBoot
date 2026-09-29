@@ -776,9 +776,6 @@ func createConfFiles(sourceDir, cmdline, title, finalEfiName, version, profile s
 	}
 
 	extraCmdline := strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
-	if extraCmdline == constants.UkiCmdlineInstall {
-		extraCmdline = ""
-	}
 
 	configData := fmt.Sprintf("title %s\nsort-key %s-%s\nuki /EFI/kairos/%s.efi\nprofile %s\n", title, finalEfiName, profile, finalEfiName, profile)
 	if includeVersion {
@@ -1070,7 +1067,7 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, log 
 // to generate UKI EFI files. Extend mode appends to the default cmdline and
 // produces a single entry; extra mode produces one entry per extra cmdline.
 func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
-	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+	defaultCmdLine := constants.UkiCmdline
 
 	if cmdlineExtend != "" {
 		return []utils.BootEntry{{
@@ -1103,7 +1100,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, c
 // values. Each user value may optionally include a "Title: cmdline" prefix.
 func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, _ logger.KairosLogger) []utils.BootEntry {
 	result := []utils.BootEntry{}
-	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+	defaultCmdLine := constants.UkiCmdline
 
 	for _, userValue := range cmdlines {
 		bootEntry := utils.BootEntry{}
@@ -1123,12 +1120,12 @@ func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, _ logger.Kairo
 }
 
 // NameFromCmdline returns a filesystem-safe basename derived from cmdline,
-// used for the per-entry EFI and .conf file names.
+// used for the per-entry EFI and .conf file names. The default entry adds
+// nothing to the base cmdline, so it keeps the bare basename; every other
+// entry is named after what it adds, which is what keeps two entries from
+// claiming the same .efi and .conf.
 func NameFromCmdline(basename, cmdline string) string {
 	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
-	if cmdlineForEfi == constants.UkiCmdlineInstall {
-		cmdlineForEfi = ""
-	}
 	allowedChars := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 	cleanCmdline := allowedChars.ReplaceAllString(cmdlineForEfi, "_")
 	name := basename + "_" + cleanCmdline
