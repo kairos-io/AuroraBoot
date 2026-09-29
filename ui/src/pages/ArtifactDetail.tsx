@@ -94,6 +94,7 @@ export function ArtifactDetail() {
   const [deleting, setDeleting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [showDeploy, setShowDeploy] = useState(false);
+  const [deployMethod, setDeployMethod] = useState<"pxe" | "redfish" | undefined>(undefined);
   const [nameInput, setNameInput] = useState("");
   const [confirmOpen, setConfirmOpen] = useState(false);
   const logsContainerRef = useRef<HTMLDivElement>(null);
@@ -341,13 +342,18 @@ export function ArtifactDetail() {
     );
   }
 
+  function openDeploy(method?: "pxe" | "redfish") {
+    setDeployMethod(method);
+    setShowDeploy(true);
+  }
+
   // The deploy methods the Deploy dialog offers. A method whose output the
   // artifact lacks stays listed but disabled, with the reason.
   const hasIso = artifactFiles.some((f) => f.endsWith(".iso"));
   const deployMethods = [
     {
       label: "PXE boot (netboot)",
-      onSelect: () => setShowDeploy(true),
+      onSelect: () => openDeploy("pxe"),
       disabled: !artifact.netboot,
       hint: artifact.netboot
         ? undefined
@@ -355,7 +361,7 @@ export function ArtifactDetail() {
     },
     {
       label: "RedFish (virtual media)",
-      onSelect: () => setShowDeploy(true),
+      onSelect: () => openDeploy("redfish"),
       disabled: !hasIso,
       hint: hasIso ? undefined : "This artifact has no ISO output. Clone it and enable ISO.",
     },
@@ -475,7 +481,7 @@ export function ArtifactDetail() {
             <SplitButton
               label="Deploy"
               icon={Rocket}
-              onClick={() => setShowDeploy(true)}
+              onClick={() => openDeploy()}
               menuLabel="Deploy methods"
               items={deployMethods}
             />
@@ -889,6 +895,7 @@ export function ArtifactDetail() {
           artifactId={id!}
           artifactFiles={artifactFiles}
           hasNetboot={artifact.netboot}
+          defaultMethod={deployMethod}
           onClose={() => setShowDeploy(false)}
         />
       )}

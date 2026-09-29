@@ -133,6 +133,24 @@ describe("ArtifactDetail header, downloads and configuration", () => {
     expect(redfish).not.toHaveAttribute("data-disabled");
   });
 
+  it("opens the deploy dialog on the RedFish tab from the RedFish menu item", async () => {
+    vi.mocked(getArtifact).mockResolvedValue(readyArtifact({ netboot: true }));
+    await renderPage();
+
+    fireEvent.keyDown(screen.getByRole("button", { name: "Deploy methods" }), { key: "Enter" });
+    fireEvent.click(await screen.findByRole("menuitem", { name: /RedFish/ }));
+
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("tab", { name: /RedFish/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(within(dialog).getByRole("tab", { name: /PXE/ })).toHaveAttribute(
+      "aria-selected",
+      "false",
+    );
+  });
+
   it("has no Deploy button in the success banner", async () => {
     await renderPage();
 
