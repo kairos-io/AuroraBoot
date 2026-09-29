@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/PageHeader";
+import { StatusBadge } from "@/components/StatusBadge";
+import { isBuilding, isFailed, isOffline, isOnline, isReady } from "@/lib/phase";
 import { GetStartedHero } from "@/components/GetStartedHero";
 import { listNodes, type Node } from "@/api/nodes";
 import { listGroups } from "@/api/groups";
@@ -44,24 +46,16 @@ interface ActivityItem {
 }
 
 function artifactStatusBadge(phase: string) {
-  switch (phase.toLowerCase()) {
-    case "ready":
-      return <Badge className="bg-green-600 text-white border-0">Ready</Badge>;
-    case "building":
-      return <Badge className="bg-[#EE5007] text-white border-0">Building</Badge>;
-    case "error":
-    case "failed":
-      return <Badge variant="destructive">Failed</Badge>;
-    default:
-      return <Badge variant="secondary">{phase}</Badge>;
+  if (isReady(phase)) {
+    return <Badge className="bg-green-600 text-white border-0">Ready</Badge>;
   }
-}
-
-function nodeStatusBadge(phase: string) {
-  if (phase === "Online") {
-    return <Badge className="bg-green-600 text-white border-0">Online</Badge>;
+  if (isBuilding(phase)) {
+    return <Badge className="bg-[#EE5007] text-white border-0">Building</Badge>;
   }
-  return <Badge variant="destructive">Offline</Badge>;
+  if (isFailed(phase)) {
+    return <Badge variant="destructive">Failed</Badge>;
+  }
+  return <Badge variant="secondary">{phase}</Badge>;
 }
 
 export function Dashboard() {
@@ -117,9 +111,13 @@ export function Dashboard() {
       .catch(() => {});
   }, []);
 
-  const onlineNodes = nodes.filter((n) => n.phase === "Online").length;
-  const offlineNodes = nodes.filter((n) => n.phase !== "Online");
-  const activeBuilds = artifacts.filter((a) => a.phase === "building");
+  const onlineNodes = nodes.filter((n) => isOnline(n.phase)).length;
+  const offlineNodes = nodes.filter((n) => isOffline(n.phase));
+  // Pending and Registered nodes have not come online yet; they are not offline.
+  const waitingNodes = nodes.filter(
+    (n) => !isOnline(n.phase) && !isOffline(n.phase)
+  ).length;
+  const activeBuilds = artifacts.filter((a) => isBuilding(a.phase));
 
   // First-run and partial-run states. We only show the full welcome wizard
   // when the instance is completely empty — no nodes, no artifacts, no
@@ -128,7 +126,7 @@ export function Dashboard() {
   // to the next step if only half the journey is done).
   const isZeroState = nodes.length === 0 && artifacts.length === 0;
   const hasArtifactsButNoNodes = nodes.length === 0 && artifacts.length > 0;
-  const readyArtifact = artifacts.find((a) => a.phase === "Ready");
+  const readyArtifact = artifacts.find((a) => isReady(a.phase));
 
   // Build recent activity feed
   const activityItems: ActivityItem[] = [
@@ -235,6 +233,13 @@ export function Dashboard() {
           <span className="font-medium">{offlineNodes.length}</span>
           <span className="text-muted-foreground">offline</span>
         </span>
+        {waitingNodes > 0 && (
+          <span className="flex items-center gap-2">
+            <span className="h-2 w-2 rounded-full bg-yellow-500" />
+            <span className="font-medium">{waitingNodes}</span>
+            <span className="text-muted-foreground">waiting</span>
+          </span>
+        )}
         <span className="text-muted-foreground">
           {groupCount} groups
         </span>
@@ -305,7 +310,7 @@ export function Dashboard() {
                   </span>
                   {item.type === "artifact"
                     ? artifactStatusBadge(item.status)
-                    : nodeStatusBadge(item.status)}
+                    : <StatusBadge status={item.status} />}
                   <span className="text-xs text-muted-foreground whitespace-nowrap">
                     {timeAgo(item.time)}
                   </span>
