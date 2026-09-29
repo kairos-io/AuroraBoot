@@ -17,30 +17,19 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Download,
   XCircle,
-  Trash2,
   Bookmark,
   Pencil,
   Check,
   Copy,
+  Link2,
   Rocket,
   FileDown,
   Box,
   Cpu,
-  Server,
-  Layers,
-  Disc3,
-  Wifi,
-  ShieldCheck,
-  HardDrive,
-  Cloud,
-  CloudCog,
-  Package,
-  FileCode,
-  Tag,
-  UserCheck,
   Clock,
   AlertTriangle,
   CheckCircle2,
+  MoreHorizontal,
   Terminal as TerminalIcon,
   ArrowDown,
   WrapText,
@@ -48,6 +37,15 @@ import {
   ChevronDown,
   ChevronRight,
 } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { SplitButton } from "@/components/SplitButton";
+import { BuildSummary, summaryFromArtifact } from "@/components/wizard/BuildSummary";
 import { DeployDialog } from "@/components/DeployDialog";
 import { ansiToHtml } from "@/lib/ansi";
 
@@ -85,13 +83,6 @@ function formatDuration(totalSeconds: number): string {
   if (m > 0) return `${m}m ${s}s`;
   return `${s}s`;
 }
-
-// Color classes for the three output category tones.
-const TONE_CLASSES: Record<"orange" | "blue" | "neutral", string> = {
-  orange: "border-primary/30 bg-primary/10 text-primary",
-  blue: "border-sky-500/30 bg-sky-500/10 text-sky-700",
-  neutral: "border-border bg-muted/60 text-foreground",
-};
 
 export function ArtifactDetail() {
   const { id } = useParams<{ id: string }>();
@@ -332,36 +323,44 @@ export function ArtifactDetail() {
     });
   }
 
-  // Categorized output badges — same grouping as the Builder's Output step
-  // so users see a consistent story (install media / disk images / archive).
-  const outputCategories = [
+  async function handleToggleSaved() {
+    await updateArtifact(id!, { saved: !artifact!.saved });
+    fetchArtifact();
+  }
+
+  // absoluteDownloadUrl turns the relative download path into a link that
+  // works when pasted elsewhere, for example into curl on another host.
+  function absoluteDownloadUrl(filename: string): string {
+    return new URL(artifactDownloadUrl(id!, filename), window.location.origin).href;
+  }
+
+  function copyDownloadLink(filename: string) {
+    navigator.clipboard.writeText(absoluteDownloadUrl(filename)).then(
+      () => toast("Copied download link", "success"),
+      () => toast("Copy failed", "error"),
+    );
+  }
+
+  // The deploy methods the Deploy dialog offers. A method whose output the
+  // artifact lacks stays listed but disabled, with the reason.
+  const hasIso = artifactFiles.some((f) => f.endsWith(".iso"));
+  const deployMethods = [
     {
-      title: "Install media",
-      tone: "orange" as const,
-      items: [
-        { on: artifact.iso, label: "ISO", icon: Disc3 },
-        { on: artifact.netboot, label: "Netboot", icon: Wifi },
-        { on: artifact.uki, label: "UKI", icon: ShieldCheck },
-      ],
+      label: "PXE boot (netboot)",
+      onSelect: () => setShowDeploy(true),
+      disabled: !artifact.netboot,
+      hint: artifact.netboot
+        ? undefined
+        : "This artifact has no Netboot output. Clone it and enable Netboot.",
     },
     {
-      title: "Disk images",
-      tone: "blue" as const,
-      items: [
-        { on: artifact.rawDisk, label: "Raw disk", icon: HardDrive },
-        { on: artifact.cloudImage, label: "Cloud image", icon: Cloud },
-        { on: artifact.gce, label: "Google Cloud", icon: CloudCog },
-        { on: artifact.vhd, label: "Azure (VHD)", icon: CloudCog },
-        { on: artifact.maas, label: "MAAS", icon: Server },
-      ],
-    },
-    {
-      title: "Archives",
-      tone: "neutral" as const,
-      items: [{ on: artifact.tar, label: "TAR", icon: Package }],
+      label: "RedFish (virtual media)",
+      onSelect: () => setShowDeploy(true),
+      disabled: !hasIso,
+      hint: hasIso ? undefined : "This artifact has no ISO output. Clone it and enable ISO.",
     },
   ];
-  const hasSecurityFlags = artifact.fips || artifact.trustedBoot;
+
   const targetGroupName = artifact.targetGroupId
     ? groups.find((g) => g.id === artifact.targetGroupId)?.name
     : undefined;
@@ -376,7 +375,7 @@ export function ArtifactDetail() {
       </div>
 
       {/* Header */}
-      <div className="flex items-start gap-4">
+      <div className="flex flex-wrap items-start gap-4">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             {editingName ? (
@@ -446,59 +445,67 @@ export function ArtifactDetail() {
             </button>
           </div>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={async () => {
-            await updateArtifact(id!, { saved: !artifact.saved });
-            fetchArtifact();
-          }}
-        >
-          <Bookmark className={`h-4 w-4 mr-2 ${artifact.saved ? "fill-current" : ""}`} />
-          {artifact.saved ? "Saved" : "Save"}
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
-        >
-          <Copy className="h-4 w-4 mr-2" />
-          Clone Build
-        </Button>
-        <Button variant="outline" size="sm" onClick={handleExportConfig}>
-          <FileDown className="h-4 w-4 mr-2" />
-          Export Config
-        </Button>
-        {!isActive && artifact.phase === "Ready" && (
+        {/* Actions: secondary, then the primary, then the ⋯ menu. Delete
+            lives in the menu so the header never shows a red button. */}
+        <div role="group" aria-label="Page actions" className="flex flex-wrap items-center gap-2">
+          {artifact.saved && (
+            <span className="inline-flex items-center gap-1 rounded-md border border-primary/30 bg-primary-soft px-2 py-0.5 text-xs font-medium text-primary">
+              <Bookmark className="h-3 w-3 fill-current" aria-hidden="true" />
+              Saved as template
+            </span>
+          )}
           <Button
-            size="sm"
-            onClick={() => setShowDeploy(true)}
+            variant="outline"
+            onClick={() => navigate(`/artifacts/new?clone=${artifact.id}`)}
           >
-            <Rocket className="h-4 w-4 mr-2" /> Deploy
+            <Copy aria-hidden="true" />
+            Clone
           </Button>
-        )}
-        {isActive && (
-          <Button
-            variant="destructive-outline"
-            size="sm"
-            onClick={handleCancel}
-            disabled={cancelling}
-          >
-            <XCircle className="h-4 w-4 mr-2" />
-            {cancelling ? "Cancelling..." : "Cancel Build"}
-          </Button>
-        )}
-        {!isActive && (
-          <Button
-            variant="destructive-outline"
-            size="sm"
-            onClick={() => setConfirmOpen(true)}
-            disabled={deleting}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            {deleting ? "Deleting..." : "Delete"}
-          </Button>
-        )}
+          {isActive && (
+            <Button
+              variant="destructive-outline"
+              onClick={handleCancel}
+              loading={cancelling}
+            >
+              {!cancelling && <XCircle aria-hidden="true" />}
+              {cancelling ? "Cancelling..." : "Cancel build"}
+            </Button>
+          )}
+          {artifact.phase === "Ready" && (
+            <SplitButton
+              label="Deploy"
+              icon={Rocket}
+              onClick={() => setShowDeploy(true)}
+              menuLabel="Deploy methods"
+              items={deployMethods}
+            />
+          )}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="outline" size="icon" aria-label="More actions">
+                <MoreHorizontal aria-hidden="true" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onSelect={handleToggleSaved}>
+                {artifact.saved ? "Remove template" : "Save as template"}
+              </DropdownMenuItem>
+              <DropdownMenuItem onSelect={handleExportConfig}>Export config</DropdownMenuItem>
+              {!isActive && (
+                <>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    className="text-danger focus:text-danger"
+                    disabled={deleting}
+                    onSelect={() => setConfirmOpen(true)}
+                  >
+                    Delete
+                  </DropdownMenuItem>
+                </>
+              )}
+            </DropdownMenuContent>
+          </DropdownMenu>
+        </div>
       </div>
 
       {/* Status band */}
@@ -579,7 +586,7 @@ export function ArtifactDetail() {
           outputs to a prominent card above the configuration. Users come
           here specifically to grab the files; it deserves the top slot. */}
       {artifact.phase === "Ready" && artifactFiles.length > 0 && (
-        <Card className="border-emerald-500/30 overflow-hidden animate-fade-up">
+        <Card data-slot="success-banner" className="border-emerald-500/30 overflow-hidden animate-fade-up">
           {/* High-contrast header: solid emerald-50 / emerald-950 pair
               (and emerald-950/80 / emerald-100 for dark mode) so the
               title and subtitle are actually legible against the fill. */}
@@ -597,29 +604,32 @@ export function ArtifactDetail() {
                 </p>
               </div>
             </div>
-            <Button
-              size="sm"
-              onClick={() => setShowDeploy(true)}
-            >
-              <Rocket className="h-4 w-4 mr-2" />
-              Deploy
-            </Button>
           </div>
           <CardContent className="p-0">
             <ul className="divide-y">
               {artifactFiles.map((filePath) => {
                 const filename = extractFilename(filePath);
                 return (
-                  <li key={filePath}>
+                  <li key={filePath} className="flex items-center gap-2 pr-3">
                     <a
                       href={artifactDownloadUrl(id!, filename)}
                       download
-                      className="flex items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/60"
+                      className="flex min-w-0 flex-1 items-center gap-3 px-5 py-3 transition-colors hover:bg-muted/40 focus:outline-none focus-visible:bg-muted/60"
                     >
                       <Download className="h-4 w-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
                       <span className="flex-1 font-mono text-xs truncate">{filename}</span>
-                      <span className="text-[11px] text-muted-foreground">Click to download</span>
+                      <span className="text-[11px] text-muted-foreground">Download</span>
                     </a>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      title={`Copy the download link for ${filename}`}
+                      onClick={() => copyDownloadLink(filename)}
+                    >
+                      <Link2 aria-hidden="true" />
+                      Copy link
+                    </Button>
                   </li>
                 );
               })}
@@ -673,156 +683,14 @@ export function ArtifactDetail() {
           )}
         </button>
         {configOpen && (
-        <CardContent className="p-6 pt-0 space-y-6 border-t">
-          {/* Source */}
-          <section>
-            <div className="flex items-center gap-2 mb-3">
-              <Box className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Source</h3>
-            </div>
-            <dl className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-4 text-sm">
-              {artifact.dockerfile ? (
-                <div className="md:col-span-3">
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1.5 flex items-center gap-1.5">
-                    <FileCode className="h-3 w-3" />
-                    Dockerfile
-                  </dt>
-                  <dd>
-                    <pre className="font-mono text-xs bg-muted/40 border rounded-md p-3 overflow-x-auto max-h-40">
-                      {artifact.dockerfile}
-                    </pre>
-                  </dd>
-                </div>
-              ) : (
-                <div className="md:col-span-2">
-                  <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Base image</dt>
-                  <dd className="font-mono text-xs break-all">{artifact.baseImage || "—"}</dd>
-                </div>
-              )}
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Version</dt>
-                <dd className="flex items-center gap-1.5">
-                  <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>{artifact.kairosVersion || "—"}</span>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Architecture</dt>
-                <dd className="flex items-center gap-1.5">
-                  <Cpu className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>{(artifact.arch || "amd64").toUpperCase()}</span>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Model</dt>
-                <dd className="flex items-center gap-1.5">
-                  <Server className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span>{artifact.model || "generic"}</span>
-                </dd>
-              </div>
-              <div>
-                <dt className="text-xs uppercase tracking-wide text-muted-foreground mb-1">Variant</dt>
-                <dd className="flex items-center gap-1.5">
-                  <Layers className="h-3.5 w-3.5 text-muted-foreground" />
-                  <span className="capitalize">{artifact.variant || "core"}</span>
-                  {artifact.variant === "standard" && artifact.kubernetesDistro && (
-                    <span className="text-xs text-muted-foreground">
-                      · {artifact.kubernetesDistro.toUpperCase()}
-                      {artifact.kubernetesVersion ? ` ${artifact.kubernetesVersion}` : ""}
-                    </span>
-                  )}
-                </dd>
-              </div>
-            </dl>
-          </section>
-
-          {/* Outputs */}
-          <section className="border-t pt-5">
-            <div className="flex items-center gap-2 mb-3">
-              <Package className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Outputs</h3>
-            </div>
-            <div className="space-y-3">
-              {outputCategories.map((cat) => {
-                const selected = cat.items.filter((i) => i.on);
-                if (selected.length === 0) return null;
-                return (
-                  <div key={cat.title} className="flex items-center gap-3 flex-wrap">
-                    <span className="text-xs text-muted-foreground w-28 shrink-0">{cat.title}</span>
-                    <div className="flex gap-2 flex-wrap">
-                      {selected.map((item) => {
-                        const Icon = item.icon;
-                        return (
-                          <span
-                            key={item.label}
-                            className={`inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border ${TONE_CLASSES[cat.tone]}`}
-                          >
-                            <Icon className="h-3.5 w-3.5" />
-                            {item.label}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-              {hasSecurityFlags && (
-                <div className="flex items-center gap-3 flex-wrap">
-                  <span className="text-xs text-muted-foreground w-28 shrink-0">Security</span>
-                  <div className="flex gap-2 flex-wrap">
-                    {artifact.fips && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-700">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        FIPS
-                      </span>
-                    )}
-                    {artifact.trustedBoot && (
-                      <span className="inline-flex items-center gap-1.5 text-xs font-medium px-2.5 py-1 rounded-md border border-purple-500/30 bg-purple-500/10 text-purple-700">
-                        <ShieldCheck className="h-3.5 w-3.5" />
-                        Trusted Boot
-                      </span>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>
-
-          {/* Provisioning */}
-          <section className="border-t pt-5">
-            <div className="flex items-center gap-2 mb-3">
-              <UserCheck className="h-4 w-4 text-muted-foreground" />
-              <h3 className="text-sm font-semibold">Provisioning</h3>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-x-6 gap-y-3 text-sm">
-              <div className="flex items-center gap-2">
-                {artifact.autoInstall ? (
-                  <Check className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-amber-600" />
-                )}
-                <span>{artifact.autoInstall ? "Auto-install on boot" : "Manual install"}</span>
-              </div>
-              <div className="flex items-center gap-2">
-                {artifact.registerAuroraBoot ? (
-                  <Check className="h-4 w-4 text-emerald-600" />
-                ) : (
-                  <XCircle className="h-4 w-4 text-amber-600" />
-                )}
-                <span>
-                  {artifact.registerAuroraBoot ? "Auto-register with AuroraBoot" : "No auto-registration"}
-                </span>
-              </div>
-              {targetGroupName && (
-                <div className="flex items-center gap-2">
-                  <Tag className="h-4 w-4 text-muted-foreground" />
-                  <span>
-                    Group: <span className="font-medium">{targetGroupName}</span>
-                  </span>
-                </div>
-              )}
-            </div>
-          </section>
+        <CardContent className="border-t p-4">
+          <BuildSummary
+            variant="full"
+            data={{
+              ...summaryFromArtifact(artifact),
+              targetGroup: targetGroupName ?? artifact.targetGroupId ?? undefined,
+            }}
+          />
         </CardContent>
         )}
       </Card>
@@ -993,11 +861,21 @@ export function ArtifactDetail() {
                     <Download className="h-4 w-4 text-muted-foreground" />
                     <a
                       href={artifactDownloadUrl(id!, filename)}
-                      className="text-sm font-mono hover:underline text-primary"
+                      className="min-w-0 flex-1 truncate text-sm font-mono hover:underline text-primary"
                       download
                     >
                       {filename}
                     </a>
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      title={`Copy the download link for ${filename}`}
+                      onClick={() => copyDownloadLink(filename)}
+                    >
+                      <Link2 aria-hidden="true" />
+                      Copy link
+                    </Button>
                   </li>
                 );
               })}
