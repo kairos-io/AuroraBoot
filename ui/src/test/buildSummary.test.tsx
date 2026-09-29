@@ -23,6 +23,8 @@ const data: BuildSummaryData = {
   trustedBoot: false,
   outputs: ["ISO", "Raw Disk"],
   overlayFiles: 3,
+  autoInstall: true,
+  insecureRegistries: true,
 };
 
 describe("BuildSummary", () => {
@@ -67,6 +69,27 @@ describe("BuildSummary", () => {
     );
     expect(screen.queryByText("default password")).not.toBeInTheDocument();
     expect(screen.queryByText("destructive commands allowed")).not.toBeInTheDocument();
+  });
+
+  it("shows auto-install in Access", () => {
+    const { unmount } = render(<BuildSummary data={data} variant="full" />);
+    expect(screen.getByText("Auto-install on first boot")).toBeInTheDocument();
+    unmount();
+    render(<BuildSummary data={{ ...data, autoInstall: false }} variant="full" />);
+    expect(screen.getByText("Manual install")).toBeInTheDocument();
+    expect(screen.queryByText("Auto-install on first boot")).not.toBeInTheDocument();
+  });
+
+  it("warns when insecure registries are allowed", () => {
+    render(<BuildSummary data={data} variant="aside" />);
+    expect(screen.getByText("Insecure registries")).toBeInTheDocument();
+    expect(screen.getByText("insecure registries allowed")).toHaveClass("text-warning-foreground");
+  });
+
+  it("does not warn when insecure registries are not allowed", () => {
+    render(<BuildSummary data={{ ...data, insecureRegistries: false }} variant="aside" />);
+    expect(screen.getByText("Insecure registries")).toBeInTheDocument();
+    expect(screen.queryByText("insecure registries allowed")).not.toBeInTheDocument();
   });
 
   it("calls onEdit with the step key", () => {
@@ -136,7 +159,12 @@ describe("summaryFromArtifact", () => {
       commands: [],
       sshKeyCount: 0,
       overlayFiles: 0,
+      autoInstall: false,
+      insecureRegistries: false,
     });
+    expect(
+      summaryFromArtifact({ ...a, autoInstall: true, "allow-insecure-registries": true }),
+    ).toMatchObject({ autoInstall: true, insecureRegistries: true });
   });
 
   it("leaves Kubernetes empty on core or when disabled", () => {
@@ -145,5 +173,11 @@ describe("summaryFromArtifact", () => {
     expect(
       summaryFromArtifact({ ...base, variant: "standard", kubernetesEnabled: false }).kubernetes,
     ).toBeUndefined();
+  });
+
+  it("defaults auto-install and insecure registries to false", () => {
+    const s = summaryFromArtifact({ artifacts: [] } as unknown as Artifact);
+    expect(s.autoInstall).toBe(false);
+    expect(s.insecureRegistries).toBe(false);
   });
 });

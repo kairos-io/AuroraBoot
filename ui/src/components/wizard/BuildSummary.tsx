@@ -24,6 +24,8 @@ export type BuildSummaryData = {
   trustedBoot: boolean;
   outputs: string[];
   overlayFiles: number;
+  autoInstall: boolean;
+  insecureRegistries: boolean;
 };
 
 export interface BuildSummaryProps {
@@ -73,6 +75,7 @@ function sections(d: BuildSummaryData): Section[] {
   const access: Row[] = [
     { label: "User", value: USER_LABELS[d.user], warning: d.user === "default" ? "default password" : undefined },
     { label: "SSH keys", value: plural(d.sshKeyCount, "SSH key", "SSH keys") },
+    { label: "Install", value: d.autoInstall ? "Auto-install on first boot" : "Manual install" },
     { label: "Register", value: yesNo(d.register) },
   ];
   if (d.register) {
@@ -127,6 +130,11 @@ function sections(d: BuildSummaryData): Section[] {
       rows: [
         { label: "FIPS", value: yesNo(d.fips) },
         { label: "Trusted Boot", value: yesNo(d.trustedBoot) },
+        {
+          label: "Insecure registries",
+          value: yesNo(d.insecureRegistries),
+          warning: d.insecureRegistries ? "insecure registries allowed" : undefined,
+        },
       ],
     },
   ];
@@ -213,5 +221,7 @@ export function summaryFromArtifact(a: Artifact): BuildSummaryData {
     trustedBoot: !!a.trustedBoot,
     outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([, label]) => label),
     overlayFiles: 0,
+    autoInstall: !!a.autoInstall,
+    insecureRegistries: !!a["allow-insecure-registries"],
   };
 }

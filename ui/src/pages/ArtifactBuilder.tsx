@@ -1479,6 +1479,9 @@ export function ArtifactBuilder() {
     trustedBoot: form.outputs.trustedBoot,
     outputs: selectedOutputItems.map((i) => i.label),
     overlayFiles: overlayFiles.length,
+    autoInstall: form.provisioning.autoInstall,
+    // Like the build request, the flag only applies to an image build.
+    insecureRegistries: buildMode === "image" && !!form["allow-insecure-registries"],
   };
   // Edit links follow the stepper's rules: a step not reached yet stays closed.
   const editStep = (key: string) => {
