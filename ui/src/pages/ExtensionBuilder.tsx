@@ -1,6 +1,11 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router";
-import { listArtifacts, type Artifact } from "@/api/artifacts";
+import {
+  listArtifacts,
+  listSecureBootKeySets,
+  type Artifact,
+  type SecureBootKeySet,
+} from "@/api/artifacts";
 import {
   createExtension,
   type CreateExtensionInput,
@@ -18,13 +23,27 @@ import {
 } from "@/components/ui/card";
 import { PageHeader } from "@/components/PageHeader";
 import { HierarchyChipInput } from "@/components/HierarchyChipInput";
+import { WizardShell, type WizardStep } from "@/components/wizard/WizardShell";
 
 type SourceMode = "artifact" | "image" | "dockerfile";
 type Arch = "amd64" | "arm64" | "riscv64";
 
+const STEPS = ["source", "configure", "review"] as const;
+type StepKey = (typeof STEPS)[number];
+const STEP_LABELS: Record<StepKey, string> = {
+  source: "Source",
+  configure: "Configure",
+  review: "Review",
+};
+
+type FieldError = { field: string; step: StepKey; message: string };
+
 export function ExtensionBuilder() {
   const navigate = useNavigate();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<StepKey>("source");
+  const [maxReached, setMaxReached] = useState(0);
+  // Errors of a step are shown only once the user tried to leave it.
+  const [shownErrorSteps, setShownErrorSteps] = useState<Set<StepKey>>(new Set());
   const [name, setName] = useState("");
   const [sourceMode, setSourceMode] = useState<SourceMode>("image");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
@@ -36,6 +55,7 @@ export function ExtensionBuilder() {
   const [type, setType] = useState<ExtensionType>("sysext");
   const [arch, setArch] = useState<Arch>("amd64");
   const [version, setVersion] = useState("v1.0");
+  const [keySets, setKeySets] = useState<SecureBootKeySet[]>([]);
   const [signingKeySetId, setSigningKeySetId] = useState("");
   const [hierarchies, setHierarchies] = useState<string[]>([]);
   const [serviceReload, setServiceReload] = useState(false);
@@ -56,9 +76,73 @@ export function ExtensionBuilder() {
         }
       })
       .catch(() => {});
+    listSecureBootKeySets()
+      .then((rows) => setKeySets(rows ?? []))
+      .catch(() => {});
   }, []);
 
+  // computeErrors lists every invalid field with the step it belongs to.
+  // It runs on every render, so an error goes away as soon as its field
+  // becomes valid.
+  function computeErrors(): FieldError[] {
+    const errs: FieldError[] = [];
+    if (!name.trim()) {
+      errs.push({ field: "name", step: "source", message: "Name is required" });
+    }
+    if (sourceMode === "image" && !baseImage.trim()) {
+      errs.push({ field: "baseImage", step: "source", message: "Base image is required" });
+    }
+    if (sourceMode === "dockerfile" && !dockerfile.trim()) {
+      errs.push({ field: "dockerfile", step: "source", message: "Dockerfile is required" });
+    }
+    if (sourceMode === "artifact" && !selectedArtifactId) {
+      errs.push({ field: "artifact", step: "source", message: "Artifact is required" });
+    }
+    if (!version.trim()) {
+      errs.push({ field: "version", step: "configure", message: "Version is required" });
+    }
+    return errs;
+  }
+
+  const liveErrors = computeErrors();
+  const fieldError = (field: string) =>
+    liveErrors.find((e) => e.field === field && shownErrorSteps.has(e.step))?.message;
+  const stepIndex = STEPS.indexOf(step);
+  const currentStepErrors = liveErrors.filter((e) => e.step === step);
+  const stepHasErrors = (key: StepKey) => liveErrors.some((e) => e.step === key);
+
+  const wizardSteps: WizardStep[] = STEPS.map((key, i) => {
+    let state: WizardStep["state"];
+    if (i === stepIndex) {
+      state = "current";
+    } else if (i < stepIndex) {
+      state = stepHasErrors(key) ? "error" : "done";
+    } else if (i <= maxReached && !STEPS.slice(0, i).some(stepHasErrors)) {
+      state = stepHasErrors(key) ? "error" : "done";
+    } else {
+      state = "todo";
+    }
+    return { key, label: STEP_LABELS[key], state };
+  });
+
+  function goToStep(next: StepKey) {
+    setStep(next);
+    setMaxReached((prev) => Math.max(prev, STEPS.indexOf(next)));
+  }
+
+  // Next validates only the current step and stays on it when it is invalid.
+  function handleNext() {
+    setShownErrorSteps((prev) => (prev.has(step) ? prev : new Set(prev).add(step)));
+    if (currentStepErrors.length > 0) return;
+    goToStep(STEPS[stepIndex + 1]);
+  }
+
   async function submit() {
+    if (liveErrors.length > 0) {
+      setShownErrorSteps(new Set(STEPS));
+      goToStep(liveErrors[0].step);
+      return;
+    }
     setSubmitting(true);
     setSubmitErr(null);
     const input: CreateExtensionInput = {
@@ -88,6 +172,11 @@ export function ExtensionBuilder() {
     }
   }
 
+  const selectedArtifact = artifacts.find((a) => a.id === selectedArtifactId);
+  const signingLabel = signingKeySetId
+    ? keySets.find((k) => k.id === signingKeySetId)?.name || signingKeySetId
+    : "Unsigned";
+
   return (
     <div>
       <PageHeader
@@ -95,9 +184,32 @@ export function ExtensionBuilder() {
         description="A sysext extends /usr; a confext extends /etc. Both ship as a single signed .raw."
       />
 
-      <StepIndicator current={step} />
-
-      {step === 0 && (
+      <WizardShell
+        steps={wizardSteps}
+        current={step}
+        onStepChange={(key) => goToStep(key as StepKey)}
+        footer={{
+          onBack: stepIndex > 0 ? () => goToStep(STEPS[stepIndex - 1]) : () => navigate("/extensions"),
+          backLabel: stepIndex > 0 ? "Back" : "Cancel",
+          status:
+            currentStepErrors.length === 0
+              ? { tone: "success", text: "All required fields set" }
+              : {
+                  tone: "warning",
+                  text: `${currentStepErrors.length} issue${currentStepErrors.length === 1 ? "" : "s"} on this step`,
+                },
+          primary:
+            step === "review"
+              ? {
+                  label: "Build extension",
+                  onClick: () => void submit(),
+                  disabled: submitting,
+                  loading: submitting,
+                }
+              : { label: `Next: ${STEP_LABELS[STEPS[stepIndex + 1]]}`, onClick: handleNext },
+        }}
+      >
+      {step === "source" && (
         <div className="grid gap-6">
           <div className="max-w-md grid gap-1.5">
             <Label htmlFor="ext-name">Name</Label>
@@ -106,7 +218,9 @@ export function ExtensionBuilder() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. tailscale-agent"
+              aria-invalid={!!fieldError("name")}
             />
+            <FieldErrorText message={fieldError("name")} />
           </div>
 
           <Card>
@@ -136,13 +250,16 @@ export function ExtensionBuilder() {
               </div>
 
               {sourceMode === "artifact" && (
-                <ArtifactPicker
-                  artifacts={artifacts}
-                  selectedId={selectedArtifactId}
-                  onSelect={setSelectedArtifactId}
-                  extraSteps={extraSteps}
-                  onExtraStepsChange={setExtraSteps}
-                />
+                <>
+                  <ArtifactPicker
+                    artifacts={artifacts}
+                    selectedId={selectedArtifactId}
+                    onSelect={setSelectedArtifactId}
+                    extraSteps={extraSteps}
+                    onExtraStepsChange={setExtraSteps}
+                  />
+                  <FieldErrorText message={fieldError("artifact")} />
+                </>
               )}
               {sourceMode === "image" && (
                 <div className="grid gap-1.5">
@@ -152,7 +269,9 @@ export function ExtensionBuilder() {
                     value={baseImage}
                     onChange={(e) => setBaseImage(e.target.value)}
                     placeholder="e.g. ubuntu:24.04"
+                    aria-invalid={!!fieldError("baseImage")}
                   />
+                  <FieldErrorText message={fieldError("baseImage")} />
                 </div>
               )}
               {sourceMode === "dockerfile" && (
@@ -165,22 +284,17 @@ export function ExtensionBuilder() {
                     onChange={(e) => setDockerfile(e.target.value)}
                     placeholder="FROM ubuntu:24.04\nRUN apt-get install -y curl"
                     className="font-mono text-sm"
+                    aria-invalid={!!fieldError("dockerfile")}
                   />
+                  <FieldErrorText message={fieldError("dockerfile")} />
                 </div>
               )}
             </CardContent>
           </Card>
-
-          <div className="flex justify-between">
-            <Button variant="outline" onClick={() => navigate("/extensions")}>
-              Cancel
-            </Button>
-            <Button onClick={() => setStep(1)}>Next →</Button>
-          </div>
         </div>
       )}
 
-      {step === 1 && (
+      {step === "configure" && (
         <ConfigureStep
           type={type}
           onType={setType}
@@ -188,18 +302,18 @@ export function ExtensionBuilder() {
           onArch={setArch}
           version={version}
           onVersion={setVersion}
+          versionError={fieldError("version")}
+          keySets={keySets}
           signingKeySetId={signingKeySetId}
           onSigningKeySetId={setSigningKeySetId}
           hierarchies={hierarchies}
           onHierarchies={setHierarchies}
           serviceReload={serviceReload}
           onServiceReload={setServiceReload}
-          onBack={() => setStep(0)}
-          onNext={() => setStep(2)}
         />
       )}
 
-      {step === 2 && (
+      {step === "review" && (
         <ReviewStep
           name={name}
           type={type}
@@ -207,19 +321,23 @@ export function ExtensionBuilder() {
           version={version}
           sourceMode={sourceMode}
           baseImage={baseImage}
-          selectedArtifactId={selectedArtifactId}
+          artifactLabel={selectedArtifact ? selectedArtifact.name || selectedArtifact.id : selectedArtifactId}
           dockerfile={dockerfile}
           extraSteps={extraSteps}
           hierarchies={hierarchies}
           serviceReload={serviceReload}
-          submitting={submitting}
+          signingLabel={signingLabel}
           submitErr={submitErr}
-          onBack={() => setStep(1)}
-          onSubmit={submit}
         />
       )}
+      </WizardShell>
     </div>
   );
+}
+
+function FieldErrorText({ message }: { message?: string }) {
+  if (!message) return null;
+  return <p className="text-xs text-danger-foreground">{message}</p>;
 }
 
 function ModeButton({
@@ -309,14 +427,14 @@ function ConfigureStep({
   onArch,
   version,
   onVersion,
+  versionError,
+  keySets,
   signingKeySetId,
   onSigningKeySetId,
   hierarchies,
   onHierarchies,
   serviceReload,
   onServiceReload,
-  onBack,
-  onNext,
 }: {
   type: ExtensionType;
   onType: (t: ExtensionType) => void;
@@ -324,16 +442,15 @@ function ConfigureStep({
   onArch: (a: Arch) => void;
   version: string;
   onVersion: (v: string) => void;
+  versionError?: string;
+  keySets: SecureBootKeySet[];
   signingKeySetId: string;
   onSigningKeySetId: (s: string) => void;
   hierarchies: string[];
   onHierarchies: (h: string[]) => void;
   serviceReload: boolean;
   onServiceReload: (s: boolean) => void;
-  onBack: () => void;
-  onNext: () => void;
 }) {
-  const required = type && arch && version.trim();
   return (
     <div className="grid gap-6">
       <div className="grid md:grid-cols-2 gap-4">
@@ -389,7 +506,9 @@ function ConfigureStep({
               value={version}
               onChange={(e) => onVersion(e.target.value)}
               placeholder="v1.0"
+              aria-invalid={!!versionError}
             />
+            <FieldErrorText message={versionError} />
             <p className="text-[11px] text-muted-foreground mt-1.5">
               Tracked server-side for staleness detection.
             </p>
@@ -400,12 +519,26 @@ function ConfigureStep({
           <CardHeader>
             <CardTitle className="text-sm">Signing (optional)</CardTitle>
           </CardHeader>
-          <CardContent>
-            <Input
+          <CardContent className="grid gap-1.5">
+            <Label htmlFor="ext-signing" className="sr-only">
+              Signing key set
+            </Label>
+            <select
+              id="ext-signing"
+              className="border rounded-md px-3 py-2 text-sm bg-background"
               value={signingKeySetId}
               onChange={(e) => onSigningKeySetId(e.target.value)}
-              placeholder="key-set id (optional)"
-            />
+            >
+              <option value="">Unsigned</option>
+              {keySets.map((k) => (
+                <option key={k.id} value={k.id}>
+                  {k.name || k.id}
+                </option>
+              ))}
+            </select>
+            <p className="text-[11px] text-muted-foreground">
+              Key sets come from Secure Boot keys.
+            </p>
           </CardContent>
         </Card>
       </div>
@@ -442,15 +575,6 @@ function ConfigureStep({
           </CardContent>
         </Card>
       )}
-
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={onBack}>
-          ← Back
-        </Button>
-        <Button disabled={!required} onClick={onNext}>
-          Next →
-        </Button>
-      </div>
     </div>
   );
 }
@@ -490,15 +614,13 @@ function ReviewStep({
   version,
   sourceMode,
   baseImage,
-  selectedArtifactId,
+  artifactLabel,
   dockerfile,
   extraSteps,
   hierarchies,
   serviceReload,
-  submitting,
+  signingLabel,
   submitErr,
-  onBack,
-  onSubmit,
 }: {
   name: string;
   type: ExtensionType;
@@ -506,16 +628,20 @@ function ReviewStep({
   version: string;
   sourceMode: SourceMode;
   baseImage: string;
-  selectedArtifactId: string;
+  artifactLabel: string;
   dockerfile: string;
   extraSteps: string;
   hierarchies: string[];
   serviceReload: boolean;
-  submitting: boolean;
+  signingLabel: string;
   submitErr: string | null;
-  onBack: () => void;
-  onSubmit: () => void;
 }) {
+  const sourceLabel: Record<SourceMode, string> = {
+    artifact: "From artifact",
+    image: "Base image",
+    dockerfile: "Dockerfile",
+  };
+  const isSysext = type === "sysext";
   return (
     <div className="grid gap-6">
       <Card>
@@ -527,40 +653,36 @@ function ReviewStep({
           <KV k="Type" v={type} />
           <KV k="Arch" v={arch} />
           <KV k="Version" v={version} />
-          <KV k="Source" v={sourceMode} />
-          {sourceMode === "artifact" && (
-            <KV k="Artifact" v={selectedArtifactId} />
-          )}
+          <KV k="Source" v={sourceLabel[sourceMode]} />
+          {sourceMode === "artifact" && <KV k="Artifact" v={artifactLabel} />}
           {sourceMode === "image" && <KV k="Base image" v={baseImage} />}
           {sourceMode === "dockerfile" && (
             <KV k="Dockerfile" v={`${dockerfile.length} bytes`} />
           )}
-          {sourceMode === "artifact" && extraSteps && (
-            <KV k="Extra steps" v={`${extraSteps.length} bytes`} />
+          {sourceMode === "artifact" && (
+            <KV k="Extra steps" v={extraSteps ? `${extraSteps.length} bytes` : "None"} />
           )}
-          {type === "sysext" && hierarchies.length > 0 && (
-            <KV k="Hierarchies" v={hierarchies.join(", ")} />
-          )}
-          {type === "sysext" && serviceReload && (
-            <KV k="Service reload" v="yes" />
-          )}
+          <KV
+            k="Hierarchies"
+            v={
+              isSysext
+                ? ["/usr", ...hierarchies].join(", ")
+                : "/etc (confext)"
+            }
+          />
+          <KV k="Signing" v={signingLabel} />
+          <KV
+            k="Service reload"
+            v={isSysext ? (serviceReload ? "Yes" : "No") : "Not used for confext"}
+          />
         </CardContent>
       </Card>
 
       {submitErr && (
-        <p role="alert" className="text-sm text-red-600">
+        <p role="alert" className="text-sm text-danger-foreground">
           {submitErr}
         </p>
       )}
-
-      <div className="flex justify-between">
-        <Button variant="outline" onClick={onBack} disabled={submitting}>
-          ← Back
-        </Button>
-        <Button onClick={onSubmit} disabled={submitting}>
-          {submitting ? "Building…" : "Build"}
-        </Button>
-      </div>
     </div>
   );
 }
@@ -570,33 +692,6 @@ function KV({ k, v }: { k: string; v: string }) {
     <div className="grid grid-cols-[160px_1fr] gap-2">
       <span className="text-muted-foreground">{k}</span>
       <span className="font-mono">{v}</span>
-    </div>
-  );
-}
-
-function StepIndicator({ current }: { current: number }) {
-  const steps = ["Source", "Configure", "Review"];
-  return (
-    <div className="flex gap-3 items-center text-sm mb-6">
-      {steps.map((label, i) => (
-        <span
-          key={label}
-          className={`inline-flex items-center gap-1.5 ${
-            i === current
-              ? "text-primary font-semibold"
-              : "text-muted-foreground"
-          }`}
-        >
-          <span
-            className={`h-6 w-6 rounded-full border inline-flex items-center justify-center text-xs ${
-              i === current ? "bg-primary text-primary-foreground border-primary" : ""
-            }`}
-          >
-            {i + 1}
-          </span>
-          {label}
-        </span>
-      ))}
     </div>
   );
 }
