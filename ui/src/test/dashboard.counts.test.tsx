@@ -60,8 +60,9 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-function cardOf(title: HTMLElement): HTMLElement {
-  return title.parentElement!.parentElement!;
+// StatTile: label span -> label row -> tile.
+function tile(label: string): HTMLElement {
+  return screen.getByText(label, { selector: "span" }).parentElement!.parentElement!;
 }
 
 describe("Dashboard counts", () => {
@@ -72,20 +73,17 @@ describe("Dashboard counts", () => {
       </MemoryRouter>,
     );
 
-    const buildsTitle = await screen.findByText("Active Builds");
-    // Title -> CardHeader -> Card. The activity feed also names the build and
-    // the nodes, so each assertion is scoped to its card.
-    const buildsCard = cardOf(buildsTitle);
-    expect(within(buildsCard).getByText("build-in-progress")).toBeInTheDocument();
-    expect(screen.queryByText("No active builds")).not.toBeInTheDocument();
+    await screen.findByText("Needs attention");
+    // Phases arrive capitalized ("Building"); the Builds tile must count it.
+    const builds = tile("Builds");
+    expect(builds).toHaveTextContent("1 building");
+    expect(within(builds).getByText("build-in-progress")).toBeInTheDocument();
 
-    const offlineTitle = screen.getByText("Offline Nodes");
-    const offline = within(cardOf(offlineTitle));
-    expect(offline.getByText("node-offline")).toBeInTheDocument();
-    expect(offline.queryByText("node-online")).not.toBeInTheDocument();
-    expect(offline.queryByText("node-pending")).not.toBeInTheDocument();
-    expect(offline.queryByText("node-registered")).not.toBeInTheDocument();
-
-    expect(screen.getByText("waiting")).toBeInTheDocument();
+    // Only the Offline node is reported offline; Pending and Registered wait.
+    expect(tile("Fleet")).toHaveTextContent("1 offline · 2 waiting");
+    expect(screen.getByText("node-offline is offline")).toBeInTheDocument();
+    expect(screen.queryByText("node-online is offline")).not.toBeInTheDocument();
+    expect(screen.queryByText("node-pending is offline")).not.toBeInTheDocument();
+    expect(screen.queryByText("node-registered is offline")).not.toBeInTheDocument();
   });
 });
