@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
-import { useNavigate } from "react-router";
-import { listNodes, sendBulkCommand, type Node, type NodeListParams } from "@/api/nodes";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNavigate, useSearchParams } from "react-router";
+import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { listGroups, type Group } from "@/api/groups";
 import { NodeTable } from "@/components/NodeTable";
 import { PageHeader } from "@/components/PageHeader";
 import { CommandDialog } from "@/components/CommandDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import {
   Select,
@@ -16,26 +15,50 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Terminal } from "lucide-react";
+import { Activity, Folder, Search, SearchX, Tag, Terminal } from "lucide-react";
+import { FilterChip } from "@/components/fleet/FilterChip";
+import { NodeSummary } from "@/components/fleet/NodeSummary";
+import { EmptyState } from "@/components/fleet/EmptyState";
+import {
+  filterNodes,
+  groupNodes,
+  hasActiveFilter,
+  parseQuery,
+  phaseCounts,
+  queryKeys,
+  toSearchParams,
+  UNGROUPED,
+  type NodeQuery,
+} from "@/lib/nodeFilter";
+
+const defaultPhases = ["Online", "Offline", "Pending"];
+const defaultGroupKey = "site";
 
 export function Nodes() {
   const [nodes, setNodes] = useState<Node[]>([]);
   const [groups, setGroups] = useState<Group[]>([]);
-  const [groupFilter, setGroupFilter] = useState("__all__");
-  const [labelFilter, setLabelFilter] = useState("");
-  const [phaseFilter, setPhaseFilter] = useState("__all__");
-  const [hostnameSearch, setHostnameSearch] = useState("");
   const [bulkCmdOpen, setBulkCmdOpen] = useState(false);
   const [confirmState, setConfirmState] = useState<{ open: boolean; action: () => void }>({ open: false, action: () => {} });
+  const [searchParams, setSearchParams] = useSearchParams();
   const navigate = useNavigate();
 
+  const query = parseQuery(searchParams);
+
+  // Write the query to the URL, keeping keys this page does not own (such as
+  // `view`) so a shared link keeps them.
+  function setQuery(patch: Partial<NodeQuery>) {
+    const next = toSearchParams({ ...query, ...patch });
+    for (const [k, v] of searchParams) {
+      if (!(queryKeys as readonly string[]).includes(k)) next.append(k, v);
+    }
+    setSearchParams(next, { replace: true });
+  }
+
+  // The whole fleet is loaded once per tick and filtered here, so the summary
+  // strip always describes every node while the table shows the matches.
   const load = useCallback(() => {
-    const params: NodeListParams = {};
-    if (groupFilter && groupFilter !== "__all__") params.group_id = groupFilter;
-    if (labelFilter) params.label = labelFilter;
-    if (phaseFilter && phaseFilter !== "__all__") params.phase = phaseFilter;
-    listNodes(params).then(setNodes).catch(() => {});
-  }, [groupFilter, labelFilter, phaseFilter]);
+    listNodes().then(setNodes).catch(() => {});
+  }, []);
 
   useEffect(() => {
     listGroups().then(setGroups).catch(() => {});
@@ -44,29 +67,45 @@ export function Nodes() {
   // Poll the node list so newly-registered machines appear without a
   // manual refresh. Five seconds matches the kairos-agent's default
   // reconnect backoff, so a freshly-booted node typically shows up on
-  // the next tick after it phones home. The interval re-arms whenever
-  // the filters change (via `load`'s deps), so we always poll with the
-  // currently-selected filter set.
+  // the next tick after it phones home.
   useEffect(() => {
     load();
     const id = setInterval(load, 5000);
     return () => clearInterval(id);
   }, [load]);
 
-  const filteredNodes = nodes.filter(
-    (n) => !hostnameSearch || n.hostname.toLowerCase().includes(hostnameSearch.toLowerCase())
+  const filteredNodes = filterNodes(nodes, query);
+  const buckets = query.groupBy === "none" ? undefined : groupNodes(filteredNodes, query.groupBy, groups);
+
+  const phaseOptions = useMemo(() => {
+    const names = new Map(defaultPhases.map((p) => [p.toLowerCase(), p]));
+    for (const p of phaseCounts(nodes)) if (!names.has(p.label)) names.set(p.label, p.name);
+    return [...names.values()].map((p) => ({ value: p, label: p }));
+  }, [nodes]);
+
+  const groupOptions = useMemo(
+    () => [...groups.map((g) => ({ value: g.id, label: g.name })), { value: UNGROUPED, label: "Not in a group" }],
+    [groups],
   );
 
-  // The bulk command targets exactly the nodes on screen: the server-side
-  // filters (group, label, phase) and the client-side hostname search are
-  // already applied to filteredNodes, so we always send their IDs instead of
-  // a selector the server would resolve without the hostname/phase filter.
+  const labelOptions = useMemo(() => {
+    const pairs = new Set<string>();
+    for (const n of nodes) for (const [k, v] of Object.entries(n.labels ?? {})) pairs.add(`${k}=${v}`);
+    return [...pairs].sort().map((p) => ({ value: p, label: p }));
+  }, [nodes]);
+
+  const labelKeys = useMemo(() => {
+    const keys = new Set<string>([defaultGroupKey]);
+    for (const n of nodes) for (const k of Object.keys(n.labels ?? {})) keys.add(k);
+    if (query.groupBy !== "none" && query.groupBy !== "group") keys.add(query.groupBy);
+    return [...keys].sort();
+  }, [nodes, query.groupBy]);
+
+  // The bulk command targets exactly the nodes on screen: every filter is
+  // applied to filteredNodes, so we always send their IDs instead of a
+  // selector the server would resolve differently.
   const targetCount = filteredNodes.length;
-  const anyFilterActive =
-    !!hostnameSearch ||
-    (!!groupFilter && groupFilter !== "__all__") ||
-    !!labelFilter ||
-    (!!phaseFilter && phaseFilter !== "__all__");
+  const anyFilterActive = hasActiveFilter(query);
   const [confirmCommand, setConfirmCommand] = useState("");
 
   function handleBulkSubmit(command: string, args: Record<string, unknown>) {
@@ -98,56 +137,82 @@ export function Nodes() {
         </Button>
       </PageHeader>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <div className="grid gap-2">
-          <Label>Hostname</Label>
+      {nodes.length > 0 && <NodeSummary nodes={nodes} />}
+
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <div className="relative w-full sm:w-72">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" aria-hidden="true" />
           <Input
+            aria-label="Search hostname, IP, label or image version"
             placeholder="Search by hostname..."
-            value={hostnameSearch}
-            onChange={(e) => setHostnameSearch(e.target.value)}
+            className="pl-8"
+            value={query.q}
+            onChange={(e) => setQuery({ q: e.target.value })}
           />
         </div>
-        <div className="grid gap-2">
-          <Label>Group</Label>
-          <Select value={groupFilter} onValueChange={setGroupFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All groups" />
+        <FilterChip
+          label="Status"
+          icon={Activity}
+          value={query.phase}
+          options={phaseOptions}
+          onSelect={(phase) => setQuery({ phase })}
+          onClear={() => setQuery({ phase: "" })}
+        />
+        <FilterChip
+          label="Group"
+          icon={Folder}
+          value={query.group}
+          options={groupOptions}
+          onSelect={(group) => setQuery({ group })}
+          onClear={() => setQuery({ group: "" })}
+        />
+        <FilterChip
+          label="Label"
+          icon={Tag}
+          value={query.label}
+          options={labelOptions}
+          emptyText="No labels in the fleet"
+          onSelect={(label) => setQuery({ label })}
+          onClear={() => setQuery({ label: "" })}
+        />
+        <div className="flex items-center gap-2 sm:ml-auto">
+          <span className="text-xs text-muted-foreground">Group by</span>
+          <Select value={query.groupBy} onValueChange={(groupBy) => setQuery({ groupBy })}>
+            <SelectTrigger className="h-8 w-36" aria-label="Group by">
+              <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="__all__">All groups</SelectItem>
-              {groups.map((g) => (
-                <SelectItem key={g.id} value={g.id}>
-                  {g.name}
+              <SelectItem value="none">None</SelectItem>
+              <SelectItem value="group">Group</SelectItem>
+              {labelKeys.map((k) => (
+                <SelectItem key={k} value={k}>
+                  Label: {k}
                 </SelectItem>
               ))}
             </SelectContent>
           </Select>
         </div>
-        <div className="grid gap-2">
-          <Label>Label Filter</Label>
-          <Input
-            placeholder="e.g. role=worker"
-            value={labelFilter}
-            onChange={(e) => setLabelFilter(e.target.value)}
-          />
-        </div>
-        <div className="grid gap-2">
-          <Label>Phase</Label>
-          <Select value={phaseFilter} onValueChange={setPhaseFilter}>
-            <SelectTrigger>
-              <SelectValue placeholder="All phases" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">All phases</SelectItem>
-              <SelectItem value="Online">Online</SelectItem>
-              <SelectItem value="Offline">Offline</SelectItem>
-              <SelectItem value="Pending">Pending</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
       </div>
 
-      <NodeTable nodes={filteredNodes} emptyAction={() => navigate("/import")} />
+      {nodes.length > 0 && filteredNodes.length === 0 ? (
+        <EmptyState
+          icon={SearchX}
+          title="No nodes match"
+          text="Change the search or remove a filter to see more nodes."
+          action={
+            <Button variant="outline" onClick={() => setQuery({ q: "", phase: "", group: "", label: "" })}>
+              Clear filters
+            </Button>
+          }
+        />
+      ) : (
+        <NodeTable
+          nodes={filteredNodes}
+          groups={buckets}
+          showGroupColumn={query.groupBy !== "group"}
+          emptyAction={() => navigate("/import")}
+        />
+      )}
 
       <CommandDialog
         open={bulkCmdOpen}
