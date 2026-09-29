@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
@@ -32,9 +33,13 @@ Options:
   --debug             Enable debug logging for troubleshooting.
   --grub-cfg          Path to the livecd grub config, so the netboot cmdline matches the ISO.
 
+Options go before the positional arguments. Placed after them they are read as
+positional arguments themselves, not as flags.
+
 Example:
-  start-pixie user-data.yaml rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
-  start-pixie "" rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz --debug
+  start-pixie --debug user-data.yaml rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz
+  start-pixie --debug "" rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz
+  start-pixie --grub-cfg kairos-grub.cfg user-data.yaml rootfs.squashfs 0.0.0.0 8080 initrd.img vmlinuz
 `,
 	ArgsUsage: "<cloud-config-file|\"\"> <squashfs-file> <address> <port> <initrd-file> <kernel-file>",
 	Flags: []cli.Flag{
@@ -55,6 +60,14 @@ Example:
 		netbootPort := c.Args().Get(3)
 		initrdFile := c.Args().Get(4)
 		kernelFile := c.Args().Get(5)
+
+		// Checked before the required-argument check, so the message names the
+		// mistake that was actually made rather than the count it causes.
+		if err := ValidateNoFlagsAfterArgs(c.Args().Slice()); err != nil {
+			cli.ShowCommandHelp(c, c.Command.Name)
+			fmt.Println("")
+			return err
+		}
 
 		if err := ValidateStartPixieArgs(squashFSfile, address, netbootPort, initrdFile, kernelFile); err != nil {
 			cli.ShowCommandHelp(c, c.Command.Name)
@@ -102,6 +115,25 @@ Example:
 func ValidateStartPixieArgs(squashFSfile, address, netbootPort, initrdFile, kernelFile string) error {
 	if squashFSfile == "" || address == "" || netbootPort == "" || initrdFile == "" || kernelFile == "" {
 		return fmt.Errorf("all arguments except cloud-config-file are required")
+	}
+	return nil
+}
+
+// ValidateNoFlagsAfterArgs rejects a flag that was written after the
+// positional arguments.
+//
+// urfave/cli v2 stops parsing flags at the first positional argument, so
+// `start-pixie ... vmlinuz --grub-cfg x` leaves --grub-cfg in Args() and the
+// flag reads as unset. The command then netboots with the default cmdline and
+// says nothing about it, which is the minor half of the QA failure on
+// kairos-io/kairos#2573. None of this command's positional arguments (paths,
+// an address, a port) legitimately starts with a dash, so treating one as a
+// misplaced flag is unambiguous.
+func ValidateNoFlagsAfterArgs(args []string) error {
+	for _, a := range args {
+		if strings.HasPrefix(a, "-") {
+			return fmt.Errorf("%q came after the positional arguments, where it is not parsed as a flag: put options before <cloud-config-file>", a)
+		}
 	}
 	return nil
 }

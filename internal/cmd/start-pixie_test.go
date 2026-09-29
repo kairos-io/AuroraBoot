@@ -70,4 +70,28 @@ var _ = Describe("start-pixie", Label("pixie", "cmd"), func() {
 		Expect(buf.String()).To(ContainSubstring("--grub-cfg value"))
 		Expect(buf.String()).To(ContainSubstring("extracted by the netboot command"))
 	})
+
+	// The minor half of the #2573 QA failure: urfave/cli v2 stops parsing
+	// flags at the first positional, so this --grub-cfg never reached the
+	// flag set and the command netbooted with the default cmdline without
+	// saying so. It is now an error instead of a silent no-op.
+	It("rejects a flag written after the positional arguments", Label("flags"), func() {
+		err = app.Run([]string{"", "start-pixie", "cloud.yaml", "rootfs.squashfs", "0.0.0.0", "8080", "initrd.img", "vmlinuz", "--grub-cfg", "/tmp/kairos-grub.cfg"})
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).To(ContainSubstring("came after the positional arguments"))
+		Expect(err.Error()).To(ContainSubstring("--grub-cfg"))
+	})
+
+	// The help example used to place --debug last, modelling exactly the
+	// order that does not work.
+	It("does not document options after the positional arguments", Label("flags"), func() {
+		err = app.Run([]string{"", "start-pixie", "--help"})
+		Expect(err).To(BeNil())
+		Expect(buf.String()).To(ContainSubstring("Options go before the positional arguments"))
+		Expect(buf.String()).ToNot(ContainSubstring("vmlinuz --debug"))
+	})
+
+	It("passes a flag written before the positional arguments through", Label("flags"), func() {
+		Expect(cmdpkg.ValidateNoFlagsAfterArgs([]string{"cloud.yaml", "rootfs.squashfs", "0.0.0.0", "8080", "initrd.img", "vmlinuz"})).To(BeNil())
+	})
 })
