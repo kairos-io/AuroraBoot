@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router";
 
 import { Nodes } from "@/pages/Nodes";
 import { setToken } from "@/api/client";
+import { Toaster } from "@/components/ui/toaster";
 
 function makeNode(id: string, hostname: string) {
   return {
@@ -29,7 +30,7 @@ const nodes = [
 
 type Sent = { selector: { groupID?: string; labels?: Record<string, string>; nodeIDs?: string[] }; command: string };
 
-function mockFetch() {
+function mockFetch(opts: { failCommand?: boolean } = {}) {
   const sent: Sent[] = [];
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
@@ -41,6 +42,7 @@ function mockFetch() {
     const method = (init?.method ?? "GET").toUpperCase();
     if (url.startsWith("/api/v1/nodes/commands") && method === "POST") {
       sent.push(JSON.parse(String(init?.body)));
+      if (opts.failCommand) return json({ error: "boom" }, 500);
       return json([]);
     }
     if (url.startsWith("/api/v1/nodes")) return json(nodes);
@@ -62,6 +64,7 @@ function renderNodes() {
   return render(
     <MemoryRouter>
       <Nodes />
+      <Toaster />
     </MemoryRouter>,
   );
 }
@@ -115,5 +118,21 @@ describe("Nodes bulk command", () => {
     await waitFor(() => expect(m.sent).toHaveLength(1));
     expect(m.sent[0].selector.nodeIDs).toEqual(["id-milan", "id-rome", "id-lab"]);
     expect(m.sent[0].selector.groupID).toBeUndefined();
+  });
+
+  it("shows an error toast when the bulk command fails", async () => {
+    const m = mockFetch({ failCommand: true });
+    vi.stubGlobal("fetch", m.fn);
+    renderNodes();
+
+    expect(await screen.findByText("lab-01")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Search by hostname..."), {
+      target: { value: "pos" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Send Command to 2 nodes" }));
+    await chooseRebootAndSubmit();
+
+    await waitFor(() => expect(m.sent).toHaveLength(1));
+    expect(await screen.findByText("Failed to send command: boom")).toBeInTheDocument();
   });
 });

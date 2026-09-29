@@ -142,4 +142,22 @@ describe("useNodeMetrics", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(result.current.latest?.cpu?.usedPercent).toBe(87.2);
   });
+
+  it("clears the old node's data when the id changes", async () => {
+    const { result, rerender } = renderHook(({ id }) => useNodeMetrics(id, 10000), {
+      initialProps: { id: "n1" },
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(result.current.latest?.cpu?.usedPercent).toBe(87.2);
+
+    // The next fetch never resolves, so what we see is the state before it.
+    fetchMock.mockImplementation(() => new Promise<Response>(() => {}));
+    rerender({ id: "n2" });
+    expect(result.current.latest).toBeNull();
+    expect(result.current.samples).toEqual([]);
+    expect(result.current.loading).toBe(true);
+    expect(String(fetchMock.mock.calls.at(-1)?.[0])).toBe("/api/v1/nodes/n2/metrics");
+  });
 });

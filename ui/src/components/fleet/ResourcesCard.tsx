@@ -5,17 +5,11 @@ import { Gauge } from "@/components/fleet/Gauge";
 import { Sparkline } from "@/components/fleet/Sparkline";
 import { MeterBar } from "@/components/fleet/MeterBar";
 import { cpuPercent, diskPercent, formatUptime, memPercent, usageTone } from "@/lib/metrics";
-import { timeAgo } from "@/lib/time";
+import { formatBytes, timeAgo } from "@/lib/time";
 
 interface ResourcesCardProps {
   latest: NodeMetrics;
   samples: NodeMetrics[];
-}
-
-function formatBytes(bytes: number): string {
-  const gib = bytes / 1024 ** 3;
-  if (gib >= 1) return `${gib.toFixed(1)} GiB`;
-  return `${Math.round(bytes / 1024 ** 2)} MiB`;
 }
 
 function series(samples: NodeMetrics[], pick: (m: NodeMetrics) => number | null): number[] {

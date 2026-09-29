@@ -18,6 +18,7 @@ import {
 import { Activity, Folder, FolderInput, LayoutGrid, List, Search, SearchX, Tag, Terminal } from "lucide-react";
 import { FilterChip } from "@/components/fleet/FilterChip";
 import { NodeSummary } from "@/components/fleet/NodeSummary";
+import { toast } from "@/hooks/useToast";
 import { EmptyState } from "@/components/fleet/EmptyState";
 import { SelectionBar } from "@/components/fleet/SelectionBar";
 import { NodeTiles, type TileColorBy } from "@/components/fleet/NodeTiles";
@@ -229,7 +230,9 @@ export function Nodes() {
   function handleBulkSubmit(command: string, args: Record<string, unknown>) {
     const nodeIDs = targetNodes.map((n) => n.id);
     const send = () => {
-      sendBulkCommand({ nodeIDs }, command, args).catch(() => {});
+      sendBulkCommand({ nodeIDs }, command, args).catch((err) => {
+        toast(`Failed to send command: ${(err as Error).message}`, "error");
+      });
       setBulkCmdOpen(false);
     };
 

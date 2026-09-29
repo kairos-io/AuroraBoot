@@ -280,13 +280,18 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// does not send "" and leaves the stored value alone. remoteIP, unlike those,
 	// is always known here — it is the live connection's address, not something
 	// the agent reports.
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP); err != nil {
-		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
+	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP)
+	if heartbeatErr != nil {
+		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, heartbeatErr)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {
 		log.Printf("ws: failed to update node phase: %v", err)
 	}
-	h.recordMetrics(nodeID, hb.Metrics)
+	// Record metrics only for a heartbeat the store accepted: a node deleted
+	// while its socket is still open must not get samples back after Forget.
+	if heartbeatErr == nil {
+		h.recordMetrics(nodeID, hb.Metrics)
+	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
 	// attempt the auto eject-on-phone-home (nil-safe, off this goroutine).
 	h.triggerFinalize(nodeID)

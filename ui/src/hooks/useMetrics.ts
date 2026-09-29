@@ -11,6 +11,17 @@ export function useNodeMetrics(
   const [latest, setLatest] = useState<NodeMetrics | null>(null);
   const [samples, setSamples] = useState<NodeMetrics[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadedId, setLoadedId] = useState(id);
+
+  // A new id must not show the previous node's data while its first fetch is
+  // in flight. Reset during render (not in the effect) so the stale values are
+  // never painted.
+  if (loadedId !== id) {
+    setLoadedId(id);
+    setLatest(null);
+    setSamples([]);
+    setLoading(true);
+  }
 
   useEffect(() => {
     let cancelled = false;

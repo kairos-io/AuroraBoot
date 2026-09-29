@@ -148,4 +148,18 @@ var _ = Describe("Buffer", func() {
 		Expect(b.Samples("a")).To(HaveLen(50))
 		Expect(b.Samples("b")).To(HaveLen(50))
 	})
+
+	It("caps the disks and load of a sample", func() {
+		b := metrics.NewBuffer(10)
+		m := sample(1)
+		m.Disks = make([]store.DiskMetrics, 100)
+		m.Load = []float64{1, 2, 3, 4, 5}
+		b.Record("a", m)
+		l, ok := b.Latest("a")
+		Expect(ok).To(BeTrue())
+		Expect(l.Disks).To(HaveLen(metrics.MaxDisks))
+		Expect(metrics.MaxDisks).To(Equal(16))
+		Expect(l.Load).To(Equal([]float64{1, 2, 3}))
+		Expect(metrics.MaxLoad).To(Equal(3))
+	})
 })

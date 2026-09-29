@@ -12,6 +12,13 @@ import (
 // capacity is given.
 const DefaultCapacity = 120
 
+// MaxDisks and MaxLoad cap the disks and load averages kept from one sample,
+// so an oversized sample cannot grow memory.
+const (
+	MaxDisks = 16
+	MaxLoad  = 3
+)
+
 // Recorder records a metrics sample for a node.
 type Recorder interface {
 	Record(nodeID string, m store.NodeMetrics)
@@ -38,10 +45,17 @@ func NewBuffer(capacity int) *Buffer {
 }
 
 // Record stores a sample for nodeID. A zero SampledAt is set to the current
-// UTC time. The oldest sample is dropped when the node is at capacity.
+// UTC time. Disks beyond MaxDisks and load averages beyond MaxLoad are
+// dropped. The oldest sample is dropped when the node is at capacity.
 func (b *Buffer) Record(nodeID string, m store.NodeMetrics) {
 	if m.SampledAt.IsZero() {
 		m.SampledAt = time.Now().UTC()
+	}
+	if len(m.Disks) > MaxDisks {
+		m.Disks = m.Disks[:MaxDisks]
+	}
+	if len(m.Load) > MaxLoad {
+		m.Load = m.Load[:MaxLoad]
 	}
 	m = clone(m)
 
