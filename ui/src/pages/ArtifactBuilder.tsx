@@ -34,6 +34,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
 import { WizardShell, type WizardStep } from "@/components/wizard/WizardShell";
+import { BuildSummary, type BuildSummaryData } from "@/components/wizard/BuildSummary";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -1449,10 +1450,6 @@ export function ArtifactBuilder() {
 
   const availableModels = modelsForArch(form.arch);
 
-  const selectedOutputs = Object.entries(form.outputs)
-    .filter(([, v]) => v)
-    .map(([k]) => k);
-
   // Count only actual output formats (not security modifiers)
   const selectedOutputCount = OUTPUT_GROUPS.flatMap((g) => g.items).filter(
     (i) => form.outputs[i.field],
@@ -1466,6 +1463,37 @@ export function ArtifactBuilder() {
       .filter((i) => form.outputs[i.field])
       .map((i) => ({ ...i, tone: g.tone })),
   );
+
+  // The summary aside and the Review step read the same builder state.
+  const summaryData: BuildSummaryData = {
+    name: form.name ?? "",
+    base: buildMode === "dockerfile" ? "Dockerfile" : form.baseImage,
+    arch: form.arch,
+    model: form.model,
+    variant: form.variant,
+    kubernetes:
+      form.variant === "standard" && (form.kubernetesEnabled ?? true)
+        ? [form.kubernetesDistro, form.kubernetesVersion].filter(Boolean).join(" ") || undefined
+        : undefined,
+    version: form.kairosVersion || DEFAULT_ARTIFACT_VERSION,
+    bundledExtensions: (form.bundledExtensions ?? []).map((e) => e.name),
+    catalogExtensions: selectedExtensionNames,
+    user: userMode,
+    sshKeyCount: userMode === "none" ? 0 : sshKeys.split("\n").filter((l) => l.trim()).length,
+    register: form.provisioning.registerAuroraBoot,
+    targetGroup: form.provisioning.targetGroupId
+      ? groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || form.provisioning.targetGroupId
+      : undefined,
+    commands: form.provisioning.registerAuroraBoot ? (form.provisioning.allowedCommands ?? []) : [],
+    fips: form.outputs.fips,
+    trustedBoot: form.outputs.trustedBoot,
+    outputs: selectedOutputItems.map((i) => i.label),
+    overlayFiles: overlayFiles.length,
+  };
+  // Edit links follow the stepper's rules: a step not reached yet stays closed.
+  const editStep = (key: string) => {
+    if (wizardSteps.find((w) => w.key === key)?.state !== "todo") goToStep(key as BuilderStep);
+  };
 
   return (
     <div>
@@ -1523,6 +1551,7 @@ export function ArtifactBuilder() {
         steps={wizardSteps}
         current={step}
         onStepChange={(key) => goToStep(key as BuilderStep)}
+        aside={step === "review" ? undefined : <BuildSummary data={summaryData} variant="aside" onEdit={editStep} />}
         footer={{
           onBack: stepIndex > 0 ? () => goToStep(BUILDER_STEPS[stepIndex - 1]) : () => navigate("/artifacts"),
           backLabel: stepIndex > 0 ? "Back" : "Cancel",
@@ -3189,138 +3218,22 @@ export function ArtifactBuilder() {
           </div>
         )}
 
-        {/* Step 3: Review */}
+        {/* Step 6: Review */}
         {step === "review" && (
           <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Review Build Configuration</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                {/* Source */}
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Source</p>
-                  <div className="grid gap-1 text-sm">
-                    {form.name && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Name:</span>
-                        <span>{form.name}</span>
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Image source:</span>
-                      <span className="font-mono text-xs break-all">
-                        {buildMode === "dockerfile" ? "(Dockerfile)" : form.baseImage || "\u2014"}
-                      </span>
-                    </div>
-                    {buildMode === "image" && form["allow-insecure-registries"] && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Registry:</span>
-                        <span>Insecure registries allowed (plain HTTP / untrusted TLS)</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Configuration */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Configuration</p>
-                  <div className="grid gap-1 text-sm">
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Architecture:</span>
-                      <span>{form.arch}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Model:</span>
-                      <span>{form.model}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Variant:</span>
-                      <span>{form.variant}</span>
-                    </div>
-                    {form.variant === "standard" && (
-                      <>
-                        <div className="flex gap-2">
-                          <span className="text-muted-foreground w-28 shrink-0">K8s Enabled:</span>
-                          <span>{form.kubernetesEnabled ?? true ? "Yes" : "No"}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="text-muted-foreground w-28 shrink-0">K8s Distro:</span>
-                          <span>{form.kubernetesDistro || "\u2014"}</span>
-                        </div>
-                        {form.kubernetesVersion && (
-                          <div className="flex gap-2">
-                            <span className="text-muted-foreground w-28 shrink-0">K8s Version:</span>
-                            <span>{form.kubernetesVersion}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Version:</span>
-                      <span>{form.kairosVersion || DEFAULT_ARTIFACT_VERSION}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Outputs */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Outputs</p>
-                  {selectedOutputs.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedOutputs.map((o) => (
-                        <span key={o} className="inline-flex items-center rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-medium text-primary">
-                          {o}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No outputs selected</p>
-                  )}
-                </div>
-
-                {/* Provisioning */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Provisioning</p>
-                  <div className="grid gap-1 text-sm">
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Auto-install:</span>
-                      <span>{form.provisioning.autoInstall ? "Yes" : "No"}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Register:</span>
-                      <span>{form.provisioning.registerAuroraBoot ? "Yes" : "No"}</span>
-                    </div>
-                    {form.provisioning.registerAuroraBoot && form.provisioning.targetGroupId && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Target Group:</span>
-                        <span>{groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || form.provisioning.targetGroupId}</span>
-                      </div>
-                    )}
-                    {form.provisioning.registerAuroraBoot && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Allowed cmds:</span>
-                        {(form.provisioning.allowedCommands ?? []).length === 0 ? (
-                          <span className="text-amber-700 dark:text-amber-300">Observe-only (no commands)</span>
-                        ) : (
-                          <span className="font-mono text-xs">
-                            {(form.provisioning.allowedCommands ?? []).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
+            <BuildSummary data={summaryData} variant="full" onEdit={editStep} />
+            {(advancedConfig.trim() || userMode !== "default") && (
+              <Card>
+                <CardContent className="grid gap-4">
                 {/* Cloud Config Preview */}
-                {(advancedConfig.trim() || userMode !== "default") && (() => {
+                {(() => {
                   const isTruncated = cloudConfigPreview.length > 500;
                   const previewText =
                     !isTruncated || showFullCloudConfigPreview
                       ? cloudConfigPreview
                       : cloudConfigPreview.slice(0, 500) + "\n...";
                   return (
-                    <div className="border-t pt-3">
+                    <div>
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cloud Config Preview</p>
                         {isTruncated && (
@@ -3346,8 +3259,9 @@ export function ArtifactBuilder() {
                     </div>
                   );
                 })()}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
       </form>
