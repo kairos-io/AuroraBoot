@@ -56,7 +56,7 @@ function nodesCell(groupName: string) {
 describe("Groups node count", () => {
   it("renders node_count in the Nodes column", async () => {
     render(
-      <MemoryRouter>
+      <MemoryRouter initialEntries={["/groups?view=table"]}>
         <Groups />
       </MemoryRouter>,
     );
