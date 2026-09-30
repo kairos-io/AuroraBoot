@@ -43,7 +43,7 @@ type CommandKey =
   | "reboot"
   | "exec";
 
-interface CommandDef {
+export interface CommandDef {
   key: CommandKey;
   label: string;
   // What the user will see on the primary button ("Send upgrade", etc).
@@ -54,7 +54,7 @@ interface CommandDef {
   tone: "orange" | "blue" | "amber" | "red";
 }
 
-const COMMANDS: CommandDef[] = [
+export const COMMANDS: CommandDef[] = [
   {
     key: "upgrade",
     label: "Upgrade",
