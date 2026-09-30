@@ -543,8 +543,23 @@ func (f *fakeArtifactStore) AppendLog(_ context.Context, id string, text string)
 
 // fakeGroupStore implements store.GroupStore for testing.
 type fakeGroupStore struct {
-	mu     sync.Mutex
-	groups []*store.NodeGroup
+	mu       sync.Mutex
+	groups   []*store.NodeGroup
+	counts   map[string]int
+	countErr error
+}
+
+func (f *fakeGroupStore) NodeCounts(_ context.Context) (map[string]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.countErr != nil {
+		return nil, f.countErr
+	}
+	out := make(map[string]int, len(f.counts))
+	for k, v := range f.counts {
+		out[k] = v
+	}
+	return out, nil
 }
 
 func (f *fakeGroupStore) Create(_ context.Context, g *store.NodeGroup) error {

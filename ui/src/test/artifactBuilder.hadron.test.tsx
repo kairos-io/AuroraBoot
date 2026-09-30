@@ -56,6 +56,15 @@ function renderBuilder(initialEntry: string) {
   );
 }
 
+// A template click keeps the Base step; the Hadron cards are on the System
+// step, and Next needs a name first.
+function gotoSystemStep() {
+  fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
+    target: { value: "edge" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
+}
+
 describe("ArtifactBuilder: Hadron peer template", () => {
   it("renders Hadron as the first template tile", async () => {
     renderBuilder("/artifacts/new");
@@ -76,6 +85,7 @@ describe("ArtifactBuilder: Hadron peer template", () => {
     renderBuilder("/artifacts/new");
 
     fireEvent.click(await screen.findByText(/^Hadron v/));
+    gotoSystemStep();
 
     await waitFor(() => {
       expect(
@@ -93,6 +103,7 @@ describe("ArtifactBuilder: Hadron peer template", () => {
   it("reveals the Kubernetes card when Standard is picked from a Hadron build", async () => {
     renderBuilder("/artifacts/new");
     fireEvent.click(await screen.findByText(/^Hadron v/));
+    gotoSystemStep();
 
     const standardCopy = await screen.findByText(
       /OS bundled with a Kubernetes distribution/i,

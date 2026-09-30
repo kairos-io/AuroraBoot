@@ -16,6 +16,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -51,6 +52,9 @@ type Config struct {
 	ArtifactsDir  string
 	KeysDir       string  // base directory for SecureBoot key sets
 	Hub           *ws.Hub // optional, created if nil
+	// Metrics holds the in-memory node metrics that heartbeats carry. Optional,
+	// created if nil.
+	Metrics *metrics.Buffer
 	// ISOServe serves a local artifact ISO over a tokenized, BMC-reachable URL
 	// for Redfish virtual-media deployments. Optional; when nil the Redfish
 	// deploy path requires an explicit imageUrl.
@@ -193,6 +197,11 @@ func New(cfg Config) *echo.Echo {
 	if deployHandler != nil {
 		nodeHandler.WithFinalizer(deployHandler.MaybeFinalizeForNode, cfg.BaseContext)
 	}
+	metricsBuf := cfg.Metrics
+	if metricsBuf == nil {
+		metricsBuf = metrics.NewBuffer(metrics.DefaultCapacity)
+	}
+	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	var extensionHandler *handlers.ExtensionHandler
@@ -215,6 +224,7 @@ func New(cfg Config) *echo.Echo {
 		// tracking write must hook in here too (not just on the REST
 		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
 		OnCommandStatus: cmdHandler.ApplyExtensionTracking,
+		Metrics:         metricsBuf,
 	}
 	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
 	// same auto eject-on-phone-home hook — a node that reports liveness only over
@@ -294,6 +304,9 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
 	adminGroup.POST("/nodes/:nodeID/release", nodeHandler.Release)
+	metricsHandler := handlers.NewMetricsHandler(metricsBuf)
+	adminGroup.GET("/nodes/:nodeID/metrics", metricsHandler.GetNode)
+	adminGroup.GET("/metrics/latest", metricsHandler.GetLatest)
 	// GET /nodes/:nodeID/commands and PUT .../commands/:commandID/status are
 	// served by the shared agent-or-admin group above (single registration to
 	// avoid Echo route shadowing); they branch on the caller's identity.

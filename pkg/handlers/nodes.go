@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -44,6 +46,10 @@ type NodeHandler struct {
 	// the server lifecycle so a shutdown cancels an in-flight eject. Defaults to
 	// context.Background().
 	baseCtx context.Context
+
+	// metrics, when non-nil, receives the resource sample a heartbeat carries
+	// and drops a node's samples when the node is deleted. nil ignores metrics.
+	metrics *metrics.Buffer
 }
 
 // NewNodeHandler creates a new NodeHandler.
@@ -57,6 +63,12 @@ func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups s
 		aurorabootURL: aurorabootURL,
 		baseCtx:       context.Background(),
 	}
+}
+
+// SetMetrics wires the in-memory metrics buffer. A nil buffer disables metrics
+// recording: heartbeats that carry metrics are accepted and the metrics ignored.
+func (h *NodeHandler) SetMetrics(b *metrics.Buffer) {
+	h.metrics = b
 }
 
 // WithFinalizer wires the auto eject-on-phone-home hook and the server base context
@@ -272,6 +284,9 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 	nodeID := c.Param("nodeID")
 	if err := h.nodes.Delete(c.Request().Context(), nodeID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete node"})
+	}
+	if h.metrics != nil {
+		h.metrics.Forget(nodeID)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -535,6 +550,9 @@ type heartbeatRequest struct {
 	// renamed later in its life (kairos-io/kairos#4196). Omitted by older agents,
 	// in which case the stored value is preserved.
 	Hostname string `json:"hostname,omitempty"`
+	// Metrics is an optional resource sample (store.NodeMetrics). It is kept raw
+	// and decoded separately so a malformed sample never fails the heartbeat.
+	Metrics json.RawMessage `json:"metrics,omitempty"`
 }
 
 // Heartbeat handles POST /api/v1/nodes/:nodeID/heartbeat.
@@ -560,11 +578,27 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update phase"})
 	}
+	h.recordMetrics(c, nodeID, req.Metrics)
 	// Heartbeat is the universal "OS is up" signal (and the fallback when a node
 	// never re-registers): attempt the auto eject-on-phone-home off-request. The
 	// per-deployment CAS makes a repeated heartbeat a harmless no-op once ejected.
 	h.triggerFinalize(nodeID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// recordMetrics stores the heartbeat's metrics sample, if any. The route is
+// bound to the authenticated node (RequireNodeMatch), so nodeID is the node's
+// own identity. A sample that does not decode is logged and dropped.
+func (h *NodeHandler) recordMetrics(c echo.Context, nodeID string, raw json.RawMessage) {
+	if h.metrics == nil || len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var m store.NodeMetrics
+	if err := json.Unmarshal(raw, &m); err != nil {
+		c.Logger().Warnf("ignoring invalid heartbeat metrics from node %s: %v", nodeID, err)
+		return
+	}
+	h.metrics.Record(nodeID, m)
 }
 
 // GetCommands handles GET /api/v1/nodes/:nodeID/commands.
