@@ -126,6 +126,24 @@ var _ = Describe("ExtractNetboot", Label("iso"), func() {
 		Expect(entries).To(HaveLen(3))
 	})
 
+
+	// An extensions.yaml this build did not write can name a nested live-media
+	// path. Only an entry directly under the live directory names a file
+	// materializeISOExtensions put at the ISO root, so a nested one is as much
+	// the installed system's business as an oci:// one. Failing on it would
+	// break an ISO that netboot-extracted fine before kairos-io/kairos#5040.
+	It("skips a declared extension nested below the live media directory", func() {
+		src := netbootISO(map[string]string{
+			"/extensions.yaml":           declaration("/run/initramfs/live/extensions/foo.sysext.raw"),
+			"/extensions/foo.sysext.raw": "nested image",
+		})
+
+		Expect(extract(src)).To(Succeed())
+
+		entries, err := os.ReadDir(dst)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(entries).To(HaveLen(3))
+	})
 	// AuroraBoot writes the declaration and the images together, so the two
 	// disagreeing means the ISO is inconsistent. Failing is what keeps a netboot
 	// tree from quietly lacking an extension the ISO install gets.

@@ -197,10 +197,12 @@ func extractNetbootExtensions(src, dst string) ([]string, error) {
 // declaredExtensionImages reads the file names install.extensions points at on
 // the live media.
 //
-// Only the entries under the live media directory name a file on this ISO. A
-// user's own extensions.yaml, arriving through --overlay-iso, can name an
-// oci:// or https:// image instead, and those are the installed system's to
-// fetch, not this build's to carry.
+// Only an entry sitting directly under the live media directory names a file
+// on this ISO, because that is where materializeISOExtensions puts the images
+// it resolves: at the root. Everything else is the installed system's to fetch
+// rather than this build's to carry, whether it is an oci:// or https:// image
+// or a nested live-media path from an extensions.yaml AuroraBoot did not write,
+// so it is skipped rather than looked for at a root that does not hold it.
 func declaredExtensionImages(path string) ([]string, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
@@ -216,7 +218,7 @@ func declaredExtensionImages(path string) ([]string, error) {
 	}
 	images := make([]string, 0, len(config.Install.Extensions))
 	for _, extension := range config.Install.Extensions {
-		if !strings.HasPrefix(extension.Name, agentconstants.LiveDir+"/") {
+		if filepath.Dir(extension.Name) != agentconstants.LiveDir {
 			continue
 		}
 		images = append(images, filepath.Base(extension.Name))
