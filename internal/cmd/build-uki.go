@@ -182,7 +182,13 @@ var BuildUKICmd = cli.Command{
 		}
 
 		cloudConfig := ""
-		if ccPath := ctx.String("cloud-config"); ccPath != "" {
+		ccPath := ctx.String("cloud-config")
+		if ccPath == "" && len(ctx.Lineage()) > 1 {
+			// A same-named app-level flag given before the subcommand would
+			// otherwise be shadowed by this command's flag.
+			ccPath = ctx.Lineage()[1].String("cloud-config")
+		}
+		if ccPath != "" {
 			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
 			if err != nil {
 				return fmt.Errorf("reading cloud config: %w", err)

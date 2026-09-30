@@ -330,7 +330,7 @@ var _ = Describe("UKI cmdlines with SELinux base", func() {
 	It("keeps unpatched base byte-identical to today (regression)", func() {
 		entries := GetUkiCmdline("", "Kairos", []string{}, false)
 		Expect(entries).To(HaveLen(1))
-		Expect(entries[0].Cmdline).To(Equal(constants.UkiCmdline + " " + constants.UkiCmdlineInstall))
+		Expect(entries[0].Cmdline).To(Equal(constants.UkiCmdline))
 	})
 
 	It("single-efi entries carry the patched base", func() {
@@ -344,10 +344,10 @@ var _ = Describe("UKI cmdlines with SELinux base", func() {
 	})
 
 	It("EFI names stay short when the base is patched", func() {
-		name := nameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall+" quiet")
+		name := nameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" quiet")
 		Expect(name).ToNot(ContainSubstring("selinux"))
 		Expect(name).To(HavePrefix("norole_"))
-		Expect(nameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase+" "+constants.UkiCmdlineInstall)).To(Equal(constants.ArtifactBaseName))
+		Expect(nameFromCmdline(selinuxBase, constants.ArtifactBaseName, selinuxBase)).To(Equal(constants.ArtifactBaseName))
 	})
 })
 

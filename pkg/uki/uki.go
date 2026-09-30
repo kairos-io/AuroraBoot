@@ -1106,7 +1106,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, c
 
 // getUkiCmdline is GetUkiCmdline with an explicit base cmdline
 func getUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
-	defaultCmdLine := baseCmdline + " " + constants.UkiCmdlineInstall
+	defaultCmdLine := baseCmdline
 
 	if cmdlineExtend != "" {
 		return []utils.BootEntry{{
