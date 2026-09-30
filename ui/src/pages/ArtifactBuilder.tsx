@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   createArtifact,
   getArtifact,
@@ -10,7 +10,7 @@ import {
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
 import { listExtensions, type Extension } from "@/api/extensions";
-import { getRegistrationToken } from "@/api/settings";
+import { getExtensionCatalogSettings, getRegistrationToken } from "@/api/settings";
 import { HierarchyChipInput } from "@/components/HierarchyChipInput";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 import {
@@ -21,6 +21,9 @@ import { buildCloudConfigPreview, stripPhonehome } from "@/lib/cloudConfigPrevie
 import { renderHadronMiddleContent } from "@/lib/hadronContent";
 import {
   DEFAULT_EXTENSIONS_CATALOG,
+  SUGGESTED_EXTENSION_CATALOGS,
+  extensionCatalogChoices,
+  isHadronBaseImage,
   LATEST_VERSION,
   catalogExtensionsForArch,
   fetchCatalogExtensions,
@@ -654,9 +657,16 @@ export function ArtifactBuilder() {
   const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   // Catalog extensions materialized into the built ISO. extensionsCatalog is
-  // pre-filled with the default the backend would use anyway, so the field
-  // shows the operator what is being read and is the place to override it.
-  const [extensionsCatalog, setExtensionsCatalog] = useState(DEFAULT_EXTENSIONS_CATALOG);
+  // pre-filled when the Extensions step opens: with the default the backend
+  // would use anyway for a Hadron build, and with the first configured
+  // catalog for any other flavor, because the default catalog publishes
+  // Hadron extensions only. Once the operator picks or types a catalog
+  // (extensionsCatalogTouched), a flavor change no longer replaces it.
+  const [extensionsCatalog, setExtensionsCatalog] = useState("");
+  const [extensionsCatalogTouched, setExtensionsCatalogTouched] = useState(false);
+  // The catalogs given with `web --extensions-catalog` and saved in
+  // Settings, in that order.
+  const [configuredCatalogs, setConfiguredCatalogs] = useState<string[]>([]);
   const [extensionsCatalogItems, setExtensionsCatalogItems] = useState<CatalogExtensionItem[]>([]);
   const [extensionsCatalogState, setExtensionsCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   // name -> version, where LATEST_VERSION means "whatever the catalog calls
@@ -733,9 +743,33 @@ export function ArtifactBuilder() {
   function goToStep(next: BuilderStep) {
     setStep(next);
     setMaxReached((prev) => Math.max(prev, BUILDER_STEPS.indexOf(next)));
-    if (next === "extensions" && extensionsCatalogState === "idle") {
+    if (next !== "extensions") return;
+    if (!extensionsCatalogTouched) {
+      // Follow the flavor: a build switched from Hadron to Ubuntu must not
+      // keep offering Hadron extensions.
+      const catalog = extensionCatalogChoices(hadronBuild, configuredCatalogs)[0] ?? "";
+      if (catalog !== extensionsCatalog) {
+        setExtensionsCatalog(catalog);
+        if (catalog === "") {
+          setExtensionsCatalogItems([]);
+          setExtensionsCatalogState("idle");
+        } else {
+          loadExtensionsCatalog(catalog);
+        }
+        return;
+      }
+    }
+    if (extensionsCatalogState === "idle" && extensionsCatalog.trim() !== "") {
       loadExtensionsCatalog(extensionsCatalog);
     }
+  }
+
+  // pickExtensionsCatalog is an explicit operator choice: it sticks across
+  // flavor changes and is read right away.
+  function pickExtensionsCatalog(url: string) {
+    setExtensionsCatalog(url);
+    setExtensionsCatalogTouched(true);
+    loadExtensionsCatalog(url);
   }
 
   // Fetch the hadron release tag list once the Hadron template is picked.
@@ -762,6 +796,13 @@ export function ArtifactBuilder() {
         ? `ghcr.io/kairos-io/hadron:${hadronBaseTag}`
         : "";
 
+  // The default catalog publishes Hadron extensions only, so which catalogs
+  // the Extensions step offers depends on the flavor. A Custom build from a
+  // Hadron image counts as Hadron.
+  const hadronBuild =
+    selectedTemplate === HADRON_TEMPLATE_NAME || isHadronBaseImage(form.baseImage);
+  const catalogChoices = extensionCatalogChoices(hadronBuild, configuredCatalogs);
+
   // The catalog entries that publish an artifact for the architecture being
   // built, and the request list derived from the operator's picks.
   const availableExtensions = useMemo(
@@ -775,6 +816,10 @@ export function ArtifactBuilder() {
     selectedExtensions,
     Object.keys(selectedExtensions).sort(),
   );
+  // With no catalog there is nothing to resolve the picks against, so they
+  // are left out of the build rather than resolved against the Hadron
+  // default. The card says so.
+  const catalogMissing = extensionsCatalog.trim() === "";
   const unavailableExtensions = Object.keys(selectedExtensions)
     .filter((name) => {
       const item = availableExtensions.find((i) => i.name === name);
@@ -850,6 +895,9 @@ export function ArtifactBuilder() {
     listGroups().then(setGroups).catch(() => {});
     listSecureBootKeySets().then(setKeySets).catch(() => {});
     getRegistrationToken().then((t) => setRegistrationToken(t.registrationToken)).catch(() => {});
+    getExtensionCatalogSettings()
+      .then((c) => setConfiguredCatalogs([...c.launch, ...c.saved]))
+      .catch(() => {});
   }, []);
 
   // After focusFirstError queues a focusTarget and setStep has re-rendered
@@ -1011,6 +1059,12 @@ export function ArtifactBuilder() {
         }
         if (a.extensionsCatalogs && a.extensionsCatalogs.length > 0) {
           setExtensionsCatalog(a.extensionsCatalogs[0]);
+          setExtensionsCatalogTouched(true);
+        } else if (a.extensions && a.extensions.length > 0) {
+          // A build that sent no catalog was resolved against the default
+          // one, whatever its flavor, so the rebuild reads it too.
+          setExtensionsCatalog(DEFAULT_EXTENSIONS_CATALOG);
+          setExtensionsCatalogTouched(true);
         }
 
         // Hadron branch: restore the composer state and land on Source so the
@@ -1340,13 +1394,18 @@ export function ArtifactBuilder() {
         selectedTemplate === HADRON_TEMPLATE_NAME
           ? hadronExtra || undefined
           : undefined,
-      extensions: selectedExtensionNames.length > 0 ? selectedExtensionNames : undefined,
-      // Only sent when the operator pointed the build at another catalog:
-      // leaving it out keeps the server's default as the single source of
-      // that URL, so it can move without every stored build disagreeing.
+      extensions:
+        selectedExtensionNames.length > 0 && !catalogMissing
+          ? selectedExtensionNames
+          : undefined,
+      // Left out only for a Hadron build on the default catalog: that keeps
+      // the server's default as the single source of that URL, so it can
+      // move without every stored build disagreeing. Any other flavor states
+      // its catalog, because the server default is the Hadron one.
       extensionsCatalogs:
         selectedExtensionNames.length > 0 &&
-        extensionsCatalog.trim() !== DEFAULT_EXTENSIONS_CATALOG
+        !catalogMissing &&
+        (!hadronBuild || extensionsCatalog.trim() !== DEFAULT_EXTENSIONS_CATALOG)
           ? [extensionsCatalog.trim()]
           : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
@@ -1467,7 +1526,7 @@ export function ArtifactBuilder() {
         : undefined,
     version: form.kairosVersion || DEFAULT_ARTIFACT_VERSION,
     bundledExtensions: (form.bundledExtensions ?? []).map((e) => e.name),
-    catalogExtensions: selectedExtensionNames,
+    catalogExtensions: catalogMissing ? [] : selectedExtensionNames,
     user: userMode,
     sshKeyCount: userMode === "none" ? 0 : sshKeys.split("\n").filter((l) => l.trim()).length,
     register: form.provisioning.registerAuroraBoot,
@@ -2393,21 +2452,88 @@ export function ArtifactBuilder() {
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {!hadronBuild && configuredCatalogs.length === 0 && catalogMissing && (
+                    <div className="rounded-md border border-dashed p-3 grid gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        The default catalog publishes extensions built for Hadron,
+                        so this flavor has no catalog yet. Use one of the catalogs
+                        below, type the URL of your own, or save catalogs in{" "}
+                        <Link to="/settings" className="underline text-foreground">
+                          Settings
+                        </Link>{" "}
+                        so every build offers them. You can also start AuroraBoot
+                        with <code className="font-mono text-xs">--extensions-catalog</code>.
+                      </p>
+                      <div className="grid gap-2">
+                        {SUGGESTED_EXTENSION_CATALOGS.map((suggestion) => (
+                          <div
+                            key={suggestion.url}
+                            className="rounded-md border p-2 flex items-start gap-2"
+                          >
+                            <div className="grid gap-0.5 min-w-0 flex-1">
+                              <span className="text-xs font-medium">{suggestion.name}</span>
+                              <span className="text-xs font-mono text-muted-foreground truncate">
+                                {suggestion.url}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {suggestion.description}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => pickExtensionsCatalog(suggestion.url)}
+                              aria-label={`Use ${suggestion.name}`}
+                            >
+                              Use
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid gap-1">
                     <Label className="text-xs">
                       Catalog
                       <InfoTooltip>
-                        Defaults to the Kairos hadron-layers catalog, the same index
-                        a node reads. Point it at your own index to publish your own
-                        extensions.
+                        {hadronBuild
+                          ? "Defaults to the Kairos hadron-layers catalog, the same index a node reads. Point it at your own index to publish your own extensions."
+                          : "The catalogs given with --extensions-catalog and saved in Settings are offered here. Point it at any index to use its extensions."}
                       </InfoTooltip>
                     </Label>
+                    {catalogChoices.length > 1 && (
+                      <div className="flex flex-wrap gap-1.5 mb-1">
+                        {catalogChoices.map((url) => (
+                          <Button
+                            key={url}
+                            type="button"
+                            size="sm"
+                            variant={url === extensionsCatalog.trim() ? "default" : "outline"}
+                            className="h-7 max-w-full text-xs font-mono"
+                            title={url}
+                            aria-pressed={url === extensionsCatalog.trim()}
+                            onClick={() => pickExtensionsCatalog(url)}
+                          >
+                            <span className="truncate">{url}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Input
                         ref={bindRef("extensionsCatalog")}
                         value={extensionsCatalog}
-                        onChange={(e) => setExtensionsCatalog(e.target.value)}
-                        placeholder={DEFAULT_EXTENSIONS_CATALOG}
+                        onChange={(e) => {
+                          setExtensionsCatalog(e.target.value);
+                          setExtensionsCatalogTouched(true);
+                        }}
+                        placeholder={
+                          hadronBuild
+                            ? DEFAULT_EXTENSIONS_CATALOG
+                            : "https://example.com/extensions/releases.json"
+                        }
                         className="font-mono text-xs"
                         aria-label="Extension catalog URL"
                       />
@@ -2416,6 +2542,7 @@ export function ArtifactBuilder() {
                         size="sm"
                         variant="outline"
                         onClick={() => loadExtensionsCatalog(extensionsCatalog)}
+                        disabled={catalogMissing}
                       >
                         {extensionsCatalogState === "loading" ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -2509,6 +2636,17 @@ export function ArtifactBuilder() {
                           </div>
                         );
                       })}
+                    </div>
+                  )}
+
+                  {catalogMissing && selectedExtensionNames.length > 0 && (
+                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-700">
+                        No catalog is set, so {selectedExtensionNames.join(", ")}{" "}
+                        will not be baked into the image. Pick a catalog to keep
+                        them.
+                      </p>
                     </div>
                   )}
 
