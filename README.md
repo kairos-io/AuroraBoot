@@ -250,19 +250,22 @@ Passing `-` to `--cloud-config` reads it from stdin, which is handy in CI pipeli
 ### Other subcommands
 
 ```bash
-# Build an ISO from a Kairos release
-auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
-    --output ./out --name kairos.iso
+# Build an ISO from a container image. The source is a positional argument.
+# --output defaults to the current directory. It only receives the ISO and its
+# checksum. In Docker, pass --output or -w, because the image sets no working
+# directory.
+auroraboot build-iso quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+    --override-name kairos --output ./out
 
 # Build a UKI from a container image
-auroraboot build-uki --image quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
+auroraboot build-uki quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
     --output-dir ./out
 
 # Build an ISO carrying system extensions from a catalog. Names resolve against
 # the hadron-layers catalog unless --extensions-catalog names another one, and
 # an extension can be pinned with name@version. Both flags are repeatable, and
 # catalogs are searched in order, so your own index can shadow a published name.
-auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+auroraboot build-iso quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
     --extension nvidia --extension tailscale@v1.2.3 --output ./out
 
 # Generate a SecureBoot key set
@@ -272,7 +275,8 @@ auroraboot genkey my-keys --output ./keys
 auroraboot sysext my-ext quay.io/myorg/my-tool:latest
 
 # Redfish-driven deploy to a BMC
-auroraboot redfish --endpoint https://bmc/redfish/v1 --user admin --pass secret --image kairos.iso
+auroraboot redfish deploy --endpoint https://bmc/redfish/v1 --username admin \
+    --password-file ./bmc-password --image-url http://10.0.0.5:8090/kairos.iso
 
 # Extract netboot artifacts from an ISO
 auroraboot netboot kairos.iso ./netboot-out

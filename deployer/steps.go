@@ -18,6 +18,12 @@ import (
 
 // CleanTmpDirs removes the temp rootfs and netboot directories when finished to not leave things around
 func (d *Deployer) CleanTmpDirs() error {
+	if d.WorkDir != "" {
+		// Everything the run created is in WorkDir. Never touch State.
+		d.Log.Logger.Debug().Str("workDir", d.WorkDir).Msg("Cleaning up work directory")
+		return os.RemoveAll(d.WorkDir)
+	}
+
 	var err *multierror.Error
 	d.Log.Logger.Debug().Str("tmpRootFs", d.tmpRootFs()).Msg("Cleaning up temp rootfs directory")
 	err = multierror.Append(err, os.RemoveAll(d.tmpRootFs()))
@@ -83,9 +89,10 @@ func (d *Deployer) StepCopyCloudConfig() error {
 		herd.WithDeps(constants.OpPrepareDirs),
 		herd.WithCallback(func(ctx context.Context) error {
 			d.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
-			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
+			dir := filepath.Dir(d.cloudConfigPath())
+			if _, err := os.Stat(dir); err != nil && os.IsNotExist(err) {
 				d.Log.Logger.Error().Err(err).Msg("Destination directory does not exist, creating it")
-				if err := os.MkdirAll(d.destination(), 0755); err != nil {
+				if err := os.MkdirAll(dir, 0755); err != nil {
 					return err
 				}
 			}
@@ -118,7 +125,7 @@ func (d *Deployer) StepGenISO() error {
 			netbootRequested := !d.Config.DisableNetboot
 			return isoRequested || netbootRequested
 		}),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.cloudConfigPath, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
 }
 
 func (d *Deployer) StepDownloadISO() error {
@@ -250,7 +257,14 @@ func (d *Deployer) fromImage() bool {
 // temp-rootfs lived under state_dir. Only the location changes here, not the
 // per-build uniqueness, so PrepDirs' RemoveAll for one build can never clobber
 // another build's rootfs.
+//
+// When WorkDir is set (build-iso), the rootfs lives in it instead. WorkDir is
+// created per run under os.TempDir(), so the same guarantees hold, and two runs
+// that share one output directory no longer share an unpack directory.
 func (d *Deployer) tmpRootFs() string {
+	if d.WorkDir != "" {
+		return filepath.Join(d.WorkDir, "rootfs")
+	}
 	// Hash the normalized state_dir (StateDir cleans the path, so "/output" and
 	// "/output/" collapse to the same key) and use the full digest so distinct
 	// state_dirs can never collide onto the same unpack directory.
@@ -292,6 +306,9 @@ func (d *Deployer) getIsoFile() string {
 }
 
 func (d *Deployer) dstNetboot() string {
+	if d.WorkDir != "" {
+		return filepath.Join(d.WorkDir, "netboot")
+	}
 	return d.Config.StateDir("netboot")
 }
 
@@ -321,6 +338,9 @@ func (d *Deployer) isoOption() bool {
 }
 
 func (d *Deployer) cloudConfigPath() string {
+	if d.WorkDir != "" {
+		return filepath.Join(d.WorkDir, "config.yaml")
+	}
 	return filepath.Join(d.destination(), "config.yaml")
 }
 

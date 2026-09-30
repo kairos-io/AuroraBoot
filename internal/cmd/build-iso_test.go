@@ -2,6 +2,8 @@ package cmd_test
 
 import (
 	"bytes"
+	"os"
+	"path/filepath"
 
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
 	. "github.com/onsi/ginkgo/v2"
@@ -136,5 +138,82 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
 		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog is required"))
 		Expect(err.Error()).ToNot(ContainSubstring("invalid extension request"))
+	})
+})
+
+var _ = Describe("build-iso work files", Label("iso", "cmd"), func() {
+	var (
+		app *cli.App
+		out string
+		tmp string
+	)
+
+	listDir := func(dir string) []string {
+		entries, err := os.ReadDir(dir)
+		Expect(err).ToNot(HaveOccurred())
+		names := []string{}
+		for _, e := range entries {
+			names = append(names, e.Name())
+		}
+		return names
+	}
+
+	BeforeEach(func() {
+		app = cmdpkg.GetApp("v0.0.0")
+		app.Writer = new(bytes.Buffer)
+
+		// Create every temp dir first, so none of them lands inside tmp.
+		out = GinkgoT().TempDir()
+		tmp = GinkgoT().TempDir()
+		GinkgoT().Setenv("TMPDIR", tmp)
+	})
+
+	It("keeps a config.yaml it did not create in --output", func() {
+		user := []byte("hostname: users-own\n")
+		Expect(os.WriteFile(filepath.Join(out, "config.yaml"), user, 0o600)).To(Succeed())
+		other := filepath.Join(GinkgoT().TempDir(), "other.yaml")
+		Expect(os.WriteFile(other, []byte("hostname: from-flag\n"), 0o600)).To(Succeed())
+
+		err := app.Run([]string{"", "build-iso", "--output", out, "-c", other, "/no/image/reference"})
+		Expect(err).To(HaveOccurred())
+
+		got, readErr := os.ReadFile(filepath.Join(out, "config.yaml"))
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(got).To(Equal(user))
+		Expect(listDir(out)).To(Equal([]string{"config.yaml"}))
+	})
+
+	It("defaults --output to the current directory", func() {
+		var output *cli.StringFlag
+		for _, f := range cmdpkg.BuildISOCmd.Flags {
+			if sf, ok := f.(*cli.StringFlag); ok && sf.Name == "output" {
+				output = sf
+			}
+		}
+		Expect(output).ToNot(BeNil())
+		Expect(output.Value).To(Equal("."))
+		Expect(output.Usage).To(ContainSubstring("current directory"))
+	})
+
+	It("leaves the current directory clean when --output is omitted", func() {
+		cwd := GinkgoT().TempDir()
+		user := []byte("hostname: users-own\n")
+		Expect(os.WriteFile(filepath.Join(cwd, "config.yaml"), user, 0o600)).To(Succeed())
+		GinkgoT().Chdir(cwd)
+
+		err := app.Run([]string{"", "build-iso", "/no/image/reference"})
+		Expect(err).To(HaveOccurred())
+
+		got, readErr := os.ReadFile(filepath.Join(cwd, "config.yaml"))
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(got).To(Equal(user))
+		Expect(listDir(cwd)).To(Equal([]string{"config.yaml"}))
+	})
+
+	It("removes its private work dir when a step fails", func() {
+		err := app.Run([]string{"", "build-iso", "--output", out, "/no/image/reference"})
+		Expect(err).To(HaveOccurred())
+
+		Expect(listDir(tmp)).To(BeEmpty())
 	})
 })
