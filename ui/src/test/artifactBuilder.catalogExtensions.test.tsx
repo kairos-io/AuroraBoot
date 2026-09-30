@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Routes, Route } from "react-router";
 
 vi.mock("@/api/artifacts", async () => {
@@ -344,5 +344,98 @@ describe("ArtifactBuilder: catalog per flavor", () => {
     const input = (createArtifact as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
     expect(input.extensions).toBeUndefined();
     expect(input.extensionsCatalogs).toBeUndefined();
+  });
+});
+
+describe("ArtifactBuilder: the catalog follows the flavor from any step", () => {
+  function stubFetch(settings: { launch: string[]; saved: string[] }) {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input);
+        if (url.includes("/api/v1/settings/extension-catalogs")) {
+          return new Response(JSON.stringify(settings), { status: 200 });
+        }
+        if (url.includes("releases.json")) {
+          return new Response(JSON.stringify(CATALOG), { status: 200 });
+        }
+        return new Response("[]", { status: 200 });
+      }),
+    );
+  }
+
+  // The stepper is the second way to change step, and it can jump straight
+  // to a step already reached without passing through Extensions.
+  function stepper(label: string) {
+    const nav = screen.getByRole("navigation", { name: "Steps" });
+    return within(nav).getByRole("button", { name: new RegExp(label) });
+  }
+
+  it("drops the Hadron picks when the flavor changes on Base and Review is opened from the stepper", async () => {
+    stubFetch({ launch: [], saved: [] });
+    renderBuilder();
+    await gotoExtensionsStep();
+    fireEvent.click(await screen.findByLabelText("nvidia"));
+    // Reach Review once so the stepper can jump back to it.
+    gotoReviewStep();
+
+    // Change the flavor on Base, then jump to Review with the stepper. The
+    // Extensions step is never opened again, which is what used to leave the
+    // Hadron catalog and the Hadron picks on an Ubuntu build.
+    fireEvent.click(stepper("Base"));
+    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(stepper("Review"));
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
+    await waitFor(() => expect(createArtifact).toHaveBeenCalled());
+    const input = (createArtifact as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(input.baseImage).toContain("ubuntu");
+    expect(input.extensions).toBeUndefined();
+    expect(input.extensionsCatalogs).toBeUndefined();
+  });
+
+  it("re-selects the flavor's catalog when the flavor changes on Base", async () => {
+    const saved = "https://saved.example.test/releases.json";
+    stubFetch({ launch: [], saved: [saved] });
+    renderBuilder();
+    await gotoExtensionsStep();
+    await screen.findByText("nvidia");
+    expect(screen.getByLabelText(/Extension catalog URL/i)).toHaveValue(CATALOG_URL);
+
+    fireEvent.click(stepper("Base"));
+    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(stepper("Extensions"));
+
+    // Ubuntu has one configured catalog, so that one is selected, not the
+    // Hadron default the build was carrying.
+    await waitFor(() =>
+      expect(screen.getByLabelText(/Extension catalog URL/i)).toHaveValue(saved),
+    );
+  });
+
+  it("keeps a catalog the operator typed across a flavor change", async () => {
+    stubFetch({ launch: [], saved: [] });
+    renderBuilder();
+    await gotoExtensionsStep();
+    await screen.findByText("nvidia");
+    fireEvent.change(screen.getByLabelText(/Extension catalog URL/i), {
+      target: { value: "https://mine.example.test/releases.json" },
+    });
+    // A typed catalog is not read until Load: until then the field names one
+    // catalog while the entries came from another, so nothing is offered.
+    expect(screen.queryByLabelText("nvidia")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Load" }));
+    fireEvent.click(await screen.findByLabelText("nvidia"));
+    gotoReviewStep();
+
+    fireEvent.click(stepper("Base"));
+    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(stepper("Review"));
+
+    fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
+    await waitFor(() => expect(createArtifact).toHaveBeenCalled());
+    const input = (createArtifact as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0];
+    expect(input.extensions).toEqual(["nvidia"]);
+    expect(input.extensionsCatalogs).toEqual(["https://mine.example.test/releases.json"]);
   });
 });

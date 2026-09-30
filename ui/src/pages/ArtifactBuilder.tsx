@@ -656,19 +656,25 @@ export function ArtifactBuilder() {
   const [layersCatalog, setLayersCatalog] = useState<HadronLayerItem[]>([]);
   const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  // Catalog extensions materialized into the built ISO. extensionsCatalog is
-  // pre-filled when the Extensions step opens: with the default the backend
-  // would use anyway for a Hadron build, and with the first configured
-  // catalog for any other flavor, because the default catalog publishes
-  // Hadron extensions only. Once the operator picks or types a catalog
-  // (extensionsCatalogTouched), a flavor change no longer replaces it.
-  const [extensionsCatalog, setExtensionsCatalog] = useState("");
+  // Catalog extensions materialized into the built ISO. The catalog in force
+  // is derived, not stored: the flavor decides it, because the default
+  // catalog publishes Hadron extensions only and a configured catalog is
+  // per-flavor. Once the operator picks or types one
+  // (extensionsCatalogTouched), that override wins and a flavor change no
+  // longer replaces it. Deriving rather than syncing is what makes the
+  // catalog right on every step, including a stepper jump from Base to
+  // Review that never re-opens Extensions.
+  const [extensionsCatalogOverride, setExtensionsCatalogOverride] = useState("");
   const [extensionsCatalogTouched, setExtensionsCatalogTouched] = useState(false);
   // The catalogs given with `web --extensions-catalog` and saved in
   // Settings, in that order.
   const [configuredCatalogs, setConfiguredCatalogs] = useState<string[]>([]);
   const [extensionsCatalogItems, setExtensionsCatalogItems] = useState<CatalogExtensionItem[]>([]);
-  const [extensionsCatalogState, setExtensionsCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [extensionsCatalogLoadState, setExtensionsCatalogLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // The catalog those entries were read from. When the flavor moves the
+  // catalog on, they describe the old one, so they are stale and no effect
+  // is needed to clear them.
+  const [loadedCatalogURL, setLoadedCatalogURL] = useState("");
   // name -> version, where LATEST_VERSION means "whatever the catalog calls
   // latest at build time".
   const [selectedExtensions, setSelectedExtensions] = useState<Record<string, string>>({});
@@ -721,18 +727,19 @@ export function ArtifactBuilder() {
   function loadExtensionsCatalog(url: string) {
     const source = url.trim();
     if (source === "") {
-      setExtensionsCatalogState("error");
+      setExtensionsCatalogLoadState("error");
       return;
     }
-    setExtensionsCatalogState("loading");
+    setLoadedCatalogURL(source);
+    setExtensionsCatalogLoadState("loading");
     fetchCatalogExtensions(source)
       .then((items) => {
         setExtensionsCatalogItems(items);
-        setExtensionsCatalogState("ready");
+        setExtensionsCatalogLoadState("ready");
       })
       .catch(() => {
         setExtensionsCatalogItems([]);
-        setExtensionsCatalogState("error");
+        setExtensionsCatalogLoadState("error");
       });
   }
 
@@ -744,21 +751,6 @@ export function ArtifactBuilder() {
     setStep(next);
     setMaxReached((prev) => Math.max(prev, BUILDER_STEPS.indexOf(next)));
     if (next !== "extensions") return;
-    if (!extensionsCatalogTouched) {
-      // Follow the flavor: a build switched from Hadron to Ubuntu must not
-      // keep offering Hadron extensions.
-      const catalog = extensionCatalogChoices(hadronBuild, configuredCatalogs)[0] ?? "";
-      if (catalog !== extensionsCatalog) {
-        setExtensionsCatalog(catalog);
-        if (catalog === "") {
-          setExtensionsCatalogItems([]);
-          setExtensionsCatalogState("idle");
-        } else {
-          loadExtensionsCatalog(catalog);
-        }
-        return;
-      }
-    }
     if (extensionsCatalogState === "idle" && extensionsCatalog.trim() !== "") {
       loadExtensionsCatalog(extensionsCatalog);
     }
@@ -767,7 +759,7 @@ export function ArtifactBuilder() {
   // pickExtensionsCatalog is an explicit operator choice: it sticks across
   // flavor changes and is read right away.
   function pickExtensionsCatalog(url: string) {
-    setExtensionsCatalog(url);
+    setExtensionsCatalogOverride(url);
     setExtensionsCatalogTouched(true);
     loadExtensionsCatalog(url);
   }
@@ -802,12 +794,24 @@ export function ArtifactBuilder() {
   const hadronBuild =
     selectedTemplate === HADRON_TEMPLATE_NAME || isHadronBaseImage(form.baseImage);
   const catalogChoices = extensionCatalogChoices(hadronBuild, configuredCatalogs);
+  // The catalog in force. An override the operator picked or typed wins;
+  // otherwise it is the flavor's own catalog, so changing the flavor moves
+  // it wherever that change was made. Reading the catalog stays lazy in
+  // goToStep, so nothing is fetched before the Extensions step is opened.
+  const extensionsCatalog = extensionsCatalogTouched
+    ? extensionsCatalogOverride
+    : (catalogChoices[0] ?? "");
+  // Entries read from a catalog that is no longer in force describe the
+  // previous flavor, so they are not offered and the step counts as unread.
+  const catalogEntriesAreCurrent = loadedCatalogURL === extensionsCatalog.trim();
+  const extensionsCatalogState = catalogEntriesAreCurrent ? extensionsCatalogLoadState : "idle";
 
   // The catalog entries that publish an artifact for the architecture being
   // built, and the request list derived from the operator's picks.
   const availableExtensions = useMemo(
-    () => catalogExtensionsForArch(extensionsCatalogItems, form.arch),
-    [extensionsCatalogItems, form.arch],
+    () =>
+      catalogEntriesAreCurrent ? catalogExtensionsForArch(extensionsCatalogItems, form.arch) : [],
+    [catalogEntriesAreCurrent, extensionsCatalogItems, form.arch],
   );
   // Serialized over the selection itself, not over the visible list: changing
   // the architecture must not quietly drop a pick. The card reports the
@@ -1058,12 +1062,12 @@ export function ArtifactBuilder() {
           setSelectedExtensions(parseExtensionSelection(a.extensions));
         }
         if (a.extensionsCatalogs && a.extensionsCatalogs.length > 0) {
-          setExtensionsCatalog(a.extensionsCatalogs[0]);
+          setExtensionsCatalogOverride(a.extensionsCatalogs[0]);
           setExtensionsCatalogTouched(true);
         } else if (a.extensions && a.extensions.length > 0) {
           // A build that sent no catalog was resolved against the default
           // one, whatever its flavor, so the rebuild reads it too.
-          setExtensionsCatalog(DEFAULT_EXTENSIONS_CATALOG);
+          setExtensionsCatalogOverride(DEFAULT_EXTENSIONS_CATALOG);
           setExtensionsCatalogTouched(true);
         }
 
@@ -2526,7 +2530,7 @@ export function ArtifactBuilder() {
                         ref={bindRef("extensionsCatalog")}
                         value={extensionsCatalog}
                         onChange={(e) => {
-                          setExtensionsCatalog(e.target.value);
+                          setExtensionsCatalogOverride(e.target.value);
                           setExtensionsCatalogTouched(true);
                         }}
                         placeholder={
