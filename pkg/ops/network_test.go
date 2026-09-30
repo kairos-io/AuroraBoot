@@ -100,27 +100,46 @@ var _ = Describe("download", Label("network"), func() {
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 
-		// The handler blocks until the test has canceled ctx, so the
-		// cancellation is guaranteed to land while downloadOnce is still
-		// waiting on the transfer rather than between two attempts.
-		canceled := make(chan struct{})
+		// The response headers go out first and the body is held back, so the
+		// cancellation lands while downloadOnce is still waiting on the
+		// transfer rather than between two attempts.
+		//
+		// Holding the headers back too is what made this flaky. grab's
+		// Client.Do returns once the headers arrive, so a handler that sends
+		// nothing until after cancel() lets Do return with ctx already
+		// canceled AND the whole 7-byte body already copied, which closes
+		// resp.Done. Then both arms of downloadOnce's select are ready and Go
+		// picks one at random: when resp.Done wins, download returns a nil
+		// error and this spec fails. Forcing that interleaving (an 80ms sleep
+		// before the select) failed 21 of 60 runs.
+		//
+		// Flushing the headers and blocking the body instead means resp.Done
+		// can never close, so ctx.Done is the only arm that can fire.
 		inFlight := make(chan struct{})
+		release := make(chan struct{})
 		var once sync.Once
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if notFoundOnHead(w, r) {
 				return
 			}
+			w.WriteHeader(http.StatusOK)
+			flusher, ok := w.(http.Flusher)
+			Expect(ok).To(BeTrue(), "the test server must support flushing headers")
+			flusher.Flush()
 			once.Do(func() { close(inFlight) })
-			<-canceled
+			<-release
 			w.Write([]byte("payload"))
 		}))
 		defer srv.Close()
+		// Registered after srv.Close, so it runs before it: the handler is
+		// let go first, then srv.Close waits for it. DeferCleanup would run
+		// after this function's defers and deadlock srv.Close.
+		defer close(release)
 
 		go func() {
 			defer GinkgoRecover()
 			<-inFlight
 			cancel()
-			close(canceled)
 		}()
 
 		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
