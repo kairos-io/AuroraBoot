@@ -362,7 +362,7 @@ jobs:
      - name: Load image
        run: docker load -i /tmp/auroraboot-image.tar
      - name: Cypress run
-       uses: cypress-io/github-action@v7.4.4
+       uses: cypress-io/github-action@v7.4.5
        with:
          working-directory: e2e/web/
          start: docker run --network=host --rm auroraboot:ci web
