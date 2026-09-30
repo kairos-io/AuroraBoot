@@ -65,7 +65,7 @@ jobs:
       - name: Run chart unit tests
         run: make helm-chart-test
   build-image:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -93,7 +93,7 @@ jobs:
           path: /tmp/auroraboot-image.tar
           retention-days: 1
   e2e-tests:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -105,11 +105,13 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
-      # docker/setup-qemu-action runs the binfmt container on the default bridge,
-      # which these runners fail with "bridge port not forwarding after 200ms".
-      # binfmt only writes to /proc/sys/fs/binfmt_misc, so give it the host
-      # network and never create a bridge port. Same reason as the network=host
-      # driver-opt on buildx below.
+      # docker/setup-qemu-action runs the binfmt container on the default
+      # bridge, which the self-hosted pool failed with "bridge port not
+      # forwarding after 200ms" (kairos-io/kairos#4553). binfmt only writes to
+      # /proc/sys/fs/binfmt_misc, so give it the host network and never create
+      # a bridge port. Kept after the move to hosted runners: it costs nothing
+      # here and is what makes this step portable back to a self-hosted pool.
+      # Same reason as the network=host driver-opt on buildx below.
       # Pinned by digest: this step installs the emulators every cross-arch
       # build then depends on, so it must not change under us.
       # tonistiigi/binfmt:qemu-v9.2.2
@@ -133,10 +135,10 @@ jobs:
           tags: auroraboot:test
       - name: Ensure loop device nodes
         # losetup asks the kernel for a free loop index and then opens
-        # /dev/loopN. On the shared kvm runners the loop pool leaks across
-        # jobs: a previous run can leave the kernel index free while the
+        # /dev/loopN. A previous step can leave the kernel index free while the
         # /dev/loopN node has been unlinked (LOOP_CTL_DEL, or a container
-        # bind-mounting /dev). losetup then fails with
+        # bind-mounting /dev); on the shared self-hosted pool this also leaked
+        # across jobs. losetup then fails with
         # "device node /dev/loopN is lost. You may use mknod(1) to recover it."
         # Pre-create the nodes so any recycled index has a matching /dev entry.
         run: |
@@ -157,7 +159,7 @@ jobs:
         with:
           files: ./coverage.out
   test-bootable-iso-uki:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -167,6 +169,23 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        # Hosted runners expose /dev/kvm as root:kvm 0660 and the `runner` user
+        # is not in that group, so qemu would silently fall back to TCG and
+        # these boots would run far slower than the suite's timeouts allow.
+        # setfacl on its own is not enough: installing the qemu stack above
+        # triggers udev, and `udevadm trigger` is asynchronous, so the node can
+        # be re-created with the packaged mode seconds after setfacl has
+        # already returned 0. Install a rule that outranks the packaged one,
+        # drain the udev queue, and only then fall back to the ACL.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          sudo udevadm settle || true
+          sudo setfacl -m u:runner:rwx /dev/kvm || true
+          # Fail here rather than deep inside a boot that silently ran on TCG.
+          test -w /dev/kvm
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -217,7 +236,7 @@ jobs:
           export ISO=$(find $PWD/build -name *.iso)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -227,6 +246,23 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        # Hosted runners expose /dev/kvm as root:kvm 0660 and the `runner` user
+        # is not in that group, so qemu would silently fall back to TCG and
+        # these boots would run far slower than the suite's timeouts allow.
+        # setfacl on its own is not enough: installing the qemu stack above
+        # triggers udev, and `udevadm trigger` is asynchronous, so the node can
+        # be re-created with the packaged mode seconds after setfacl has
+        # already returned 0. Install a rule that outranks the packaged one,
+        # drain the udev queue, and only then fall back to the ACL.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          sudo udevadm settle || true
+          sudo setfacl -m u:runner:rwx /dev/kvm || true
+          # Fail here rather than deep inside a boot that silently ran on TCG.
+          test -w /dev/kvm
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -269,7 +305,7 @@ jobs:
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-bios:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -279,6 +315,23 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        # Hosted runners expose /dev/kvm as root:kvm 0660 and the `runner` user
+        # is not in that group, so qemu would silently fall back to TCG and
+        # these boots would run far slower than the suite's timeouts allow.
+        # setfacl on its own is not enough: installing the qemu stack above
+        # triggers udev, and `udevadm trigger` is asynchronous, so the node can
+        # be re-created with the packaged mode seconds after setfacl has
+        # already returned 0. Install a rule that outranks the packaged one,
+        # drain the udev queue, and only then fall back to the ACL.
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          sudo udevadm settle || true
+          sudo setfacl -m u:runner:rwx /dev/kvm || true
+          # Fail here rather than deep inside a boot that silently ran on TCG.
+          test -w /dev/kvm
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
