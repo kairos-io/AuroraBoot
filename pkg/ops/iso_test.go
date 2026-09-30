@@ -2,6 +2,7 @@ package ops
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -281,4 +282,38 @@ var _ = Describe("cleanupGrubName", Label("iso"), func() {
 		Entry("gcdaa64.efi.signed becomes grubaa64.efi", "gcdaa64.efi.signed", "grubaa64.efi"),
 		Entry("plain gcdx64.efi (unsigned build) also renames", "gcdx64.efi", "grubx64.efi"),
 	)
+})
+
+var _ = Describe("GenISO", func() {
+	// The ISO root gets the cloud config from the path the caller hands in,
+	// not from <dst>/config.yaml, which may be a file the user owns.
+	It("copies the cloud config from the path the getter returns", func() {
+		dst := GinkgoT().TempDir()
+		src := GinkgoT().TempDir()
+		other := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(dst, "config.yaml"), []byte("hostname: users-own\n"), 0o600)).To(Succeed())
+		ccPath := filepath.Join(other, "cc.yaml")
+		Expect(os.WriteFile(ccPath, []byte("hostname: from-flag\n"), 0o600)).To(Succeed())
+
+		var recorded string
+		materializeExtensionArtifacts = func(_ context.Context, _ []string, _ []extensions.Request, _, destination string, _ bool) ([]string, error) {
+			b, err := os.ReadFile(filepath.Join(destination, "config.yaml"))
+			Expect(err).ToNot(HaveOccurred())
+			recorded = string(b)
+			return nil, errors.New("stop here")
+		}
+		DeferCleanup(func() { materializeExtensionArtifacts = extensions.Materialize })
+
+		iso := schema.ISO{OverrideName: "probe", Extensions: []extensions.Request{{Name: "x"}}}
+		err := GenISO(
+			func() string { return src },
+			func() string { return dst },
+			func() string { return ccPath },
+			iso, "amd64", false,
+		)(context.Background())
+
+		Expect(err).To(MatchError(ContainSubstring("stop here")))
+		Expect(recorded).To(ContainSubstring("from-flag"))
+		Expect(recorded).ToNot(ContainSubstring("users-own"))
+	})
 })

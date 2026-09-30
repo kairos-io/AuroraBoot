@@ -125,7 +125,7 @@ func (d *Deployer) StepGenISO() error {
 			netbootRequested := !d.Config.DisableNetboot
 			return isoRequested || netbootRequested
 		}),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.cloudConfigPath, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
 }
 
 func (d *Deployer) StepDownloadISO() error {
