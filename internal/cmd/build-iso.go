@@ -175,6 +175,7 @@ var BuildISOCmd = cli.Command{
 			return fmt.Errorf("creating work directory: %w", err)
 		}
 		defer os.RemoveAll(workDir)
+		defer removeOnSignal(workDir)()
 
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
 		d.WorkDir = workDir
