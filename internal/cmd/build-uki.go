@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
@@ -176,6 +177,15 @@ var BuildUKICmd = cli.Command{
 			extensionRequests = append(extensionRequests, request)
 		}
 
+		cloudConfig := ""
+		if ccPath := ctx.String("cloud-config"); ccPath != "" {
+			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
+			if err != nil {
+				return err
+			}
+			cloudConfig = cc
+		}
+
 		return uki.Build(uki.Options{
 			Source:                  args.Get(0),
 			OutputDir:               ctx.String("output-dir"),
@@ -200,6 +210,7 @@ var BuildUKICmd = cli.Command{
 			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
 			Extensions:              extensionRequests,
 			ExtensionsCatalogs:      ctx.StringSlice("extensions-catalog"),
+			CloudConfig:             cloudConfig,
 			Logger:                  &log,
 		})
 	},

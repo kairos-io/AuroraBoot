@@ -2,6 +2,7 @@ package cmd_test
 
 import (
 	"bytes"
+	"os"
 
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
 	. "github.com/onsi/ginkgo/v2"
@@ -44,5 +45,14 @@ var _ = Describe("build-uki", Label("uki", "cmd"), func() {
 	It("rejects malformed extension requests", Label("flags"), func() {
 		err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extension", "tool@", "--extensions-catalog", "catalog.yaml", "some/image:latest"})
 		Expect(err).To(MatchError(ContainSubstring("invalid extension request")))
+	It("accepts the app-level --cloud-config flag before the subcommand", Label("flags"), func() {
+		cc := GinkgoT().TempDir() + "/cc.yaml"
+		Expect(os.WriteFile(cc, []byte("#cloud-config\nusers:\n  - name: kairos\n"), 0o644)).To(Succeed())
+
+		err = app.Run([]string{"", "--cloud-config", cc, "build-uki", "some/image:latest"})
+
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+		Expect(err.Error()).ToNot(ContainSubstring("unknown flag"))
 	})
 })
