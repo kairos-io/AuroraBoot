@@ -150,12 +150,7 @@ func (r *RawImage) stageOemContents(tmpDirOem, recoveryImagePath string) (int64,
 		return 0, err
 	}
 	if r.CloudConfig != "" && len(ccContent) > 0 {
-		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("Copying cloud config to oem partition")
-		f, err := r.config.Fs.ReadFile(r.CloudConfig)
-		if err != nil {
-			return 0, err
-		}
-		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Str("content", string(f)).Interface("s", f).Msg("Copying cloud config to oem partition")
+		internal.Log.Logger.Debug().Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Str("content", string(ccContent)).Msg("Copying cloud config to oem partition")
 		err = fsutils.Copy(r.config.Fs, r.CloudConfig, filepath.Join(tmpDirOem, "90_custom.yaml"))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Str("source", r.CloudConfig).Str("target", filepath.Join(tmpDirOem, "90_custom.yaml")).Msg("failed to copy cloud config")
