@@ -161,7 +161,18 @@ var BuildISOCmd = cli.Command{
 			c.State = "/tmp/auroraboot"
 		}
 
+		// The cloud config copy, the unpacked rootfs and the netboot dir stay in a
+		// private directory of this run, so --output only receives the ISO and
+		// its checksum. It lives under os.TempDir() and not under --output, see
+		// the note on tmpRootFs in the deployer.
+		workDir, err := os.MkdirTemp("", "auroraboot-build-iso-")
+		if err != nil {
+			return fmt.Errorf("creating work directory: %w", err)
+		}
+		defer os.RemoveAll(workDir)
+
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
+		d.WorkDir = workDir
 		for _, step := range []func() error{
 			d.PrepDirs,
 			d.StepCopyCloudConfig,
