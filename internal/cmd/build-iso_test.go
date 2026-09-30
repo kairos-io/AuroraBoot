@@ -183,6 +183,33 @@ var _ = Describe("build-iso work files", Label("iso", "cmd"), func() {
 		Expect(listDir(out)).To(Equal([]string{"config.yaml"}))
 	})
 
+	It("defaults --output to the current directory", func() {
+		var output *cli.StringFlag
+		for _, f := range cmdpkg.BuildISOCmd.Flags {
+			if sf, ok := f.(*cli.StringFlag); ok && sf.Name == "output" {
+				output = sf
+			}
+		}
+		Expect(output).ToNot(BeNil())
+		Expect(output.Value).To(Equal("."))
+		Expect(output.Usage).To(ContainSubstring("current directory"))
+	})
+
+	It("leaves the current directory clean when --output is omitted", func() {
+		cwd := GinkgoT().TempDir()
+		user := []byte("hostname: users-own\n")
+		Expect(os.WriteFile(filepath.Join(cwd, "config.yaml"), user, 0o600)).To(Succeed())
+		GinkgoT().Chdir(cwd)
+
+		err := app.Run([]string{"", "build-iso", "/no/image/reference"})
+		Expect(err).To(HaveOccurred())
+
+		got, readErr := os.ReadFile(filepath.Join(cwd, "config.yaml"))
+		Expect(readErr).ToNot(HaveOccurred())
+		Expect(got).To(Equal(user))
+		Expect(listDir(cwd)).To(Equal([]string{"config.yaml"}))
+	})
+
 	It("removes its private work dir when a step fails", func() {
 		err := app.Run([]string{"", "build-iso", "--output", out, "/no/image/reference"})
 		Expect(err).To(HaveOccurred())

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -36,7 +37,8 @@ var BuildISOCmd = cli.Command{
 		&cli.StringFlag{
 			Name:    "output",
 			Aliases: []string{"o"},
-			Usage:   "Output directory (defaults to current directory)",
+			Value:   ".",
+			Usage:   "Output directory for the ISO and its checksum (defaults to current directory)",
 		},
 		&cli.BoolFlag{
 			Name:  "date",
@@ -158,7 +160,10 @@ var BuildISOCmd = cli.Command{
 		}
 
 		if c.State == "" {
-			c.State = "/tmp/auroraboot"
+			c.State = "."
+		}
+		if abs, err := filepath.Abs(c.State); err == nil {
+			c.State = abs
 		}
 
 		// The cloud config copy, the unpacked rootfs and the netboot dir stay in a
