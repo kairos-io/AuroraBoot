@@ -72,7 +72,7 @@ var BuildISOCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  "default-grub-entry",
-			Usage: "Title of the live menu entry to boot when the grub timeout expires. Defaults to \"" + constants.LiveGrubEntryInteractive + "\"; pass \"" + constants.LiveGrubEntryUnattended + "\" for the unattended installer",
+			Usage: "Id (grub --id) of the live menu entry to boot when the grub timeout expires. Defaults to \"" + constants.LiveGrubEntryInteractive + "\"; pass \"" + constants.LiveGrubEntryUnattended + "\" for the unattended installer",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extension",

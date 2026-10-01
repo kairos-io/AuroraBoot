@@ -55,7 +55,28 @@ const (
 	// (cmdline `install-mode-interactive`). This is what a live ISO boots
 	// when the build does not name another entry.
 	LiveGrubEntryInteractive = "kairos-interactive-install"
+	// LiveGrubEntryManual boots the live system and stops at a login
+	// prompt, installing nothing.
+	LiveGrubEntryManual = "kairos-manual"
+	// LiveGrubEntryBootLocal chainloads the system already installed on
+	// the disk (cmdline `kairos.boot_live_mode`).
+	LiveGrubEntryBootLocal = "kairos-boot-local"
+	// LiveGrubEntryDebug boots the live system with the initrd debug
+	// shell and immucore debug logging.
+	LiveGrubEntryDebug = "kairos-debug"
 )
+
+// LiveGrubEntries lists every id a build may name as the default live entry.
+// Grub falls back to the first entry when `set default` matches nothing, so
+// an id outside this list does not fail the boot, it silently boots the
+// unattended installer. The build refuses such a value instead.
+var LiveGrubEntries = []string{
+	LiveGrubEntryUnattended,
+	LiveGrubEntryManual,
+	LiveGrubEntryInteractive,
+	LiveGrubEntryBootLocal,
+	LiveGrubEntryDebug,
+}
 
 type UkiOutput string
 
