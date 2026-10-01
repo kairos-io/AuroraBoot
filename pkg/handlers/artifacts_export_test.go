@@ -129,7 +129,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 			// from one barrier, so an unqueued handler would show several
 			// exports in flight at once.
 			fe := &fakeExporter{body: []byte("flat-tar-bytes"), hold: 60 * time.Millisecond}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			const callers = 6
@@ -180,7 +180,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 				_, err := w.Write([]byte("tar"))
 				return err
 			}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(exporter)
 
 			var wg sync.WaitGroup
@@ -200,7 +200,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 
 		It("releases the per-artifact lock so the map does not grow", func() {
 			fe := &fakeExporter{body: []byte("tar")}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			for i := 0; i < 3; i++ {
@@ -217,7 +217,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 			defer handlers.SetExportQueueWaitForTest(50 * time.Millisecond)()
 
 			fe := &fakeExporter{body: []byte("tar"), block: make(chan struct{}), started: make(chan struct{})}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			holder := make(chan struct{})
@@ -252,7 +252,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 			// observable server-side: the export never ran, and the lock map
 			// drained.
 			fe := &fakeExporter{body: []byte("tar"), block: make(chan struct{}), started: make(chan struct{})}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			holder := make(chan struct{})
@@ -365,7 +365,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 	Describe("failure before any output", func() {
 		It("answers 500 with a JSON error instead of an empty 200", func() {
 			fe := &fakeExporter{err: fmt.Errorf("docker import failed: exit status 1")}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			w := call(h, nil, "art-1")
@@ -382,7 +382,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 	Describe("successful export", func() {
 		It("sets the download headers and streams the tar", func() {
 			fe := &fakeExporter{body: []byte("tar-bytes")}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			w := call(h, nil, "art-1")
@@ -396,7 +396,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 	Describe("an export that succeeds without producing bytes", func() {
 		It("still answers 200 with the download headers", func() {
 			fe := &fakeExporter{}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			w := call(h, nil, "art-1")
@@ -409,7 +409,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 	Describe("lookup failures", func() {
 		It("404s an unknown artifact without touching docker", func() {
 			fe := &fakeExporter{body: []byte("tar")}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			Expect(call(h, nil, "nope").Code).To(Equal(http.StatusNotFound))
@@ -420,7 +420,7 @@ var _ = Describe("ArtifactHandler ExportImage", func() {
 		It("404s an artifact that has no container image", func() {
 			as.records = append(as.records, &store.ArtifactRecord{ID: "art-iso-only"})
 			fe := &fakeExporter{body: []byte("tar")}
-			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, "", "reg", "http://localhost:8080").
+			h := handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, "", "reg", "http://localhost:8080").
 				WithTestImageExporter(fe.export)
 
 			Expect(call(h, nil, "art-iso-only").Code).To(Equal(http.StatusNotFound))
