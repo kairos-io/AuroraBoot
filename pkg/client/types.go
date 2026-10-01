@@ -150,8 +150,9 @@ type BulkCommandRequest struct {
 	Selector CommandSelector   `json:"selector"`
 	Command  string            `json:"command"`
 	Args     map[string]string `json:"args,omitempty"`
-	// FailFast stops the rollout at the first node that fails instead of
-	// running it to the end of the selection.
+	// FailFast cancels the commands of this fan-out that are still Pending
+	// once any node of it reports Failed. A node that was online when the
+	// fan-out ran already holds its command and is not stopped.
 	FailFast bool `json:"failFast,omitempty"`
 }
 

@@ -266,6 +266,11 @@ func (f *fakeNodeStore) Delete(_ context.Context, id string) error {
 type fakeCommandStore struct {
 	mu   sync.Mutex
 	cmds []*store.NodeCommand
+	// onClaim, when set, runs just before a command is claimed for delivery
+	// and stands in for the node reacting to the push: the agent can report a
+	// phase back while the caller is still inside pushCommand. It runs outside
+	// f.mu so the hook may call back into the store.
+	onClaim func(id string)
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, cmd *store.NodeCommand) error {
@@ -325,6 +330,9 @@ func (f *fakeCommandStore) MarkDelivered(_ context.Context, ids []string) error 
 }
 
 func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool, error) {
+	if f.onClaim != nil {
+		f.onClaim(id)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, cmd := range f.cmds {

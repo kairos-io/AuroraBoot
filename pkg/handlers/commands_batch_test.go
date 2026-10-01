@@ -13,6 +13,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
+	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
 )
 
@@ -155,6 +156,35 @@ var _ = Describe("CommandHandler batches", func() {
 
 			Expect(find(cmds[1].ID).Phase).To(Equal(store.CommandRunning))
 			Expect(find(cmds[2].ID).Phase).To(Equal(store.CommandDelivered))
+		})
+
+		// The ordering the fan-out owes the cancellation. A node that is
+		// already online receives its command inside the same request, so it
+		// can report Failed before the fan-out has reached the end of the
+		// selection, and CancelPendingInBatch can only cancel rows that exist
+		// by then. Creating every row before pushing any of them is what makes
+		// the first node's failure stop the siblings further down the slice;
+		// pushing inside the create loop cancels nothing and upgrades them all.
+		It("cancels the siblings when the first node fails during the fan-out", func() {
+			hub := ws.NewHub()
+			hub.Register("node-1", nil)
+			handler = handlers.NewCommandHandler(cs, ns, hub, nil, nil)
+
+			cs.onClaim = func(id string) {
+				cmd := find(id)
+				if cmd == nil || cmd.ManagedNodeID != "node-1" || cmd.Phase != store.CommandPending {
+					return
+				}
+				reportStatus("node-1", id, store.CommandFailed)
+			}
+
+			cmds := postBulk(`{"selector":{"nodeIDs":["node-1","node-2","node-3"]},"command":"upgrade","failFast":true}`)
+
+			Expect(cmds).To(HaveLen(3))
+			Expect(find(cmds[0].ID).Phase).To(Equal(store.CommandFailed))
+			Expect(find(cmds[1].ID).Phase).To(Equal(store.CommandCanceled))
+			Expect(find(cmds[2].ID).Phase).To(Equal(store.CommandCanceled))
+			Expect(find(cmds[1].ID).Result).To(ContainSubstring("node-1"))
 		})
 
 		It("does not touch the batch when fail-fast was not asked for", func() {

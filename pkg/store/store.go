@@ -147,9 +147,11 @@ type NodeCommand struct {
 	// single bulk or group request produced can be found again as one
 	// operation. It is empty on a command addressed to one node.
 	BatchID string `json:"batchID,omitempty" gorm:"index"`
-	// FailFast asks for the rest of the batch to be stopped once any node in
-	// it fails. It is carried on every row of the batch rather than in a
-	// batch table so the rule travels with the command that has to apply it.
+	// FailFast asks for the still-Pending rows of the batch to be canceled
+	// once any node in it fails; a row already Delivered to its node is left
+	// to report its own result. It is carried on every row of the batch rather
+	// than in a batch table so the rule travels with the command that has to
+	// apply it.
 	FailFast bool `json:"failFast,omitempty"`
 }
 

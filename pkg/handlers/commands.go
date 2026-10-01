@@ -46,7 +46,9 @@ type createCommandRequest struct {
 type groupCommandRequest struct {
 	Command string            `json:"command"`
 	Args    map[string]string `json:"args"`
-	// FailFast stops the rollout at the first node that fails.
+	// FailFast cancels the commands of this fan-out that are still Pending
+	// once any node of it reports Failed. A node that was online when the
+	// fan-out ran already holds its command and is not stopped.
 	FailFast bool `json:"failFast,omitempty"`
 }
 
@@ -104,9 +106,11 @@ type bulkCommandRequest struct {
 	Selector store.CommandSelector `json:"selector"`
 	Command  string                `json:"command"`
 	Args     map[string]string     `json:"args"`
-	// FailFast asks for the rollout to stop at the first node that fails
-	// instead of running to the end of the selection. It defaults to false, so
-	// a caller that does not send it keeps the fan-out behaviour it had.
+	// FailFast cancels the commands of this fan-out that are still Pending
+	// once any node of it reports Failed. A node that was online when the
+	// fan-out ran already holds its command and is not stopped. It defaults to
+	// false, so a caller that does not send it keeps the fan-out behaviour it
+	// had.
 	FailFast bool `json:"failFast,omitempty"`
 }
 
@@ -174,13 +178,21 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 // came from the same request is what the batch status in the API is built on,
 // and it costs one column.
 //
-// The push still happens inside the loop. Holding a node back until an earlier
-// one finishes is the concurrency limit, and that needs the held command to be
-// hidden from the agent's own GetPending poll as well, which is a change to the
-// delivery path rather than to this fan-out.
+// Every row is written before any of them is pushed. A node that is already
+// online can report Failed while the fan-out is still running, and
+// CancelBatchAfterFailure can only cancel the siblings that exist as Pending
+// rows by then. Pushing inside the create loop would let the first node's
+// failure leave the nodes further down the slice untouched, and they would then
+// be created Pending and pushed anyway, which is exactly what fail-fast is
+// supposed to prevent.
+//
+// Delivery itself is still one unthrottled pass. Holding a node back until an
+// earlier one finishes is the concurrency limit, and that needs the held command
+// to be hidden from the agent's own GetPending poll as well, which is a change
+// to the delivery path rather than to this fan-out.
 func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode, command string, args map[string]string, failFast bool) ([]*store.NodeCommand, error) {
 	batchID := uuid.New().String()
-	var created []*store.NodeCommand
+	created := make([]*store.NodeCommand, 0, len(nodes))
 	for _, node := range nodes {
 		cmd := &store.NodeCommand{
 			ID:            uuid.New().String(),
@@ -200,8 +212,10 @@ func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode,
 		if command == store.CmdReset {
 			_ = h.nodes.SetResetPending(ctx, node.ID)
 		}
-		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
+	}
+	for _, cmd := range created {
+		h.pushCommand(ctx, cmd)
 	}
 	return created, nil
 }
