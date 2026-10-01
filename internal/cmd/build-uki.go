@@ -137,7 +137,7 @@ var BuildUKICmd = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  "extension",
-			Usage: "Add a catalog extension by name or name@version (repeatable)",
+			Usage: "Add an extension by name or name@version, or file://<path> to bake in a .raw image this host already has (repeatable)",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",

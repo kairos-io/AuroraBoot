@@ -71,7 +71,7 @@ var BuildISOCmd = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  "extension",
-			Usage: "Named system extension to include, optionally with @version (repeatable)",
+			Usage: "System extension to include, repeatable. Either a catalog name, optionally with @version, or file://<path> to bake in a .raw image this host already has",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
