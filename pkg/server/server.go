@@ -64,6 +64,9 @@ type Config struct {
 	// image-source settings' advertised URL until an operator overrides it at
 	// runtime.
 	RedfishServeURL string
+	// ExtensionCatalogs are the extension catalogs given at launch with
+	// --extensions-catalog. The UI offers them for every flavor.
+	ExtensionCatalogs []string
 	// BaseContext, when non-nil, is the parent context for background deploy
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
@@ -213,7 +216,8 @@ func New(cfg Config) *echo.Echo {
 	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
-		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
+		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL).
+		WithExtensionCatalogs(cfg.ExtensionCatalogs)
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
@@ -396,6 +400,8 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
 	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
 	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
+	adminGroup.GET("/settings/extension-catalogs", settingsHandler.GetExtensionCatalogs)
+	adminGroup.PUT("/settings/extension-catalogs", settingsHandler.UpdateExtensionCatalogs)
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)

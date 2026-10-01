@@ -102,6 +102,7 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "redfish-serve-tls-cert", Usage: "TLS certificate for the Redfish ISO-serve (opt-in HTTPS; requires a BMC-trusted cert)"},
 		&cli.StringFlag{Name: "redfish-serve-tls-key", Usage: "TLS key for the Redfish ISO-serve"},
 		&cli.StringFlag{Name: "redfish-quirks-dir", Usage: "Directory of operator-supplied *.yaml/*.yml Redfish quirk profiles, loaded once at server start (not hot-reloaded). A BMCTarget's vendor resolves to a profile by name; an operator profile named the same as a built-in overrides it (logged). A malformed profile is skipped, not fatal", EnvVars: []string{redfishQuirksDirEnv}},
+		&cli.StringSliceFlag{Name: "extensions-catalog", Usage: "System extension catalog URL the UI offers when building an artifact, repeatable. The Hadron flavor always has the hadron-layers catalog; other flavors only get the catalogs given here or saved in Settings", EnvVars: []string{"AURORABOOT_EXTENSIONS_CATALOG"}},
 		&cli.StringFlag{Name: "builder", Value: "local", Usage: "Which builder backend to use: 'local' or 'operator'"},
 		&cli.StringFlag{Name: "kubeconfig", Usage: "Path to a kubeconfig file for the operator builder (single file). Empty means try in-cluster config first, then the default client-go loading rules (which honour a multi-file KUBECONFIG env)"},
 		&cli.StringFlag{Name: "builder-namespace", Value: "default", Usage: "Namespace in which OSArtifact CRs are created. Used only when --builder=operator"},
@@ -378,6 +379,8 @@ func runWeb(c *cli.Context) error {
 		Hub:             wsHub,
 		ISOServe:        isoServe,
 		RedfishServeURL: redfishServeURLSeed(isoServe, serveURL),
+
+		ExtensionCatalogs: c.StringSlice("extensions-catalog"),
 
 		DisableRateLimit:     c.Bool("disable-rate-limit"),
 		NodeRateLimitRPS:     c.Float64("node-rate-limit"),

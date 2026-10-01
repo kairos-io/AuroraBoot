@@ -1536,6 +1536,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/settings/extension-catalogs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Read the configured extension catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.extensionCatalogsResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Replaces the catalogs saved from the UI. The catalogs given at launch with --extensions-catalog are not affected.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Replace the saved extension catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.extensionCatalogsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/settings/image-source": {
             "get": {
                 "security": [
@@ -2221,6 +2271,25 @@ const docTemplate = `{
                 },
                 "nodeOnline": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handlers.extensionCatalogsResponse": {
+            "type": "object",
+            "properties": {
+                "launch": {
+                    "description": "Launch are the catalogs given with --extensions-catalog. Read-only.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "saved": {
+                    "description": "Saved are the catalogs an operator added at runtime.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
