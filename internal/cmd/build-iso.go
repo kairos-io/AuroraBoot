@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -72,7 +73,7 @@ var BuildISOCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  "default-grub-entry",
-			Usage: "Id (grub --id) of the live menu entry to boot when the grub timeout expires. Defaults to \"" + constants.LiveGrubEntryInteractive + "\"; pass \"" + constants.LiveGrubEntryUnattended + "\" for the unattended installer",
+			Usage: "Id (grub --id) of the live menu entry to boot when the grub timeout expires. One of " + strings.Join(constants.LiveGrubEntries, ", ") + ". Defaults to \"" + constants.LiveGrubEntryInstall + "\"",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extension",

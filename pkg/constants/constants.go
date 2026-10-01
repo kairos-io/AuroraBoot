@@ -41,23 +41,22 @@ var GrubLiveBiosCfg []byte
 // `--id`. Grub resolves `set default` against ids before titles, and it
 // truncates the value at the first space while doing so
 // (grub-core/normal/menu.c, get_entry_number_helper), so a title is not
-// usable here: "Kairos (interactive install)" matches an entry whose id is
-// "Kairos" and boots that one instead. Ids carry no spaces for that reason.
+// usable here: "Kairos (install)" would match an entry whose id is
+// "Kairos" and boot that one instead. Ids carry no spaces for that reason.
 //
 // These strings are part of the template's contract. Renaming an id in the
 // .cfg without renaming the constant leaves `default` naming nothing, and
 // grub silently falls back to the first entry.
 const (
-	// LiveGrubEntryUnattended runs the non-interactive installer
-	// (cmdline `install-mode`), which installs without asking anything.
-	LiveGrubEntryUnattended = "kairos-install"
-	// LiveGrubEntryInteractive runs the interactive installer
-	// (cmdline `install-mode-interactive`). This is what a live ISO boots
-	// when the build does not name another entry.
-	LiveGrubEntryInteractive = "kairos-interactive-install"
-	// LiveGrubEntryManual boots the live system and stops at a login
-	// prompt, installing nothing.
-	LiveGrubEntryManual = "kairos-manual"
+	// LiveGrubEntryInstall runs the installer. It is one entry, not one per
+	// install style: `kairos-agent interactive-install` is a dispatcher, so
+	// it runs AutoInstall first and installs unattended when the config says
+	// `install.auto: true`, and otherwise shows the welcome page, from which
+	// the user reaches the TUI, the WebUI or a shell. The UKI path has
+	// shipped a single entry (`norole`) for the same reason; this is the
+	// GRUB equivalent, and it is what a live ISO boots when the build does
+	// not name another entry.
+	LiveGrubEntryInstall = "kairos-install"
 	// LiveGrubEntryBootLocal chainloads the system already installed on
 	// the disk (cmdline `kairos.boot_live_mode`).
 	LiveGrubEntryBootLocal = "kairos-boot-local"
@@ -68,12 +67,10 @@ const (
 
 // LiveGrubEntries lists every id a build may name as the default live entry.
 // Grub falls back to the first entry when `set default` matches nothing, so
-// an id outside this list does not fail the boot, it silently boots the
-// unattended installer. The build refuses such a value instead.
+// an id outside this list does not fail the boot, it silently boots the first
+// entry. The build refuses such a value instead.
 var LiveGrubEntries = []string{
-	LiveGrubEntryUnattended,
-	LiveGrubEntryManual,
-	LiveGrubEntryInteractive,
+	LiveGrubEntryInstall,
 	LiveGrubEntryBootLocal,
 	LiveGrubEntryDebug,
 }

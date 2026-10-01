@@ -184,17 +184,17 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 		Expect(string(result)).To(Equal("linux console=ttyS1console=tty1 end"))
 	})
 
-	It("defaults to the interactive installer entry", func() {
+	It("defaults to the installer entry", func() {
 		result := mustApplyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", "")
 		Expect(string(result)).To(ContainSubstring(
-			fmt.Sprintf("set default=%q", constants.LiveGrubEntryInteractive)))
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryInstall)))
 		Expect(string(result)).ToNot(ContainSubstring("{{DEFAULT_ENTRY}}"))
 	})
 
 	It("boots the entry the build names instead", func() {
-		result := mustApplyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", constants.LiveGrubEntryUnattended)
+		result := mustApplyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", constants.LiveGrubEntryBootLocal)
 		Expect(string(result)).To(ContainSubstring(
-			fmt.Sprintf("set default=%q", constants.LiveGrubEntryUnattended)))
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryBootLocal)))
 	})
 
 	It("accepts every id the template defines", func() {
@@ -224,9 +224,9 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 	// lines that follow it. Rejecting unknown ids covers that too.
 	It("refuses an id that would escape the quoted assignment", func() {
 		for _, id := range []string{
-			constants.LiveGrubEntryUnattended + `\`,
+			constants.LiveGrubEntryInstall + `\`,
 			"Kairos\"\nset timeout=0",
-			"Kairos (unattended install)",
+			"Kairos (install)",
 		} {
 			_, err := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", id)
 			Expect(err).To(HaveOccurred(), "accepted %q", id)
@@ -235,10 +235,10 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 
 	It("takes a padded id, since a shell or a yaml quote leaves whitespace", func() {
 		result, err := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "",
-			"  "+constants.LiveGrubEntryUnattended+"\n")
+			"  "+constants.LiveGrubEntryBootLocal+"\n")
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(result)).To(ContainSubstring(
-			fmt.Sprintf("set default=%q", constants.LiveGrubEntryUnattended)))
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryBootLocal)))
 	})
 })
 
@@ -288,21 +288,36 @@ var _ = Describe("the shipped live grub config", Label("iso"), func() {
 			entries++
 			Expect(line).To(MatchRegexp(`--id [^" ]+ `), "menuentry without an id: %s", line)
 		}
-		Expect(entries).To(BeNumerically(">=", 5))
+		Expect(entries).To(BeNumerically(">=", 3))
 	})
 
-	It("points the default at the entry that runs the interactive installer", func() {
+	It("points the default at the entry that runs the installer", func() {
 		Expect(cfg).To(ContainSubstring(`set default="{{DEFAULT_ENTRY}}"`))
-		Expect(entryCmdline(cfg, constants.LiveGrubEntryInteractive)).
+		Expect(entryCmdline(cfg, constants.LiveGrubEntryInstall)).
 			To(ContainSubstring(" install-mode-interactive "))
 	})
 
-	// The unattended entry is what an automated build selects once the
-	// default moves off it, so it has to keep working.
-	It("keeps the unattended installer selectable by id", func() {
-		cmdline := entryCmdline(cfg, constants.LiveGrubEntryUnattended)
-		Expect(cmdline).To(ContainSubstring(" install-mode "))
-		Expect(cmdline).ToNot(ContainSubstring("install-mode-interactive"))
+	// Unattended, interactive and manual are one entry, because the
+	// installer decides between them from the config and the welcome page.
+	// A second install entry would reintroduce the choice in the menu, and
+	// a menu cannot know what the config says.
+	It("offers exactly one entry that installs", func() {
+		installing := []string{}
+		for _, id := range constants.LiveGrubEntries {
+			if strings.Contains(entryCmdline(cfg, id), "install-mode") {
+				installing = append(installing, id)
+			}
+		}
+		Expect(installing).To(ConsistOf(constants.LiveGrubEntryInstall))
+	})
+
+	// `install-mode` starts kairos-installer.service, which installs with no
+	// prompt and no way back. It was the unattended entry's keyword, and
+	// that entry is gone, so no entry may carry it: `install-mode` is a
+	// prefix of `install-mode-interactive`, so the assertion is
+	// space-delimited the same way the kairos stage guard is.
+	It("leaves the unattended installer keyword on no entry", func() {
+		Expect(cfg).ToNot(MatchRegexp(`(^| )install-mode( |$)`))
 	})
 })
 
@@ -311,12 +326,12 @@ var _ = Describe("newLiveISOSpec", Label("iso"), func() {
 		spec := newLiveISOSpec("/rootfs", "/isoroot", schema.ISO{
 			ExtendLiveCmdline: "rd.debug",
 			LiveConsole:       "console=ttyUSB0,115200",
-			DefaultGrubEntry:  constants.LiveGrubEntryUnattended,
+			DefaultGrubEntry:  constants.LiveGrubEntryBootLocal,
 		})
 
 		Expect(spec.ExtendLiveCmdline).To(Equal("rd.debug"))
 		Expect(spec.LiveConsole).To(Equal("console=ttyUSB0,115200"))
-		Expect(spec.DefaultGrubEntry).To(Equal(constants.LiveGrubEntryUnattended))
+		Expect(spec.DefaultGrubEntry).To(Equal(constants.LiveGrubEntryBootLocal))
 	})
 
 	It("leaves the default entry to the template when the config names none", func() {
@@ -339,14 +354,14 @@ var _ = Describe("prepareBootArtifacts", Label("iso"), func() {
 		return string(written)
 	}
 
-	It("boots the interactive installer when the spec names no entry", func() {
+	It("boots the installer when the spec names no entry", func() {
 		Expect(writeGrubCfg(&LiveISO{})).To(ContainSubstring(
-			fmt.Sprintf("set default=%q", constants.LiveGrubEntryInteractive)))
+			fmt.Sprintf("set default=%q", constants.LiveGrubEntryInstall)))
 	})
 
 	It("boots the entry the spec names", func() {
-		Expect(writeGrubCfg(&LiveISO{DefaultGrubEntry: constants.LiveGrubEntryUnattended})).
-			To(ContainSubstring(fmt.Sprintf("set default=%q", constants.LiveGrubEntryUnattended)))
+		Expect(writeGrubCfg(&LiveISO{DefaultGrubEntry: constants.LiveGrubEntryBootLocal})).
+			To(ContainSubstring(fmt.Sprintf("set default=%q", constants.LiveGrubEntryBootLocal)))
 	})
 
 	// The build has to stop here rather than burn an ISO whose default

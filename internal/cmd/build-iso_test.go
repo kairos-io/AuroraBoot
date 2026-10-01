@@ -98,7 +98,7 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 	})
 
 	It("Accepts the default-grub-entry flag", Label("flags"), func() {
-		err = app.Run([]string{"", "build-iso", "--default-grub-entry", constants.LiveGrubEntryUnattended, "system/cos"})
+		err = app.Run([]string{"", "build-iso", "--default-grub-entry", constants.LiveGrubEntryBootLocal, "system/cos"})
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("default-grub-entry"))
 		Expect(err.Error()).ToNot(ContainSubstring("unknown"))

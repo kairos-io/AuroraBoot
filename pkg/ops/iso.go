@@ -44,8 +44,8 @@ type LiveISO struct {
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline,omitempty" mapstructure:"extend-live-cmdline"`
 	LiveConsole       string `yaml:"live-console,omitempty" mapstructure:"live-console"`
 	// DefaultGrubEntry is the id (`--id`) of the live menu entry grub boots when
-	// the timeout expires. Left empty, the ISO boots the interactive
-	// installer (constants.LiveGrubEntryInteractive). Any value outside
+	// the timeout expires. Left empty, the ISO boots the installer
+	// (constants.LiveGrubEntryInstall). Any value outside
 	// constants.LiveGrubEntries fails the build.
 	DefaultGrubEntry string `yaml:"default-grub-entry,omitempty" mapstructure:"default-grub-entry"`
 }
@@ -203,7 +203,7 @@ func newLiveISOSpec(rootfs, isoRoot string, i schema.ISO) *LiveISO {
 		RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(rootfs)},
 		Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(isoRoot)},
 		Label:              constants.ISOLabel,
-		GrubEntry:          constants.LiveGrubEntryUnattended,
+		GrubEntry:          constants.LiveGrubEntryInstall,
 		BootloaderInRootFs: false,
 		ExtendLiveCmdline:  i.ExtendLiveCmdline,
 		DefaultGrubEntry:   i.DefaultGrubEntry,
@@ -412,27 +412,27 @@ func (b *BuildISOAction) ISORun() (err error) {
 }
 
 // resolveDefaultGrubEntry checks the entry id a build named against the ids
-// the template defines, and returns the interactive installer when the build
-// named none.
+// the template defines, and returns the installer entry when the build named
+// none.
 //
-// Grub resolves `set default` against the ids and falls back to the first
-// entry, the unattended installer, when it matches nothing. So a typo is not
-// a boot failure that a user can diagnose: the ISO installs the disk without
-// asking. The id also lands inside a quoted grub assignment, where a value
-// ending in a backslash escapes the closing quote and swallows the lines that
-// follow. Both cases are the same mistake, and the build can only report it
-// before it writes the config.
+// Grub resolves `set default` against the ids and silently falls back to the
+// first entry when it matches nothing, so a typo is not a boot failure a user
+// can diagnose, it is a boot that lands somewhere else. The id also goes
+// inside a quoted grub assignment, where a value ending in a backslash
+// escapes the closing quote and swallows the lines that follow. Both cases
+// are the same mistake, and the build can only report it before it writes
+// the config.
 func resolveDefaultGrubEntry(defaultEntry string) (string, error) {
 	defaultEntry = strings.TrimSpace(defaultEntry)
 	if defaultEntry == "" {
-		return constants.LiveGrubEntryInteractive, nil
+		return constants.LiveGrubEntryInstall, nil
 	}
 	if slices.Contains(constants.LiveGrubEntries, defaultEntry) {
 		return defaultEntry, nil
 	}
 	return "", fmt.Errorf(
 		"unknown default live grub entry %q: expected one of %s, or an empty value for %s",
-		defaultEntry, strings.Join(constants.LiveGrubEntries, ", "), constants.LiveGrubEntryInteractive)
+		defaultEntry, strings.Join(constants.LiveGrubEntries, ", "), constants.LiveGrubEntryInstall)
 }
 
 // applyGrubTemplate replaces placeholders in the grub config template.
