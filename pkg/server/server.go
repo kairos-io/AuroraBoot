@@ -16,6 +16,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -51,6 +52,9 @@ type Config struct {
 	ArtifactsDir  string
 	KeysDir       string  // base directory for SecureBoot key sets
 	Hub           *ws.Hub // optional, created if nil
+	// Metrics holds the in-memory node metrics that heartbeats carry. Optional,
+	// created if nil.
+	Metrics *metrics.Buffer
 	// ISOServe serves a local artifact ISO over a tokenized, BMC-reachable URL
 	// for Redfish virtual-media deployments. Optional; when nil the Redfish
 	// deploy path requires an explicit imageUrl.
@@ -60,6 +64,9 @@ type Config struct {
 	// image-source settings' advertised URL until an operator overrides it at
 	// runtime.
 	RedfishServeURL string
+	// ExtensionCatalogs are the extension catalogs given at launch with
+	// --extensions-catalog. The UI offers them for every flavor.
+	ExtensionCatalogs []string
 	// BaseContext, when non-nil, is the parent context for background deploy
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
@@ -67,14 +74,15 @@ type Config struct {
 
 	// Rate limiting of the node-driven endpoints (registration, heartbeat, command
 	// polling) — fleet-server hardening, kairos-io/kairos#4117. It is on by
-	// default: zero RPS/Burst values fall back to the auth package defaults.
-	// Admin-authenticated requests (the UI and the CAPI infra provider) are never
-	// limited. DisableRateLimit turns the limiters off entirely.
+	// default: a zero RPS falls back to the auth package default, and a zero Burst
+	// to the larger of that package's burst floor and one second of the RPS in
+	// effect. Admin-authenticated requests (the UI and the CAPI infra provider)
+	// are never limited. DisableRateLimit turns the limiters off entirely.
 	DisableRateLimit       bool
 	NodeRateLimitRPS       float64 // per-node requests/sec for heartbeat + command polling
-	NodeRateLimitBurst     int     // per-node burst
+	NodeRateLimitBurst     int     // per-node instantaneous allowance
 	RegisterRateLimitRPS   float64 // per-IP requests/sec for registration
-	RegisterRateLimitBurst int     // per-IP burst
+	RegisterRateLimitBurst int     // per-IP instantaneous allowance
 }
 
 // firstPositive returns v if it is positive, otherwise fallback. It lets a zero
@@ -193,6 +201,11 @@ func New(cfg Config) *echo.Echo {
 	if deployHandler != nil {
 		nodeHandler.WithFinalizer(deployHandler.MaybeFinalizeForNode, cfg.BaseContext)
 	}
+	metricsBuf := cfg.Metrics
+	if metricsBuf == nil {
+		metricsBuf = metrics.NewBuffer(metrics.DefaultCapacity)
+	}
+	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
 	var extensionHandler *handlers.ExtensionHandler
@@ -204,7 +217,8 @@ func New(cfg Config) *echo.Echo {
 	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
-		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
+		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL).
+		WithExtensionCatalogs(cfg.ExtensionCatalogs)
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
@@ -215,6 +229,7 @@ func New(cfg Config) *echo.Echo {
 		// tracking write must hook in here too (not just on the REST
 		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
 		OnCommandStatus: cmdHandler.ApplyExtensionTracking,
+		Metrics:         metricsBuf,
 	}
 	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
 	// same auto eject-on-phone-home hook — a node that reports liveness only over
@@ -294,6 +309,9 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
 	adminGroup.POST("/nodes/:nodeID/release", nodeHandler.Release)
+	metricsHandler := handlers.NewMetricsHandler(metricsBuf)
+	adminGroup.GET("/nodes/:nodeID/metrics", metricsHandler.GetNode)
+	adminGroup.GET("/metrics/latest", metricsHandler.GetLatest)
 	// GET /nodes/:nodeID/commands and PUT .../commands/:commandID/status are
 	// served by the shared agent-or-admin group above (single registration to
 	// avoid Echo route shadowing); they branch on the caller's identity.
@@ -383,6 +401,8 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
 	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
 	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
+	adminGroup.GET("/settings/extension-catalogs", settingsHandler.GetExtensionCatalogs)
+	adminGroup.PUT("/settings/extension-catalogs", settingsHandler.UpdateExtensionCatalogs)
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)

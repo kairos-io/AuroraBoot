@@ -1,4 +1,4 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
 import { login, validateToken } from "@/api/client";
 import { Button } from "@/components/ui/button";
@@ -6,12 +6,18 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KairosLogo } from "@/components/KairosLogo";
+import { applyTheme, getStoredTheme } from "@/lib/theme";
 
 export function Login() {
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Match the theme the operator chose in the app shell.
+  useEffect(() => {
+    applyTheme(getStoredTheme());
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -32,7 +38,7 @@ export function Login() {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-[#03153A] to-[#051d52]">
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-navy to-navy">
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2">
           <KairosLogo className="h-12 w-12" />
@@ -66,7 +72,7 @@ export function Login() {
               </div>
               <Button
                 type="submit"
-                className="w-full bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                className="w-full"
                 disabled={loading}
               >
                 {loading ? "Signing in..." : "Sign In"}
