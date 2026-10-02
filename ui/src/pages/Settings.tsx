@@ -4,25 +4,27 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ExtensionCatalogsCard } from "@/components/settings/ExtensionCatalogsCard";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 
 export function Settings() {
   const [token, setToken] = useState("");
   const [revealed, setRevealed] = useState(false);
   const [rotating, setRotating] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
 
   useEffect(() => {
     getRegistrationToken()
-      .then((t) => setToken(t.token))
+      .then((t) => setToken(t.registrationToken))
       .catch(() => {});
   }, []);
 
   async function handleRotate() {
-    if (!confirm("Are you sure? This will invalidate the current token.")) return;
     setRotating(true);
     try {
       const result = await rotateRegistrationToken();
-      setToken(result.token);
+      setToken(result.registrationToken);
     } finally {
       setRotating(false);
     }
@@ -59,14 +61,26 @@ export function Settings() {
                   {revealed ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </Button>
               </div>
-              <Button variant="outline" onClick={handleRotate} disabled={rotating}>
+              <Button variant="outline" onClick={() => setConfirmOpen(true)} disabled={rotating}>
                 <RefreshCw className={`h-4 w-4 mr-2 ${rotating ? "animate-spin" : ""}`} />
                 Rotate
               </Button>
             </div>
           </CardContent>
         </Card>
+
+        <ExtensionCatalogsCard />
       </div>
+
+      <ConfirmDialog
+        open={confirmOpen}
+        onOpenChange={setConfirmOpen}
+        title="Rotate registration token"
+        description="Rotate the registration token? Nodes that have not registered yet must use the new token."
+        confirmLabel="Rotate token"
+        destructive
+        onConfirm={handleRotate}
+      />
     </div>
   );
 }

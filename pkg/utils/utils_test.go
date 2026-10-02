@@ -185,7 +185,13 @@ var _ = Describe("Utils", Label("utils"), func() {
 	Describe("GetUkiCmdline", Label("GetUkiCmdline"), func() {
 		var defaultCmdline string
 		BeforeEach(func() {
-			defaultCmdline = constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+			defaultCmdline = constants.UkiCmdline
+			// viper is process-global, so clear the keys these specs set.
+			// Without this, how many entries a spec sees depends on which
+			// specs ran before it.
+			viper.Set("extend-cmdline", "")
+			viper.Set("extra-cmdline", []string{})
+			viper.Set("single-efi-cmdline", []string{})
 		})
 
 		It("returns the default cmdline", func() {
@@ -193,7 +199,24 @@ var _ = Describe("Utils", Label("utils"), func() {
 			Expect(entries[0].Cmdline).To(Equal(defaultCmdline))
 		})
 
-		It("returns the default cmdline with the cmdline flag and install-mode", func() {
+		// The installer copies norole.efi byte for byte into every role, so a
+		// keyword put on the live media's cmdline is on the installed
+		// machine's cmdline for its whole life. kairos-io/kairos#5000.
+		It("puts no install keyword on any entry it builds", func() {
+			viper.Set("extra-cmdline", []string{"key=value testkey"})
+			viper.Set("single-efi-cmdline", []string{"My Entry: key=value"})
+			entries := append(utils.GetUkiCmdline(), utils.GetUkiSingleCmdlines(sdkLogger.NewNullLogger())...)
+			Expect(entries).ToNot(BeEmpty())
+			for _, entry := range entries {
+				for _, keyword := range []string{"install-mode", "install-mode-interactive", "interactive-install"} {
+					Expect(strings.Fields(entry.Cmdline)).ToNot(
+						ContainElement(keyword),
+						"entry %q must not carry %q", entry.FileName, keyword)
+				}
+			}
+		})
+
+		It("returns the default cmdline with the cmdline flag", func() {
 			viper.Set("extra-cmdline", []string{"key=value testkey"})
 			entries := utils.GetUkiCmdline()
 			cmdlines := []string{}
@@ -214,9 +237,30 @@ var _ = Describe("Utils", Label("utils"), func() {
 
 			// Should contain the default one
 			Expect(cmdlines).To(ContainElements(defaultCmdline))
-			// Also the extra ones, without the install-mode
+			// Also the extra ones
 			Expect(cmdlines).To(ContainElements(defaultCmdline + " key=value testkey"))
 			Expect(cmdlines).To(ContainElements(defaultCmdline + " another=value anotherkey"))
+		})
+
+		// An entry whose whole addition is "install-mode" used to be renamed to
+		// the bare basename, which is the default entry's name. Two entries
+		// with one name overwrite each other's .efi and .conf.
+		It("gives every entry its own file name, install keyword or not", func() {
+			viper.Set("extra-cmdline", []string{"install-mode", "install-mode-interactive"})
+			entries := utils.GetUkiCmdline()
+			Expect(entries).To(HaveLen(3))
+
+			names := []string{}
+			for _, entry := range entries {
+				names = append(names, entry.FileName)
+			}
+			// ConsistOf compares as a multiset, so a name claimed twice fails
+			// here rather than silently overwriting an .efi on disk.
+			Expect(names).To(ConsistOf(
+				constants.ArtifactBaseName,
+				constants.ArtifactBaseName+"_install-mode",
+				constants.ArtifactBaseName+"_install-mode-interactive",
+			))
 		})
 
 		It("expands the default cmdline if extended-cmdline is used", func() {
@@ -231,7 +275,7 @@ var _ = Describe("Utils", Label("utils"), func() {
 	Describe("GetUkiSingleCmdlines", Label("GetUkiSingleCmdlines"), func() {
 		var defaultCmdline string
 		BeforeEach(func() {
-			defaultCmdline = constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+			defaultCmdline = constants.UkiCmdline
 		})
 
 		It("returns the specified entry", func() {

@@ -156,11 +156,25 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 		Expect(string(result)).ToNot(ContainSubstring("{{LIVE_CONSOLE}}"))
 	})
 
+	// One per {{LIVE_CONSOLE}} in the shipped menu, which is every entry
+	// except the debug one: that entry pins console=tty0 so a broken serial
+	// console cannot take the debug boot down with it.
 	It("replaces live consoles while preserving the debug console", func() {
 		result := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "console=ttyUSB0,115200")
 		Expect(string(result)).ToNot(ContainSubstring("console=ttyS0 console=tty1"))
-		Expect(strings.Count(string(result), "console=ttyUSB0,115200")).To(Equal(6))
+		Expect(strings.Count(string(result), "console=ttyUSB0,115200")).
+			To(Equal(strings.Count(string(constants.GrubLiveBiosCfg), "{{LIVE_CONSOLE}}")))
 		Expect(string(result)).To(ContainSubstring("console=tty0 rd.debug"))
+	})
+
+	// Remote recovery is reached from the interactive installer's welcome
+	// page now, not from a live menu entry of its own
+	// (kairos-io/kairos#5064). The menu has to shrink towards one entry that
+	// lands in the installer, so an entry defined only by a cmdline keyword
+	// that the installer already offers cannot come back.
+	It("offers no remote recovery entry of its own", func() {
+		Expect(string(constants.GrubLiveBiosCfg)).ToNot(ContainSubstring("kairos.remote_recovery_mode"))
+		Expect(string(constants.GrubLiveBiosCfg)).ToNot(ContainSubstring("remote recovery"))
 	})
 
 	It("strips carriage returns and newlines from a live console override", func() {

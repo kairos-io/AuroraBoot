@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from "react";
-import { useNavigate, useSearchParams } from "react-router";
+import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   createArtifact,
   getArtifact,
@@ -10,7 +10,7 @@ import {
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
 import { listExtensions, type Extension } from "@/api/extensions";
-import { getRegistrationToken } from "@/api/settings";
+import { getExtensionCatalogSettings, getRegistrationToken } from "@/api/settings";
 import { HierarchyChipInput } from "@/components/HierarchyChipInput";
 import { ExtensionTypeChip } from "@/components/ExtensionTypeChip";
 import {
@@ -21,6 +21,9 @@ import { buildCloudConfigPreview, stripPhonehome } from "@/lib/cloudConfigPrevie
 import { renderHadronMiddleContent } from "@/lib/hadronContent";
 import {
   DEFAULT_EXTENSIONS_CATALOG,
+  SUGGESTED_EXTENSION_CATALOGS,
+  extensionCatalogChoices,
+  isHadronBaseImage,
   LATEST_VERSION,
   catalogExtensionsForArch,
   fetchCatalogExtensions,
@@ -33,6 +36,16 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { PageHeader } from "@/components/PageHeader";
+import { WizardShell, type WizardStep } from "@/components/wizard/WizardShell";
+import { BuildSummary, type BuildSummaryData } from "@/components/wizard/BuildSummary";
+import { SegmentedControl } from "@/components/wizard/SegmentedControl";
+import { CommandPresets } from "@/components/wizard/CommandPresets";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Select,
   SelectContent,
@@ -62,6 +75,7 @@ import {
   Server,
   CircuitBoard,
   Layers,
+  MoreHorizontal,
 } from "lucide-react";
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { KubernetesReleasePicker } from "@/components/KubernetesReleasePicker";
@@ -87,7 +101,7 @@ type OutputCardDef = {
 // Kept in sync with ArtifactDetail.tsx's outputCategories tones so a build
 // looks the same wherever you see it.
 const OUTPUT_TONE_CLASSES: Record<OutputTone, string> = {
-  install: "border-[#EE5007]/30 bg-[#EE5007]/10 text-[#C73F00]",
+  install: "border-primary/30 bg-primary/10 text-primary",
   disk: "border-sky-500/30 bg-sky-500/10 text-sky-700",
   archive: "border-border bg-muted/60 text-foreground",
 };
@@ -500,9 +514,21 @@ type UserMode = "default" | "custom" | "none";
 // FieldError pairs a validation error with the form field and wizard step
 // it belongs to, so we can jump the user straight to the offending input
 // instead of just showing a red list at the top of the page.
-type FieldError = { field: string; step: number; message: string };
+// The wizard's steps, in order. Each one covers a single topic.
+// eslint-disable-next-line react-refresh/only-export-components -- the step keys are part of the page contract
+export const BUILDER_STEPS = ["base", "system", "extensions", "access", "output", "review"] as const;
+export type BuilderStep = (typeof BUILDER_STEPS)[number];
 
-const STEPS = ["Source", "Configure", "Output", "Review"];
+const STEP_LABELS: Record<BuilderStep, string> = {
+  base: "Base",
+  system: "System",
+  extensions: "Extensions",
+  access: "Access",
+  output: "Output",
+  review: "Review",
+};
+
+type FieldError = { field: string; step: BuilderStep; message: string };
 
 // Per-command descriptions surfaced below each checkbox. Kept short so the
 // row matches the "Auto-install" / "Register" rhythm in the parent card —
@@ -566,19 +592,7 @@ function AllowedCommandsPicker({
 
   return (
     <div>
-      <Label className="text-xs">
-        Allowed remote commands
-        <InfoTooltip>
-          Baked into <code className="font-mono">phonehome.allowed_commands</code> in the
-          node's cloud-config. Commands not ticked here are refused by the
-          node, even if AuroraBoot requests them.
-        </InfoTooltip>
-      </Label>
-      <p className="text-xs text-muted-foreground mt-1">
-        Commands not listed here will be denied by the node.
-      </p>
-
-      <div className="mt-3 space-y-3">
+      <div className="space-y-3">
         {PHONEHOME_SAFE_DEFAULTS.map(commandRow)}
       </div>
 
@@ -612,15 +626,22 @@ export function ArtifactBuilder() {
   const [cloneSource, setCloneSource] = useState("");
   const [customModel, setCustomModel] = useState(false);
   const [ukiKeyMode, setUkiKeyMode] = useState<"keyset" | "manual">("keyset");
-  const [errors, setErrors] = useState<string[]>([]);
+  // Steps whose errors are on screen: a step joins once Next was tried on it,
+  // and "all" follows a submit attempt. The messages themselves are computed
+  // from the current state on every render, so an error goes away as soon as
+  // its field is valid again.
+  const [shownErrorSteps, setShownErrorSteps] = useState<Set<BuilderStep> | "all">(() => new Set());
   const [overlayFiles, setOverlayFiles] = useState<string[]>([]);
   const [overlayUploading, setOverlayUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const overlayInputRef = useRef<HTMLInputElement>(null);
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState<BuilderStep>("base");
+  // The furthest step reached, so the stepper can jump forward again to a
+  // step the user already saw.
+  const [maxReached, setMaxReached] = useState(0);
 
   // Hadron composer state. Firmware, layers, and the extra-Dockerfile
-  // textarea populate an optional advanced expander on Step 0. When any of
+  // textarea populate an optional advanced expander on the System step. When any of
   // those three are non-empty, the Next handler stitches them into a
   // Dockerfile and switches the build to Dockerfile mode; otherwise the
   // template-prefilled Hadron base image runs the normal image build path.
@@ -635,12 +656,25 @@ export function ArtifactBuilder() {
   const [layersCatalog, setLayersCatalog] = useState<HadronLayerItem[]>([]);
   const [firmwareCatalogState, setFirmwareCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [layersCatalogState, setLayersCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
-  // Catalog extensions materialized into the built ISO. extensionsCatalog is
-  // pre-filled with the default the backend would use anyway, so the field
-  // shows the operator what is being read and is the place to override it.
-  const [extensionsCatalog, setExtensionsCatalog] = useState(DEFAULT_EXTENSIONS_CATALOG);
+  // Catalog extensions materialized into the built ISO. The catalog in force
+  // is derived, not stored: the flavor decides it, because the default
+  // catalog publishes Hadron extensions only and a configured catalog is
+  // per-flavor. Once the operator picks or types one
+  // (extensionsCatalogTouched), that override wins and a flavor change no
+  // longer replaces it. Deriving rather than syncing is what makes the
+  // catalog right on every step, including a stepper jump from Base to
+  // Review that never re-opens Extensions.
+  const [extensionsCatalogOverride, setExtensionsCatalogOverride] = useState("");
+  const [extensionsCatalogTouched, setExtensionsCatalogTouched] = useState(false);
+  // The catalogs given with `web --extensions-catalog` and saved in
+  // Settings, in that order.
+  const [configuredCatalogs, setConfiguredCatalogs] = useState<string[]>([]);
   const [extensionsCatalogItems, setExtensionsCatalogItems] = useState<CatalogExtensionItem[]>([]);
-  const [extensionsCatalogState, setExtensionsCatalogState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [extensionsCatalogLoadState, setExtensionsCatalogLoadState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  // The catalog those entries were read from. When the flavor moves the
+  // catalog on, they describe the old one, so they are stale and no effect
+  // is needed to clear them.
+  const [loadedCatalogURL, setLoadedCatalogURL] = useState("");
   // name -> version, where LATEST_VERSION means "whatever the catalog calls
   // latest at build time".
   const [selectedExtensions, setSelectedExtensions] = useState<Record<string, string>>({});
@@ -654,7 +688,7 @@ export function ArtifactBuilder() {
   const [hadronBaseTag, setHadronBaseTag] = useState<string>(HADRON_VERSION);
   const [hadronBaseCustom, setHadronBaseCustom] = useState<string>("");
   // Expander default is closed. The advanced composer opens on demand from
-  // Step 0; clone rehydration flips it open when the source artifact carried
+  // the System step; clone rehydration flips it open when the source artifact carried
   // firmware / layers / extra content.
   const [hadronAdvancedOpen, setHadronAdvancedOpen] = useState(false);
 
@@ -693,30 +727,41 @@ export function ArtifactBuilder() {
   function loadExtensionsCatalog(url: string) {
     const source = url.trim();
     if (source === "") {
-      setExtensionsCatalogState("error");
+      setExtensionsCatalogLoadState("error");
       return;
     }
-    setExtensionsCatalogState("loading");
+    setLoadedCatalogURL(source);
+    setExtensionsCatalogLoadState("loading");
     fetchCatalogExtensions(source)
       .then((items) => {
         setExtensionsCatalogItems(items);
-        setExtensionsCatalogState("ready");
+        setExtensionsCatalogLoadState("ready");
       })
       .catch(() => {
         setExtensionsCatalogItems([]);
-        setExtensionsCatalogState("error");
+        setExtensionsCatalogLoadState("error");
       });
   }
 
-  // goToStep is the one way the wizard changes step, so reaching Output can
-  // start the catalog fetch. Driven from the navigation handlers rather than
-  // an effect, for the same reason startHadronCatalogs is: it keeps the
+  // goToStep is the one way the wizard changes step, so reaching Extensions
+  // can start the catalog fetch. Driven from the navigation handlers rather
+  // than an effect, for the same reason startHadronCatalogs is: it keeps the
   // "start loading" state update off the synchronous render path.
-  function goToStep(next: number) {
+  function goToStep(next: BuilderStep) {
     setStep(next);
-    if (next === 2 && extensionsCatalogState === "idle") {
+    setMaxReached((prev) => Math.max(prev, BUILDER_STEPS.indexOf(next)));
+    if (next !== "extensions") return;
+    if (extensionsCatalogState === "idle" && extensionsCatalog.trim() !== "") {
       loadExtensionsCatalog(extensionsCatalog);
     }
+  }
+
+  // pickExtensionsCatalog is an explicit operator choice: it sticks across
+  // flavor changes and is read right away.
+  function pickExtensionsCatalog(url: string) {
+    setExtensionsCatalogOverride(url);
+    setExtensionsCatalogTouched(true);
+    loadExtensionsCatalog(url);
   }
 
   // Fetch the hadron release tag list once the Hadron template is picked.
@@ -743,11 +788,30 @@ export function ArtifactBuilder() {
         ? `ghcr.io/kairos-io/hadron:${hadronBaseTag}`
         : "";
 
+  // The default catalog publishes Hadron extensions only, so which catalogs
+  // the Extensions step offers depends on the flavor. A Custom build from a
+  // Hadron image counts as Hadron.
+  const hadronBuild =
+    selectedTemplate === HADRON_TEMPLATE_NAME || isHadronBaseImage(form.baseImage);
+  const catalogChoices = extensionCatalogChoices(hadronBuild, configuredCatalogs);
+  // The catalog in force. An override the operator picked or typed wins;
+  // otherwise it is the flavor's own catalog, so changing the flavor moves
+  // it wherever that change was made. Reading the catalog stays lazy in
+  // goToStep, so nothing is fetched before the Extensions step is opened.
+  const extensionsCatalog = extensionsCatalogTouched
+    ? extensionsCatalogOverride
+    : (catalogChoices[0] ?? "");
+  // Entries read from a catalog that is no longer in force describe the
+  // previous flavor, so they are not offered and the step counts as unread.
+  const catalogEntriesAreCurrent = loadedCatalogURL === extensionsCatalog.trim();
+  const extensionsCatalogState = catalogEntriesAreCurrent ? extensionsCatalogLoadState : "idle";
+
   // The catalog entries that publish an artifact for the architecture being
   // built, and the request list derived from the operator's picks.
   const availableExtensions = useMemo(
-    () => catalogExtensionsForArch(extensionsCatalogItems, form.arch),
-    [extensionsCatalogItems, form.arch],
+    () =>
+      catalogEntriesAreCurrent ? catalogExtensionsForArch(extensionsCatalogItems, form.arch) : [],
+    [catalogEntriesAreCurrent, extensionsCatalogItems, form.arch],
   );
   // Serialized over the selection itself, not over the visible list: changing
   // the architecture must not quietly drop a pick. The card reports the
@@ -756,6 +820,10 @@ export function ArtifactBuilder() {
     selectedExtensions,
     Object.keys(selectedExtensions).sort(),
   );
+  // With no catalog there is nothing to resolve the picks against, so they
+  // are left out of the build rather than resolved against the Hadron
+  // default. The card says so.
+  const catalogMissing = extensionsCatalog.trim() === "";
   const unavailableExtensions = Object.keys(selectedExtensions)
     .filter((name) => {
       const item = availableExtensions.find((i) => i.name === name);
@@ -814,7 +882,10 @@ export function ArtifactBuilder() {
   // Advanced cloud-config
   const [advancedConfig, setAdvancedConfig] = useState("");
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const [showFullCloudConfigPreview, setShowFullCloudConfigPreview] = useState(false);
+  // The preview content the "View full" toggle was opened on. The preview
+  // shows in full only while its content still matches, so a changed
+  // preview always starts collapsed again.
+  const [expandedCloudConfigPreview, setExpandedCloudConfigPreview] = useState<string | null>(null);
 
   // Real phonehome values for the Review-step preview, same source Import.tsx
   // uses for its curl command. Kept separate from the submitted form: the
@@ -827,7 +898,10 @@ export function ArtifactBuilder() {
   useEffect(() => {
     listGroups().then(setGroups).catch(() => {});
     listSecureBootKeySets().then(setKeySets).catch(() => {});
-    getRegistrationToken().then((t) => setRegistrationToken(t.token)).catch(() => {});
+    getRegistrationToken().then((t) => setRegistrationToken(t.registrationToken)).catch(() => {});
+    getExtensionCatalogSettings()
+      .then((c) => setConfiguredCatalogs([...c.launch, ...c.saved]))
+      .catch(() => {});
   }, []);
 
   // After focusFirstError queues a focusTarget and setStep has re-rendered
@@ -838,7 +912,8 @@ export function ArtifactBuilder() {
     if (!focusTarget) return;
     const el = fieldRefs.current[focusTarget];
     if (!el) return;
-    el.scrollIntoView({ block: "center", behavior: "smooth" });
+    // Optional call: jsdom, used by the tests, has no scrollIntoView.
+    el.scrollIntoView?.({ block: "center", behavior: "smooth" });
     if (typeof (el as HTMLElement).focus === "function") {
       (el as HTMLElement).focus({ preventScroll: true });
     }
@@ -944,7 +1019,7 @@ export function ArtifactBuilder() {
       },
     });
     setBuildMode(parsed.buildMode === "dockerfile" ? "dockerfile" : "image");
-    // Reveal the Image Source / Dockerfile card on the Source step. Without
+    // Reveal the Image Source / Dockerfile card on the Base step. Without
     // this the card stays hidden (it only shows when a template is picked or
     // a clone is loaded), so the imported baseImage/dockerfile looks like it
     // didn't load even though the form state is correct.
@@ -957,7 +1032,7 @@ export function ArtifactBuilder() {
     setSshKeys(prov.sshKeys || "");
     setAdvancedConfig(parsed.advancedCloudConfig || "");
     setShowAdvanced(Boolean(parsed.advancedCloudConfig));
-    setStep(0);
+    setStep("base");
 
     const warnings: string[] = [];
     if (prov.targetGroupName && !resolvedGroupId) {
@@ -987,7 +1062,13 @@ export function ArtifactBuilder() {
           setSelectedExtensions(parseExtensionSelection(a.extensions));
         }
         if (a.extensionsCatalogs && a.extensionsCatalogs.length > 0) {
-          setExtensionsCatalog(a.extensionsCatalogs[0]);
+          setExtensionsCatalogOverride(a.extensionsCatalogs[0]);
+          setExtensionsCatalogTouched(true);
+        } else if (a.extensions && a.extensions.length > 0) {
+          // A build that sent no catalog was resolved against the default
+          // one, whatever its flavor, so the rebuild reads it too.
+          setExtensionsCatalogOverride(DEFAULT_EXTENSIONS_CATALOG);
+          setExtensionsCatalogTouched(true);
         }
 
         // Hadron branch: restore the composer state and land on Source so the
@@ -1054,9 +1135,11 @@ export function ArtifactBuilder() {
             setShowAdvanced(true);
             setUserMode("none");
           }
-          // Land on Configure so the Hadron composer expander (which now
-          // lives on Step 1) is visible with the cloned state ready to edit.
-          setStep(1);
+          // Land on System so the Hadron composer expander is visible with
+          // the cloned state ready to edit. A clone carries a full
+          // configuration, so every step can be opened from the stepper.
+          setStep("system");
+          setMaxReached(BUILDER_STEPS.length - 1);
           return;
         }
 
@@ -1103,7 +1186,8 @@ export function ArtifactBuilder() {
           setShowAdvanced(true);
           setUserMode("none");
         }
-        setStep(3);
+        setStep("review");
+        setMaxReached(BUILDER_STEPS.length - 1);
       }).catch(() => {});
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1178,11 +1262,9 @@ export function ArtifactBuilder() {
   ]);
 
   // The "View full" toggle only makes sense for the content it was opened
-  // against -- reset it whenever the preview's actual content changes, so a
-  // newly truncated preview never starts out expanded from a stale toggle.
-  useEffect(() => {
-    setShowFullCloudConfigPreview(false);
-  }, [cloudConfigPreview]);
+  // against, so it is derived from that content: a newly truncated preview
+  // never starts out expanded from a stale toggle.
+  const showFullCloudConfigPreview = expandedCloudConfigPreview === cloudConfigPreview;
 
   // computeErrors produces a structured list: each error knows which wizard
   // step it belongs to and which field ref to focus. The top-of-page red
@@ -1191,40 +1273,43 @@ export function ArtifactBuilder() {
   //
   // Pass an explicit step to scope to a single step (Next button flow);
   // leave undefined to validate the whole form (final Submit flow).
-  function computeErrors(scope?: number): FieldError[] {
+  function computeErrors(scope?: BuilderStep): FieldError[] {
     const errs: FieldError[] = [];
 
-    // Step 0 — Source
-    if (scope === undefined || scope === 0) {
+    // Base
+    if (scope === undefined || scope === "base") {
+      if (!form.name?.trim()) {
+        errs.push({ field: "name", step: "base", message: "Name is required." });
+      }
       if (buildMode === "image" && !form.baseImage.trim()) {
-        errs.push({ field: "baseImage", step: 0, message: "Base image is required." });
+        errs.push({ field: "baseImage", step: "base", message: "Base image is required." });
       }
       if (buildMode === "dockerfile" && !form.dockerfile?.trim()) {
-        errs.push({ field: "dockerfile", step: 0, message: "Dockerfile is required." });
+        errs.push({ field: "dockerfile", step: "base", message: "Dockerfile is required." });
       }
     }
 
-    // Step 1 — Configure
+    // System
     // Artifact version is no longer required: if the user leaves it blank
     // we stub DEFAULT_ARTIFACT_VERSION at submit time so a brand-new
     // build still has a usable version for upgrade tracking.
-    if (scope === undefined || scope === 1) {
+    if (scope === undefined || scope === "system") {
       if (form.variant === "standard" && !form.kubernetesDistro?.trim()) {
         errs.push({
           field: "kubernetesDistro",
-          step: 1,
+          step: "system",
           message: "Kubernetes distro is required for standard variant.",
         });
       }
     }
 
-    // Step 2 — Output
-    if (scope === undefined || scope === 2) {
+    // Output
+    if (scope === undefined || scope === "output") {
       const hasOutput = Object.values(form.outputs).some(Boolean);
       if (!hasOutput) {
         errs.push({
           field: "outputs",
-          step: 2,
+          step: "output",
           message: "At least one output format must be selected.",
         });
       }
@@ -1233,14 +1318,14 @@ export function ArtifactBuilder() {
           if (!form.signing.ukiSecureBootKey.trim() || !form.signing.ukiSecureBootCert.trim()) {
             errs.push({
               field: "ukiSecureBootKey",
-              step: 2,
+              step: "output",
               message: "UKI secure boot key and cert are required when UKI is enabled.",
             });
           }
         } else if (!form.signing.ukiKeySetId) {
           errs.push({
             field: "ukiKeySetId",
-            step: 2,
+            step: "output",
             message: "A secure boot key set must be selected when UKI is enabled.",
           });
         }
@@ -1253,9 +1338,9 @@ export function ArtifactBuilder() {
   // Per-step validation used by the Next button. Returns true when the
   // current step is clean; side-effects: sets the error banner and queues
   // a focus/scroll to the first invalid field on the same step.
-  function validateStep(s: number): boolean {
+  function validateStep(s: BuilderStep): boolean {
     const errs = computeErrors(s);
-    setErrors(errs.map((e) => e.message));
+    setShownErrorSteps((prev) => (prev === "all" || prev.has(s) ? prev : new Set(prev).add(s)));
     if (errs.length > 0) focusFirstError(errs);
     return errs.length === 0;
   }
@@ -1276,14 +1361,13 @@ export function ArtifactBuilder() {
     e.preventDefault();
     // Only allow submission from the Review step (prevents accidental Enter-key submits
     // from inputs or Radix component keyboard handlers on earlier steps).
-    if (step !== 3) return;
+    if (step !== "review") return;
     const fieldErrors = computeErrors();
     if (fieldErrors.length > 0) {
-      setErrors(fieldErrors.map((e) => e.message));
+      setShownErrorSteps("all");
       focusFirstError(fieldErrors);
       return;
     }
-    setErrors([]);
 
     const input: CreateArtifactInput = {
       name: form.name || undefined,
@@ -1314,13 +1398,18 @@ export function ArtifactBuilder() {
         selectedTemplate === HADRON_TEMPLATE_NAME
           ? hadronExtra || undefined
           : undefined,
-      extensions: selectedExtensionNames.length > 0 ? selectedExtensionNames : undefined,
-      // Only sent when the operator pointed the build at another catalog:
-      // leaving it out keeps the server's default as the single source of
-      // that URL, so it can move without every stored build disagreeing.
+      extensions:
+        selectedExtensionNames.length > 0 && !catalogMissing
+          ? selectedExtensionNames
+          : undefined,
+      // Left out only for a Hadron build on the default catalog: that keeps
+      // the server's default as the single source of that URL, so it can
+      // move without every stored build disagreeing. Any other flavor states
+      // its catalog, because the server default is the Hadron one.
       extensionsCatalogs:
         selectedExtensionNames.length > 0 &&
-        extensionsCatalog.trim() !== DEFAULT_EXTENSIONS_CATALOG
+        !catalogMissing &&
+        (!hadronBuild || extensionsCatalog.trim() !== DEFAULT_EXTENSIONS_CATALOG)
           ? [extensionsCatalog.trim()]
           : undefined,
       overlayRootfs: form.overlayRootfs || undefined,
@@ -1342,11 +1431,77 @@ export function ArtifactBuilder() {
     navigate(`/artifacts/${result.id}`);
   }
 
-  const availableModels = modelsForArch(form.arch);
+  // selectTemplate prefills the form from a template. It does not change the
+  // step: the user reviews the Base step and moves on with Next.
+  function selectTemplate(t: BuildTemplate) {
+    setSelectedTemplate(t.name);
+    if (t.name === HADRON_TEMPLATE_NAME) startHadronCatalogs();
+    setForm((prev) => ({
+      ...EMPTY_FORM,
+      ...t.values,
+      name: prev.name, // preserve user-typed name
+      outputs: { ...EMPTY_OUTPUTS, ...t.values.outputs },
+      signing: { ...EMPTY_SIGNING, ...t.values.signing },
+      provisioning: { ...EMPTY_PROVISIONING, ...t.values.provisioning },
+    }));
+    setCustomModel(false);
+  }
 
-  const selectedOutputs = Object.entries(form.outputs)
-    .filter(([, v]) => v)
-    .map(([k]) => k);
+  // handleNext validates the current step only, then moves on. Leaving the
+  // System step of a Hadron build also turns the composer inputs into the
+  // build source.
+  function handleNext() {
+    if (!validateStep(step)) return;
+    if (step === "system" && selectedTemplate === HADRON_TEMPLATE_NAME) {
+      const composed =
+        hadronFirmware.length > 0 ||
+        hadronLayers.length > 0 ||
+        hadronExtra.trim() !== "";
+      if (composed) {
+        const dockerfile = renderHadronMiddleContent(
+          hadronFirmware,
+          hadronLayers,
+          hadronExtra,
+        );
+        setForm((prev) => ({ ...prev, dockerfile, baseImage: "" }));
+        setBuildMode("dockerfile");
+      } else {
+        // Round-trip case: an earlier composed pass may have blanked
+        // baseImage and populated dockerfile. Restore the plain path
+        // so a user who removed all firmware/layers/extra still
+        // gets a valid image-mode build.
+        setForm((prev) => ({ ...prev, dockerfile: "", baseImage: hadronBase }));
+        setBuildMode("image");
+      }
+    }
+    goToStep(BUILDER_STEPS[BUILDER_STEPS.indexOf(step) + 1]);
+  }
+
+  // Errors are recomputed from the current state on every render.
+  const liveErrors = computeErrors();
+  const errors = liveErrors
+    .filter((e) => shownErrorSteps === "all" || shownErrorSteps.has(e.step))
+    .map((e) => e.message);
+  const stepIndex = BUILDER_STEPS.indexOf(step);
+  const currentStepErrors = liveErrors.filter((e) => e.step === step);
+  const stepHasErrors = (key: BuilderStep) => liveErrors.some((e) => e.step === key);
+  // Steps before the current one are done (or in error). A later step can be
+  // opened again once it was reached and every step before it is valid.
+  const wizardSteps: WizardStep[] = BUILDER_STEPS.map((key, i) => {
+    let state: WizardStep["state"];
+    if (i === stepIndex) {
+      state = "current";
+    } else if (i < stepIndex) {
+      state = stepHasErrors(key) ? "error" : "done";
+    } else if (i <= maxReached && !BUILDER_STEPS.slice(0, i).some(stepHasErrors)) {
+      state = stepHasErrors(key) ? "error" : "done";
+    } else {
+      state = "todo";
+    }
+    return { key, label: STEP_LABELS[key], state };
+  });
+
+  const availableModels = modelsForArch(form.arch);
 
   // Count only actual output formats (not security modifiers)
   const selectedOutputCount = OUTPUT_GROUPS.flatMap((g) => g.items).filter(
@@ -1362,6 +1517,40 @@ export function ArtifactBuilder() {
       .map((i) => ({ ...i, tone: g.tone })),
   );
 
+  // The summary aside and the Review step read the same builder state.
+  const summaryData: BuildSummaryData = {
+    name: form.name ?? "",
+    base: buildMode === "dockerfile" ? "Dockerfile" : form.baseImage,
+    arch: form.arch,
+    model: form.model,
+    variant: form.variant,
+    kubernetes:
+      form.variant === "standard" && (form.kubernetesEnabled ?? true)
+        ? [form.kubernetesDistro, form.kubernetesVersion].filter(Boolean).join(" ") || undefined
+        : undefined,
+    version: form.kairosVersion || DEFAULT_ARTIFACT_VERSION,
+    bundledExtensions: (form.bundledExtensions ?? []).map((e) => e.name),
+    catalogExtensions: catalogMissing ? [] : selectedExtensionNames,
+    user: userMode,
+    sshKeyCount: userMode === "none" ? 0 : sshKeys.split("\n").filter((l) => l.trim()).length,
+    register: form.provisioning.registerAuroraBoot,
+    targetGroup: form.provisioning.targetGroupId
+      ? groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || form.provisioning.targetGroupId
+      : undefined,
+    commands: form.provisioning.registerAuroraBoot ? (form.provisioning.allowedCommands ?? []) : [],
+    fips: form.outputs.fips,
+    trustedBoot: form.outputs.trustedBoot,
+    outputs: selectedOutputItems.map((i) => i.label),
+    overlayFiles: overlayFiles.length,
+    autoInstall: form.provisioning.autoInstall,
+    // Like the build request, the flag only applies to an image build.
+    insecureRegistries: buildMode === "image" && !!form["allow-insecure-registries"],
+  };
+  // Edit links follow the stepper's rules: a step not reached yet stays closed.
+  const editStep = (key: string) => {
+    if (wizardSteps.find((w) => w.key === key)?.state !== "todo") goToStep(key as BuilderStep);
+  };
+
   return (
     <div>
       <PageHeader
@@ -1375,35 +1564,24 @@ export function ArtifactBuilder() {
           className="hidden"
           onChange={handleImportFile}
         />
-        <Button type="button" variant="outline" size="sm" onClick={handleImportClick}>
-          <FileUp className="h-4 w-4 mr-2" />
-          Import
-        </Button>
-        <Button type="button" variant="outline" size="sm" onClick={handleExportConfig}>
-          <Download className="h-4 w-4 mr-2" />
-          Export
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button type="button" variant="outline" size="icon" aria-label="More actions">
+              <MoreHorizontal aria-hidden="true" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={handleImportClick}>
+              <FileUp aria-hidden="true" />
+              Import config
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleExportConfig}>
+              <Download aria-hidden="true" />
+              Export config
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </PageHeader>
-
-      {/* Step indicator */}
-      <div className="flex items-center gap-2 mb-4">
-        {STEPS.map((name, i) => (
-          <React.Fragment key={name}>
-            {i > 0 && <div className={`flex-1 h-px ${i <= step ? "bg-[#EE5007]" : "bg-border"}`} />}
-            <button
-              type="button"
-              onClick={() => goToStep(i)}
-              className={`flex items-center gap-2 text-sm ${i === step ? "text-[#EE5007] font-medium" : i < step ? "text-foreground" : "text-muted-foreground"}`}
-            >
-              <span className={`h-7 w-7 rounded-full flex items-center justify-center text-xs border ${i === step ? "border-[#EE5007] bg-[#EE5007] text-white" : i < step ? "border-[#EE5007] text-[#EE5007]" : "border-muted-foreground"}`}>
-                {i < step ? "\u2713" : i + 1}
-              </span>
-              <span className="hidden md:inline">{name}</span>
-            </button>
-          </React.Fragment>
-        ))}
-      </div>
-
       {/* Ambient preview of the outputs the user has selected. Hidden when
           no outputs are picked so the row doesn't render a dangling label. */}
       {selectedOutputItems.length > 0 && (
@@ -1424,6 +1602,33 @@ export function ArtifactBuilder() {
         </div>
       )}
 
+
+      <WizardShell
+        steps={wizardSteps}
+        current={step}
+        onStepChange={(key) => goToStep(key as BuilderStep)}
+        aside={step === "review" ? undefined : <BuildSummary data={summaryData} variant="aside" onEdit={editStep} />}
+        footer={{
+          onBack: stepIndex > 0 ? () => goToStep(BUILDER_STEPS[stepIndex - 1]) : () => navigate("/artifacts"),
+          backLabel: stepIndex > 0 ? "Back" : "Cancel",
+          status:
+            currentStepErrors.length === 0
+              ? { tone: "success", text: "All required fields set" }
+              : {
+                  tone: "warning",
+                  text: `${currentStepErrors.length} issue${currentStepErrors.length === 1 ? "" : "s"} on this step`,
+                },
+          primary:
+            step === "review"
+              ? {
+                  label: "Start build",
+                  onClick: () => {
+                    void handleSubmit({ preventDefault: () => {} } as FormEvent);
+                  },
+                }
+              : { label: `Next: ${STEP_LABELS[BUILDER_STEPS[stepIndex + 1]]}`, onClick: handleNext },
+        }}
+      >
       {/* Validation errors */}
       {errors.length > 0 && (
         <div className="mb-6 rounded-md bg-red-500/10 border border-red-500/25 p-4">
@@ -1436,8 +1641,8 @@ export function ArtifactBuilder() {
       )}
 
       <form onSubmit={handleSubmit}>
-        {/* Step 0: Source */}
-        {step === 0 && (
+        {/* Step 1: Base */}
+        {step === "base" && (
           <div>
             <div className="mb-6 max-w-md">
               <Label className="mb-2 block text-sm font-medium">
@@ -1447,6 +1652,7 @@ export function ArtifactBuilder() {
                 </InfoTooltip>
               </Label>
               <Input
+                ref={bindRef("name")}
                 placeholder="e.g. Production v4.0.3 + custom agent"
                 value={form.name || ""}
                 onChange={(e) => update("name", e.target.value)}
@@ -1465,26 +1671,18 @@ export function ArtifactBuilder() {
                       key={t.name}
                       className={`cursor-pointer transition-colors ${
                         selectedTemplate === t.name
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]/20"
-                          : "hover:border-[#FF7442]/40"
+                          ? "border-primary bg-primary-soft ring-1 ring-primary/20"
+                          : "hover:border-primary/40"
                       }`}
-                      onClick={() => {
-                        setSelectedTemplate(t.name);
-                        if (t.name === HADRON_TEMPLATE_NAME) startHadronCatalogs();
-                        setForm((prev) => ({
-                          ...EMPTY_FORM,
-                          ...t.values,
-                          name: prev.name, // preserve user-typed name
-                          outputs: { ...EMPTY_OUTPUTS, ...t.values.outputs },
-                          signing: { ...EMPTY_SIGNING, ...t.values.signing },
-                          provisioning: { ...EMPTY_PROVISIONING, ...t.values.provisioning },
-                        }));
-                        setCustomModel(false);
-                        // Custom stays on Source so the user can reveal the
-                        // Image Source sub-form; every real flavor (Hadron
-                        // included) advances straight to Configure, where
-                        // Hadron surfaces its own advanced expander.
-                        if (t.name !== "Custom") setStep(1);
+                      role="button"
+                      tabIndex={0}
+                      aria-pressed={selectedTemplate === t.name}
+                      onClick={() => selectTemplate(t)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          selectTemplate(t);
+                        }
                       }}
                     >
                       <CardContent className="p-3">
@@ -1587,8 +1785,8 @@ export function ArtifactBuilder() {
           </div>
         )}
 
-        {/* Step 1: Configure */}
-        {step === 1 && (
+        {/* Step 2: System */}
+        {step === "system" && (
           <div className="grid gap-6">
             {/* Architecture */}
             <Card>
@@ -1600,34 +1798,13 @@ export function ArtifactBuilder() {
                   </InfoTooltip>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                {ARCHES.map((a) => {
-                  const Icon = a.icon;
-                  const selected = form.arch === a.value;
-                  return (
-                    <button
-                      key={a.value}
-                      type="button"
-                      onClick={() => handleArchChange(a.value)}
-                      className={`text-left rounded-lg border p-4 transition-colors ${
-                        selected
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
-                          : "border-border hover:border-[#EE5007]/50 hover:bg-muted/40"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-[#EE5007]" : "text-muted-foreground"}`} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{a.label}</span>
-                            {selected && <Check className="h-4 w-4 text-[#EE5007]" />}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">{a.desc}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <CardContent>
+                <SegmentedControl
+                  ariaLabel="Architecture"
+                  value={form.arch}
+                  onChange={handleArchChange}
+                  options={ARCHES.map((a) => ({ value: a.value, label: a.label, hint: a.desc }))}
+                />
               </CardContent>
             </Card>
 
@@ -1678,16 +1855,16 @@ export function ArtifactBuilder() {
                           onClick={() => update("model", m.value)}
                           className={`text-left rounded-lg border p-4 transition-colors ${
                             selected
-                              ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
-                              : "border-border hover:border-[#EE5007]/50 hover:bg-muted/40"
+                              ? "border-primary bg-primary-soft ring-1 ring-primary"
+                              : "border-border hover:border-primary/50 hover:bg-muted/40"
                           }`}
                         >
                           <div className="flex items-start gap-3">
-                            <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-[#EE5007]" : "text-muted-foreground"}`} />
+                            <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-primary" : "text-muted-foreground"}`} />
                             <div className="flex-1">
                               <div className="flex items-center gap-2">
                                 <span className="font-medium">{m.label}</span>
-                                {selected && <Check className="h-4 w-4 text-[#EE5007]" />}
+                                {selected && <Check className="h-4 w-4 text-primary" />}
                               </div>
                               <p className="text-xs text-muted-foreground mt-1">{m.desc}</p>
                             </div>
@@ -1710,51 +1887,30 @@ export function ArtifactBuilder() {
                   </InfoTooltip>
                 </CardTitle>
               </CardHeader>
-              <CardContent className="grid gap-3 md:grid-cols-2">
-                {VARIANTS.map((v) => {
-                  const Icon = v.icon;
-                  const selected = form.variant === v.value;
-                  return (
-                    <button
-                      key={v.value}
-                      type="button"
-                      onClick={() => {
-                        if (v.value === "standard") {
-                          setForm((prev) => ({
-                            ...prev,
-                            variant: "standard",
-                            kubernetesDistro: prev.kubernetesDistro || "k3s",
-                            kubernetesEnabled: prev.kubernetesEnabled ?? true,
-                          }));
-                        } else {
-                          setForm((prev) => ({
-                            ...prev,
-                            variant: "core",
-                            kubernetesDistro: "",
-                            kubernetesVersion: "",
-                            kubernetesEnabled: true,
-                          }));
-                        }
-                      }}
-                      className={`text-left rounded-lg border p-4 transition-colors ${
-                        selected
-                          ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
-                          : "border-border hover:border-[#EE5007]/50 hover:bg-muted/40"
-                      }`}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Icon className={`h-5 w-5 mt-0.5 ${selected ? "text-[#EE5007]" : "text-muted-foreground"}`} />
-                        <div className="flex-1">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">{v.label}</span>
-                            {selected && <Check className="h-4 w-4 text-[#EE5007]" />}
-                          </div>
-                          <p className="text-xs text-muted-foreground mt-1">{v.desc}</p>
-                        </div>
-                      </div>
-                    </button>
-                  );
-                })}
+              <CardContent>
+                <SegmentedControl
+                  ariaLabel="Variant"
+                  value={form.variant}
+                  onChange={(value) => {
+                    if (value === "standard") {
+                      setForm((prev) => ({
+                        ...prev,
+                        variant: "standard",
+                        kubernetesDistro: prev.kubernetesDistro || "k3s",
+                        kubernetesEnabled: prev.kubernetesEnabled ?? true,
+                      }));
+                    } else {
+                      setForm((prev) => ({
+                        ...prev,
+                        variant: "core",
+                        kubernetesDistro: "",
+                        kubernetesVersion: "",
+                        kubernetesEnabled: true,
+                      }));
+                    }
+                  }}
+                  options={VARIANTS.map((v) => ({ value: v.value, label: v.label, hint: v.desc }))}
+                />
               </CardContent>
             </Card>
 
@@ -1887,165 +2043,6 @@ export function ArtifactBuilder() {
                 </div>
               </CardContent>
             </Card>
-
-            {/* Access & Security */}
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Access &amp; Security</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                <div className="grid gap-2">
-                  <Label>
-                    User Setup
-                    <InfoTooltip>
-                      How the default login is provisioned on first boot: none, a default <code>kairos</code>/<code>kairos</code> user, or a custom one.{" "}
-                      <a
-                        href="https://kairos.io/docs/reference/configuration/"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="underline"
-                      >
-                        Docs
-                      </a>
-                    </InfoTooltip>
-                  </Label>
-                  <div className="flex gap-2">
-                    {(["default", "custom", "none"] as const).map((mode) => (
-                      <Button
-                        key={mode}
-                        type="button"
-                        size="sm"
-                        variant={userMode === mode ? "default" : "outline"}
-                        onClick={() => {
-                          setUserMode(mode);
-                          if (mode === "default") {
-                            setUsername("kairos");
-                            setPassword("kairos");
-                          }
-                        }}
-                      >
-                        {mode === "default" ? "Default User" : mode === "custom" ? "Custom User" : "No User"}
-                      </Button>
-                    ))}
-                  </div>
-                </div>
-
-                {userMode !== "none" && (
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="grid gap-2">
-                      <Label>
-                        Username
-                        <InfoTooltip>
-                          Login user created at first boot.
-                        </InfoTooltip>
-                      </Label>
-                      <Input
-                        value={username}
-                        onChange={(e) => setUsername(e.target.value)}
-                        disabled={userMode === "default"}
-                      />
-                    </div>
-                    <div className="grid gap-2">
-                      <Label>
-                        Password
-                        <InfoTooltip>
-                          Stored as plain text in the generated cloud-config. Prefer SSH keys for anything you actually care about.
-                        </InfoTooltip>
-                      </Label>
-                      <Input
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        disabled={userMode === "default"}
-                      />
-                    </div>
-                  </div>
-                )}
-
-                {userMode === "none" && (
-                  <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3">
-                    <p className="text-sm text-amber-700">
-                      No user will be created. You must configure access via the advanced cloud-config section in the Output step.
-                    </p>
-                  </div>
-                )}
-
-                {userMode !== "none" && (
-                  <div className="grid gap-2">
-                    <Label>
-                      SSH Authorized Keys (optional)
-                      <InfoTooltip>
-                        One key per line. Kairos also accepts <code>github:user</code> and <code>gitlab:user</code> shortcuts.{" "}
-                        <a
-                          href="https://kairos.io/docs/reference/configuration/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="underline"
-                        >
-                          Docs
-                        </a>
-                      </InfoTooltip>
-                    </Label>
-                    <Textarea
-                      placeholder={"ssh-rsa AAAAB3... user@host\nssh-ed25519 AAAA... other@host"}
-                      value={sshKeys}
-                      onChange={(e) => setSshKeys(e.target.value)}
-                      rows={3}
-                      className="font-mono text-xs"
-                    />
-                    <p className="text-xs text-muted-foreground">One key per line.</p>
-                  </div>
-                )}
-
-                {/* Pre-configure for system extensions: bakes a systemd drop-in
-                    so the OS image accepts overlays on the listed paths
-                    without manual setup at upgrade time. */}
-                <details className="mt-4 pt-3 border-t border-border/60">
-                  <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
-                    Pre-configure for system extensions
-                    <span className="text-xs font-normal opacity-60">Optional · advanced</span>
-                  </summary>
-                  <p className="text-xs text-muted-foreground mt-2">
-                    Bakes a systemd drop-in so the node accepts sysext overlays on the listed paths without manual setup.
-                  </p>
-                  <div className="mt-3">
-                    <div className="text-xs text-muted-foreground mb-1.5">Additional sysext hierarchies</div>
-                    <HierarchyChipInput
-                      value={form.extensionHierarchies?.sysext ?? []}
-                      onChange={(next) =>
-                        update("extensionHierarchies", {
-                          sysext: next,
-                          confext: form.extensionHierarchies?.confext ?? [],
-                        })
-                      }
-                      implicitRoot="/usr"
-                      quickAdds={["/opt", "/srv", "/var/lib"]}
-                    />
-                  </div>
-                  <details className="mt-3">
-                    <summary className="cursor-pointer text-xs opacity-80">Confext hierarchies (optional)</summary>
-                    <div className="mt-2">
-                      <HierarchyChipInput
-                        value={form.extensionHierarchies?.confext ?? []}
-                        onChange={(next) =>
-                          update("extensionHierarchies", {
-                            sysext: form.extensionHierarchies?.sysext ?? [],
-                            confext: next,
-                          })
-                        }
-                        implicitRoot="/etc"
-                      />
-                    </div>
-                  </details>
-                </details>
-              </CardContent>
-            </Card>
-
-            {/* Bundled extensions: ride along with every upgrade to this artifact. */}
-            <BundledExtensionsCard
-              arch={form.arch}
-              bundled={form.bundledExtensions ?? []}
-              onChange={(next) => update("bundledExtensions", next)}
-            />
 
             {selectedTemplate === HADRON_TEMPLATE_NAME && (
               <Card>
@@ -2186,7 +2183,7 @@ export function ArtifactBuilder() {
                                   return (
                                     <label
                                       key={ref}
-                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-primary/10" : ""}`}
                                     >
                                       <input
                                         type="checkbox"
@@ -2342,7 +2339,7 @@ export function ArtifactBuilder() {
                                   return (
                                     <label
                                       key={l.name}
-                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-[#EE5007]/10" : ""}`}
+                                      className={`flex items-center gap-2 text-xs cursor-pointer px-2 py-1 rounded hover:bg-muted/60 ${selected ? "bg-primary/10" : ""}`}
                                     >
                                       <input
                                         type="checkbox"
@@ -2422,98 +2419,125 @@ export function ArtifactBuilder() {
           </div>
         )}
 
-        {/* Step 2: Output */}
-        {step === 2 && (
-          <div className="grid gap-6 lg:grid-cols-5">
-            {/* LEFT: Outputs (primary) */}
-            <div className="lg:col-span-3 space-y-6">
-              <Card ref={bindRef("outputs")}>
-                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
-                  <CardTitle className="text-sm">Outputs</CardTitle>
-                  <span className="text-xs text-muted-foreground">
-                    {selectedOutputCount} selected
-                  </span>
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  {OUTPUT_GROUPS.map((group) => (
-                    <div key={group.title}>
-                      <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
-                        {group.title}
-                      </p>
-                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                        {group.items.map((item) => {
-                          const Icon = item.icon;
-                          const checked = !!form.outputs[item.field];
-                          return (
-                            <button
-                              key={item.field}
-                              type="button"
-                              onClick={() => updateOutput(item.field, !checked)}
-                              className={`relative text-left rounded-lg border p-3 transition-colors ${
-                                checked
-                                  ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]/20"
-                                  : "border-border hover:border-[#FF7442]/40"
-                              }`}
-                            >
-                              {checked && (
-                                <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-[#EE5007] text-white flex items-center justify-center">
-                                  <Check className="h-3 w-3" strokeWidth={3} />
-                                </span>
-                              )}
-                              <Icon
-                                className={`h-5 w-5 mb-2 ${
-                                  checked ? "text-[#EE5007]" : "text-muted-foreground"
-                                }`}
-                              />
-                              <p className="font-medium text-sm">{item.label}</p>
-                              <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  ))}
-
-                  {form.outputs.uki && (
-                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
-                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                      <p className="text-sm text-amber-700">
-                        UKI requires secure boot signing keys — configure them in the panel below.
-                      </p>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
+        {/* Step 3: Extensions */}
+        {step === "extensions" && (
+          <div className="grid gap-6">
+            <p className="text-sm text-muted-foreground">
+              Extensions come from two places. <strong className="text-foreground">Install after boot</strong>:
+              extensions built on this instance ride along with every upgrade to the artifact.{" "}
+              <strong className="text-foreground">Bake into the image</strong>: extensions from a catalog are
+              written into the ISO.
+            </p>
+            {/* Bundled extensions: ride along with every upgrade to this artifact. */}
+            <BundledExtensionsCard
+              arch={form.arch}
+              bundled={form.bundledExtensions ?? []}
+              onChange={(next) => update("bundledExtensions", next)}
+              // The catalog picker is on this step too, so the jump scrolls to
+              // its URL field.
+              onGoToCatalog={() => setFocusTarget("extensionsCatalog")}
+            />
 
               {/* Catalog extensions materialized into the ISO */}
               <Card>
                 <CardHeader>
                   <CardTitle className="text-sm flex items-center gap-2">
-                    <Package className="h-4 w-4 text-[#EE5007]" />
+                    <Package className="h-4 w-4 text-primary" />
                     System Extensions
                     <InfoTooltip>
                       Extensions are resolved from the catalog and written into the
                       ISO, so the installed system carries them without pulling
                       anything at first boot. Only extensions published for the{" "}
-                      {form.arch} architecture are listed.
+                      {form.arch} architecture are listed. To use an extension
+                      this AuroraBoot instance built itself, and carry it with
+                      every upgrade to the artifact instead, see "Extensions
+                      built on this instance" above.
                     </InfoTooltip>
                   </CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
+                  {!hadronBuild && configuredCatalogs.length === 0 && catalogMissing && (
+                    <div className="rounded-md border border-dashed p-3 grid gap-3">
+                      <p className="text-sm text-muted-foreground">
+                        The default catalog publishes extensions built for Hadron,
+                        so this flavor has no catalog yet. Use one of the catalogs
+                        below, type the URL of your own, or save catalogs in{" "}
+                        <Link to="/settings" className="underline text-foreground">
+                          Settings
+                        </Link>{" "}
+                        so every build offers them. You can also start AuroraBoot
+                        with <code className="font-mono text-xs">--extensions-catalog</code>.
+                      </p>
+                      <div className="grid gap-2">
+                        {SUGGESTED_EXTENSION_CATALOGS.map((suggestion) => (
+                          <div
+                            key={suggestion.url}
+                            className="rounded-md border p-2 flex items-start gap-2"
+                          >
+                            <div className="grid gap-0.5 min-w-0 flex-1">
+                              <span className="text-xs font-medium">{suggestion.name}</span>
+                              <span className="text-xs font-mono text-muted-foreground truncate">
+                                {suggestion.url}
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {suggestion.description}
+                              </span>
+                            </div>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => pickExtensionsCatalog(suggestion.url)}
+                              aria-label={`Use ${suggestion.name}`}
+                            >
+                              Use
+                            </Button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid gap-1">
                     <Label className="text-xs">
                       Catalog
                       <InfoTooltip>
-                        Defaults to the Kairos hadron-layers catalog, the same index
-                        a node reads. Point it at your own index to publish your own
-                        extensions.
+                        {hadronBuild
+                          ? "Defaults to the Kairos hadron-layers catalog, the same index a node reads. Point it at your own index to publish your own extensions."
+                          : "The catalogs given with --extensions-catalog and saved in Settings are offered here. Point it at any index to use its extensions."}
                       </InfoTooltip>
                     </Label>
+                    {catalogChoices.length > 1 && (
+                      <div className="flex flex-wrap gap-1.5 mb-1">
+                        {catalogChoices.map((url) => (
+                          <Button
+                            key={url}
+                            type="button"
+                            size="sm"
+                            variant={url === extensionsCatalog.trim() ? "default" : "outline"}
+                            className="h-7 max-w-full text-xs font-mono"
+                            title={url}
+                            aria-pressed={url === extensionsCatalog.trim()}
+                            onClick={() => pickExtensionsCatalog(url)}
+                          >
+                            <span className="truncate">{url}</span>
+                          </Button>
+                        ))}
+                      </div>
+                    )}
                     <div className="flex gap-2">
                       <Input
+                        ref={bindRef("extensionsCatalog")}
                         value={extensionsCatalog}
-                        onChange={(e) => setExtensionsCatalog(e.target.value)}
-                        placeholder={DEFAULT_EXTENSIONS_CATALOG}
+                        onChange={(e) => {
+                          setExtensionsCatalogOverride(e.target.value);
+                          setExtensionsCatalogTouched(true);
+                        }}
+                        placeholder={
+                          hadronBuild
+                            ? DEFAULT_EXTENSIONS_CATALOG
+                            : "https://example.com/extensions/releases.json"
+                        }
                         className="font-mono text-xs"
                         aria-label="Extension catalog URL"
                       />
@@ -2522,6 +2546,7 @@ export function ArtifactBuilder() {
                         size="sm"
                         variant="outline"
                         onClick={() => loadExtensionsCatalog(extensionsCatalog)}
+                        disabled={catalogMissing}
                       >
                         {extensionsCatalogState === "loading" ? (
                           <Loader2 className="h-4 w-4 animate-spin" />
@@ -2618,6 +2643,17 @@ export function ArtifactBuilder() {
                     </div>
                   )}
 
+                  {catalogMissing && selectedExtensionNames.length > 0 && (
+                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-700">
+                        No catalog is set, so {selectedExtensionNames.join(", ")}{" "}
+                        will not be baked into the image. Pick a catalog to keep
+                        them.
+                      </p>
+                    </div>
+                  )}
+
                   {unavailableExtensions.length > 0 && (
                     <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
@@ -2641,12 +2677,377 @@ export function ArtifactBuilder() {
                 </CardContent>
               </Card>
 
+            <Card>
+              <CardContent className="pt-6">
+                {/* Pre-configure for system extensions: bakes a systemd drop-in
+                    so the OS image accepts overlays on the listed paths
+                    without manual setup at upgrade time. */}
+                <details>
+                  <summary className="cursor-pointer text-sm font-semibold flex items-center gap-2">
+                    Pre-configure for system extensions
+                    <span className="text-xs font-normal opacity-60">Optional · advanced</span>
+                  </summary>
+                  <p className="text-xs text-muted-foreground mt-2">
+                    Bakes a systemd drop-in so the node accepts sysext overlays on the listed paths without manual setup.
+                  </p>
+                  <div className="mt-3">
+                    <div className="text-xs text-muted-foreground mb-1.5">Additional sysext hierarchies</div>
+                    <HierarchyChipInput
+                      value={form.extensionHierarchies?.sysext ?? []}
+                      onChange={(next) =>
+                        update("extensionHierarchies", {
+                          sysext: next,
+                          confext: form.extensionHierarchies?.confext ?? [],
+                        })
+                      }
+                      implicitRoot="/usr"
+                      quickAdds={["/opt", "/srv", "/var/lib"]}
+                    />
+                  </div>
+                  <details className="mt-3">
+                    <summary className="cursor-pointer text-xs opacity-80">Confext hierarchies (optional)</summary>
+                    <div className="mt-2">
+                      <HierarchyChipInput
+                        value={form.extensionHierarchies?.confext ?? []}
+                        onChange={(next) =>
+                          update("extensionHierarchies", {
+                            sysext: form.extensionHierarchies?.sysext ?? [],
+                            confext: next,
+                          })
+                        }
+                        implicitRoot="/etc"
+                      />
+                    </div>
+                  </details>
+                </details>
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        {/* Step 4: Access */}
+        {step === "access" && (
+          <div className="grid gap-6">
+            {/* Access */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-sm">Access</CardTitle>
+              </CardHeader>
+              <CardContent className="grid gap-4">
+                <div className="grid gap-2">
+                  <Label>
+                    User Setup
+                    <InfoTooltip>
+                      How the default login is provisioned on first boot: none, a default <code>kairos</code>/<code>kairos</code> user, or a custom one.{" "}
+                      <a
+                        href="https://kairos.io/docs/reference/configuration/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="underline"
+                      >
+                        Docs
+                      </a>
+                    </InfoTooltip>
+                  </Label>
+                  <SegmentedControl<UserMode>
+                    ariaLabel="User setup"
+                    value={userMode}
+                    onChange={(mode) => {
+                      setUserMode(mode);
+                      if (mode === "default") {
+                        setUsername("kairos");
+                        setPassword("kairos");
+                      }
+                    }}
+                    options={[
+                      { value: "default", label: "Default user" },
+                      { value: "custom", label: "Custom user" },
+                      { value: "none", label: "No user" },
+                    ]}
+                  />
+                </div>
+
+                {userMode === "default" && (
+                  <div className="rounded-md border border-warning/40 bg-warning/10 px-3 py-2">
+                    <p className="text-sm text-warning-foreground">
+                      The default user is <code className="font-mono">kairos</code> and its password is{" "}
+                      <code className="font-mono">kairos</code>. Change it before you put the node on a network you
+                      do not trust, or pick a custom user.
+                    </p>
+                  </div>
+                )}
+
+                {userMode !== "none" && (
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="grid gap-2">
+                      <Label>
+                        Username
+                        <InfoTooltip>
+                          Login user created at first boot.
+                        </InfoTooltip>
+                      </Label>
+                      <Input
+                        value={username}
+                        onChange={(e) => setUsername(e.target.value)}
+                        disabled={userMode === "default"}
+                      />
+                    </div>
+                    <div className="grid gap-2">
+                      <Label>
+                        Password
+                        <InfoTooltip>
+                          Stored as plain text in the generated cloud-config. Prefer SSH keys for anything you actually care about.
+                        </InfoTooltip>
+                      </Label>
+                      <Input
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        disabled={userMode === "default"}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {userMode === "none" && (
+                  <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3">
+                    <p className="text-sm text-amber-700">
+                      No user will be created. You must configure access via the advanced cloud-config section in the Output step.
+                    </p>
+                  </div>
+                )}
+
+                {userMode !== "none" && (
+                  <div className="grid gap-2">
+                    <Label>
+                      SSH Authorized Keys (optional)
+                      <InfoTooltip>
+                        One key per line. Kairos also accepts <code>github:user</code> and <code>gitlab:user</code> shortcuts.{" "}
+                        <a
+                          href="https://kairos.io/docs/reference/configuration/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="underline"
+                        >
+                          Docs
+                        </a>
+                      </InfoTooltip>
+                    </Label>
+                    <Textarea
+                      placeholder={"ssh-rsa AAAAB3... user@host\nssh-ed25519 AAAA... other@host"}
+                      value={sshKeys}
+                      onChange={(e) => setSshKeys(e.target.value)}
+                      rows={3}
+                      className="font-mono text-xs"
+                    />
+                    <p className="text-xs text-muted-foreground">One key per line.</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+              {/* Provisioning */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Provisioning</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={form.provisioning.autoInstall}
+                        onChange={(e) => updateProvisioning("autoInstall", e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      Auto-install
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                      Install to disk on first boot, no interaction needed.
+                    </p>
+                    {/* When the user disables auto-install we nudge them toward
+                        the upstream Kairos docs so they know how to drive the
+                        install by hand — otherwise a booted image just sits at
+                        the live prompt and looks broken. Colors are picked for
+                        WCAG AA contrast against the light/dark backgrounds. */}
+                    {!form.provisioning.autoInstall && (
+                      <div className="mt-2 ml-6 rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
+                        With auto-install off, the image boots into a live
+                        environment and you install it manually.{" "}
+                        <a
+                          href="https://kairos.io/docs/installation/"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="font-semibold underline underline-offset-2 hover:text-amber-950 dark:hover:text-white"
+                        >
+                          Read the installation guide →
+                        </a>
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={form.provisioning.registerAuroraBoot}
+                        onChange={(e) => updateProvisioning("registerAuroraBoot", e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      Register with AuroraBoot
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                      Node will phone home to this AuroraBoot on boot.
+                    </p>
+                  </div>
+
+                  {form.provisioning.registerAuroraBoot && (
+                    <div className="grid gap-2 pt-1">
+                      <Label className="text-xs">
+                        Target Group
+                        <InfoTooltip>
+                          Assigns the registered node to a fleet group on first boot. Groups are managed from the Groups page.
+                        </InfoTooltip>
+                      </Label>
+                      <Select
+                        value={form.provisioning.targetGroupId || "__none__"}
+                        onValueChange={(v) => updateProvisioning("targetGroupId", v === "__none__" ? "" : v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select group (optional)" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">None</SelectItem>
+                          {groups.map((g) => (
+                            <SelectItem key={g.id} value={g.id}>
+                              {g.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  )}
+
+                  {form.provisioning.registerAuroraBoot && (
+                    <CommandPresets
+                      value={form.provisioning.allowedCommands ?? []}
+                      onChange={(next) => updateProvisioning("allowedCommands", next)}
+                      renderCustom={() => (
+                        <AllowedCommandsPicker
+                          value={form.provisioning.allowedCommands ?? []}
+                          onChange={(next) => updateProvisioning("allowedCommands", next)}
+                        />
+                      )}
+                    />
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Security */}
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Security</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={!!form.outputs.fips}
+                        onChange={(e) => updateOutput("fips", e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      FIPS
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                      Build with FIPS-validated cryptographic modules.
+                    </p>
+                  </div>
+                  <div>
+                    <label className="flex items-center gap-2 text-sm font-medium">
+                      <input
+                        type="checkbox"
+                        checked={!!form.outputs.trustedBoot}
+                        onChange={(e) => updateOutput("trustedBoot", e.target.checked)}
+                        className="rounded border-input"
+                      />
+                      Trusted Boot
+                    </label>
+                    <p className="text-xs text-muted-foreground mt-1 ml-6">
+                      Enable measured boot with TPM verification.
+                    </p>
+                  </div>
+                </CardContent>
+              </Card>
+          </div>
+        )}
+
+        {/* Step 5: Output */}
+        {step === "output" && (
+          <div className="grid gap-6 lg:grid-cols-5">
+            <div className="lg:col-span-3 space-y-6">
+              <Card ref={bindRef("outputs")}>
+                <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
+                  <CardTitle className="text-sm">Outputs</CardTitle>
+                  <span className="text-xs text-muted-foreground">
+                    {selectedOutputCount} selected
+                  </span>
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  {OUTPUT_GROUPS.map((group) => (
+                    <div key={group.title}>
+                      <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
+                        {group.title}
+                      </p>
+                      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                        {group.items.map((item) => {
+                          const Icon = item.icon;
+                          const checked = !!form.outputs[item.field];
+                          return (
+                            <button
+                              key={item.field}
+                              type="button"
+                              onClick={() => updateOutput(item.field, !checked)}
+                              className={`relative text-left rounded-lg border p-3 transition-colors ${
+                                checked
+                                  ? "border-primary bg-primary-soft ring-1 ring-primary/20"
+                                  : "border-border hover:border-primary/40"
+                              }`}
+                            >
+                              {checked && (
+                                <span className="absolute top-2 right-2 h-4 w-4 rounded-full bg-primary text-primary-foreground flex items-center justify-center">
+                                  <Check className="h-3 w-3" strokeWidth={3} />
+                                </span>
+                              )}
+                              <Icon
+                                className={`h-5 w-5 mb-2 ${
+                                  checked ? "text-primary" : "text-muted-foreground"
+                                }`}
+                              />
+                              <p className="font-medium text-sm">{item.label}</p>
+                              <p className="text-xs text-muted-foreground mt-0.5">{item.desc}</p>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  ))}
+
+                  {form.outputs.uki && (
+                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-700">
+                        UKI requires secure boot signing keys — configure them in the panel below.
+                      </p>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
               {/* UKI Signing Keys (only when UKI selected) */}
               {form.outputs.uki && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm flex items-center gap-2">
-                      <ShieldCheck className="h-4 w-4 text-[#EE5007]" />
+                      <ShieldCheck className="h-4 w-4 text-primary" />
                       UKI Signing Keys
                     </CardTitle>
                   </CardHeader>
@@ -2772,136 +3173,7 @@ export function ArtifactBuilder() {
               )}
             </div>
 
-            {/* RIGHT: Build options (secondary) */}
             <div className="lg:col-span-2 space-y-6">
-              {/* Provisioning */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Provisioning</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={form.provisioning.autoInstall}
-                        onChange={(e) => updateProvisioning("autoInstall", e.target.checked)}
-                        className="rounded border-input"
-                      />
-                      Auto-install
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Install to disk on first boot, no interaction needed.
-                    </p>
-                    {/* When the user disables auto-install we nudge them toward
-                        the upstream Kairos docs so they know how to drive the
-                        install by hand — otherwise a booted image just sits at
-                        the live prompt and looks broken. Colors are picked for
-                        WCAG AA contrast against the light/dark backgrounds. */}
-                    {!form.provisioning.autoInstall && (
-                      <div className="mt-2 ml-6 rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
-                        With auto-install off, the image boots into a live
-                        environment and you install it manually.{" "}
-                        <a
-                          href="https://kairos.io/docs/installation/"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="font-semibold underline underline-offset-2 hover:text-amber-950 dark:hover:text-white"
-                        >
-                          Read the installation guide →
-                        </a>
-                      </div>
-                    )}
-                  </div>
-
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={form.provisioning.registerAuroraBoot}
-                        onChange={(e) => updateProvisioning("registerAuroraBoot", e.target.checked)}
-                        className="rounded border-input"
-                      />
-                      Register with AuroraBoot
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Node will phone home to this AuroraBoot on boot.
-                    </p>
-                  </div>
-
-                  {form.provisioning.registerAuroraBoot && (
-                    <div className="grid gap-2 pt-1">
-                      <Label className="text-xs">
-                        Target Group
-                        <InfoTooltip>
-                          Assigns the registered node to a fleet group on first boot. Groups are managed from the Groups page.
-                        </InfoTooltip>
-                      </Label>
-                      <Select
-                        value={form.provisioning.targetGroupId || "__none__"}
-                        onValueChange={(v) => updateProvisioning("targetGroupId", v === "__none__" ? "" : v)}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select group (optional)" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">None</SelectItem>
-                          {groups.map((g) => (
-                            <SelectItem key={g.id} value={g.id}>
-                              {g.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                  )}
-
-                  {form.provisioning.registerAuroraBoot && (
-                    <AllowedCommandsPicker
-                      value={form.provisioning.allowedCommands ?? []}
-                      onChange={(next) => updateProvisioning("allowedCommands", next)}
-                    />
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Security */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Security</CardTitle>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={!!form.outputs.fips}
-                        onChange={(e) => updateOutput("fips", e.target.checked)}
-                        className="rounded border-input"
-                      />
-                      FIPS
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Build with FIPS-validated cryptographic modules.
-                    </p>
-                  </div>
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={!!form.outputs.trustedBoot}
-                        onChange={(e) => updateOutput("trustedBoot", e.target.checked)}
-                        className="rounded border-input"
-                      />
-                      Trusted Boot
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Enable measured boot with TPM verification.
-                    </p>
-                  </div>
-                </CardContent>
-              </Card>
-
               {/* Overlay Files */}
               <Card>
                 <CardHeader className="pb-3">
@@ -2923,7 +3195,7 @@ export function ArtifactBuilder() {
                       setOverlayUploading(false);
                     }}
                     className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors ${
-                      dragOver ? "border-[#EE5007] bg-[#EE5007]/5" : "border-muted-foreground/25 hover:border-muted-foreground/50"
+                      dragOver ? "border-primary bg-primary-soft" : "border-muted-foreground/25 hover:border-muted-foreground/50"
                     }`}
                     onClick={() => overlayInputRef.current?.click()}
                   >
@@ -3052,138 +3324,22 @@ export function ArtifactBuilder() {
           </div>
         )}
 
-        {/* Step 3: Review */}
-        {step === 3 && (
+        {/* Step 6: Review */}
+        {step === "review" && (
           <div className="grid gap-6">
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-sm">Review Build Configuration</CardTitle>
-              </CardHeader>
-              <CardContent className="grid gap-4">
-                {/* Source */}
-                <div>
-                  <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Source</p>
-                  <div className="grid gap-1 text-sm">
-                    {form.name && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Name:</span>
-                        <span>{form.name}</span>
-                      </div>
-                    )}
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Image source:</span>
-                      <span className="font-mono text-xs break-all">
-                        {buildMode === "dockerfile" ? "(Dockerfile)" : form.baseImage || "\u2014"}
-                      </span>
-                    </div>
-                    {buildMode === "image" && form["allow-insecure-registries"] && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Registry:</span>
-                        <span>Insecure registries allowed (plain HTTP / untrusted TLS)</span>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Configuration */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Configuration</p>
-                  <div className="grid gap-1 text-sm">
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Architecture:</span>
-                      <span>{form.arch}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Model:</span>
-                      <span>{form.model}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Variant:</span>
-                      <span>{form.variant}</span>
-                    </div>
-                    {form.variant === "standard" && (
-                      <>
-                        <div className="flex gap-2">
-                          <span className="text-muted-foreground w-28 shrink-0">K8s Enabled:</span>
-                          <span>{form.kubernetesEnabled ?? true ? "Yes" : "No"}</span>
-                        </div>
-                        <div className="flex gap-2">
-                          <span className="text-muted-foreground w-28 shrink-0">K8s Distro:</span>
-                          <span>{form.kubernetesDistro || "\u2014"}</span>
-                        </div>
-                        {form.kubernetesVersion && (
-                          <div className="flex gap-2">
-                            <span className="text-muted-foreground w-28 shrink-0">K8s Version:</span>
-                            <span>{form.kubernetesVersion}</span>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Version:</span>
-                      <span>{form.kairosVersion || DEFAULT_ARTIFACT_VERSION}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Outputs */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-2 uppercase tracking-wide">Outputs</p>
-                  {selectedOutputs.length > 0 ? (
-                    <div className="flex flex-wrap gap-1.5">
-                      {selectedOutputs.map((o) => (
-                        <span key={o} className="inline-flex items-center rounded-full bg-[#EE5007]/10 px-2.5 py-0.5 text-xs font-medium text-[#EE5007]">
-                          {o}
-                        </span>
-                      ))}
-                    </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">No outputs selected</p>
-                  )}
-                </div>
-
-                {/* Provisioning */}
-                <div className="border-t pt-3">
-                  <p className="text-xs font-medium text-muted-foreground mb-1 uppercase tracking-wide">Provisioning</p>
-                  <div className="grid gap-1 text-sm">
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Auto-install:</span>
-                      <span>{form.provisioning.autoInstall ? "Yes" : "No"}</span>
-                    </div>
-                    <div className="flex gap-2">
-                      <span className="text-muted-foreground w-28 shrink-0">Register:</span>
-                      <span>{form.provisioning.registerAuroraBoot ? "Yes" : "No"}</span>
-                    </div>
-                    {form.provisioning.registerAuroraBoot && form.provisioning.targetGroupId && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Target Group:</span>
-                        <span>{groups.find((g) => g.id === form.provisioning.targetGroupId)?.name || form.provisioning.targetGroupId}</span>
-                      </div>
-                    )}
-                    {form.provisioning.registerAuroraBoot && (
-                      <div className="flex gap-2">
-                        <span className="text-muted-foreground w-28 shrink-0">Allowed cmds:</span>
-                        {(form.provisioning.allowedCommands ?? []).length === 0 ? (
-                          <span className="text-amber-700 dark:text-amber-300">Observe-only (no commands)</span>
-                        ) : (
-                          <span className="font-mono text-xs">
-                            {(form.provisioning.allowedCommands ?? []).join(", ")}
-                          </span>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-
+            <BuildSummary data={summaryData} variant="full" onEdit={editStep} />
+            {(advancedConfig.trim() || userMode !== "default") && (
+              <Card>
+                <CardContent className="grid gap-4">
                 {/* Cloud Config Preview */}
-                {(advancedConfig.trim() || userMode !== "default") && (() => {
+                {(() => {
                   const isTruncated = cloudConfigPreview.length > 500;
                   const previewText =
                     !isTruncated || showFullCloudConfigPreview
                       ? cloudConfigPreview
                       : cloudConfigPreview.slice(0, 500) + "\n...";
                   return (
-                    <div className="border-t pt-3">
+                    <div>
                       <div className="flex items-center justify-between mb-1">
                         <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Cloud Config Preview</p>
                         {isTruncated && (
@@ -3191,7 +3347,9 @@ export function ArtifactBuilder() {
                             type="button"
                             aria-expanded={showFullCloudConfigPreview}
                             className="text-xs text-primary hover:underline"
-                            onClick={() => setShowFullCloudConfigPreview((prev) => !prev)}
+                            onClick={() =>
+                              setExpandedCloudConfigPreview(showFullCloudConfigPreview ? null : cloudConfigPreview)
+                            }
                           >
                             {showFullCloudConfigPreview ? "Show less" : "View full"}
                           </button>
@@ -3207,63 +3365,13 @@ export function ArtifactBuilder() {
                     </div>
                   );
                 })()}
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            )}
           </div>
         )}
-
-        {/* Navigation */}
-        <div className="flex justify-between mt-8">
-          {step > 0 ? (
-            <Button type="button" variant="outline" onClick={() => setStep(step - 1)}>Back</Button>
-          ) : (
-            <Button type="button" variant="outline" onClick={() => navigate("/artifacts")}>Cancel</Button>
-          )}
-          <div className="flex-1" />
-          {step < 3 ? (
-            <Button
-              type="button"
-              onClick={() => {
-                if (!validateStep(step)) return;
-                if (step === 1 && selectedTemplate === HADRON_TEMPLATE_NAME) {
-                  const composed =
-                    hadronFirmware.length > 0 ||
-                    hadronLayers.length > 0 ||
-                    hadronExtra.trim() !== "";
-                  if (composed) {
-                    const dockerfile = renderHadronMiddleContent(
-                      hadronFirmware,
-                      hadronLayers,
-                      hadronExtra,
-                    );
-                    setForm((prev) => ({ ...prev, dockerfile, baseImage: "" }));
-                    setBuildMode("dockerfile");
-                  } else {
-                    // Round-trip case: an earlier composed pass may have blanked
-                    // baseImage and populated dockerfile. Restore the plain path
-                    // so a user who removed all firmware/layers/extra still
-                    // gets a valid image-mode build.
-                    setForm((prev) => ({ ...prev, dockerfile: "", baseImage: hadronBase }));
-                    setBuildMode("image");
-                  }
-                }
-                goToStep(step + 1);
-              }}
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
-            >
-              Next
-            </Button>
-          ) : (
-            <Button
-              type="button"
-              onClick={() => { void handleSubmit({ preventDefault: () => {} } as FormEvent); }}
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
-            >
-              Start Build
-            </Button>
-          )}
-        </div>
       </form>
+      </WizardShell>
     </div>
   );
 }
@@ -3275,14 +3383,27 @@ interface BundledExtensionEntry {
   order?: number;
 }
 
+// BundledExtensionsCard is one of the two places the builder asks about
+// extensions. This one offers what this AuroraBoot instance built, and the
+// selection rides along with every upgrade to the artifact. The other is
+// System Extensions below it on the Extensions step, which resolves names from a catalog
+// and writes them into the artifact itself.
+//
+// Both cards are kept, because they answer different questions (built here or
+// published upstream, carried with upgrades or written in), but each one now
+// names the other. Without that, a fresh instance shows this card empty on the
+// step before, and it reads as "extensions do not work", which is what
+// kairos-io/kairos#4959 reports.
 function BundledExtensionsCard({
   arch,
   bundled,
   onChange,
+  onGoToCatalog,
 }: {
   arch: string;
   bundled: BundledExtensionEntry[];
   onChange: (next: BundledExtensionEntry[]) => void;
+  onGoToCatalog: () => void;
 }) {
   const [available, setAvailable] = useState<Extension[]>([]);
 
@@ -3312,13 +3433,28 @@ function BundledExtensionsCard({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-sm">Bundled extensions</CardTitle>
+        <CardTitle className="text-sm">
+          Extensions built on this instance
+        </CardTitle>
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-3">
-          Extensions selected here ride along with every upgrade to this
-          artifact. Only <code>Ready</code> extensions matching arch{" "}
-          <code>{arch}</code> are listed.
+          Extensions this AuroraBoot instance built on the Extensions page.
+          What you select here rides along with every upgrade to this artifact.
+          Only <code>Ready</code> extensions matching arch <code>{arch}</code>{" "}
+          are listed.
+        </p>
+        <p className="text-xs text-muted-foreground mb-3">
+          To use an extension published in a catalog, and write it into the
+          artifact itself, see{" "}
+          <button
+            type="button"
+            className="underline underline-offset-2 hover:text-foreground"
+            onClick={onGoToCatalog}
+          >
+            System Extensions
+          </button>{" "}
+          below.
         </p>
 
         {bundled.length > 0 && (
@@ -3354,10 +3490,21 @@ function BundledExtensionsCard({
         )}
 
         {available.length === 0 ? (
-          <p className="text-xs text-muted-foreground">
-            No Ready extensions match arch <code>{arch}</code>. Build extensions
-            from the Extensions page first.
-          </p>
+          <div className="space-y-2">
+            <p className="text-xs text-muted-foreground">
+              Nothing built on this instance matches arch <code>{arch}</code>.
+              Build one from the Extensions page, or take one from a catalog
+              instead.
+            </p>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={onGoToCatalog}
+            >
+              Pick from a catalog
+            </Button>
+          </div>
         ) : (
           <div className="grid gap-1.5 max-h-64 overflow-auto">
             {available.map((e) => {

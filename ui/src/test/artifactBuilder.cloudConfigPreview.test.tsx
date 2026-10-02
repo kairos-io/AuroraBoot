@@ -64,8 +64,16 @@ const TAIL_MARKER = "TAIL_MARKER_PAST_500";
 const LONG_CONFIG = `filler: "${FILLER}${TAIL_MARKER}"`;
 const SHORT_CONFIG = "hostname: short-host";
 
+// The Output step is reached with Next from a template with a name, since
+// the stepper does not jump ahead to a step not reached yet.
 async function openAdvancedCloudConfig() {
-  fireEvent.click(screen.getByRole("button", { name: /Output/i }));
+  fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+  fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
+    target: { value: "edge" },
+  });
+  for (const next of ["System", "Extensions", "Access", "Output"]) {
+    fireEvent.click(screen.getByRole("button", { name: `Next: ${next}` }));
+  }
   fireEvent.click(
     await screen.findByRole("button", { name: /Advanced.*Cloud config/i }),
   );
@@ -78,7 +86,7 @@ describe("ArtifactBuilder: Review-step cloud config preview toggle", () => {
     const textarea = await openAdvancedCloudConfig();
     fireEvent.change(textarea, { target: { value: LONG_CONFIG } });
 
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 
     const button = await screen.findByRole("button", { name: /View full/i });
     expect(button).toBeInTheDocument();
@@ -92,7 +100,7 @@ describe("ArtifactBuilder: Review-step cloud config preview toggle", () => {
     renderBuilder("/artifacts/new");
     const textarea = await openAdvancedCloudConfig();
     fireEvent.change(textarea, { target: { value: LONG_CONFIG } });
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 
     const viewFull = await screen.findByRole("button", { name: /View full/i });
     fireEvent.click(viewFull);
@@ -117,7 +125,7 @@ describe("ArtifactBuilder: Review-step cloud config preview toggle", () => {
     renderBuilder("/artifacts/new");
     const textarea = await openAdvancedCloudConfig();
     fireEvent.change(textarea, { target: { value: LONG_CONFIG } });
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 
     fireEvent.click(await screen.findByRole("button", { name: /View full/i }));
     const pre = document.querySelector("pre") as HTMLElement;
@@ -133,7 +141,7 @@ describe("ArtifactBuilder: Review-step cloud config preview toggle", () => {
     fireEvent.change(textareaAgain, {
       target: { value: LONG_CONFIG.replace(TAIL_MARKER, "DIFFERENT_TAIL") },
     });
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 
     await waitFor(() => {
       expect(
@@ -148,7 +156,7 @@ describe("ArtifactBuilder: Review-step cloud config preview toggle", () => {
     renderBuilder("/artifacts/new");
     const textarea = await openAdvancedCloudConfig();
     fireEvent.change(textarea, { target: { value: SHORT_CONFIG } });
-    fireEvent.click(screen.getByRole("button", { name: /Review/i }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
 
     await screen.findByText(/Cloud Config Preview/i);
     expect(

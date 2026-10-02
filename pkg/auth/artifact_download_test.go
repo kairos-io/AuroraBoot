@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -37,8 +38,9 @@ func (f *fakeCommandStore) UpdateStatus(context.Context, string, string, string)
 func (f *fakeCommandStore) UpdateStatusForNode(context.Context, string, string, string, string) error {
 	return nil
 }
-func (f *fakeCommandStore) Delete(context.Context, string) error         { return nil }
-func (f *fakeCommandStore) DeleteTerminal(context.Context, string) error { return nil }
+func (f *fakeCommandStore) ExpireBefore(context.Context, string, time.Time) error { return nil }
+func (f *fakeCommandStore) Delete(context.Context, string) error                  { return nil }
+func (f *fakeCommandStore) DeleteTerminal(context.Context, string) error          { return nil }
 
 // fakeExtensionStore is a minimal store.ExtensionStore; only GetByID is
 // functional, which is all ExtensionDownloadMiddleware reads.

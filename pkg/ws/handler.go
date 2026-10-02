@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
@@ -36,6 +37,9 @@ type heartbeatData struct {
 	// this is the only path a hostname change can arrive on
 	// (kairos-io/kairos#4196).
 	Hostname string `json:"hostname,omitempty"`
+	// Metrics is an optional resource sample (store.NodeMetrics). It is kept raw
+	// and decoded separately so a malformed sample never drops the heartbeat.
+	Metrics json.RawMessage `json:"metrics,omitempty"`
 }
 
 // commandData is sent to the agent.
@@ -99,6 +103,10 @@ type AgentHandler struct {
 	// BaseCtx is the server lifecycle context the finalize goroutine derives from
 	// (cancelled on shutdown). Nil means context.Background().
 	BaseCtx context.Context
+
+	// Metrics, when set, receives the resource sample a heartbeat carries. nil
+	// ignores metrics.
+	Metrics metrics.Recorder
 
 	// OnCommandStatus is invoked after the agent's command-status report has
 	// been persisted. The server uses this hook to update node_extensions
@@ -272,15 +280,36 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// does not send "" and leaves the stored value alone. remoteIP, unlike those,
 	// is always known here — it is the live connection's address, not something
 	// the agent reports.
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP); err != nil {
-		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
+	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP)
+	if heartbeatErr != nil {
+		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, heartbeatErr)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {
 		log.Printf("ws: failed to update node phase: %v", err)
 	}
+	// Record metrics only for a heartbeat the store accepted: a node deleted
+	// while its socket is still open must not get samples back after Forget.
+	if heartbeatErr == nil {
+		h.recordMetrics(nodeID, hb.Metrics)
+	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
 	// attempt the auto eject-on-phone-home (nil-safe, off this goroutine).
 	h.triggerFinalize(nodeID)
+}
+
+// recordMetrics stores the heartbeat's metrics sample for nodeID (the node this
+// connection authenticated as), if any. A sample that does not decode is logged
+// and dropped.
+func (h *AgentHandler) recordMetrics(nodeID string, raw json.RawMessage) {
+	if h.Metrics == nil || len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var m store.NodeMetrics
+	if err := json.Unmarshal(raw, &m); err != nil {
+		log.Printf("ws: ignoring invalid heartbeat metrics from node %s: %v", nodeID, err)
+		return
+	}
+	h.Metrics.Record(nodeID, m)
 }
 
 // handleCommandStatus applies a command_status report from the agent. The
