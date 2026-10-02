@@ -85,17 +85,17 @@ export function InfoTooltip({ children }: { children: React.ReactNode }) {
           // the arrow lines up with the icon. The popover always grows
           // rightward into the form area, where there's plenty of
           // space.
-          className="absolute z-50 bottom-full left-0 -translate-x-2 mb-2 w-max max-w-sm rounded-md bg-slate-900 px-3 py-2.5 text-xs leading-relaxed text-slate-50 shadow-lg ring-1 ring-black/5 dark:bg-slate-800 dark:ring-white/10"
+          className="absolute z-50 bottom-full left-0 -translate-x-2 mb-2 w-max max-w-sm rounded-md border bg-popover px-3 py-2.5 text-xs leading-relaxed text-popover-foreground shadow-lg"
           // Tooltip content links inherit underline + color-on-hover so
-          // they're obviously clickable against the dark background.
+          // they're obviously clickable against the popover background.
           onMouseEnter={cancelClose}
           onMouseLeave={scheduleClose}
         >
-          <div className="[&_a]:text-[#FFB380] [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-white [&_code]:rounded [&_code]:bg-white/10 [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[11px]">
+          <div className="[&_a]:text-primary [&_a]:underline [&_a]:underline-offset-2 [&_a:hover]:text-primary-hover [&_code]:rounded [&_code]:bg-muted [&_code]:px-1 [&_code]:py-0.5 [&_code]:font-mono [&_code]:text-[11px]">
             {children}
           </div>
           <div
-            className="absolute top-full left-3 -mt-px border-4 border-transparent border-t-slate-900 dark:border-t-slate-800"
+            className="absolute top-full left-3 -mt-px border-4 border-transparent border-t-popover"
             aria-hidden="true"
           />
         </div>

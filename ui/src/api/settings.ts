@@ -1,7 +1,7 @@
 import { apiFetch } from "./client";
 
 export interface RegistrationToken {
-  token: string;
+  registrationToken: string;
 }
 
 export function getRegistrationToken(): Promise<RegistrationToken> {
@@ -52,5 +52,35 @@ export function updateImageSourceSettings(
   return apiFetch<ImageSourceSettings>("/api/v1/settings/image-source", {
     method: "PUT",
     body: JSON.stringify(payload),
+  });
+}
+
+// ExtensionCatalogSettings mirrors GET /api/v1/settings/extension-catalogs:
+// the catalogs the Artifact Builder offers for system extensions.
+export interface ExtensionCatalogSettings {
+  // launch are the catalogs given with `web --extensions-catalog`. Read-only.
+  launch: string[];
+  // saved are the catalogs an operator added in Settings.
+  saved: string[];
+}
+
+export async function getExtensionCatalogSettings(): Promise<ExtensionCatalogSettings> {
+  const resp = await apiFetch<Partial<ExtensionCatalogSettings>>(
+    "/api/v1/settings/extension-catalogs"
+  );
+  return {
+    launch: Array.isArray(resp?.launch) ? resp.launch : [],
+    saved: Array.isArray(resp?.saved) ? resp.saved : [],
+  };
+}
+
+// updateExtensionCatalogSettings replaces the saved list. The launch
+// catalogs are not affected.
+export function updateExtensionCatalogSettings(
+  saved: string[]
+): Promise<ExtensionCatalogSettings> {
+  return apiFetch<ExtensionCatalogSettings>("/api/v1/settings/extension-catalogs", {
+    method: "PUT",
+    body: JSON.stringify({ saved }),
   });
 }

@@ -166,7 +166,7 @@ export function Certificates() {
             type="submit"
             size="sm"
             disabled={generating || !name.trim()}
-            className="bg-[#EE5007] hover:bg-[#FF7442] text-white disabled:opacity-60"
+            className="disabled:opacity-60"
           >
             {generating && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Generate
@@ -208,7 +208,7 @@ export function Certificates() {
                   <TableRow key={ks.id} className="hover:bg-muted/40 transition-colors">
                     <TableCell className="font-medium">
                       <div className="flex items-center gap-2">
-                        <KeyRound className="h-4 w-4 text-[#EE5007]" />
+                        <KeyRound className="h-4 w-4 text-primary" />
                         {ks.name}
                       </div>
                     </TableCell>

@@ -7,6 +7,8 @@ on:
 concurrency:
   group: ci-tests-${{ github.head_ref || github.ref }}-${{ github.repository }}
   cancel-in-progress: true
+permissions:
+  contents: read
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
@@ -65,7 +67,7 @@ jobs:
       - name: Run chart unit tests
         run: make helm-chart-test
   build-image:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -93,7 +95,7 @@ jobs:
           path: /tmp/auroraboot-image.tar
           retention-days: 1
   e2e-tests:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -106,7 +108,7 @@ jobs:
         with:
           go-version-file: go.mod
       # docker/setup-qemu-action runs the binfmt container on the default bridge,
-      # which these runners fail with "bridge port not forwarding after 200ms".
+      # which the former self-hosted runners failed with "bridge port not forwarding after 200ms".
       # binfmt only writes to /proc/sys/fs/binfmt_misc, so give it the host
       # network and never create a bridge port. Same reason as the network=host
       # driver-opt on buildx below.
@@ -131,6 +133,22 @@ jobs:
           file: ./Dockerfile
           platforms: linux/amd64
           tags: auroraboot:test
+      - name: Ensure loop device nodes
+        # losetup asks the kernel for a free loop index and then opens
+        # /dev/loopN. On the former shared kvm runners the loop pool leaked across
+        # jobs: a previous run could leave the kernel index free while the
+        # /dev/loopN node has been unlinked (LOOP_CTL_DEL, or a container
+        # bind-mounting /dev). losetup then fails with
+        # "device node /dev/loopN is lost. You may use mknod(1) to recover it."
+        # Pre-create the nodes so any recycled index has a matching /dev entry.
+        run: |
+          sudo bash -c '
+            for i in $(seq 0 15); do
+              [ -e /dev/loop$i ] || mknod -m 660 /dev/loop$i b 7 $i
+              chown root:disk /dev/loop$i 2>/dev/null || true
+            done
+          '
+          ls -la /dev/loop*
       - name: Run e2e tests
         run: |
           go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
@@ -141,7 +159,7 @@ jobs:
         with:
           files: ./coverage.out
   test-bootable-iso-uki:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -151,6 +169,14 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        run: |
+          echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          test -w /dev/kvm
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -201,7 +227,7 @@ jobs:
           export ISO=$(find $PWD/build -name *.iso)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -211,6 +237,14 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        run: |
+          echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          test -w /dev/kvm
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -253,7 +287,7 @@ jobs:
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-bios:
-    runs-on: kvm
+    runs-on: ubuntu-24.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -263,6 +297,14 @@ jobs:
       - name: Install deps
         run: |
           sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        run: |
+          echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          test -w /dev/kvm
       - name: Set up Go
         uses: actions/setup-go@v7
         with:
@@ -320,7 +362,7 @@ jobs:
      - name: Load image
        run: docker load -i /tmp/auroraboot-image.tar
      - name: Cypress run
-       uses: cypress-io/github-action@v7.4.4
+       uses: cypress-io/github-action@v7.4.6
        with:
          working-directory: e2e/web/
          start: docker run --network=host --rm auroraboot:ci web

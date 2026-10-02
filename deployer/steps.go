@@ -82,7 +82,14 @@ func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(constants.OpCopyCloudConfig,
 		herd.WithDeps(constants.OpPrepareDirs),
 		herd.WithCallback(func(ctx context.Context) error {
-			d.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
+			// The cloud-config carries user passwords, join tokens and
+			// kcrypt secrets, which is why it is written 0600 below. Keep
+			// the document out of the default output: --loglevel defaults
+			// to info, so anything logged here lands on stdout and in the
+			// CI log of every plain build-iso run. -l debug is an explicit
+			// opt-in and still shows it.
+			d.Log.Logger.Info().Int("bytes", len(d.Config.CloudConfig)).Msg("Copying cloud config")
+			d.Log.Logger.Debug().Str("cloudConfig", d.Config.CloudConfig).Msg("Cloud config contents")
 			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
 				d.Log.Logger.Error().Err(err).Msg("Destination directory does not exist, creating it")
 				if err := os.MkdirAll(d.destination(), 0755); err != nil {
@@ -118,7 +125,7 @@ func (d *Deployer) StepGenISO() error {
 			netbootRequested := !d.Config.DisableNetboot
 			return isoRequested || netbootRequested
 		}),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO)))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
 }
 
 func (d *Deployer) StepDownloadISO() error {
@@ -148,14 +155,14 @@ func (d *Deployer) StepGenRawDisk() error {
 			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 		}),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS)))
+		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS, d.diskExtensions())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig)))
+		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.diskExtensions())))
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -370,6 +377,19 @@ func (d *Deployer) netBootListenAddr() string {
 func (d *Deployer) netbootOption() bool {
 	// squashfs, kernel, and initrd names are tied to the output of /netboot.sh (op.ExtractNetboot)
 	return !d.Config.DisableNetboot
+}
+
+// diskExtensions is the extension payload a raw-disk build bakes into the
+// image. A build names its extensions once, under `iso.extensions`, and the
+// artifact type decides where they land: the ISO root for an ISO, the OEM
+// partition and then the persistent one here.
+func (d *Deployer) diskExtensions() ops.DiskExtensions {
+	return ops.DiskExtensions{
+		Requests:     d.Config.ISO.Extensions,
+		Catalogs:     d.Config.ISO.ExtensionsCatalogs,
+		Architecture: d.Config.Arch,
+		Insecure:     d.Config.AllowInsecureRegistriesBool(),
+	}
 }
 
 func (d *Deployer) rawDiskSize() uint64 {
