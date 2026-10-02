@@ -161,7 +161,6 @@ export function Artifacts() {
           </Button>
         )}
         <Button
-          className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
           onClick={() => navigate("/artifacts/new")}
         >
           <Plus className="h-4 w-4 mr-2" />
@@ -257,7 +256,7 @@ export function Artifacts() {
                       </p>
                     </div>
                     <Button
-                      className="mt-2 bg-[#EE5007] hover:bg-[#FF7442] text-white"
+                      className="mt-2"
                       onClick={() => navigate("/artifacts/new")}
                     >
                       <Plus className="h-4 w-4 mr-2" /> Build First Artifact
@@ -270,7 +269,7 @@ export function Artifacts() {
             filtered.map((artifact) => (
               <TableRow
                 key={artifact.id}
-                className="cursor-pointer hover:bg-[#EE5007]/5"
+                className="cursor-pointer hover:bg-primary-soft"
                 onClick={() => navigate(`/artifacts/${artifact.id}`)}
               >
                 <TableCell>
@@ -287,7 +286,7 @@ export function Artifacts() {
                     <Bookmark
                       className={`h-4 w-4 ${
                         artifact.saved
-                          ? "fill-[#EE5007] text-[#EE5007]"
+                          ? "fill-primary text-primary"
                           : "text-muted-foreground/40"
                       }`}
                     />
@@ -323,7 +322,7 @@ export function Artifacts() {
                       {artifact.hadronBase && (
                         <Badge
                           variant="outline"
-                          className="text-[10px] font-mono border-[#EE5007] text-[#EE5007]"
+                          className="text-[10px] font-mono border-primary text-primary"
                           title="Hadron composite (firmware + layers)"
                         >
                           Hadron

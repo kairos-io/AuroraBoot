@@ -126,9 +126,9 @@ export function Deployments() {
 
   function methodIcon(method: string) {
     if (method.toLowerCase() === "pxe" || method.toLowerCase() === "netboot") {
-      return <Wifi className="h-4 w-4 text-[#EE5007]" />;
+      return <Wifi className="h-4 w-4 text-primary" />;
     }
-    return <Server className="h-4 w-4 text-[#FF7442]" />;
+    return <Server className="h-4 w-4 text-primary" />;
   }
 
   const filtered = deployments.filter(
@@ -214,7 +214,7 @@ export function Deployments() {
                           <div className="flex items-center gap-2">
                             <div className="h-2 w-24 rounded-full bg-secondary overflow-hidden">
                               <div
-                                className="h-full rounded-full bg-[#EE5007] transition-all"
+                                className="h-full rounded-full bg-primary transition-all"
                                 style={{ width: `${Math.min(d.progress, 100)}%` }}
                               />
                             </div>

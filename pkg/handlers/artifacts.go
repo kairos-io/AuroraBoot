@@ -310,8 +310,18 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// Catalog extensions: an unusable name is the operator's mistake, so it is
 	// a 400 here rather than a build that dies after the source image has
 	// already been pulled.
-	if _, err := extensions.ParseRequests(req.Extensions); err != nil {
+	parsedExtensions, err := extensions.ParseRequests(req.Extensions)
+	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	// A file:// request names a path on this server, which is the CLI's way of
+	// baking an image the operator already has. Over the API it would let the
+	// caller read any file this process can reach and download it back inside
+	// the artifact, so it is refused here rather than resolved.
+	for _, request := range parsedExtensions {
+		if _, isFile := request.FilePath(); isFile {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("extension %q names a local file, which is not allowed over the API", request.Name)})
+		}
 	}
 
 	// Mint the per-build upload token before we hand opts to the builder so

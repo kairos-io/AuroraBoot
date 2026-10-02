@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -159,6 +160,19 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 	}
 	return out, nil
 }
+func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadline time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.cmds {
+		if c.ManagedNodeID != nodeID || c.ExpiresAt == nil || c.ExpiresAt.After(deadline) {
+			continue
+		}
+		if c.Phase == store.CommandPending || c.Phase == store.CommandDelivered || c.Phase == store.CommandRunning {
+			c.Phase = store.CommandExpired
+		}
+	}
+	return nil
+}
 func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }
 
@@ -174,6 +188,9 @@ func (f *fakeGroupStore) GetByName(_ context.Context, _ string) (*store.NodeGrou
 func (f *fakeGroupStore) List(_ context.Context) ([]*store.NodeGroup, error) { return nil, nil }
 func (f *fakeGroupStore) Update(_ context.Context, _ *store.NodeGroup) error { return nil }
 func (f *fakeGroupStore) Delete(_ context.Context, _ string) error           { return nil }
+func (f *fakeGroupStore) NodeCounts(_ context.Context) (map[string]int, error) {
+	return map[string]int{}, nil
+}
 
 type fakeBuilder struct{}
 
@@ -246,6 +263,24 @@ var _ = Describe("Server", func() {
 			resp, err := http.Get(e.URL + "/api/v1/nodes")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+		})
+
+		It("should reject unauthenticated metrics requests", func() {
+			for _, path := range []string{"/api/v1/nodes/node-1/metrics", "/api/v1/metrics/latest"} {
+				resp, err := http.Get(e.URL + path)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized), path)
+			}
+		})
+
+		It("should allow authenticated metrics requests", func() {
+			for _, path := range []string{"/api/v1/nodes/node-1/metrics", "/api/v1/metrics/latest"} {
+				req, _ := http.NewRequest(http.MethodGet, e.URL+path, nil)
+				req.Header.Set("Authorization", "Bearer admin-pass")
+				resp, err := http.DefaultClient.Do(req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK), path)
+			}
 		})
 
 		It("should allow authenticated admin requests", func() {

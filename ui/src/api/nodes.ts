@@ -15,6 +15,12 @@ export interface Node {
   // time. Server-side, not agent-reported, so it tracks a DHCP/NAT change even
   // when the agent sends no addresses at all.
   remoteIP?: string;
+  // Addresses the agent reported for its interfaces.
+  addresses?: { type: string; address: string }[];
+  // Which image the node booted: "active", "passive" or "recovery".
+  bootState?: string;
+  resetState?: string;
+  lastReset?: string | null;
   createdAt: string;
   updatedAt: string;
 }

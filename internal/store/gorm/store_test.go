@@ -109,6 +109,22 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found2.GroupID).To(BeEmpty())
 		})
 
+		It("counts nodes per group, skipping empty and ungrouped", func() {
+			a := &store.NodeGroup{Name: "count-a"}
+			b := &store.NodeGroup{Name: "count-b"}
+			Expect(s.Create(ctx, a)).To(Succeed())
+			Expect(s.Create(ctx, b)).To(Succeed())
+
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-1", GroupID: a.ID})).To(Succeed())
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-2", GroupID: a.ID})).To(Succeed())
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-3"})).To(Succeed())
+
+			counts, err := s.GroupNodeCounts(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(counts).To(Equal(map[string]int{a.ID: 2}))
+			Expect(counts).NotTo(HaveKey(b.ID))
+		})
+
 		It("rejects duplicate name", func() {
 			Expect(s.Create(ctx, &store.NodeGroup{Name: "dup"})).To(Succeed())
 			err := s.Create(ctx, &store.NodeGroup{Name: "dup"})
@@ -707,6 +723,121 @@ var _ = Describe("Gorm Store", func() {
 			cmds2, err := s.ListByNode(ctx, node2.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cmds2).To(HaveLen(1))
+		})
+
+		It("should delete Expired commands too", func() {
+			past := time.Now().Add(-time.Hour)
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec, ExpiresAt: &past}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+
+			Expect(s.CommandDeleteTerminal(ctx, node.ID)).To(Succeed())
+
+			cmds, err := s.ListByNode(ctx, node.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cmds).To(BeEmpty())
+		})
+	})
+
+	Describe("CommandExpireBefore", func() {
+		var node *store.ManagedNode
+		var past, future time.Time
+
+		BeforeEach(func() {
+			node = &store.ManagedNode{MachineID: "cmd-expire-node"}
+			Expect(s.Register(ctx, node)).To(Succeed())
+			past = time.Now().Add(-time.Hour)
+			future = time.Now().Add(time.Hour)
+		})
+
+		// create makes a command in the given phase; CommandCreate always writes
+		// Pending, so a non-Pending phase needs the follow-up UpdateStatus.
+		create := func(phase string, expires *time.Time) *store.NodeCommand {
+			GinkgoHelper()
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec, ExpiresAt: expires}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+			if phase != store.CommandPending {
+				Expect(s.UpdateStatus(ctx, cmd.ID, phase, "")).To(Succeed())
+			}
+			return cmd
+		}
+
+		phaseOf := func(id string) string {
+			GinkgoHelper()
+			found, err := s.CommandGetByID(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+			return found.Phase
+		}
+
+		It("expires overdue Pending, Delivered and Running commands", func() {
+			pending := create(store.CommandPending, &past)
+			delivered := create(store.CommandDelivered, &past)
+			running := create(store.CommandRunning, &past)
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+
+			Expect(phaseOf(pending.ID)).To(Equal(store.CommandExpired))
+			Expect(phaseOf(delivered.ID)).To(Equal(store.CommandExpired))
+			Expect(phaseOf(running.ID)).To(Equal(store.CommandExpired))
+		})
+
+		It("stamps CompletedAt on the command it expires", func() {
+			cmd := create(store.CommandPending, &past)
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+
+			found, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.CompletedAt).NotTo(BeNil())
+		})
+
+		It("leaves a command whose deadline has not passed, and one with no deadline", func() {
+			notYet := create(store.CommandPending, &future)
+			noDeadline := create(store.CommandPending, nil)
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+
+			Expect(phaseOf(notYet.ID)).To(Equal(store.CommandPending))
+			Expect(phaseOf(noDeadline.ID)).To(Equal(store.CommandPending))
+		})
+
+		It("does not rewrite a terminal phase, so a late report keeps its outcome", func() {
+			completed := create(store.CommandCompleted, &past)
+			failed := create(store.CommandFailed, &past)
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+
+			Expect(phaseOf(completed.ID)).To(Equal(store.CommandCompleted))
+			Expect(phaseOf(failed.ID)).To(Equal(store.CommandFailed))
+		})
+
+		It("is idempotent", func() {
+			cmd := create(store.CommandPending, &past)
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+			first, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+			second, err := s.CommandGetByID(ctx, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(second.Phase).To(Equal(store.CommandExpired))
+			Expect(second.CompletedAt.Equal(*first.CompletedAt)).To(BeTrue())
+		})
+
+		It("only affects the named node", func() {
+			node2 := &store.ManagedNode{MachineID: "cmd-expire-node2"}
+			Expect(s.Register(ctx, node2)).To(Succeed())
+			other := &store.NodeCommand{ManagedNodeID: node2.ID, Command: store.CmdExec, ExpiresAt: &past}
+			Expect(s.CommandCreate(ctx, other)).To(Succeed())
+
+			mine := create(store.CommandPending, &past)
+
+			Expect(s.CommandExpireBefore(ctx, node.ID, time.Now())).To(Succeed())
+
+			Expect(phaseOf(mine.ID)).To(Equal(store.CommandExpired))
+			Expect(phaseOf(other.ID)).To(Equal(store.CommandPending))
 		})
 	})
 

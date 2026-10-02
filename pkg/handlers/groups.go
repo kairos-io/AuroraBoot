@@ -67,12 +67,20 @@ func (h *GroupHandler) Create(c echo.Context) error {
 //	@Success	200	{array}	store.NodeGroup
 //	@Router		/api/v1/groups [get]
 func (h *GroupHandler) List(c echo.Context) error {
-	groups, err := h.groups.List(c.Request().Context())
+	ctx := c.Request().Context()
+	groups, err := h.groups.List(ctx)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list groups"})
 	}
+	counts, err := h.groups.NodeCounts(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to count group nodes"})
+	}
 	if groups == nil {
 		groups = []*store.NodeGroup{}
+	}
+	for _, g := range groups {
+		setNodeCount(g, counts)
 	}
 	return c.JSON(http.StatusOK, groups)
 }
@@ -89,11 +97,24 @@ func (h *GroupHandler) List(c echo.Context) error {
 //	@Router		/api/v1/groups/{id} [get]
 func (h *GroupHandler) Get(c echo.Context) error {
 	id := c.Param("id")
-	group, err := h.groups.GetByID(c.Request().Context(), id)
+	ctx := c.Request().Context()
+	group, err := h.groups.GetByID(ctx, id)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "group not found"})
 	}
+	counts, err := h.groups.NodeCounts(ctx)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to count group nodes"})
+	}
+	setNodeCount(group, counts)
 	return c.JSON(http.StatusOK, group)
+}
+
+// setNodeCount sets the group's NodeCount from counts; a group with no key
+// gets 0.
+func setNodeCount(g *store.NodeGroup, counts map[string]int) {
+	n := counts[g.ID]
+	g.NodeCount = &n
 }
 
 // updateGroupRequest is the expected body for updating a group.

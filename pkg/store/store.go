@@ -20,11 +20,15 @@ var ErrNoClaimCapacity = errors.New("no unclaimed node available in group")
 
 // NodeGroup represents a logical group/environment for nodes (e.g., "production", "staging").
 type NodeGroup struct {
-	ID          string    `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"uniqueIndex"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string `json:"id" gorm:"primaryKey"`
+	Name        string `json:"name" gorm:"uniqueIndex"`
+	Description string `json:"description"`
+	// NodeCount is the number of nodes in the group. It is not stored. List and
+	// Get always set it (0 included); a group embedded in a node payload leaves
+	// it nil, so it is omitted there.
+	NodeCount *int      `json:"node_count,omitempty" gorm:"-"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ManagedNode represents a Kairos node managed by auroraboot.
@@ -176,6 +180,9 @@ type GroupStore interface {
 	List(ctx context.Context) ([]*NodeGroup, error)
 	Update(ctx context.Context, group *NodeGroup) error
 	Delete(ctx context.Context, id string) error
+	// NodeCounts returns the number of nodes per group ID. Groups with no
+	// nodes have no key.
+	NodeCounts(ctx context.Context) (map[string]int, error)
 }
 
 // NodeStore manages node registration and state.
@@ -252,7 +259,16 @@ type CommandStore interface {
 	// instead of silently succeeding on a foreign or missing command.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error
 	ListByNode(ctx context.Context, nodeID string) ([]*NodeCommand, error)
+	// ExpireBefore moves every command of nodeID that carries an ExpiresAt at
+	// or before deadline, and has not reached a terminal phase, into
+	// CommandExpired. GetPending already refuses to deliver such a command, so
+	// without this transition the row is stranded in a phase nothing can ever
+	// advance: DeleteTerminal does not collect it and the dashboard offers no
+	// delete button for a Pending command.
+	ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error
 	Delete(ctx context.Context, id string) error
+	// DeleteTerminal removes every command of nodeID that reached a terminal
+	// phase: Completed, Failed or Expired.
 	DeleteTerminal(ctx context.Context, nodeID string) error
 }
 
