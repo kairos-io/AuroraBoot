@@ -783,6 +783,40 @@
                 }
             }
         },
+        "/api/v1/metrics/latest": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the latest resource sample of every node that has one, keyed by node ID. Samples are kept in memory only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get the latest metrics of every node",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/store.NodeMetrics"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/netboot/logs": {
             "get": {
                 "security": [
@@ -1217,6 +1251,46 @@
                 }
             }
         },
+        "/api/v1/nodes/{nodeID}/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the latest resource sample of a node and its recent samples, oldest first. Samples are kept in memory only. A node without samples returns a null latest and an empty samples list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get node metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APINodeMetricsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nodes/{nodeID}/release": {
             "post": {
                 "security": [
@@ -1450,6 +1524,56 @@
                         "description": "OK",
                         "schema": {
                             "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/settings/extension-catalogs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Read the configured extension catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.extensionCatalogsResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Replaces the catalogs saved from the UI. The catalogs given at launch with --extensions-catalog are not affected.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Replace the saved extension catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.extensionCatalogsResponse"
                         }
                     }
                 }
@@ -1916,10 +2040,32 @@
                         "type": "string"
                     }
                 },
+                "metrics": {
+                    "description": "Metrics is an optional resource sample. The server keeps recent samples in\nmemory. A sample that does not decode is ignored and does not fail the\nheartbeat.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/store.NodeMetrics"
+                        }
+                    ]
+                },
                 "osRelease": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.APINodeMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "latest": {
+                    "$ref": "#/definitions/store.NodeMetrics"
+                },
+                "samples": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeMetrics"
                     }
                 }
             }
@@ -2118,6 +2264,25 @@
                 },
                 "nodeOnline": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handlers.extensionCatalogsResponse": {
+            "type": "object",
+            "properties": {
+                "launch": {
+                    "description": "Launch are the catalogs given with --extensions-catalog. Read-only.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "saved": {
+                    "description": "Saved are the catalogs an operator added at runtime.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -2370,6 +2535,31 @@
                 }
             }
         },
+        "store.CPUMetrics": {
+            "type": "object",
+            "properties": {
+                "usedPercent": {
+                    "type": "number"
+                }
+            }
+        },
+        "store.DiskMetrics": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "mount": {
+                    "type": "string"
+                },
+                "totalBytes": {
+                    "type": "integer"
+                },
+                "usedBytes": {
+                    "type": "integer"
+                }
+            }
+        },
         "store.ExtensionHierarchies": {
             "type": "object",
             "properties": {
@@ -2469,6 +2659,17 @@
                 }
             }
         },
+        "store.MemoryMetrics": {
+            "type": "object",
+            "properties": {
+                "availableBytes": {
+                    "type": "integer"
+                },
+                "totalBytes": {
+                    "type": "integer"
+                }
+            }
+        },
         "store.NodeAddress": {
             "type": "object",
             "properties": {
@@ -2564,8 +2765,44 @@
                 "name": {
                     "type": "string"
                 },
+                "node_count": {
+                    "description": "NodeCount is the number of nodes in the group. It is not stored. List and\nGet always set it (0 included); a group embedded in a node payload leaves\nit nil, so it is omitted there.",
+                    "type": "integer"
+                },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "store.NodeMetrics": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "$ref": "#/definitions/store.CPUMetrics"
+                },
+                "disks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.DiskMetrics"
+                    }
+                },
+                "load": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "memory": {
+                    "$ref": "#/definitions/store.MemoryMetrics"
+                },
+                "sampledAt": {
+                    "type": "string"
+                },
+                "temperatureC": {
+                    "type": "number"
+                },
+                "uptimeSeconds": {
+                    "type": "integer"
                 }
             }
         },

@@ -82,7 +82,14 @@ func (d *Deployer) StepCopyCloudConfig() error {
 	return d.Add(constants.OpCopyCloudConfig,
 		herd.WithDeps(constants.OpPrepareDirs),
 		herd.WithCallback(func(ctx context.Context) error {
-			d.Log.Logger.Info().Str("cloudConfig", d.Config.CloudConfig).Msg("Copying cloud config")
+			// The cloud-config carries user passwords, join tokens and
+			// kcrypt secrets, which is why it is written 0600 below. Keep
+			// the document out of the default output: --loglevel defaults
+			// to info, so anything logged here lands on stdout and in the
+			// CI log of every plain build-iso run. -l debug is an explicit
+			// opt-in and still shows it.
+			d.Log.Logger.Info().Int("bytes", len(d.Config.CloudConfig)).Msg("Copying cloud config")
+			d.Log.Logger.Debug().Str("cloudConfig", d.Config.CloudConfig).Msg("Cloud config contents")
 			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
 				d.Log.Logger.Error().Err(err).Msg("Destination directory does not exist, creating it")
 				if err := os.MkdirAll(d.destination(), 0755); err != nil {

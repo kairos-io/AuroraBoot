@@ -341,3 +341,40 @@ func TestMaterializeDiskExtensionsWithoutRequestsTouchesNothing(t *testing.T) {
 
 	cleanup()
 }
+
+// A raw-disk build that names a local image must stage it without reading a
+// catalog. That is what lets the e2e suite bake tests/assets/sysext into a raw
+// artifact: the fixture lives in the repo, and there is no published catalog
+// entry for it.
+func TestMaterializeDiskExtensionsStagesALocalImage(t *testing.T) {
+	source := writeExtension(t, t.TempDir(), "work.sysext.raw", 2048)
+
+	images, cleanup, err := materializeDiskExtensions(context.Background(), DiskExtensions{
+		Requests: mustParseRequests(t, extensions.FileScheme+source),
+	})
+	if err != nil {
+		t.Fatalf("materializeDiskExtensions: %v", err)
+	}
+	defer cleanup()
+
+	if len(images) != 1 || filepath.Base(images[0]) != "work.sysext.raw" {
+		t.Fatalf("images = %v, want one work.sysext.raw", images)
+	}
+	info, err := os.Stat(images[0])
+	if err != nil {
+		t.Fatalf("the staged image is not on disk: %v", err)
+	}
+	if info.Size() != 2048 {
+		t.Fatalf("staged image is %d bytes, want 2048", info.Size())
+	}
+	// The staged copy is what the OEM partition takes, so the name it carries
+	// is the name the installed system merges.
+	if _, err := newTestRawImage(images).stageBundledExtensions(t.TempDir()); err != nil {
+		t.Fatalf("stageBundledExtensions rejected the staged local image: %v", err)
+	}
+
+	cleanup()
+	if _, err := os.Stat(images[0]); !os.IsNotExist(err) {
+		t.Fatalf("cleanup left the staging directory behind: %v", err)
+	}
+}

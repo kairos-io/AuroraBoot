@@ -109,6 +109,22 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found2.GroupID).To(BeEmpty())
 		})
 
+		It("counts nodes per group, skipping empty and ungrouped", func() {
+			a := &store.NodeGroup{Name: "count-a"}
+			b := &store.NodeGroup{Name: "count-b"}
+			Expect(s.Create(ctx, a)).To(Succeed())
+			Expect(s.Create(ctx, b)).To(Succeed())
+
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-1", GroupID: a.ID})).To(Succeed())
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-2", GroupID: a.ID})).To(Succeed())
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-3"})).To(Succeed())
+
+			counts, err := s.GroupNodeCounts(ctx)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(counts).To(Equal(map[string]int{a.ID: 2}))
+			Expect(counts).NotTo(HaveKey(b.ID))
+		})
+
 		It("rejects duplicate name", func() {
 			Expect(s.Create(ctx, &store.NodeGroup{Name: "dup"})).To(Succeed())
 			err := s.Create(ctx, &store.NodeGroup{Name: "dup"})

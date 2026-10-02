@@ -56,17 +56,31 @@ interface DeployDialogProps {
   artifactId: string;
   artifactFiles: string[];
   hasNetboot: boolean;
+  // The tab to open on, when that method is available. Falls back to the
+  // first available method otherwise.
+  defaultMethod?: "pxe" | "redfish";
   onClose: () => void;
 }
+
+// Shown on a disabled method tab: why it is unavailable and how to get it.
+const NO_NETBOOT_REASON = "This artifact has no Netboot output. Clone it and enable Netboot.";
+const NO_ISO_REASON = "This artifact has no ISO output. Clone it and enable ISO.";
 
 export function DeployDialog({
   artifactId,
   artifactFiles,
   hasNetboot,
+  defaultMethod,
   onClose,
 }: DeployDialogProps) {
   const hasIso = artifactFiles.some((f) => f.endsWith(".iso"));
-  const defaultTab = hasNetboot ? "pxe" : "redfish";
+  const available = { pxe: hasNetboot, redfish: hasIso };
+  const defaultTab =
+    defaultMethod && available[defaultMethod] ? defaultMethod : hasNetboot || !hasIso ? "pxe" : "redfish";
+  const methodNames = [hasNetboot && "PXE boot", hasIso && "RedFish BMC"].filter(Boolean);
+  const description = methodNames.length
+    ? `Deploy this artifact to bare-metal nodes via ${methodNames.join(" or ")}.`
+    : "This artifact has no output that can be deployed. Clone it and enable Netboot or ISO.";
 
   // PXE state
   const [netbootStatus, setNetbootStatus] = useState<NetbootStatus | null>(null);
@@ -287,23 +301,24 @@ export function DeployDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Deploy Artifact</DialogTitle>
-          <DialogDescription>
-            Deploy this artifact to bare-metal nodes via PXE boot or RedFish BMC.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue={defaultTab}>
           <TabsList className="w-full">
-            {hasNetboot && (
-              <TabsTrigger value="pxe" className="flex-1 gap-2">
+            {/* Both methods are always listed. A disabled trigger has no
+                pointer events, so the reason sits on a wrapper to keep the
+                tooltip working on hover. */}
+            <span className="flex flex-1" title={hasNetboot ? undefined : NO_NETBOOT_REASON}>
+              <TabsTrigger value="pxe" className="flex-1 gap-2" disabled={!hasNetboot}>
                 <Wifi className="h-4 w-4" /> PXE Boot
               </TabsTrigger>
-            )}
-            {hasIso && (
-              <TabsTrigger value="redfish" className="flex-1 gap-2">
+            </span>
+            <span className="flex flex-1" title={hasIso ? undefined : NO_ISO_REASON}>
+              <TabsTrigger value="redfish" className="flex-1 gap-2" disabled={!hasIso}>
                 <Server className="h-4 w-4" /> RedFish
               </TabsTrigger>
-            )}
+            </span>
           </TabsList>
 
           {hasNetboot && (
@@ -365,7 +380,7 @@ export function DeployDialog({
                   <Label>BMC Target</Label>
                   <Link
                     to="/bmc"
-                    className="text-xs text-[#EE5007] hover:underline"
+                    className="text-xs text-primary hover:underline"
                     onClick={onClose}
                   >
                     Manage BMCs →
@@ -387,7 +402,7 @@ export function DeployDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-[#EE5007]"
+                    className="text-xs text-primary"
                     onClick={() => setShowNewTarget(!showNewTarget)}
                   >
                     {showNewTarget ? "Cancel" : "+ Add new target"}

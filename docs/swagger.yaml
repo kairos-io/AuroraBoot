@@ -247,10 +247,26 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      metrics:
+        allOf:
+        - $ref: '#/definitions/store.NodeMetrics'
+        description: |-
+          Metrics is an optional resource sample. The server keeps recent samples in
+          memory. A sample that does not decode is ignored and does not fail the
+          heartbeat.
       osRelease:
         additionalProperties:
           type: string
         type: object
+    type: object
+  handlers.APINodeMetricsResponse:
+    properties:
+      latest:
+        $ref: '#/definitions/store.NodeMetrics'
+      samples:
+        items:
+          $ref: '#/definitions/store.NodeMetrics'
+        type: array
     type: object
   handlers.APIRegisterRequest:
     properties:
@@ -387,6 +403,19 @@ definitions:
         type: string
       nodeOnline:
         type: boolean
+    type: object
+  handlers.extensionCatalogsResponse:
+    properties:
+      launch:
+        description: Launch are the catalogs given with --extensions-catalog. Read-only.
+        items:
+          type: string
+        type: array
+      saved:
+        description: Saved are the catalogs an operator added at runtime.
+        items:
+          type: string
+        type: array
     type: object
   handlers.extensionSourceReq:
     properties:
@@ -561,6 +590,22 @@ definitions:
       vhd:
         type: boolean
     type: object
+  store.CPUMetrics:
+    properties:
+      usedPercent:
+        type: number
+    type: object
+  store.DiskMetrics:
+    properties:
+      label:
+        type: string
+      mount:
+        type: string
+      totalBytes:
+        type: integer
+      usedBytes:
+        type: integer
+    type: object
   store.ExtensionHierarchies:
     properties:
       confext:
@@ -657,6 +702,13 @@ definitions:
       updatedAt:
         type: string
     type: object
+  store.MemoryMetrics:
+    properties:
+      availableBytes:
+        type: integer
+      totalBytes:
+        type: integer
+    type: object
   store.NodeAddress:
     properties:
       address:
@@ -720,8 +772,35 @@ definitions:
         type: string
       name:
         type: string
+      node_count:
+        description: |-
+          NodeCount is the number of nodes in the group. It is not stored. List and
+          Get always set it (0 included); a group embedded in a node payload leaves
+          it nil, so it is omitted there.
+        type: integer
       updatedAt:
         type: string
+    type: object
+  store.NodeMetrics:
+    properties:
+      cpu:
+        $ref: '#/definitions/store.CPUMetrics'
+      disks:
+        items:
+          $ref: '#/definitions/store.DiskMetrics'
+        type: array
+      load:
+        items:
+          type: number
+        type: array
+      memory:
+        $ref: '#/definitions/store.MemoryMetrics'
+      sampledAt:
+        type: string
+      temperatureC:
+        type: number
+      uptimeSeconds:
+        type: integer
     type: object
   store.SecureBootKeySet:
     properties:
@@ -1249,6 +1328,28 @@ paths:
       summary: Claim a node from a group
       tags:
       - Groups
+  /api/v1/metrics/latest:
+    get:
+      description: Returns the latest resource sample of every node that has one,
+        keyed by node ID. Samples are kept in memory only.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/store.NodeMetrics'
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get the latest metrics of every node
+      tags:
+      - Nodes
   /api/v1/netboot/logs:
     get:
       description: Returns the current (or most recent) PXE/netboot session's captured
@@ -1493,6 +1594,33 @@ paths:
       summary: Replace a node's labels
       tags:
       - Nodes
+  /api/v1/nodes/{nodeID}/metrics:
+    get:
+      description: Returns the latest resource sample of a node and its recent samples,
+        oldest first. Samples are kept in memory only. A node without samples returns
+        a null latest and an empty samples list.
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APINodeMetricsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get node metrics
+      tags:
+      - Nodes
   /api/v1/nodes/{nodeID}/release:
     post:
       consumes:
@@ -1677,6 +1805,37 @@ paths:
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/settings/extension-catalogs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.extensionCatalogsResponse'
+      security:
+      - AdminBearer: []
+      summary: Read the configured extension catalogs
+      tags:
+      - Settings
+    put:
+      consumes:
+      - application/json
+      description: Replaces the catalogs saved from the UI. The catalogs given at
+        launch with --extensions-catalog are not affected.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.extensionCatalogsResponse'
+      security:
+      - AdminBearer: []
+      summary: Replace the saved extension catalogs
+      tags:
+      - Settings
   /api/v1/settings/image-source:
     get:
       produces:

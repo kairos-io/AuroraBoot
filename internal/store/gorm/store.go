@@ -123,6 +123,27 @@ func (s *Store) List(ctx context.Context) ([]*store.NodeGroup, error) {
 	return groups, nil
 }
 
+// GroupNodeCounts returns the number of nodes per group ID in one grouped
+// query. Ungrouped nodes and groups with no nodes are not in the map.
+func (s *Store) GroupNodeCounts(ctx context.Context) (map[string]int, error) {
+	var rows []struct {
+		GroupID string
+		Count   int
+	}
+	if err := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Select("group_id, COUNT(*) AS count").
+		Where("group_id <> ''").
+		Group("group_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(rows))
+	for _, r := range rows {
+		counts[r.GroupID] = r.Count
+	}
+	return counts, nil
+}
+
 func (s *Store) Update(ctx context.Context, group *store.NodeGroup) error {
 	return s.db.WithContext(ctx).Save(group).Error
 }

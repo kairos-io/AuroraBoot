@@ -20,7 +20,7 @@ require (
 	github.com/kairos-io/netboot v0.0.0-20260921125349-ba8ed34a440d
 	github.com/klauspost/compress v1.20.0
 	github.com/labstack/echo/v4 v4.15.4
-	github.com/mudler/go-processmanager v0.1.1
+	github.com/mudler/go-processmanager v0.1.2
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/otiai10/copy v1.14.1
@@ -52,9 +52,9 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
+	k8s.io/api v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/client-go v0.37.1
 	sigs.k8s.io/controller-runtime v0.25.1
 )
 

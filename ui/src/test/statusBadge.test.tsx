@@ -23,13 +23,19 @@ describe("StatusBadge", () => {
     expect(screen.getByText("unknown")).toBeInTheDocument();
   });
 
-  // Expired is a command phase the server now produces, so it needs a style of
-  // its own rather than the fallback every unrecognised string gets.
-  it("styles Expired differently from an unrecognised status", () => {
-    const { container: expired } = render(<StatusBadge status="Expired" />);
-    const { container: unknown } = render(<StatusBadge status="Wat" />);
-    expect(expired.firstElementChild?.className).not.toEqual(
-      unknown.firstElementChild?.className,
-    );
+  // Expired is a command phase the server produces. It is terminal but it is
+  // not a failure the node reported, so it reads in the neutral tone.
+  it("styles Expired with the neutral tone", () => {
+    const { container } = render(<StatusBadge status="Expired" />);
+    expect(container.firstElementChild?.className).toContain("bg-neutral/15");
+    expect(container.firstElementChild?.className).toContain("text-neutral-foreground");
+  });
+
+  // Running used to be red-orange, which users read as an error.
+  it("styles Running with the info tone", () => {
+    const { container } = render(<StatusBadge status="Running" />);
+    expect(container.firstElementChild?.className).toContain("bg-info/15");
+    expect(container.firstElementChild?.className).toContain("text-info-foreground");
+    expect(container.firstElementChild?.className).toContain("border-info/25");
   });
 });
