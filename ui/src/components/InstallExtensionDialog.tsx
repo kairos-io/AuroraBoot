@@ -6,6 +6,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { listGroups, type Group } from "@/api/groups";
 import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { extensionSourceUrl, type Extension } from "@/api/extensions";
@@ -131,7 +138,7 @@ export function InstallExtensionDialog({
         </DialogHeader>
 
         <p className="text-sm text-muted-foreground">
-          Re-running over the same name = upgrade.
+          Installing an extension with the same name again upgrades it.
         </p>
 
         <Section label="Target">
@@ -148,37 +155,33 @@ export function InstallExtensionDialog({
             />
           </div>
           {targetKind === "group" ? (
-            <select
-              className="border rounded-md px-3 py-2 text-sm bg-background w-full mt-2"
-              value={groupID}
-              onChange={(e) => setGroupID(e.target.value)}
-            >
-              <option value="" disabled>
-                Select a group…
-              </option>
-              {groups.map((g) => (
-                <option key={g.id} value={g.id}>
-                  {g.name}
-                </option>
-              ))}
-            </select>
+            <Select value={groupID} onValueChange={setGroupID}>
+              <SelectTrigger aria-label="Group" className="mt-2">
+                <SelectValue placeholder="Select a group…" />
+              </SelectTrigger>
+              <SelectContent>
+                {groups.map((g) => (
+                  <SelectItem key={g.id} value={g.id}>
+                    {g.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           ) : (
-            <select
-              className="border rounded-md px-3 py-2 text-sm bg-background w-full mt-2"
-              value={nodeID}
-              onChange={(e) => setNodeID(e.target.value)}
-            >
-              <option value="" disabled>
-                Select a node…
-              </option>
-              {nodes.map((n) => (
-                <option key={n.id} value={n.id}>
-                  {n.hostname || n.id.slice(0, 8)}
-                  {n.group?.name ? ` · ${n.group.name}` : ""}
-                  {n.phase ? ` · ${n.phase}` : ""}
-                </option>
-              ))}
-            </select>
+            <Select value={nodeID} onValueChange={setNodeID}>
+              <SelectTrigger aria-label="Node" className="mt-2">
+                <SelectValue placeholder="Select a node…" />
+              </SelectTrigger>
+              <SelectContent>
+                {nodes.map((n) => (
+                  <SelectItem key={n.id} value={n.id}>
+                    {n.hostname || n.id.slice(0, 8)}
+                    {n.group?.name ? ` · ${n.group.name}` : ""}
+                    {n.phase ? ` · ${n.phase}` : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
         </Section>
 
@@ -192,7 +195,7 @@ export function InstallExtensionDialog({
                 onClick={() => setAction(a)}
                 className={`px-2.5 py-2 border rounded-md text-xs ${
                   action === a
-                    ? "border-[#EE5007] bg-[#EE5007]/5 ring-1 ring-[#EE5007]"
+                    ? "border-primary bg-primary-soft ring-1 ring-primary"
                     : "hover:bg-muted/30"
                 }`}
               >
@@ -214,7 +217,7 @@ export function InstallExtensionDialog({
                     onClick={() => setBootState(s)}
                     className={`px-2.5 py-1 text-xs rounded-md border ${
                       bootState === s
-                        ? "bg-[#EE5007] text-white border-[#EE5007]"
+                        ? "bg-primary text-primary-foreground border-primary"
                         : "hover:bg-muted/30"
                     }`}
                   >
@@ -226,7 +229,7 @@ export function InstallExtensionDialog({
             {bootState === "active" && (
               <p
                 role="alert"
-                className="text-xs mt-2 px-2.5 py-1.5 rounded-md border border-amber-500/40 bg-amber-500/10 text-amber-800 dark:text-amber-200"
+                className="text-xs mt-2 px-2.5 py-1.5 rounded-md border border-warning/40 bg-warning/10 text-warning-foreground"
               >
                 This extension is only enabled when the node is booted in the
                 active partition. If the node is rolled back to passive, it
@@ -263,14 +266,14 @@ export function InstallExtensionDialog({
         </details>
 
         {action === "install" && sourcePath === null && (
-          <p role="alert" className="text-sm text-red-600 mt-2">
+          <p role="alert" className="text-sm text-danger-foreground mt-2">
             This extension has no download token, so nodes could not fetch it.
             Rebuild it to mint one.
           </p>
         )}
 
         {err && (
-          <p role="alert" className="text-sm text-red-600 mt-2">
+          <p role="alert" className="text-sm text-danger-foreground mt-2">
             {err}
           </p>
         )}
@@ -319,7 +322,7 @@ function TargetTab({
       onClick={onClick}
       className={`px-2.5 py-1 text-xs rounded-md transition-colors ${
         active
-          ? "bg-[#EE5007] text-white"
+          ? "bg-primary text-primary-foreground"
           : "border hover:bg-muted/30"
       }`}
     >
