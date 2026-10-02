@@ -75,7 +75,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Dispatch Homebrew formula update
-        if: startsWith(github.ref_name, 'test-goreleaser') != true
+        if: startsWith(github.ref_name, 'test-goreleaser') != true && !contains(github.ref_name, '-')
         env:
           DISPATCH_TOKEN: ${{ secrets.HOMEBREW_KAIROS_DISPATCH_TOKEN }}
           HOMEBREW_KAIROS_REPO: kairos-io/homebrew-kairos

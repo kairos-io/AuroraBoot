@@ -47,6 +47,9 @@ archives:
     formats:
       - tar.gz
 
+release:
+  prerelease: auto
+
 checksum:
   name_template: checksums.txt
 
