@@ -10,6 +10,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { GroupBoard } from "@/components/fleet/GroupBoard";
 import { StackBar } from "@/components/fleet/StackBar";
 import { phaseCounts } from "@/lib/nodeFilter";
+import { groupNodeCount, deleteGroupDescription } from "@/lib/groupNodes";
 import { cn } from "@/lib/utils";
 import {
   Dialog,
@@ -63,6 +64,10 @@ function ViewSwitch({ value, onChange }: { value: View; onChange(v: View): void 
 export function Groups() {
   const [groups, setGroups] = useState<Group[]>([]);
   const [nodes, setNodes] = useState<Node[]>([]);
+  // Whether the node list above is the server's answer rather than the empty
+  // initial value. It decides which of the two node counts this page can
+  // believe; see nodeCountOf.
+  const [nodesLoaded, setNodesLoaded] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   // The group being renamed; null when the dialog creates a new group.
   const [editing, setEditing] = useState<Group | null>(null);
@@ -77,8 +82,18 @@ export function Groups() {
 
   function load() {
     listGroups().then(setGroups).catch(() => {});
-    listNodes().then(setNodes).catch(() => {});
+    listNodes()
+      .then((n) => {
+        setNodes(n);
+        setNodesLoaded(true);
+      })
+      .catch(() => {});
   }
+
+  // A move patches `nodes` the moment the card is dropped, and takes it back
+  // out if the server refuses it, so counting from there follows a move without
+  // a reload.
+  const nodeCountOf = (group: Group) => groupNodeCount(group, nodes, nodesLoaded);
 
   useEffect(() => {
     load();
@@ -222,7 +237,7 @@ export function Groups() {
                 >
                   <TableCell className="font-medium">{group.name}</TableCell>
                   <TableCell>{group.description || "-"}</TableCell>
-                  <TableCell>{group.node_count ?? 0}</TableCell>
+                  <TableCell>{nodeCountOf(group) ?? 0}</TableCell>
                   <TableCell className="w-40">
                     <StackBar counts={phaseCounts(nodes.filter((n) => n.groupID === group.id))} />
                   </TableCell>
@@ -249,15 +264,7 @@ export function Groups() {
         open={!!confirmTarget}
         onOpenChange={(open) => !open && setConfirmTarget(null)}
         title="Delete group"
-        description={
-          confirmTarget
-            ? `Delete "${confirmTarget.name}"? ${
-                (confirmTarget.node_count ?? 0) > 0
-                  ? `${confirmTarget.node_count ?? 0} node(s) will be moved out of this group (they stay registered).`
-                  : "This group has no nodes."
-              }`
-            : ""
-        }
+        description={confirmTarget ? deleteGroupDescription(confirmTarget.name, nodeCountOf(confirmTarget)) : ""}
         confirmLabel="Delete"
         destructive
         onConfirm={handleConfirmDelete}

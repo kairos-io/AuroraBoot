@@ -151,7 +151,6 @@ func Tar(src string, writers ...io.Writer) error {
 
 	// walk path
 	return filepath.Walk(src, func(file string, fi os.FileInfo, err error) error {
-
 		// return on any error
 		if err != nil {
 			return err
@@ -197,7 +196,6 @@ func Tar(src string, writers ...io.Writer) error {
 
 // CreateTar a imagetarball from a standard tarball
 func CreateTar(_ logger.KairosLogger, srctar, dstimageTar, imagename, architecture, OS string) error {
-
 	dstFile, err := os.Create(dstimageTar)
 	if err != nil {
 		return fmt.Errorf("Cannot create %s: %s", dstimageTar, err)
@@ -240,7 +238,6 @@ func CreateTar(_ logger.KairosLogger, srctar, dstimageTar, imagename, architectu
 	*/
 
 	return tarball.Write(newRef, img, dstFile)
-
 }
 
 func imageFromTar(imagename, architecture, OS string, opener func() (io.ReadCloser, error)) (name.Reference, container.Image, error) {
@@ -453,4 +450,24 @@ func GetSysextSigningFlags(key, cert string) []string {
 	return []string{
 		"--exclude-partitions=root-verity-sig,usr-verity-sig",
 	}
+}
+
+func GetKairosFamily(rootfs string) (string, error) {
+	release, err := godotenv.Read(filepath.Join(rootfs, "etc/kairos-release"))
+	if err != nil {
+		return "", err
+	}
+	for _, key := range []string{"KAIROS_FAMILY", "FAMILY"} {
+		if v, ok := release[key]; ok {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("%s key not found in %s", "KAIROS_FAMILY", filepath.Join(rootfs, "etc/kairos-release"))
+}
+
+// ShellQuote wraps s in single quotes so a POSIX shell passes it on as one
+// argument, whatever it contains. A single quote inside s is closed, escaped
+// and reopened, which is the only escape a single-quoted string allows.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
