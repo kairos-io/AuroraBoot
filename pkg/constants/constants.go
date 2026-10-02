@@ -125,8 +125,15 @@ const (
 	Archaarch64 = "aarch64"
 	ArchRiscv64 = "riscv64"
 
+	// UkiCmdline is the cmdline every UKI entry is built from. It deliberately
+	// carries no install-mode keyword: on Trusted Boot the cmdline lives in a
+	// signed section of the EFI, and the installer copies norole.efi byte for
+	// byte into the active, passive, recovery and statereset roles, so anything
+	// put here is on the kernel command line of the installed machine for its
+	// whole life. A live boot is identified by immucore's
+	// /run/cos/uki_install_mode sentinel instead, which is derived from
+	// removable-media boot. See kairos-io/kairos#5000.
 	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
-	UkiCmdlineInstall             = "install-mode"
 	UkiSystemdBootx86Name         = "systemd-bootx64.efi"
 	UkiSystemdBootx86Path         = "/amd/systemd-boot/" + UkiSystemdBootx86Name
 	UkiSystemdBootStubx86Name     = "linuxx64.efi.stub"
