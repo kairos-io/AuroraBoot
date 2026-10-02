@@ -85,6 +85,11 @@ type Builder struct {
 type buildState struct {
 	status builder.BuildStatus
 	cancel context.CancelFunc
+	// done is closed when the build goroutine has returned. Cancel() only
+	// signals the context, so the goroutine can still be writing into the
+	// output directory after it returns; anything that tears that directory
+	// down has to wait for this instead.
+	done chan struct{}
 }
 
 // dbLogWriter buffers log output and periodically flushes to the artifact
@@ -209,6 +214,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			Phase: builder.BuildPending,
 		},
 		cancel: cancel,
+		done:   make(chan struct{}),
 	}
 
 	b.mu.Lock()
@@ -267,6 +273,9 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()
+			// No goroutine will ever run for this build, so release
+			// anything already waiting on it.
+			close(bs.done)
 			return nil, fmt.Errorf("persisting artifact record: %w", err)
 		}
 	}
@@ -280,6 +289,9 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 }
 
 func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOptions, outputDir string) {
+	// Every return below leaves outputDir untouched from here on.
+	defer close(bs.done)
+
 	b.setPhase(bs, builder.BuildBuilding, "")
 
 	// Update DB phase.

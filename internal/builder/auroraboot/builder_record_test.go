@@ -112,6 +112,9 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 	It("persists the Kubernetes fields the clone flow reads from the row", func() {
 		s := newRecStore()
 		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		// The build keeps writing into the TempDir after Build returns, so
+		// join it before Ginkgo removes that tree.
+		DeferCleanup(func() { auroraboot.StopAndWait(b) })
 
 		_, err := b.Build(context.Background(), builder.BuildOptions{
 			ID:            "clone-k8s",
