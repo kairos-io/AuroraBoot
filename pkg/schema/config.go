@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
@@ -84,7 +85,20 @@ type Disk struct {
 	Size              string `yaml:"size"`
 	StateSize         string `yaml:"state_size"`
 	RecoveryImageSize string `yaml:"recovery_image_size"`
+	// BootActive pre-builds COS_STATE with active.img so the EFI raw disk boots straight into active.
+	BootActive bool `yaml:"boot_active"`
+	// StateSlots sizes COS_STATE for this many system images on boot-active disks (empty means the default of 3); 2 or more also ships passive.img.
+	StateSlots string `yaml:"state_slots"`
+	// NoRecovery skips the COS_RECOVERY partition on boot-active disks.
+	NoRecovery bool `yaml:"no_recovery"`
 }
+
+const (
+	// MinStateSlots is one image: active only, no room for an in-place upgrade.
+	MinStateSlots = 1
+	// MaxStateSlots is active, passive and the upgrade transition image.
+	MaxStateSlots = 3
+)
 
 type NetBoot struct {
 	Cmdline string `yaml:"cmdline"`
@@ -168,6 +182,47 @@ func (c Config) Validate() error {
 		if c.Disk.VHD {
 			return fmt.Errorf("disk.partitions cannot be combined with disk.vhd: partition-image output does not produce a merged disk to convert")
 		}
+	}
+	return c.validateBootActive()
+}
+
+// StateSlotsCount returns disk.state_slots as a number, 0 when unset.
+func (d Disk) StateSlotsCount() (int, error) {
+	if d.StateSlots == "" {
+		return 0, nil
+	}
+	slots, err := strconv.Atoi(d.StateSlots)
+	if err != nil || slots < MinStateSlots || slots > MaxStateSlots {
+		return 0, fmt.Errorf("disk.state_slots must be a number between %d and %d, got %q", MinStateSlots, MaxStateSlots, d.StateSlots)
+	}
+	return slots, nil
+}
+
+func (c Config) validateBootActive() error {
+	if !c.Disk.BootActive {
+		if c.Disk.StateSlots != "" {
+			return fmt.Errorf("disk.state_slots requires disk.boot_active")
+		}
+		if c.Disk.NoRecovery {
+			return fmt.Errorf("disk.no_recovery requires disk.boot_active")
+		}
+		return nil
+	}
+	if _, err := c.Disk.StateSlotsCount(); err != nil {
+		return err
+	}
+	if c.Disk.BIOS {
+		return fmt.Errorf("disk.boot_active cannot be combined with disk.bios: only EFI raw disks are supported")
+	}
+	if c.Disk.Partitions {
+		return fmt.Errorf("disk.boot_active cannot be combined with disk.partitions: only merged raw disks are supported")
+	}
+	if c.Disk.MAAS {
+		return fmt.Errorf("disk.boot_active cannot be combined with disk.maas: MAAS images are not supported")
+	}
+	// Raw disks install bundled extensions from the first-boot reset, which boot-active disks never run
+	if len(c.ISO.Extensions) > 0 {
+		return fmt.Errorf("disk.boot_active cannot be combined with iso.extensions: bundled extensions are installed by the first-boot reset, which boot-active disks skip")
 	}
 	return nil
 }

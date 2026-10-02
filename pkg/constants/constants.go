@@ -67,6 +67,10 @@ const (
 		"\nset root=($root)" +
 		"\nset prefix=($root)/grub2\n" +
 		"configfile ($root)/etc/cos/grub.cfg"
+	// GrubEfiState Used for boot-active RAW images, chainloads the grub config in the state partition like an install does
+	GrubEfiState = "search --no-floppy --label --set=root COS_STATE" +
+		"\nset prefix=($root)/grub2" +
+		"\nconfigfile ($root)/grub2/grub.cfg"
 	IsoBootCatalog = "/boot/boot.catalog"
 	IsoHybridMBR   = "/boot/boot_hybrid.img"
 	IsoBootFile    = "/boot/eltorito.img"

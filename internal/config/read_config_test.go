@@ -24,6 +24,20 @@ var _ = Describe("ReadConfig --set handling", func() {
 		Expect(r.ContainerImage).To(Equal("oci://example/img:tag"))
 	})
 
+	It("parses the boot-active single-image options from --set", func() {
+		c, _, err := config.ReadConfig("", "", []string{
+			"disk.raw=true",
+			"disk.boot_active=true",
+			"disk.state_slots=1",
+			"disk.no_recovery=true",
+		})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.Disk.EFI).To(BeTrue())
+		Expect(c.Disk.BootActive).To(BeTrue())
+		Expect(c.Disk.StateSlots).To(Equal("1"))
+		Expect(c.Disk.NoRecovery).To(BeTrue())
+	})
+
 	It("surfaces an error for a --set value that does not fit its field's type", func() {
 		// A non-boolean into a boolean field used to be silently dropped (the
 		// field kept its zero value, no error reported). It must now surface, so a
