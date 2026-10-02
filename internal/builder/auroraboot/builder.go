@@ -734,6 +734,7 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 		AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
 		Extensions:              extensionRequests,
 		ExtensionsCatalogs:      opts.ExtensionsCatalogs,
+		CloudConfig:             opts.CloudConfig,
 		Logger:                  &log,
 	}
 

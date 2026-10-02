@@ -64,6 +64,9 @@ type Config struct {
 	// image-source settings' advertised URL until an operator overrides it at
 	// runtime.
 	RedfishServeURL string
+	// ExtensionCatalogs are the extension catalogs given at launch with
+	// --extensions-catalog. The UI offers them for every flavor.
+	ExtensionCatalogs []string
 	// BaseContext, when non-nil, is the parent context for background deploy
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
@@ -71,14 +74,15 @@ type Config struct {
 
 	// Rate limiting of the node-driven endpoints (registration, heartbeat, command
 	// polling) — fleet-server hardening, kairos-io/kairos#4117. It is on by
-	// default: zero RPS/Burst values fall back to the auth package defaults.
-	// Admin-authenticated requests (the UI and the CAPI infra provider) are never
-	// limited. DisableRateLimit turns the limiters off entirely.
+	// default: a zero RPS falls back to the auth package default, and a zero Burst
+	// to the larger of that package's burst floor and one second of the RPS in
+	// effect. Admin-authenticated requests (the UI and the CAPI infra provider)
+	// are never limited. DisableRateLimit turns the limiters off entirely.
 	DisableRateLimit       bool
 	NodeRateLimitRPS       float64 // per-node requests/sec for heartbeat + command polling
-	NodeRateLimitBurst     int     // per-node burst
+	NodeRateLimitBurst     int     // per-node instantaneous allowance
 	RegisterRateLimitRPS   float64 // per-IP requests/sec for registration
-	RegisterRateLimitBurst int     // per-IP burst
+	RegisterRateLimitBurst int     // per-IP instantaneous allowance
 }
 
 // firstPositive returns v if it is positive, otherwise fallback. It lets a zero
@@ -213,7 +217,8 @@ func New(cfg Config) *echo.Echo {
 	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
-		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
+		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL).
+		WithExtensionCatalogs(cfg.ExtensionCatalogs)
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
@@ -396,6 +401,8 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
 	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
 	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
+	adminGroup.GET("/settings/extension-catalogs", settingsHandler.GetExtensionCatalogs)
+	adminGroup.PUT("/settings/extension-catalogs", settingsHandler.UpdateExtensionCatalogs)
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)

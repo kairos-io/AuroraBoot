@@ -304,3 +304,196 @@ func TestMaterializeReadsTheDefaultCatalogWhenNoneIsConfigured(t *testing.T) {
 		t.Fatalf("opened catalogs = %v, want [%s]", requested, DefaultCatalog)
 	}
 }
+
+// writeRawImage drops a .raw extension image on disk and returns its path, so
+// a spec can point a file:// request at a fixture the way the e2e suite points
+// at tests/assets/sysext.
+func writeRawImage(t *testing.T, dir, name, data string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(data), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+func TestParseRequestAcceptsALocalImage(t *testing.T) {
+	tests := []struct {
+		value string
+		want  Request
+		ok    bool
+	}{
+		{value: "file:///assets/work.sysext.raw", want: Request{Name: "file:///assets/work.sysext.raw"}, ok: true},
+		{value: "file://relative/work.raw", want: Request{Name: "file://relative/work.raw"}, ok: true},
+		// An @ in a path is part of the path: a local image has no catalog
+		// version, so nothing after it may be read as one.
+		{value: "file:///assets/v1@2/work.raw", want: Request{Name: "file:///assets/v1@2/work.raw"}, ok: true},
+		{value: "file://", ok: false},
+		{value: "file:///assets/work.sysext", ok: false},
+		{value: "file:///assets/", ok: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			got, err := ParseRequest(tt.value)
+			if (err == nil) != tt.ok {
+				t.Fatalf("ParseRequest(%q) error = %v, want success %v", tt.value, err, tt.ok)
+			}
+			if got != tt.want {
+				t.Fatalf("ParseRequest(%q) = %#v, want %#v", tt.value, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMaterializeCopiesALocalImageWithoutReadingACatalog(t *testing.T) {
+	// The point of a file:// request is that a build with the image already on
+	// disk needs no index and no registry, so the opener must not be reached.
+	original := openCatalogSource
+	t.Cleanup(func() { openCatalogSource = original })
+	openCatalogSource = func(_ context.Context, source string) (io.ReadCloser, error) {
+		t.Errorf("read catalog %s for a file:// request", source)
+		return nil, fmt.Errorf("stub opener")
+	}
+
+	source := writeRawImage(t, t.TempDir(), "work.sysext.raw", "local extension")
+	destination := t.TempDir()
+
+	// No architecture either: it only selects a catalog entry, and there is
+	// none to select.
+	paths, err := Materialize(context.Background(), nil, []Request{{Name: FileScheme + source}}, "", destination, false)
+	if err != nil {
+		t.Fatalf("Materialize() error = %v", err)
+	}
+	if len(paths) != 1 || paths[0] != filepath.Join(destination, "work.sysext.raw") {
+		t.Fatalf("Materialize() paths = %v, want the base name of the source", paths)
+	}
+	data, err := os.ReadFile(paths[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(data) != "local extension" {
+		t.Fatalf("materialized data = %q", data)
+	}
+	// The source is staged, not moved or truncated: a second build of the same
+	// spec must find it.
+	if data, err = os.ReadFile(source); err != nil || string(data) != "local extension" {
+		t.Fatalf("source after Materialize = %q, %v, want it untouched", data, err)
+	}
+}
+
+func TestMaterializeMixesLocalImagesWithCatalogEntries(t *testing.T) {
+	registry := httptest.NewServer(ggcrregistry.New())
+	t.Cleanup(registry.Close)
+	repository := strings.TrimPrefix(registry.URL, "http://") + "/extensions/tool"
+	digest := pushImage(t, repository, []layerSpec{{data: "raw extension", mediaType: rawMediaType}})
+	catalog := writeCatalog(t, repository+"@"+digest)
+	source := writeRawImage(t, t.TempDir(), "work.sysext.raw", "local extension")
+	destination := t.TempDir()
+
+	paths, err := Materialize(context.Background(), []string{catalog}, []Request{
+		{Name: "tool"},
+		{Name: FileScheme + source},
+	}, "amd64", destination, true)
+	if err != nil {
+		t.Fatalf("Materialize() error = %v", err)
+	}
+	want := []string{
+		filepath.Join(destination, "tool.sysext.raw"),
+		filepath.Join(destination, "work.sysext.raw"),
+	}
+	if !reflect.DeepEqual(paths, want) {
+		t.Fatalf("Materialize() paths = %v, want %v", paths, want)
+	}
+	for index, expected := range []string{"raw extension", "local extension"} {
+		data, readErr := os.ReadFile(paths[index])
+		if readErr != nil {
+			t.Fatal(readErr)
+		}
+		if string(data) != expected {
+			t.Fatalf("%s = %q, want %q", paths[index], data, expected)
+		}
+	}
+}
+
+func TestMaterializeRejectsTwoLocalImagesWithOneBaseName(t *testing.T) {
+	// Different directories, one destination: the second copy would overwrite
+	// the first and the build would bake one image twice.
+	first := writeRawImage(t, t.TempDir(), "work.sysext.raw", "first")
+	second := writeRawImage(t, t.TempDir(), "work.sysext.raw", "second")
+
+	_, err := Materialize(context.Background(), nil, []Request{
+		{Name: FileScheme + first},
+		{Name: FileScheme + second},
+	}, "amd64", t.TempDir(), false)
+	if err == nil || !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("Materialize() error = %v, want duplicate error", err)
+	}
+}
+
+func TestMaterializeReportsAMissingLocalImage(t *testing.T) {
+	missing := filepath.Join(t.TempDir(), "absent.sysext.raw")
+
+	_, err := Materialize(context.Background(), nil, []Request{{Name: FileScheme + missing}}, "amd64", t.TempDir(), false)
+	if err == nil || !strings.Contains(err.Error(), "absent.sysext.raw") {
+		t.Fatalf("Materialize() error = %v, want the missing image named", err)
+	}
+}
+
+func TestMaterializeRejectsALocalImageThatIsADirectory(t *testing.T) {
+	directory := filepath.Join(t.TempDir(), "work.raw")
+	if err := os.Mkdir(directory, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Materialize(context.Background(), nil, []Request{{Name: FileScheme + directory}}, "amd64", t.TempDir(), false)
+	if err == nil || !strings.Contains(err.Error(), "directory") {
+		t.Fatalf("Materialize() error = %v, want a directory error", err)
+	}
+}
+
+func TestMaterializeRejectsAVersionOnALocalImage(t *testing.T) {
+	source := writeRawImage(t, t.TempDir(), "work.sysext.raw", "local extension")
+
+	_, err := Materialize(context.Background(), nil, []Request{{Name: FileScheme + source, Version: "v1"}}, "amd64", t.TempDir(), false)
+	if err == nil || !strings.Contains(err.Error(), "must not set a version") {
+		t.Fatalf("Materialize() error = %v, want a version error", err)
+	}
+}
+
+func TestMaterializeRejectsALocalImageThatIsNotRaw(t *testing.T) {
+	source := writeRawImage(t, t.TempDir(), "work.sysext", "local extension")
+
+	_, err := Materialize(context.Background(), nil, []Request{{Name: FileScheme + source}}, "amd64", t.TempDir(), false)
+	if err == nil || !strings.Contains(err.Error(), "not a .raw image") {
+		t.Fatalf("Materialize() error = %v, want a .raw error", err)
+	}
+}
+
+func TestMaterializeLeavesNothingBehindWhenALaterLocalImageIsMissing(t *testing.T) {
+	// The copies are renamed into place only once every request resolved, so a
+	// spec naming one good image and one bad one stages neither.
+	dir := t.TempDir()
+	good := writeRawImage(t, dir, "good.sysext.raw", "good")
+	missing := filepath.Join(dir, "absent.sysext.raw")
+	destination := t.TempDir()
+
+	_, err := Materialize(context.Background(), nil, []Request{
+		{Name: FileScheme + good},
+		{Name: FileScheme + missing},
+	}, "amd64", destination, false)
+	if err == nil {
+		t.Fatal("Materialize() error = nil, want the missing image reported")
+	}
+	entries, readErr := os.ReadDir(destination)
+	if readErr != nil {
+		t.Fatal(readErr)
+	}
+	if len(entries) != 0 {
+		names := make([]string, 0, len(entries))
+		for _, entry := range entries {
+			names = append(names, entry.Name())
+		}
+		t.Fatalf("destination holds %v, want it empty", names)
+	}
+}

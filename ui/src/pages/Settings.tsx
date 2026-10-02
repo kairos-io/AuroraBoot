@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/PageHeader";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { ExtensionCatalogsCard } from "@/components/settings/ExtensionCatalogsCard";
 import { Eye, EyeOff, RefreshCw } from "lucide-react";
 
 export function Settings() {
@@ -67,6 +68,8 @@ export function Settings() {
             </div>
           </CardContent>
         </Card>
+
+        <ExtensionCatalogsCard />
       </div>
 
       <ConfirmDialog
