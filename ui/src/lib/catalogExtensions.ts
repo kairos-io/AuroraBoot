@@ -13,6 +13,48 @@
 export const DEFAULT_EXTENSIONS_CATALOG =
   "https://kairos-io.github.io/hadron-layers/releases.json";
 
+// The default catalog publishes extensions built for Hadron only. Other
+// flavors get the catalogs the operator configured (`web
+// --extensions-catalog` or Settings), and none by default.
+const HADRON_IMAGE_REPO = "ghcr.io/kairos-io/hadron";
+
+// isHadronBaseImage reports whether a base image ref is a Hadron image, so a
+// Custom build from a Hadron image gets the Hadron catalog too.
+export function isHadronBaseImage(ref: string): boolean {
+  const trimmed = ref.trim();
+  return (
+    trimmed === HADRON_IMAGE_REPO ||
+    trimmed.startsWith(`${HADRON_IMAGE_REPO}:`) ||
+    trimmed.startsWith(`${HADRON_IMAGE_REPO}@`)
+  );
+}
+
+export type SuggestedExtensionCatalog = {
+  name: string;
+  url: string;
+  description: string;
+};
+
+// SUGGESTED_EXTENSION_CATALOGS are the catalogs the UI proposes when no
+// catalog is configured for a non-Hadron flavor, and in Settings. Add a
+// published catalog here to offer it with one click.
+export const SUGGESTED_EXTENSION_CATALOGS: SuggestedExtensionCatalog[] = [
+  {
+    name: "Kairos hadron-layers",
+    url: DEFAULT_EXTENSIONS_CATALOG,
+    description:
+      "Extensions built for Hadron. They can fail to load on other flavors.",
+  },
+];
+
+// extensionCatalogChoices lists the catalogs the builder offers: the Hadron
+// default first for a Hadron build, then the configured ones, without
+// duplicates.
+export function extensionCatalogChoices(hadron: boolean, configured: string[]): string[] {
+  const all = hadron ? [DEFAULT_EXTENSIONS_CATALOG, ...configured] : configured;
+  return all.filter((url, index) => url !== "" && all.indexOf(url) === index);
+}
+
 export type CatalogExtensionVersion = { version: string; archs: string[] };
 
 export type CatalogExtensionItem = {

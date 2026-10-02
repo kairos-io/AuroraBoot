@@ -8,7 +8,7 @@ godebug x509negativeserial=1
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/containerd/containerd/v2 v2.4.0
+	github.com/containerd/containerd/v2 v2.4.1
 	github.com/diskfs/go-diskfs v1.9.4
 	github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29
 	github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb
@@ -20,7 +20,7 @@ require (
 	github.com/kairos-io/netboot v0.0.0-20260921125349-ba8ed34a440d
 	github.com/klauspost/compress v1.20.0
 	github.com/labstack/echo/v4 v4.15.4
-	github.com/mudler/go-processmanager v0.1.1
+	github.com/mudler/go-processmanager v0.1.2
 	github.com/onsi/ginkgo/v2 v2.33.0
 	github.com/onsi/gomega v1.43.1
 	github.com/otiai10/copy v1.14.1
@@ -43,6 +43,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.2.2
 	github.com/kairos-io/kairos/v4 v4.3.1-0.20260921115150-170bfbb891c4
+	github.com/mudler/yip v1.26.2
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.26.0
 	github.com/swaggo/swag v1.16.6
@@ -51,9 +52,9 @@ require (
 	gorm.io/driver/postgres v1.6.3
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
-	k8s.io/api v0.37.0
-	k8s.io/apimachinery v0.37.0
-	k8s.io/client-go v0.37.0
+	k8s.io/api v0.37.1
+	k8s.io/apimachinery v0.37.1
+	k8s.io/client-go v0.37.1
 	sigs.k8s.io/controller-runtime v0.25.1
 )
 
@@ -106,7 +107,7 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/foxboron/go-tpm-keyfiles v0.0.0-20240725205618-b7c5a84edf9d // indirect
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
-	github.com/fxamacker/cbor/v2 v2.9.1 // indirect
+	github.com/fxamacker/cbor/v2 v2.9.4 // indirect
 	github.com/go-bindata/go-bindata v3.1.2+incompatible // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
@@ -181,7 +182,6 @@ require (
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.3-0.20250322232337-35a7c28c31ee // indirect
 	github.com/mudler/entities v0.8.3 // indirect
-	github.com/mudler/yip v1.26.2 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/nfnt/resize v0.0.0-20180221191011-83c6a9932646 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect

@@ -118,6 +118,25 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.builds).To(BeEmpty())
 		})
 
+		It("returns 400 for an extension that names a file on this server", func() {
+			// file:// is the CLI's way of baking an image the operator already
+			// has. Accepting it here would read any file this process can
+			// reach and hand it back inside the artifact.
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["file:///etc/shadow.raw"]}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("not allowed over the API"))
+			Expect(fb.builds).To(BeEmpty())
+		})
+
 		It("returns 500 for a genuine server failure", func() {
 			fb.buildErr = fmt.Errorf("disk full")
 
