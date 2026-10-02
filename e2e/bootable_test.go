@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/gofrs/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
@@ -16,6 +17,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	. "github.com/spectrocloud/peg/matcher"
+	"github.com/spectrocloud/peg/pkg/controller"
 	"github.com/spectrocloud/peg/pkg/machine"
 	"github.com/spectrocloud/peg/pkg/machine/types"
 )
@@ -329,10 +331,8 @@ func getEfivarsFile(firmwarePath, assetsDir string, empty bool) (string, error) 
 // saveSerialLog copies the qemu serial console into logs/ and prints it.
 //
 // qemu writes that file on the host, so it is readable even when the VM is
-// gone, and it is the only log that is. Collecting it before anything that
-// talks to the machine is what keeps it in the artifact: peg still reaches
-// the VM over SSH in GatherAllLogs and panics from a goroutine of its own
-// when the connection has died, and that ends the process on the spot.
+// gone, and it is the only log that is. Everything else has to be fetched over
+// SSH, so this one comes first.
 func saveSerialLog(vm testVM) {
 	serial, _ := os.ReadFile(filepath.Join(vm.StateDir, "serial.log"))
 	_ = os.MkdirAll("logs", os.ModePerm|os.ModeDir)
@@ -365,7 +365,7 @@ func gatherLogs(vm testVM) {
 	// zip all files under /var/log/kairos
 	vm.RootCommand("tar -czf /run/kairos-agent-logs.tar.gz /var/log/kairos")
 
-	vm.GatherAllLogs(
+	gatherAllLogs(vmLogSink(vm), "logs",
 		[]string{
 			"edgevpn@kairos",
 			"kairos-agent",
@@ -395,4 +395,107 @@ func gatherLogs(vm testVM) {
 			"/tmp/ovmf_debug.log",
 			"/run/kairos-agent-logs.tar.gz",
 		})
+}
+
+// logSink is everything gatherAllLogs needs from a VM: run a command as root,
+// and copy one file off the machine. Both report failure as an error, which is
+// the whole point of the type, and it lets the plan be tested without a VM.
+type logSink struct {
+	run   func(cmd string) (string, error)
+	fetch func(remotePath, localPath string) error
+}
+
+// vmLogSink binds a logSink to a running machine.
+//
+// peg's own vm.GatherAllLogs cannot be used here. It routes every command
+// through machineSudo, which runs `sudo /bin/sh` and feeds the command into its
+// stdin from a goroutine of its own; when the SSH session has died that write
+// fails and the goroutine panics (peg matcher/helpers.go:239). A failed spec is
+// precisely when the VM is gone or rebooting, so that is the common case, and a
+// panic Ginkgo does not own ends the test binary on the spot: the files the
+// steps above just wrote on the VM are never copied off it, and no later spec
+// runs. machine.Command and the SCP client both return errors instead.
+func vmLogSink(vm testVM) logSink {
+	return logSink{
+		run: vm.RootCommand,
+		fetch: func(remotePath, localPath string) error {
+			f, err := os.Create(localPath)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			client := controller.NewSCPClient(vm.machine)
+			if err := client.Connect(); err != nil {
+				return err
+			}
+			defer client.Close()
+
+			// A VM that answered the chmod can still stall mid-transfer, and
+			// this runs inside AfterEach: without a deadline one wedged file
+			// would hold the whole suite until the job timeout.
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			return client.CopyFromRemote(ctx, f, remotePath)
+		},
+	}
+}
+
+// gatherAllLogs collects the services and files peg's GatherAllLogs collects,
+// into outDir, without ever taking the process down with it. Every step is
+// best effort: a VM that cannot answer costs that one file, not the run.
+func gatherAllLogs(s logSink, outDir string, services, logFiles []string) {
+	for _, service := range services {
+		path := fmt.Sprintf("/run/%s.log", service)
+		runForLog(s, fmt.Sprintf("journalctl -u %s -o short-iso >> %s", service, path))
+		gatherLog(s, outDir, path)
+	}
+
+	for _, file := range logFiles {
+		gatherLog(s, outDir, file)
+	}
+
+	for _, extra := range []struct {
+		cmds []string
+		path string
+	}{
+		{[]string{"dmesg > /run/dmesg"}, "/run/dmesg"},
+		{[]string{"journalctl -o short-iso > /run/journal.log"}, "/run/journal.log"},
+		{[]string{"uname -a > /run/uname.log"}, "/run/uname.log"},
+		{[]string{"lsblk -a >> /run/disks.log", "blkid >> /run/disks.log"}, "/run/disks.log"},
+	} {
+		for _, cmd := range extra.cmds {
+			runForLog(s, cmd)
+		}
+		gatherLog(s, outDir, extra.path)
+	}
+
+	gatherLog(s, outDir, "/etc/passwd")
+	gatherLog(s, outDir, "/etc/os-release")
+}
+
+// runForLog runs a command whose only job is to produce a log on the VM.
+func runForLog(s logSink, cmd string) {
+	if out, err := s.run(cmd); err != nil {
+		fmt.Printf("Could not run %q on the VM: %s\nOutput: %s\n", cmd, err, out)
+	}
+}
+
+// gatherLog copies one file off the VM into outDir, under its base name.
+func gatherLog(s logSink, outDir, remotePath string) {
+	if out, err := s.run("chmod 777 " + remotePath); err != nil {
+		fmt.Printf("Could not chmod %s on the VM: %s\nOutput: %s\n", remotePath, err, out)
+		return
+	}
+
+	fmt.Printf("Trying to get file: %s\n", remotePath)
+	if err := os.MkdirAll(outDir, 0755); err != nil {
+		fmt.Printf("Could not create %s: %s\n", outDir, err)
+		return
+	}
+
+	if err := s.fetch(remotePath, filepath.Join(outDir, filepath.Base(remotePath))); err != nil {
+		fmt.Printf("Could not copy %s off the VM: %s\n", remotePath, err)
+	}
 }
