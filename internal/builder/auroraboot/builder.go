@@ -896,6 +896,43 @@ func (b *Builder) Cancel(_ context.Context, id string) error {
 	return nil
 }
 
+// Shutdown cancels every build this builder started and blocks until each of
+// their goroutines has returned, or until ctx is done, in which case it
+// returns ctx.Err(). A builder with nothing in flight returns immediately.
+//
+// Build returns as soon as the artifact row is persisted, and Cancel only
+// signals the build context, so a goroutine can still be writing into
+// <baseDir>/<id> after both have returned. Anything that tears that directory
+// down, or that needs the build's terminal row and its flushed logs to be in
+// the store, has to join here first. runWeb defers it so a stopping server
+// does not exit with an artifact tree half written, and the specs that hand
+// the builder a Ginkgo TempDir defer it so the TempDir cleanup does not race
+// those writes.
+func (b *Builder) Shutdown(ctx context.Context) error {
+	b.mu.Lock()
+	ids := make([]string, 0, len(b.builds))
+	states := make([]*buildState, 0, len(b.builds))
+	for id, bs := range b.builds {
+		ids = append(ids, id)
+		states = append(states, bs)
+	}
+	b.mu.Unlock()
+
+	for _, id := range ids {
+		_ = b.Cancel(ctx, id)
+	}
+
+	for _, bs := range states {
+		select {
+		case <-bs.done:
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
 // collectArtifacts returns only the final build output files (ISOs, disk images, checksums),
 // skipping the unpacked rootfs and intermediate build files.
 func collectArtifacts(dir string) []string {
