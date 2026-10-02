@@ -113,8 +113,8 @@ const COMMANDS: CommandDef[] = [
 // background and the action-card hover affordance.
 const TONE_CLASSES: Record<CommandDef["tone"], { chip: string; hover: string }> = {
   orange: {
-    chip: "bg-[#EE5007]/10 text-[#EE5007]",
-    hover: "hover:border-[#EE5007]/60 hover:bg-[#EE5007]/5",
+    chip: "bg-primary/10 text-primary",
+    hover: "hover:border-primary/60 hover:bg-primary-soft",
   },
   blue: {
     chip: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
@@ -553,7 +553,6 @@ export function CommandDialog({
           </Button>
           {!onPickStep && (
             <Button
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
               onClick={handleSubmit}
               disabled={!canSubmit}
             >

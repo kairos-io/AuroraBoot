@@ -97,6 +97,18 @@ type APIHeartbeatRequest struct {
 	// after phone-home has registered, or a later rename, reaches the record. When
 	// omitted the stored hostname is preserved.
 	Hostname string `json:"hostname,omitempty" example:"kairos-node-01"`
+	// Metrics is an optional resource sample. The server keeps recent samples in
+	// memory. A sample that does not decode is ignored and does not fail the
+	// heartbeat.
+	Metrics *store.NodeMetrics `json:"metrics,omitempty"`
+}
+
+// APINodeMetricsResponse is the JSON body returned by
+// GET /api/v1/nodes/:nodeID/metrics. Latest is null when the node has no
+// samples. Samples are oldest first and never null.
+type APINodeMetricsResponse struct {
+	Latest  *store.NodeMetrics  `json:"latest"`
+	Samples []store.NodeMetrics `json:"samples"`
 }
 
 // APISetLabelsRequest is the JSON body of PUT /api/v1/nodes/:nodeID/labels.
