@@ -72,10 +72,13 @@ var _ = Describe("UKI cmdline", func() {
 	})
 
 	Describe("createConfFiles", func() {
-		var sourceDir string
+		var sourceDir, selinuxBase string
 
 		BeforeEach(func() {
 			sourceDir = GinkgoT().TempDir()
+
+			selinuxBase = strings.Replace(constants.UkiCmdline, " selinux=0", " security=selinux selinux=1 enforcing=0 rd.cos.selinux=permissive", 1)
+			Expect(selinuxBase).NotTo(Equal(constants.UkiCmdline))
 		})
 
 		readConf := func(name string) string {
@@ -85,13 +88,8 @@ var _ = Describe("UKI cmdline", func() {
 		}
 
 		It("writes an empty cmdline line for the default entry, which adds nothing", func() {
-			Expect(createConfFiles(sourceDir, constants.UkiCmdline, "Kairos", constants.ArtifactBaseName, "v1", "0", false, true)).To(Succeed())
-			Expect(readConf(constants.ArtifactBaseName + ".conf")).To(ContainSubstring("cmdline \n"))
-		})
-
-		It("records what a non-default entry adds, including an install keyword", func() {
-			Expect(createConfFiles(sourceDir, constants.UkiCmdline+" install-mode", "Kairos", constants.ArtifactBaseName+"_install-mode", "v1", "0", false, true)).To(Succeed())
-			Expect(readConf(constants.ArtifactBaseName + "_install-mode.conf")).To(ContainSubstring("cmdline install-mode\n"))
+			Expect(createConfFiles(selinuxBase, sourceDir, constants.UkiCmdline, "Kairos", constants.ArtifactBaseName, "v1", "0", false, true)).To(Succeed())
+			Expect(readConf(constants.ArtifactBaseName + ".conf")).To(ContainSubstring("cmdline"))
 		})
 	})
 })

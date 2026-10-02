@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
@@ -81,6 +82,10 @@ var BuildUKICmd = cli.Command{
 			Aliases: []string{"x"},
 			Usage:   "Extend the default cmdline for the default 'norole' artifacts. This creates efi files with the default+provided cmdline.",
 		},
+		&cli.StringFlag{
+			Name:  "cloud-config",
+			Usage: "The cloud config to embed in the UKI",
+		},
 		&cli.StringSliceFlag{
 			Name:    "single-efi-cmdline",
 			Aliases: []string{"s"},
@@ -132,7 +137,7 @@ var BuildUKICmd = cli.Command{
 		},
 		&cli.StringSliceFlag{
 			Name:  "extension",
-			Usage: "Add a catalog extension by name or name@version (repeatable)",
+			Usage: "Add an extension by name or name@version, or file://<path> to bake in a .raw image this host already has (repeatable)",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
@@ -176,6 +181,21 @@ var BuildUKICmd = cli.Command{
 			extensionRequests = append(extensionRequests, request)
 		}
 
+		cloudConfig := ""
+		ccPath := ctx.String("cloud-config")
+		if ccPath == "" && len(ctx.Lineage()) > 1 {
+			// A same-named app-level flag given before the subcommand would
+			// otherwise be shadowed by this command's flag.
+			ccPath = ctx.Lineage()[1].String("cloud-config")
+		}
+		if ccPath != "" {
+			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
+			if err != nil {
+				return fmt.Errorf("reading cloud config: %w", err)
+			}
+			cloudConfig = cc
+		}
+
 		return uki.Build(uki.Options{
 			Source:                  args.Get(0),
 			OutputDir:               ctx.String("output-dir"),
@@ -200,6 +220,7 @@ var BuildUKICmd = cli.Command{
 			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
 			Extensions:              extensionRequests,
 			ExtensionsCatalogs:      ctx.StringSlice("extensions-catalog"),
+			CloudConfig:             cloudConfig,
 			Logger:                  &log,
 		})
 	},

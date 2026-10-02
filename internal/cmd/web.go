@@ -102,6 +102,7 @@ var WebCMD = cli.Command{
 		&cli.StringFlag{Name: "redfish-serve-tls-cert", Usage: "TLS certificate for the Redfish ISO-serve (opt-in HTTPS; requires a BMC-trusted cert)"},
 		&cli.StringFlag{Name: "redfish-serve-tls-key", Usage: "TLS key for the Redfish ISO-serve"},
 		&cli.StringFlag{Name: "redfish-quirks-dir", Usage: "Directory of operator-supplied *.yaml/*.yml Redfish quirk profiles, loaded once at server start (not hot-reloaded). A BMCTarget's vendor resolves to a profile by name; an operator profile named the same as a built-in overrides it (logged). A malformed profile is skipped, not fatal", EnvVars: []string{redfishQuirksDirEnv}},
+		&cli.StringSliceFlag{Name: "extensions-catalog", Usage: "System extension catalog URL the UI offers when building an artifact, repeatable. The Hadron flavor always has the hadron-layers catalog; other flavors only get the catalogs given here or saved in Settings", EnvVars: []string{"AURORABOOT_EXTENSIONS_CATALOG"}},
 		&cli.StringFlag{Name: "builder", Value: "local", Usage: "Which builder backend to use: 'local' or 'operator'"},
 		&cli.StringFlag{Name: "kubeconfig", Usage: "Path to a kubeconfig file for the operator builder (single file). Empty means try in-cluster config first, then the default client-go loading rules (which honour a multi-file KUBECONFIG env)"},
 		&cli.StringFlag{Name: "builder-namespace", Value: "default", Usage: "Namespace in which OSArtifact CRs are created. Used only when --builder=operator"},
@@ -109,6 +110,8 @@ var WebCMD = cli.Command{
 		&cli.BoolFlag{Name: "disable-rate-limit", Usage: "Disable per-identity rate limiting of the node-driven endpoints (registration, heartbeat, command polling). Admin/UI/API traffic is never rate-limited regardless. Consider this for a large fleet behind a shared NAT egress IP", EnvVars: []string{"AURORABOOT_DISABLE_RATE_LIMIT"}},
 		&cli.Float64Flag{Name: "node-rate-limit", Usage: "Per-node requests/sec for heartbeat and command polling (0 = generous default). Admin traffic is exempt", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT"}},
 		&cli.Float64Flag{Name: "register-rate-limit", Usage: "Per-client-IP registration requests/sec (0 = generous default)", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT"}},
+		&cli.IntFlag{Name: "node-rate-limit-burst", Usage: "Per-node instantaneous allowance for heartbeat and command polling (0 = the larger of 20 and one second of --node-rate-limit)", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT_BURST"}},
+		&cli.IntFlag{Name: "register-rate-limit-burst", Usage: "Per-client-IP instantaneous registration allowance (0 = the larger of 20 and one second of --register-rate-limit). Lower it to tighten a token brute-force at a low sustained rate", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT_BURST"}},
 		&cli.DurationFlag{Name: "reset-timeout", Value: handlers.DefaultResetTimeout, Usage: "Fail pending or in-progress resets that have not returned within this duration. The clock restarts when a node re-registers mid-reset, so a long wipe is not reported failed; set a negative duration to disable", EnvVars: []string{"AURORABOOT_RESET_TIMEOUT"}},
 	},
 	Action: runWeb,
@@ -381,10 +384,14 @@ func runWeb(c *cli.Context) error {
 		ISOServe:        isoServe,
 		RedfishServeURL: redfishServeURLSeed(isoServe, serveURL),
 
-		DisableRateLimit:     c.Bool("disable-rate-limit"),
-		NodeRateLimitRPS:     c.Float64("node-rate-limit"),
-		RegisterRateLimitRPS: c.Float64("register-rate-limit"),
-		ResetTimeout:         resetTimeout,
+		ExtensionCatalogs: c.StringSlice("extensions-catalog"),
+
+		DisableRateLimit:       c.Bool("disable-rate-limit"),
+		NodeRateLimitRPS:       c.Float64("node-rate-limit"),
+		NodeRateLimitBurst:     c.Int("node-rate-limit-burst"),
+		RegisterRateLimitRPS:   c.Float64("register-rate-limit"),
+		RegisterRateLimitBurst: c.Int("register-rate-limit-burst"),
+		ResetTimeout:           resetTimeout,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
