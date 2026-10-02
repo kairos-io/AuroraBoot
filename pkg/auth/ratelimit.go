@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"math"
 	"net/http"
 	"time"
 
@@ -17,7 +18,7 @@ import (
 // NodeRateLimiter.
 const (
 	// DefaultNodeRateLimitRPS / DefaultNodeRateLimitBurst cap per-node heartbeat
-	// and command polling.
+	// and command polling. The burst is a floor, not a cap — see defaultBurst.
 	DefaultNodeRateLimitRPS   = 5.0
 	DefaultNodeRateLimitBurst = 20
 
@@ -51,7 +52,7 @@ func NodeRateLimiter(rps float64, burst int) echo.MiddlewareFunc {
 		return passthrough
 	}
 	if burst <= 0 {
-		burst = DefaultNodeRateLimitBurst
+		burst = defaultBurst(rps, DefaultNodeRateLimitBurst)
 	}
 	return middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Store: newRateLimiterStore(rps, burst),
@@ -86,7 +87,7 @@ func RegistrationRateLimiter(rps float64, burst int) echo.MiddlewareFunc {
 		return passthrough
 	}
 	if burst <= 0 {
-		burst = DefaultRegisterRateLimitBurst
+		burst = defaultBurst(rps, DefaultRegisterRateLimitBurst)
 	}
 	return middleware.RateLimiterWithConfig(middleware.RateLimiterConfig{
 		Store: newRateLimiterStore(rps, burst),
@@ -95,6 +96,24 @@ func RegistrationRateLimiter(rps float64, burst int) echo.MiddlewareFunc {
 		},
 		DenyHandler: rateLimitDenyHandler,
 	})
+}
+
+// defaultBurst picks the burst for a limiter whose caller did not set one: the
+// larger of floor and one second of the configured rate.
+//
+// Burst is a hard instantaneous ceiling (the store builds rate.NewLimiter(rate,
+// burst)), so a flat floor silently contradicts a rate raised above it: with
+// --node-rate-limit 50 and a burst pinned to 20, the 21st request in the same
+// instant was refused even though the node's sustained budget was 50/s, and
+// raising the flag no longer raised the peak. Echo applies the same
+// one-second coupling when Burst is left at zero; keeping the floor is what
+// preserves the generous allowance the low shipped defaults rely on, where
+// ceil(rate) alone would cut the node burst to 5 and registration's to 1.
+func defaultBurst(rps float64, floor int) int {
+	if perSecond := int(math.Ceil(rps)); perSecond > floor {
+		return perSecond
+	}
+	return floor
 }
 
 // newRateLimiterStore builds an in-memory token-bucket store with the given

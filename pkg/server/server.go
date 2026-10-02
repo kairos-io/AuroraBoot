@@ -74,14 +74,15 @@ type Config struct {
 
 	// Rate limiting of the node-driven endpoints (registration, heartbeat, command
 	// polling) — fleet-server hardening, kairos-io/kairos#4117. It is on by
-	// default: zero RPS/Burst values fall back to the auth package defaults.
-	// Admin-authenticated requests (the UI and the CAPI infra provider) are never
-	// limited. DisableRateLimit turns the limiters off entirely.
+	// default: a zero RPS falls back to the auth package default, and a zero Burst
+	// to the larger of that package's burst floor and one second of the RPS in
+	// effect. Admin-authenticated requests (the UI and the CAPI infra provider)
+	// are never limited. DisableRateLimit turns the limiters off entirely.
 	DisableRateLimit       bool
 	NodeRateLimitRPS       float64 // per-node requests/sec for heartbeat + command polling
-	NodeRateLimitBurst     int     // per-node burst
+	NodeRateLimitBurst     int     // per-node instantaneous allowance
 	RegisterRateLimitRPS   float64 // per-IP requests/sec for registration
-	RegisterRateLimitBurst int     // per-IP burst
+	RegisterRateLimitBurst int     // per-IP instantaneous allowance
 }
 
 // firstPositive returns v if it is positive, otherwise fallback. It lets a zero

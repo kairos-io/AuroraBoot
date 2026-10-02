@@ -110,6 +110,8 @@ var WebCMD = cli.Command{
 		&cli.BoolFlag{Name: "disable-rate-limit", Usage: "Disable per-identity rate limiting of the node-driven endpoints (registration, heartbeat, command polling). Admin/UI/API traffic is never rate-limited regardless. Consider this for a large fleet behind a shared NAT egress IP", EnvVars: []string{"AURORABOOT_DISABLE_RATE_LIMIT"}},
 		&cli.Float64Flag{Name: "node-rate-limit", Usage: "Per-node requests/sec for heartbeat and command polling (0 = generous default). Admin traffic is exempt", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT"}},
 		&cli.Float64Flag{Name: "register-rate-limit", Usage: "Per-client-IP registration requests/sec (0 = generous default)", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT"}},
+		&cli.IntFlag{Name: "node-rate-limit-burst", Usage: "Per-node instantaneous allowance for heartbeat and command polling (0 = the larger of 20 and one second of --node-rate-limit)", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT_BURST"}},
+		&cli.IntFlag{Name: "register-rate-limit-burst", Usage: "Per-client-IP instantaneous registration allowance (0 = the larger of 20 and one second of --register-rate-limit). Lower it to tighten a token brute-force at a low sustained rate", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT_BURST"}},
 	},
 	Action: runWeb,
 }
@@ -382,9 +384,11 @@ func runWeb(c *cli.Context) error {
 
 		ExtensionCatalogs: c.StringSlice("extensions-catalog"),
 
-		DisableRateLimit:     c.Bool("disable-rate-limit"),
-		NodeRateLimitRPS:     c.Float64("node-rate-limit"),
-		RegisterRateLimitRPS: c.Float64("register-rate-limit"),
+		DisableRateLimit:       c.Bool("disable-rate-limit"),
+		NodeRateLimitRPS:       c.Float64("node-rate-limit"),
+		NodeRateLimitBurst:     c.Int("node-rate-limit-burst"),
+		RegisterRateLimitRPS:   c.Float64("register-rate-limit"),
+		RegisterRateLimitBurst: c.Int("register-rate-limit-burst"),
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
