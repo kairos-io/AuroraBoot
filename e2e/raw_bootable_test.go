@@ -1,12 +1,9 @@
 package e2e_test
 
 import (
-	"fmt"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/spectrocloud/peg/matcher"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -16,7 +13,7 @@ import (
 // the system with partitions, so that raw image now has changed.
 // All tests in here should be sequential taking into account that the auto-reset is run on teh single raw image
 var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
-	var vm VM
+	var vm testVM
 	var err error
 
 	BeforeEach(func() {
@@ -29,11 +26,8 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 
 	AfterEach(func() {
 		if CurrentSpecReport().Failed() {
+			saveSerialLog(vm)
 			gatherLogs(vm)
-			serial, _ := os.ReadFile(filepath.Join(vm.StateDir, "serial.log"))
-			_ = os.MkdirAll("logs", os.ModePerm|os.ModeDir)
-			_ = os.WriteFile(filepath.Join("logs", "serial.log"), serial, os.ModePerm)
-			fmt.Println(string(serial))
 		}
 
 		err := vm.Destroy(nil)
@@ -43,9 +37,14 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		// At first raw images boot on recovery and they reset the system and creates the partitions
 		// so it can take a while to boot in the active partition
 		// lets wait a bit checking
+		//
+		// The reset ends in a reboot, so this poll spans the moment the SSH
+		// connection goes away. RootCommand reports that as an error and the
+		// poll carries on; vm.Sudo would panic from a peg goroutine and end
+		// the run with no spec failure and no logs.
 		By("Waiting for recovery reset to finish", func() {
 			Eventually(func() string {
-				output, _ := vm.Sudo("kairos-agent state")
+				output, _ := vm.RootCommand("kairos-agent state")
 				return output
 			}, 5*time.Minute, 1*time.Second).Should(
 				Or(

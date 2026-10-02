@@ -15,19 +15,18 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/spectrocloud/peg/matcher"
 )
 
 var getVersionCmd = ". /etc/kairos-release; [ ! -z \"$KAIROS_VERSION\" ] && echo $KAIROS_VERSION"
 
-var stateAssertVM = func(vm VM, query, expected string) {
+var stateAssertVM = func(vm testVM, query, expected string) {
 	By(fmt.Sprintf("Expecting state %s to be %s", query, expected))
 	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
 	ExpectWithOffset(1, out).To(ContainSubstring(expected))
 }
 
-var stateContains = func(vm VM, query string, expected ...string) {
+var stateContains = func(vm testVM, query string, expected ...string) {
 	var or []types.GomegaMatcher
 	for _, e := range expected {
 		or = append(or, ContainSubstring(e))

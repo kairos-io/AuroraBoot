@@ -9,6 +9,9 @@ import { NodeDetail } from "./pages/NodeDetail";
 import { Artifacts } from "./pages/Artifacts";
 import { ArtifactBuilder } from "./pages/ArtifactBuilder";
 import { ArtifactDetail } from "./pages/ArtifactDetail";
+import { Extensions } from "./pages/Extensions";
+import { ExtensionBuilder } from "./pages/ExtensionBuilder";
+import { ExtensionDetail } from "./pages/ExtensionDetail";
 import { Deployments } from "./pages/Deployments";
 import { BMCRegistration } from "./pages/BMCRegistration";
 import { Certificates } from "./pages/Certificates";
@@ -44,6 +47,9 @@ export default function App() {
         <Route path="artifacts/new" element={<ArtifactBuilder />} />
         <Route path="artifacts/:id" element={<ArtifactDetail />} />
         <Route path="bmc" element={<BMCRegistration />} />
+        <Route path="extensions" element={<Extensions />} />
+        <Route path="extensions/new" element={<ExtensionBuilder />} />
+        <Route path="extensions/:id" element={<ExtensionDetail />} />
         <Route path="deployments" element={<Deployments />} />
         <Route path="certificates" element={<Certificates />} />
         <Route path="import" element={<Import />} />

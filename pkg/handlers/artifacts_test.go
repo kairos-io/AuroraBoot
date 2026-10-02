@@ -26,7 +26,7 @@ var _ = Describe("ArtifactHandler", func() {
 	BeforeEach(func() {
 		e = echo.New()
 		fb = &fakeBuilder{}
-		handler = handlers.NewArtifactHandler(fb, nil, nil, nil, "", "reg-token", "http://localhost:8080")
+		handler = handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 	})
 
 	Describe("Create", func() {
@@ -71,6 +71,72 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.builds).To(BeEmpty())
 		})
 
+		It("forwards the selected catalog extensions and the catalog override to the builder", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},` +
+				`"extensions":["nvidia","tailscale@v1.2.3"],` +
+				`"extensionsCatalogs":["https://example.test/releases.json"]}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.builds).To(HaveLen(1))
+			Expect(fb.lastOpts.Extensions).To(Equal([]string{"nvidia", "tailscale@v1.2.3"}))
+			Expect(fb.lastOpts.ExtensionsCatalogs).To(Equal([]string{"https://example.test/releases.json"}))
+		})
+
+		It("leaves the catalog list empty when the client sends none, so the default one is read", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["nvidia"]}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.builds).To(HaveLen(1))
+			Expect(fb.lastOpts.ExtensionsCatalogs).To(BeEmpty())
+		})
+
+		It("returns 400 for an extension name the catalog cannot be asked for", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["nvidia@"]}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("invalid extension request"))
+			// Nothing must be queued: the operator gets the mistake back
+			// instead of a build that dies after pulling the source image.
+			Expect(fb.builds).To(BeEmpty())
+		})
+
+		It("returns 400 for an extension that names a file on this server", func() {
+			// file:// is the CLI's way of baking an image the operator already
+			// has. Accepting it here would read any file this process can
+			// reach and hand it back inside the artifact.
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["file:///etc/shadow.raw"]}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("not allowed over the API"))
+			Expect(fb.builds).To(BeEmpty())
+		})
+
 		It("returns 500 for a genuine server failure", func() {
 			fb.buildErr = fmt.Errorf("disk full")
 
@@ -92,7 +158,7 @@ var _ = Describe("ArtifactHandler", func() {
 		// invisible to List/Get/Cancel/Delete.
 		It("reaps the builder resource and returns 500 when store.Create fails", func() {
 			as := &fakeArtifactStore{createErr: fmt.Errorf("db write refused")}
-			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 
 			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
@@ -199,7 +265,7 @@ var _ = Describe("ArtifactHandler", func() {
 			// variant, so the record must not fall back to the enabled
 			// default and contradict variant=core (kairos-io/kairos#4354).
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"core","outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
@@ -210,7 +276,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("stores kubernetes as disabled for the core variant even when the client asks for it", func() {
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"core","kubernetesEnabled":true,"outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
@@ -221,7 +287,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("stores kubernetes as enabled for the standard variant when omitted", func() {
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeTrue())
@@ -232,7 +298,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 		It("honours an explicit opt-out on the standard variant", func() {
 			as := &fakeArtifactStore{}
-			h := handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			h := handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 			createWith(h, `{"baseImage":"ubuntu:24.04","variant":"standard","kubernetesDistro":"k3s","kubernetesEnabled":false,"outputs":{"iso":true}}`)
 
 			Expect(fb.lastOpts.Provisioning.KubernetesEnabled).To(BeFalse())
@@ -293,7 +359,7 @@ var _ = Describe("ArtifactHandler", func() {
 					{ID: "art-1", Phase: store.ArtifactReady, BaseImage: "img1"},
 				},
 			}
-			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
 		It("should delete the artifact and return 204", func() {
@@ -356,7 +422,7 @@ var _ = Describe("ArtifactHandler", func() {
 					{ID: "art-err2", Phase: store.ArtifactError, BaseImage: "img3"},
 				},
 			}
-			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, "", "reg-token", "http://localhost:8080")
+			handlerWithStore = handlers.NewArtifactHandler(fb, as, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
 		})
 
 		It("should delete all Error-phase artifacts and return 204", func() {

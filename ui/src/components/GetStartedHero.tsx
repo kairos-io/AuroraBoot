@@ -70,7 +70,7 @@ export function GetStartedHero() {
     <div className="mx-auto max-w-3xl py-8">
       {/* Brand mark + welcome */}
       <div className="text-center mb-12 animate-fade-up">
-        <div className="inline-block rounded-2xl bg-[#03153A] p-6 mb-6">
+        <div className="inline-block rounded-2xl bg-navy p-6 mb-6">
           <img
             src="/kairos-wordmark.png"
             alt="Kairos by SpectroCloud"
@@ -100,7 +100,7 @@ export function GetStartedHero() {
                 delayClass +
                 " " +
                 (step.active
-                  ? "border-[#EE5007]/40 bg-[#EE5007]/5"
+                  ? "border-primary/40 bg-primary-soft"
                   : "border-border bg-card/60 opacity-75")
               }
             >
@@ -109,7 +109,7 @@ export function GetStartedHero() {
                 className={
                   "flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-semibold " +
                   (step.active
-                    ? "bg-[#EE5007] text-white"
+                    ? "bg-primary text-primary-foreground"
                     : "bg-muted text-muted-foreground")
                 }
               >
@@ -122,7 +122,7 @@ export function GetStartedHero() {
                   <Icon
                     className={
                       "h-4 w-4 " +
-                      (step.active ? "text-[#EE5007]" : "text-muted-foreground")
+                      (step.active ? "text-primary" : "text-muted-foreground")
                     }
                   />
                   <h3 className="font-semibold text-sm">{step.title}</h3>
@@ -139,7 +139,7 @@ export function GetStartedHero() {
                 {step.cta && (
                   <Button
                     size="sm"
-                    className="mt-4 bg-[#EE5007] hover:bg-[#FF7442] text-white focus-visible:ring-2 focus-visible:ring-[#EE5007]/40 focus-visible:ring-offset-2"
+                    className="mt-4 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2"
                     onClick={() => navigate(step.cta!.to)}
                   >
                     {step.cta.label}
