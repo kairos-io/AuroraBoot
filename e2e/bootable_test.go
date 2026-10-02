@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	"github.com/gofrs/uuid"
+	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	process "github.com/mudler/go-processmanager"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -19,8 +20,30 @@ import (
 	"github.com/spectrocloud/peg/pkg/machine/types"
 )
 
+// testVM is peg's VM plus the machine it was built from.
+//
+// peg keeps the machine unexported and reaches it through vm.Sudo, which runs
+// `sudo /bin/sh` and feeds the command into its stdin from a goroutine of its
+// own. When the SSH session dies while that write is in flight the goroutine
+// panics (peg matcher/helpers.go:239), and a panic Ginkgo does not own kills
+// the whole test binary: no spec failure, no AfterEach, so no logs and no
+// serial console either. Holding the machine lets the suite call Command
+// instead, which is session.CombinedOutput and returns the error.
+type testVM struct {
+	VM
+	machine types.Machine
+}
+
+// RootCommand runs cmd as root over a fresh SSH session and returns an error,
+// never a panic, when the VM is rebooting or already gone. cmd still runs
+// under /bin/sh as root, so redirections inside it are performed by the root
+// shell exactly as they are with vm.Sudo.
+func (v testVM) RootCommand(cmd string) (string, error) {
+	return v.machine.Command("sudo /bin/sh -c " + utils.ShellQuote(cmd))
+}
+
 var _ = Describe("bootable artifacts", Label("bootable"), func() {
-	var vm VM
+	var vm testVM
 	var err error
 
 	BeforeEach(func() {
@@ -33,11 +56,8 @@ var _ = Describe("bootable artifacts", Label("bootable"), func() {
 
 	AfterEach(func() {
 		if CurrentSpecReport().Failed() {
+			saveSerialLog(vm)
 			gatherLogs(vm)
-			serial, _ := os.ReadFile(filepath.Join(vm.StateDir, "serial.log"))
-			_ = os.MkdirAll("logs", os.ModePerm|os.ModeDir)
-			_ = os.WriteFile(filepath.Join("logs", "serial.log"), serial, os.ModePerm)
-			fmt.Println(string(serial))
 		}
 
 		err := vm.Destroy(nil)
@@ -78,7 +98,7 @@ func emulateTPM(stateDir string) {
 	Expect(err).ToNot(HaveOccurred())
 }
 
-func startVM() (VM, error) {
+func startVM() (testVM, error) {
 	stateDir, err := os.MkdirTemp("", "")
 	Expect(err).ToNot(HaveOccurred())
 	fmt.Printf("State dir: %s\n", stateDir)
@@ -90,7 +110,7 @@ func startVM() (VM, error) {
 
 	vm := NewVM(m, stateDir)
 	_, err = vm.Start(context.Background())
-	return vm, err
+	return testVM{VM: vm, machine: m}, err
 }
 
 func defaultVMOpts(stateDir string) []types.MachineOption {
@@ -134,6 +154,12 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 		types.WithSSHUser("kairos"),
 		types.WithSSHPass("kairos"),
 		types.OnFailure(func(p *process.Process) {
+			// peg calls this from the goroutine it starts in
+			// machine.monitor, not from a Ginkgo node, so the Fail below
+			// needs a GinkgoRecover to be turned into a spec failure
+			// instead of an unrecovered panic.
+			defer GinkgoRecover()
+
 			var serial string
 
 			out, _ := os.ReadFile(p.StdoutPath())
@@ -300,23 +326,44 @@ func getEfivarsFile(firmwarePath, assetsDir string, empty bool) (string, error) 
 	return varsFile, nil
 }
 
-func gatherLogs(vm VM) {
-	vm.Scp("assets/kubernetes_logs.sh", "/tmp/logs.sh", "0770")
-	vm.Sudo("sh /tmp/logs.sh > /run/kube_logs")
-	vm.Sudo("cat /oem/* > /run/oem.yaml")
-	vm.Sudo("cat /etc/resolv.conf > /run/resolv.conf")
-	vm.Sudo("k3s kubectl get pods -A -o json > /run/pods.json")
-	vm.Sudo("k3s kubectl get events -A -o json > /run/events.json")
-	vm.Sudo("cat /proc/cmdline > /run/cmdline")
-	vm.Sudo("chmod 777 /run/events.json")
+// saveSerialLog copies the qemu serial console into logs/ and prints it.
+//
+// qemu writes that file on the host, so it is readable even when the VM is
+// gone, and it is the only log that is. Collecting it before anything that
+// talks to the machine is what keeps it in the artifact: peg still reaches
+// the VM over SSH in GatherAllLogs and panics from a goroutine of its own
+// when the connection has died, and that ends the process on the spot.
+func saveSerialLog(vm testVM) {
+	serial, _ := os.ReadFile(filepath.Join(vm.StateDir, "serial.log"))
+	_ = os.MkdirAll("logs", os.ModePerm|os.ModeDir)
+	_ = os.WriteFile(filepath.Join("logs", "serial.log"), serial, os.ModePerm)
+	fmt.Println(string(serial))
+}
 
-	vm.Sudo("df -h > /run/disk")
-	vm.Sudo("mount > /run/mounts")
-	vm.Sudo("blkid > /run/blkid")
-	vm.Sudo("dmesg > /run/dmesg.log")
+// gatherLogs collects what a failed spec left on the VM.
+//
+// It runs on a machine that has just failed, so an unreachable or rebooting VM
+// is the normal case here and not an edge case. Every command goes through
+// RootCommand for that reason: vm.Sudo would take the whole suite down with a
+// panic before the caller gets to read serial.log, which is the one piece of
+// evidence that does not need the VM to be alive.
+func gatherLogs(vm testVM) {
+	vm.Scp("assets/kubernetes_logs.sh", "/tmp/logs.sh", "0770")
+	vm.RootCommand("sh /tmp/logs.sh > /run/kube_logs")
+	vm.RootCommand("cat /oem/* > /run/oem.yaml")
+	vm.RootCommand("cat /etc/resolv.conf > /run/resolv.conf")
+	vm.RootCommand("k3s kubectl get pods -A -o json > /run/pods.json")
+	vm.RootCommand("k3s kubectl get events -A -o json > /run/events.json")
+	vm.RootCommand("cat /proc/cmdline > /run/cmdline")
+	vm.RootCommand("chmod 777 /run/events.json")
+
+	vm.RootCommand("df -h > /run/disk")
+	vm.RootCommand("mount > /run/mounts")
+	vm.RootCommand("blkid > /run/blkid")
+	vm.RootCommand("dmesg > /run/dmesg.log")
 
 	// zip all files under /var/log/kairos
-	vm.Sudo("tar -czf /run/kairos-agent-logs.tar.gz /var/log/kairos")
+	vm.RootCommand("tar -czf /run/kairos-agent-logs.tar.gz /var/log/kairos")
 
 	vm.GatherAllLogs(
 		[]string{
