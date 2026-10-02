@@ -463,6 +463,8 @@ github.com/mudler/entities v0.8.3 h1:ByzKC/G2M9qdSpd0S8C6Q4kHcXhCX/9xWL6+vGpBVrs
 github.com/mudler/entities v0.8.3/go.mod h1:zlDInTAYHmJ7Py6GEVsPV0BsGcK9oa63KY4qrRzQCSY=
 github.com/mudler/go-processmanager v0.1.1 h1:c/1NRZOZpW8HuFv9RhBG57nQu1oDMRomEHedwBFMlrw=
 github.com/mudler/go-processmanager v0.1.1/go.mod h1:h6kmHUZeafr+k5hRYpGLMzJFH4hItHffgpRo2QIkP+o=
+github.com/mudler/go-processmanager v0.1.2 h1:ggPb/hOWZUxn/YrLCYfbzAscnMUZWtOnDwkfC7cJ7js=
+github.com/mudler/go-processmanager v0.1.2/go.mod h1:h6kmHUZeafr+k5hRYpGLMzJFH4hItHffgpRo2QIkP+o=
 github.com/mudler/yip v1.26.0 h1:3vhBC5On7kSlkb7jjLCeAEA+v3ChkzSCpAjAxqvqiDA=
 github.com/mudler/yip v1.26.0/go.mod h1:nwV/hboHZzzgCe1Qjy5hUujhAsBkYqTIe2xxmvi/J+g=
 github.com/mudler/yip v1.26.2 h1:ZB2SvF9UiI8/gOAGeLylsg/YscD+5rsQrtkykSlVi70=
