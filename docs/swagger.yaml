@@ -1,5 +1,18 @@
 basePath: /
 definitions:
+  builder.ExtensionBuildStatus:
+    properties:
+      containerImage:
+        type: string
+      id:
+        type: string
+      message:
+        type: string
+      phase:
+        type: string
+      rawFile:
+        type: string
+    type: object
   handlers.APIArtifactOutputs:
     properties:
       cloudImage:
@@ -97,6 +110,18 @@ definitions:
         type: string
       dockerfile:
         type: string
+      extensions:
+        description: |-
+          Extensions are catalog extension names (name or name@version) to place
+          in the built ISO. ExtensionsCatalogs replaces the default catalog they
+          resolve against.
+        items:
+          type: string
+        type: array
+      extensionsCatalogs:
+        items:
+          type: string
+        type: array
       hadronBase:
         type: string
       hadronExtra:
@@ -222,10 +247,26 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      metrics:
+        allOf:
+        - $ref: '#/definitions/store.NodeMetrics'
+        description: |-
+          Metrics is an optional resource sample. The server keeps recent samples in
+          memory. A sample that does not decode is ignored and does not fail the
+          heartbeat.
       osRelease:
         additionalProperties:
           type: string
         type: object
+    type: object
+  handlers.APINodeMetricsResponse:
+    properties:
+      latest:
+        $ref: '#/definitions/store.NodeMetrics'
+      samples:
+        items:
+          $ref: '#/definitions/store.NodeMetrics'
+        type: array
     type: object
   handlers.APIRegisterRequest:
     properties:
@@ -324,12 +365,72 @@ definitions:
       name:
         type: string
     type: object
+  handlers.ResolvedBundleEntry:
+    properties:
+      name:
+        type: string
+      source:
+        type: string
+      type:
+        type: string
+      version:
+        type: string
+    type: object
+  handlers.createExtensionRequest:
+    properties:
+      arch:
+        type: string
+      hierarchies:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      serviceReload:
+        type: boolean
+      signingKeySetId:
+        type: string
+      source:
+        $ref: '#/definitions/handlers.extensionSourceReq'
+      type:
+        type: string
+      version:
+        type: string
+    type: object
   handlers.decommissionResponse:
     properties:
       commandID:
         type: string
       nodeOnline:
         type: boolean
+    type: object
+  handlers.extensionCatalogsResponse:
+    properties:
+      launch:
+        description: Launch are the catalogs given with --extensions-catalog. Read-only.
+        items:
+          type: string
+        type: array
+      saved:
+        description: Saved are the catalogs an operator added at runtime.
+        items:
+          type: string
+        type: array
+    type: object
+  handlers.extensionSourceReq:
+    properties:
+      artifactId:
+        type: string
+      baseImage:
+        type: string
+      buildContextDir:
+        type: string
+      dockerfile:
+        type: string
+      extraSteps:
+        type: string
+      mode:
+        type: string
     type: object
   handlers.imageSourceLocalServe:
     properties:
@@ -356,6 +457,35 @@ definitions:
       localServe:
         $ref: '#/definitions/handlers.imageSourceLocalServe'
     type: object
+  handlers.setBundleEntry:
+    properties:
+      extensionName:
+        type: string
+      extensionType:
+        type: string
+      order:
+        type: integer
+      pinnedVersion:
+        type: string
+    type: object
+  store.ArtifactExtensionBundle:
+    properties:
+      artifactId:
+        type: string
+      createdAt:
+        type: string
+      extensionName:
+        type: string
+      extensionType:
+        description: sysext | confext
+        type: string
+      order:
+        type: integer
+      pinnedVersion:
+        type: string
+      updatedAt:
+        type: string
+    type: object
   store.ArtifactRecord:
     properties:
       allow-insecure-registries:
@@ -380,6 +510,21 @@ definitions:
         type: string
       dockerfile:
         type: string
+      extensionHierarchies:
+        $ref: '#/definitions/store.ExtensionHierarchies'
+      extensions:
+        description: |-
+          Extensions and ExtensionsCatalogs record the catalog extensions this
+          artifact was built with, so cloning it rebuilds with the same ones. An
+          empty catalog list means the build read extensions.DefaultCatalog,
+          which keeps a stored build following that default when it moves.
+        items:
+          type: string
+        type: array
+      extensionsCatalogs:
+        items:
+          type: string
+        type: array
       fips:
         type: boolean
       gce:
@@ -445,6 +590,33 @@ definitions:
       vhd:
         type: boolean
     type: object
+  store.CPUMetrics:
+    properties:
+      usedPercent:
+        type: number
+    type: object
+  store.DiskMetrics:
+    properties:
+      label:
+        type: string
+      mount:
+        type: string
+      totalBytes:
+        type: integer
+      usedBytes:
+        type: integer
+    type: object
+  store.ExtensionHierarchies:
+    properties:
+      confext:
+        items:
+          type: string
+        type: array
+      sysext:
+        items:
+          type: string
+        type: array
+    type: object
   store.ManagedNode:
     properties:
       addresses:
@@ -505,6 +677,14 @@ definitions:
         type: object
       phase:
         type: string
+      remoteIP:
+        description: |-
+          RemoteIP is the IP the server observed the node connect from at register or
+          heartbeat time (kairos-io/kairos#4590), independent of Addresses: the node
+          does not report it, and it survives even when an agent sends no addresses at
+          all (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP
+          changes because every heartbeat re-observes and overwrites it.
+        type: string
       resetRequestedAt:
         description: |-
           ResetRequestedAt is when the reset command was issued (ResetState set to
@@ -521,6 +701,13 @@ definitions:
         type: string
       updatedAt:
         type: string
+    type: object
+  store.MemoryMetrics:
+    properties:
+      availableBytes:
+        type: integer
+      totalBytes:
+        type: integer
     type: object
   store.NodeAddress:
     properties:
@@ -554,6 +741,27 @@ definitions:
       result:
         type: string
     type: object
+  store.NodeExtensionRow:
+    properties:
+      bootState:
+        description: active | passive | recovery | common
+        type: string
+      extensionId:
+        type: string
+      installedAt:
+        type: string
+      name:
+        type: string
+      nodeId:
+        type: string
+      type:
+        description: sysext | confext
+        type: string
+      updatedAt:
+        type: string
+      version:
+        type: string
+    type: object
   store.NodeGroup:
     properties:
       createdAt:
@@ -564,8 +772,35 @@ definitions:
         type: string
       name:
         type: string
+      node_count:
+        description: |-
+          NodeCount is the number of nodes in the group. It is not stored. List and
+          Get always set it (0 included); a group embedded in a node payload leaves
+          it nil, so it is omitted there.
+        type: integer
       updatedAt:
         type: string
+    type: object
+  store.NodeMetrics:
+    properties:
+      cpu:
+        $ref: '#/definitions/store.CPUMetrics'
+      disks:
+        items:
+          $ref: '#/definitions/store.DiskMetrics'
+        type: array
+      load:
+        items:
+          type: number
+        type: array
+      memory:
+        $ref: '#/definitions/store.MemoryMetrics'
+      sampledAt:
+        type: string
+      temperatureC:
+        type: number
+      uptimeSeconds:
+        type: integer
     type: object
   store.SecureBootKeySet:
     properties:
@@ -716,6 +951,100 @@ paths:
       summary: Update artifact metadata (name / saved flag)
       tags:
       - Artifacts
+  /api/v1/artifacts/{id}/bundle-extensions:
+    get:
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactExtensionBundle'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List bundled extensions for an artifact
+      tags:
+      - Artifacts
+    put:
+      consumes:
+      - application/json
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Replacement set
+        in: body
+        name: body
+        required: true
+        schema:
+          items:
+            $ref: '#/definitions/handlers.setBundleEntry'
+          type: array
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.ArtifactExtensionBundle'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Replace bundled extensions for an artifact
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/bundle-resolve:
+    post:
+      description: Returns the bundle entries with concrete download URLs and resolved
+        versions, ready to be passed as the `extensions` arg of an `upgrade` phonehome
+        command.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/handlers.ResolvedBundleEntry'
+            type: array
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Resolve bundled extensions for upgrade dispatch
+      tags:
+      - Artifacts
   /api/v1/artifacts/{id}/cancel:
     post:
       parameters:
@@ -794,6 +1123,57 @@ paths:
       summary: Upload a single artifact file for a build
       tags:
       - Artifacts
+  /api/v1/extensions:
+    post:
+      consumes:
+      - application/json
+      description: Kicks off an async sysext/confext build. Subscribe to /api/v1/ws/ui
+        or poll GET /api/v1/extensions/{id}.
+      parameters:
+      - description: Build specification
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.createExtensionRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/builder.ExtensionBuildStatus'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Start an extension build
+      tags:
+      - Extensions
+  /api/v1/extensions/{id}/nodes:
+    get:
+      parameters:
+      - description: Extension ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.NodeExtensionRow'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List nodes that have a given extension installed
+      tags:
+      - Extensions
   /api/v1/groups:
     get:
       produces:
@@ -948,6 +1328,28 @@ paths:
       summary: Claim a node from a group
       tags:
       - Groups
+  /api/v1/metrics/latest:
+    get:
+      description: Returns the latest resource sample of every node that has one,
+        keyed by node ID. Samples are kept in memory only.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              $ref: '#/definitions/store.NodeMetrics'
+            type: object
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get the latest metrics of every node
+      tags:
+      - Nodes
   /api/v1/netboot/logs:
     get:
       description: Returns the current (or most recent) PXE/netboot session's captured
@@ -1094,6 +1496,28 @@ paths:
       summary: Dispatch remote teardown before deleting a node
       tags:
       - Nodes
+  /api/v1/nodes/{nodeID}/extensions:
+    get:
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/store.NodeExtensionRow'
+            type: array
+      security:
+      - AdminBearer: []
+      summary: List extensions installed on a node
+      tags:
+      - Extensions
   /api/v1/nodes/{nodeID}/group:
     put:
       consumes:
@@ -1168,6 +1592,33 @@ paths:
       security:
       - AdminBearer: []
       summary: Replace a node's labels
+      tags:
+      - Nodes
+  /api/v1/nodes/{nodeID}/metrics:
+    get:
+      description: Returns the latest resource sample of a node and its recent samples,
+        oldest first. Samples are kept in memory only. A node without samples returns
+        a null latest and an empty samples list.
+      parameters:
+      - description: Node ID
+        in: path
+        name: nodeID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.APINodeMetricsResponse'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Get node metrics
       tags:
       - Nodes
   /api/v1/nodes/{nodeID}/release:
@@ -1354,6 +1805,37 @@ paths:
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/settings/extension-catalogs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.extensionCatalogsResponse'
+      security:
+      - AdminBearer: []
+      summary: Read the configured extension catalogs
+      tags:
+      - Settings
+    put:
+      consumes:
+      - application/json
+      description: Replaces the catalogs saved from the UI. The catalogs given at
+        launch with --extensions-catalog are not affected.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.extensionCatalogsResponse'
+      security:
+      - AdminBearer: []
+      summary: Replace the saved extension catalogs
+      tags:
+      - Settings
   /api/v1/settings/image-source:
     get:
       produces:

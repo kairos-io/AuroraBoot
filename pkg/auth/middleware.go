@@ -175,6 +175,90 @@ func ArtifactImageMiddleware(password string, nodeStore store.NodeStore, command
 	}
 }
 
+// ExtensionDownloadMiddleware authorizes GET
+// /api/v1/extensions/:id/download/:filename for an admin, for a caller holding
+// that extension's own download token, or for any authenticated node.
+//
+// Three credentials, deliberately unequal in scope:
+//
+//   - The admin password, over the Authorization header or ?token=. The UI
+//     offers the .raw as a plain <a href download> anchor, which cannot set
+//     headers, so without the query branch that button always returned
+//     {"error":"unauthorized"}.
+//   - The extension's own DownloadToken, over ?token= only. This is what the
+//     install command's "source" URL carries. That URL is pushed to every node
+//     in the selector, kept in the commands table and shown in the UI's command
+//     preview, so it must not be the admin password: this token reads one
+//     extension's .raw and nothing else. An empty DownloadToken never
+//     authorizes, so a record written before the column existed fails closed
+//     rather than opening the route to an empty ?token=.
+//   - A node API key, from the Authorization header ONLY, for the reason spelled
+//     out on ArtifactImageMiddleware — a node credential in a URL leaks through
+//     access logs, proxies, browser history and Referer headers.
+//
+// Per-command scoping analogous to nodeAssignedArtifact (a node may pull only
+// an extension some assigned command names) is a follow-up; today any
+// registered node may fetch any extension.
+//
+// extensionStore may be nil, which simply disables the per-extension branch.
+func ExtensionDownloadMiddleware(password string, nodeStore store.NodeStore, extensionStore store.ExtensionStore) echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			headerToken := extractBearer(c.Request().Header.Get("Authorization"))
+			queryToken := c.QueryParam("token")
+			if headerToken == "" && queryToken == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			// Admin: full access, from either the header or ?token=.
+			if secureCompare(headerToken, password) || secureCompare(queryToken, password) {
+				return next(c)
+			}
+			// This extension's own download token, from ?token=. Scoped to the
+			// :id in the path, so presenting one extension's token for another
+			// is rejected.
+			if extensionDownloadTokenMatches(c, extensionStore, queryToken) {
+				return next(c)
+			}
+			// Otherwise the caller must be a node, authenticated over the
+			// header only.
+			if headerToken == "" {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			node, err := nodeStore.GetByAPIKey(c.Request().Context(), headerToken)
+			if err != nil || node == nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+			}
+			c.Set(ContextKeyNodeID, node.ID)
+			return next(c)
+		}
+	}
+}
+
+// extensionDownloadTokenMatches reports whether token is the DownloadToken of
+// the extension named by the request's :id. A missing store, a missing record,
+// a store error, an empty presented token or an empty stored token all fail
+// closed.
+//
+// Both emptiness checks matter because secureCompare is a constant-time byte
+// compare: "" equals "", so a record written before the column existed would
+// otherwise be downloadable by anyone appending a bare "?token=". Either check
+// alone closes that, and they are kept as a pair on purpose — the early return
+// also spares every header-authenticated node a pointless store lookup.
+func extensionDownloadTokenMatches(c echo.Context, extensionStore store.ExtensionStore, token string) bool {
+	if extensionStore == nil || token == "" {
+		return false
+	}
+	id := c.Param("id")
+	if id == "" {
+		return false
+	}
+	rec, err := extensionStore.GetByID(c.Request().Context(), id)
+	if err != nil || rec == nil || rec.DownloadToken == "" {
+		return false
+	}
+	return secureCompare(token, rec.DownloadToken)
+}
+
 // nodeAssignedArtifact reports whether some upgrade / upgrade-recovery command
 // queued for nodeID names this artifact as its source ("artifact:<id>"). It does
 // not filter on command phase: once an operator has told a node to install an

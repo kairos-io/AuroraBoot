@@ -2,6 +2,7 @@ package handlers_test
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -75,6 +76,57 @@ var _ = Describe("GroupHandler", func() {
 			var groups []*store.NodeGroup
 			Expect(json.Unmarshal(rec.Body.Bytes(), &groups)).To(Succeed())
 			Expect(groups).To(HaveLen(2))
+		})
+	})
+
+	Describe("node counts", func() {
+		BeforeEach(func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod"},
+				{ID: "grp-2", Name: "staging"},
+			}
+			gs.counts = map[string]int{"grp-1": 2}
+		})
+
+		It("List returns node_count for every group, 0 included", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/groups", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.List(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var groups []map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &groups)).To(Succeed())
+			Expect(groups).To(HaveLen(2))
+			Expect(groups[0]).To(HaveKeyWithValue("node_count", BeNumerically("==", 2)))
+			Expect(groups[1]).To(HaveKeyWithValue("node_count", BeNumerically("==", 0)))
+		})
+
+		It("List returns 500 when counting fails", func() {
+			gs.countErr = errors.New("boom")
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/groups", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.List(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+			Expect(rec.Body.String()).To(ContainSubstring("failed to count group nodes"))
+		})
+
+		It("Get returns node_count for the group", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/groups/grp-1", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("grp-1")
+
+			Expect(handler.Get(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var group map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &group)).To(Succeed())
+			Expect(group).To(HaveKeyWithValue("node_count", BeNumerically("==", 2)))
 		})
 	})
 

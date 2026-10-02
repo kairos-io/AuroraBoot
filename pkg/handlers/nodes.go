@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -44,6 +46,10 @@ type NodeHandler struct {
 	// the server lifecycle so a shutdown cancels an in-flight eject. Defaults to
 	// context.Background().
 	baseCtx context.Context
+
+	// metrics, when non-nil, receives the resource sample a heartbeat carries
+	// and drops a node's samples when the node is deleted. nil ignores metrics.
+	metrics *metrics.Buffer
 }
 
 // NewNodeHandler creates a new NodeHandler.
@@ -57,6 +63,12 @@ func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups s
 		aurorabootURL: aurorabootURL,
 		baseCtx:       context.Background(),
 	}
+}
+
+// SetMetrics wires the in-memory metrics buffer. A nil buffer disables metrics
+// recording: heartbeats that carry metrics are accepted and the metrics ignored.
+func (h *NodeHandler) SetMetrics(b *metrics.Buffer) {
+	h.metrics = b
 }
 
 // WithFinalizer wires the auto eject-on-phone-home hook and the server base context
@@ -175,6 +187,9 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// as received — interface filtering is the agent's responsibility.
 		Addresses: req.Addresses,
 		BootState: req.BootState,
+		// RemoteIP is server-observed, not agent-reported: the request the agent
+		// just made to register is itself the observation.
+		RemoteIP: c.RealIP(),
 	}
 
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
@@ -269,6 +284,9 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 	nodeID := c.Param("nodeID")
 	if err := h.nodes.Delete(c.Request().Context(), nodeID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete node"})
+	}
+	if h.metrics != nil {
+		h.metrics.Forget(nodeID)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -532,6 +550,9 @@ type heartbeatRequest struct {
 	// renamed later in its life (kairos-io/kairos#4196). Omitted by older agents,
 	// in which case the stored value is preserved.
 	Hostname string `json:"hostname,omitempty"`
+	// Metrics is an optional resource sample (store.NodeMetrics). It is kept raw
+	// and decoded separately so a malformed sample never fails the heartbeat.
+	Metrics json.RawMessage `json:"metrics,omitempty"`
 }
 
 // Heartbeat handles POST /api/v1/nodes/:nodeID/heartbeat.
@@ -551,17 +572,33 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState, req.Hostname); err != nil {
+	if err := h.nodes.UpdateHeartbeat(c.Request().Context(), nodeID, req.AgentVersion, req.OSRelease, req.Addresses, req.BootState, req.Hostname, c.RealIP()); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update heartbeat"})
 	}
 	if err := h.nodes.UpdatePhase(c.Request().Context(), nodeID, store.PhaseOnline); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update phase"})
 	}
+	h.recordMetrics(c, nodeID, req.Metrics)
 	// Heartbeat is the universal "OS is up" signal (and the fallback when a node
 	// never re-registers): attempt the auto eject-on-phone-home off-request. The
 	// per-deployment CAS makes a repeated heartbeat a harmless no-op once ejected.
 	h.triggerFinalize(nodeID)
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// recordMetrics stores the heartbeat's metrics sample, if any. The route is
+// bound to the authenticated node (RequireNodeMatch), so nodeID is the node's
+// own identity. A sample that does not decode is logged and dropped.
+func (h *NodeHandler) recordMetrics(c echo.Context, nodeID string, raw json.RawMessage) {
+	if h.metrics == nil || len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var m store.NodeMetrics
+	if err := json.Unmarshal(raw, &m); err != nil {
+		c.Logger().Warnf("ignoring invalid heartbeat metrics from node %s: %v", nodeID, err)
+		return
+	}
+	h.metrics.Record(nodeID, m)
 }
 
 // GetCommands handles GET /api/v1/nodes/:nodeID/commands.
@@ -578,6 +615,17 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 	// Check if this is an agent request (node API key auth sets nodeID in context)
 	ctxNodeID := auth.AuthNodeID(c)
 	isAgent := ctxNodeID != ""
+
+	// Settle overdue commands before anyone reads the queue. This is the same
+	// lazy-expiry-on-read shape the reset lifecycle uses instead of a
+	// process-wide sweeper: every consumer of the Expired phase (the dashboard,
+	// and a CAPI provider polling a command it queued) goes through this
+	// endpoint, so the terminal state lands before it is observed. A failure
+	// here is not fatal to the read: the caller still gets the queue, just with
+	// the stale phases it would have seen before.
+	if err := h.commands.ExpireBefore(c.Request().Context(), nodeID, time.Now()); err != nil {
+		c.Logger().Warnf("expiring overdue commands for node %s: %v", nodeID, err)
+	}
 
 	if isAgent {
 		// Bind the agent to its own identity: the path :nodeID must be the

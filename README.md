@@ -89,7 +89,16 @@ disable them if needed:
 
 - `--node-rate-limit <rps>` / `AURORABOOT_NODE_RATE_LIMIT` — per-node requests/sec
 - `--register-rate-limit <rps>` / `AURORABOOT_REGISTER_RATE_LIMIT` — per-IP requests/sec
+- `--node-rate-limit-burst <n>` / `AURORABOOT_NODE_RATE_LIMIT_BURST` — per-node burst
+- `--register-rate-limit-burst <n>` / `AURORABOOT_REGISTER_RATE_LIMIT_BURST` — per-IP burst
 - `--disable-rate-limit` / `AURORABOOT_DISABLE_RATE_LIMIT` — turn it off entirely
+
+Rate is the sustained refill; burst is how many requests one identity may make in
+the same instant. Left unset, burst is the larger of 20 and one second of the
+configured rate, so raising a rate raises the peak with it and the generous
+defaults keep their 20. Set a burst explicitly to go either way — for example a
+low `--register-rate-limit` paired with a low `--register-rate-limit-burst` to
+leave a token brute-force no free instant allowance.
 
 If a whole rack of nodes registers at once from behind a single NAT egress IP,
 they share one per-IP registration bucket; raise `--register-rate-limit` or
@@ -124,6 +133,29 @@ the normal Kairos wizard:
 
 A live Dockerfile preview is always visible in the panel so you can verify the
 rendered output before committing to a build.
+
+### System extensions at build time
+
+The Output step of the Artifact Builder lists the extensions a catalog
+publishes and writes the ones you select into the built ISO, so the installed
+system carries them without pulling anything on first boot. The catalog field
+is pre-filled with the
+[hadron-layers](https://kairos-io.github.io/hadron-layers/releases.json)
+catalog, the same index a node reads, and can be pointed at your own. Only
+extensions published for the architecture being built are offered, and each
+one can be pinned to a version or left on the catalog's latest.
+
+On a classic (non-UKI) ISO, the build also writes `extensions.yaml` to the ISO
+root. It declares each image under `install.extensions`, which is what the
+installer stages onto the installed system. This needs a kairos-agent that
+reads `install.extensions`, which is newer than v4.3.0.
+
+The same `iso.extensions` and `iso.extensions_catalogs` keys drive a raw disk
+or cloud image build, so an artifact spec names its extensions once and each
+artifact type decides where they go. A raw disk is assembled rather than
+installed, so the images ride in the OEM partition and the first-boot reset
+moves them onto the persistent one. Either way the extension is merged with no
+network access at install time.
 
 ### Cloning Hadron artifacts as templates
 
@@ -234,6 +266,13 @@ auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6
 # Build a UKI from a container image
 auroraboot build-uki --image quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
     --output-dir ./out
+
+# Build an ISO carrying system extensions from a catalog. Names resolve against
+# the hadron-layers catalog unless --extensions-catalog names another one, and
+# an extension can be pinned with name@version. Both flags are repeatable, and
+# catalogs are searched in order, so your own index can shadow a published name.
+auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+    --extension nvidia --extension tailscale@v1.2.3 --output ./out
 
 # Generate a SecureBoot key set
 auroraboot genkey my-keys --output ./keys

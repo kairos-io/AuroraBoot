@@ -35,6 +35,11 @@ export interface Artifact {
   hadronFirmware?: string[];
   hadronLayers?: string[];
   hadronExtra?: string;
+  // Catalog extensions this artifact was built with, and the catalogs they
+  // were resolved against. An empty catalog list means the build read the
+  // server's default catalog.
+  extensions?: string[];
+  extensionsCatalogs?: string[];
   cloudConfig?: string;
   kubernetesDistro?: string;
   kubernetesVersion?: string;
@@ -42,6 +47,10 @@ export interface Artifact {
   targetGroupId?: string;
   containerImage?: string;
   artifacts: string[];
+  // Hierarchies the operator declared at build time. Used by the extension
+  // builder's "From artifact" cross-check and by tooling that surfaces what
+  // overlays an OS image is wired to accept.
+  extensionHierarchies?: { sysext: string[]; confext: string[] };
   createdAt: string;
   updatedAt: string;
 }
@@ -105,12 +114,29 @@ export interface CreateArtifactInput {
   hadronFirmware?: string[];
   hadronLayers?: string[];
   hadronExtra?: string;
+  // Catalog extensions to place in the built ISO, as name or name@version.
+  // extensionsCatalogs replaces the catalog they resolve against; leaving it
+  // out means the server resolves them against its default catalog.
+  extensions?: string[];
+  extensionsCatalogs?: string[];
   overlayRootfs?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;
   signing: CreateArtifactSigning;
   provisioning: CreateArtifactProvisioning;
   cloudConfig?: string;
+
+  // Extension integration:
+  // - extensionHierarchies bakes a SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES drop-in
+  //   so the OS image accepts overlays on the listed paths out of the box.
+  // - bundledExtensions ride along with every upgrade to this artifact.
+  extensionHierarchies?: { sysext: string[]; confext: string[] };
+  bundledExtensions?: Array<{
+    name: string;
+    type: "sysext" | "confext";
+    pinnedVersion?: string;
+    order?: number;
+  }>;
 }
 
 export interface SecureBootKeySet {
@@ -238,4 +264,20 @@ export async function uploadOverlayFiles(files: FileList | File[]): Promise<stri
   if (!res.ok) throw new Error("Upload failed");
   const data = await res.json();
   return data.path;
+}
+
+export interface ResolvedBundleEntry {
+  name: string;
+  type: "sysext" | "confext";
+  version: string;
+  source: string;
+}
+
+// resolveBundle returns the bundled extensions for an artifact in the shape
+// the agent consumes inside the upgrade command's `extensions` arg.
+export function resolveBundle(artifactId: string): Promise<ResolvedBundleEntry[]> {
+  return apiFetch<ResolvedBundleEntry[]>(
+    `/api/v1/artifacts/${artifactId}/bundle-resolve`,
+    { method: "POST" },
+  );
 }

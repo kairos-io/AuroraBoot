@@ -52,6 +52,11 @@ jobs:
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
+          # This job compiles once and exits, so a module cache never pays for
+          # itself here: a restore is ~966 MiB at the ~4.5 MB/s this runner
+          # sustains. It also crashed node24's V8 GC mid-transfer. See
+          # kairos-io/kairos#4733.
+          cache: false
 
       - name: Install build deps
         # libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive
