@@ -464,3 +464,10 @@ func GetKairosFamily(rootfs string) (string, error) {
 	}
 	return "", fmt.Errorf("%s key not found in %s", "KAIROS_FAMILY", filepath.Join(rootfs, "etc/kairos-release"))
 }
+
+// ShellQuote wraps s in single quotes so a POSIX shell passes it on as one
+// argument, whatever it contains. A single quote inside s is closed, escaped
+// and reopened, which is the only escape a single-quoted string allows.
+func ShellQuote(s string) string {
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
+}
