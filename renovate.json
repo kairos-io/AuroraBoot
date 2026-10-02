@@ -21,6 +21,26 @@
       "automerge": true
     },
     {
+      "matchManagers": [
+        "gomod"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "digest"
+      ],
+      "groupName": "go dependencies"
+    },
+    {
+      "matchManagers": [
+        "npm"
+      ],
+      "matchUpdateTypes": [
+        "minor",
+        "patch"
+      ],
+      "groupName": "frontend dependencies"
+    },
+    {
       "matchDepNames": [
         "github.com/urfave/cli/v3"
       ],

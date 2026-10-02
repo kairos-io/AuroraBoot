@@ -69,6 +69,34 @@ var _ = Describe("Rate limiting", func() {
 				Expect(code).To(Equal(http.StatusOK))
 			}
 		})
+
+		It("keeps the generous floor as the default burst at the shipped rate", func() {
+			mw := auth.NodeRateLimiter(auth.DefaultNodeRateLimitRPS, 0)
+			codes := fireAsNode(mw, "node-a", auth.DefaultNodeRateLimitBurst+1)
+			for _, code := range codes[:auth.DefaultNodeRateLimitBurst] {
+				Expect(code).To(Equal(http.StatusOK))
+			}
+			Expect(codes[auth.DefaultNodeRateLimitBurst]).To(Equal(http.StatusTooManyRequests))
+		})
+
+		It("defaults the burst to one second of the rate once that exceeds the floor", func() {
+			// The whole point of --node-rate-limit: at 50 rps the old flat burst of
+			// 20 was the binding constraint, so the 21st request in an instant was
+			// refused even though the node's sustained budget was 50/s.
+			mw := auth.NodeRateLimiter(50, 0)
+			codes := fireAsNode(mw, "node-a", 51)
+			for _, code := range codes[:50] {
+				Expect(code).To(Equal(http.StatusOK))
+			}
+			Expect(codes[50]).To(Equal(http.StatusTooManyRequests))
+		})
+
+		It("lets an explicit burst override the default in both directions", func() {
+			mw := auth.NodeRateLimiter(50, 3)
+			codes := fireAsNode(mw, "node-a", 4)
+			Expect(codes[:3]).To(Equal([]int{http.StatusOK, http.StatusOK, http.StatusOK}))
+			Expect(codes[3]).To(Equal(http.StatusTooManyRequests))
+		})
 	})
 
 	Describe("RegistrationRateLimiter", func() {
@@ -110,6 +138,31 @@ var _ = Describe("Rate limiting", func() {
 			for _, code := range codes {
 				Expect(code).To(Equal(http.StatusOK))
 			}
+		})
+
+		It("keeps the generous floor as the default burst at the shipped rate", func() {
+			mw := auth.RegistrationRateLimiter(auth.DefaultRegisterRateLimitRPS, 0)
+			codes := fireFromIP(mw, "203.0.113.5", auth.DefaultRegisterRateLimitBurst+1)
+			for _, code := range codes[:auth.DefaultRegisterRateLimitBurst] {
+				Expect(code).To(Equal(http.StatusOK))
+			}
+			Expect(codes[auth.DefaultRegisterRateLimitBurst]).To(Equal(http.StatusTooManyRequests))
+		})
+
+		It("defaults the burst to one second of the rate once that exceeds the floor", func() {
+			mw := auth.RegistrationRateLimiter(40, 0)
+			codes := fireFromIP(mw, "203.0.113.5", 41)
+			for _, code := range codes[:40] {
+				Expect(code).To(Equal(http.StatusOK))
+			}
+			Expect(codes[40]).To(Equal(http.StatusTooManyRequests))
+		})
+
+		It("lets an explicit burst override the default in both directions", func() {
+			mw := auth.RegistrationRateLimiter(40, 2)
+			codes := fireFromIP(mw, "203.0.113.5", 3)
+			Expect(codes[:2]).To(Equal([]int{http.StatusOK, http.StatusOK}))
+			Expect(codes[2]).To(Equal(http.StatusTooManyRequests))
 		})
 	})
 })

@@ -5,9 +5,9 @@ export interface Group {
   id: string;
   name: string;
   description: string;
-  node_count: number;
-  created_at: string;
-  updated_at: string;
+  node_count?: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface CreateGroupInput {

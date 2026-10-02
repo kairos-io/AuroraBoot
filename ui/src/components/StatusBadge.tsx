@@ -1,4 +1,5 @@
 import { Badge } from "@/components/ui/badge";
+import { phaseTone, type Tone } from "@/lib/phase";
 import { cn } from "@/lib/utils";
 
 interface StatusBadgeProps {
@@ -6,18 +7,13 @@ interface StatusBadgeProps {
   className?: string;
 }
 
-const statusStyles: Record<string, string> = {
-  online: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
-  offline: "bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400",
-  pending: "bg-yellow-500/15 text-yellow-700 border-yellow-500/25 dark:text-yellow-400",
-  building: "bg-[#EE5007]/15 text-[#EE5007] border-[#EE5007]/25",
-  running: "bg-[#FF7442]/15 text-[#FF7442] border-[#FF7442]/25",
-  completed: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
-  ready: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
-  failed: "bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400",
-  error: "bg-red-500/15 text-red-700 border-red-500/25 dark:text-red-400",
-  active: "bg-green-500/15 text-green-700 border-green-500/25 dark:text-green-400",
-  upgrading: "bg-[#FF7442]/15 text-[#FF7442] border-[#FF7442]/25",
+// Written out in full so Tailwind can find every class in the source.
+const toneStyles: Record<Tone, string> = {
+  success: "bg-success/15 text-success-foreground border-success/25",
+  warning: "bg-warning/15 text-warning-foreground border-warning/25",
+  danger: "bg-danger/15 text-danger-foreground border-danger/25",
+  info: "bg-info/15 text-info-foreground border-info/25",
+  neutral: "bg-neutral/15 text-neutral-foreground border-neutral/25",
 };
 
 // A node whose phase is missing must not be able to throw out of render and
@@ -25,9 +21,8 @@ const statusStyles: Record<string, string> = {
 // rather than as a blank screen.
 export function StatusBadge({ status, className }: StatusBadgeProps) {
   const label = status || "unknown";
-  const style = statusStyles[label.toLowerCase()] ?? "bg-secondary text-secondary-foreground";
   return (
-    <Badge variant="outline" className={cn(style, className)}>
+    <Badge variant="outline" className={cn(toneStyles[phaseTone(status)], className)}>
       {label}
     </Badge>
   );

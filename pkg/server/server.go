@@ -16,6 +16,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -29,11 +30,17 @@ type Config struct {
 	GroupStore            store.GroupStore
 	ArtifactStore         store.ArtifactStore
 	SecureBootKeySetStore store.SecureBootKeySetStore
-	NetbootManager        *netbootpkg.Manager
-	DeploymentStore       store.DeploymentStore
-	BMCTargetStore        store.BMCTargetStore
-	SettingsStore         store.SettingsStore
-	Builder               builder.ArtifactBuilder
+
+	ExtensionStore               store.ExtensionStore
+	ArtifactExtensionBundleStore store.ArtifactExtensionBundleStore
+	NodeExtensionStore           store.NodeExtensionStore
+	ExtensionBuilder             builder.ExtensionBuilder
+
+	NetbootManager  *netbootpkg.Manager
+	DeploymentStore store.DeploymentStore
+	BMCTargetStore  store.BMCTargetStore
+	SettingsStore   store.SettingsStore
+	Builder         builder.ArtifactBuilder
 	// SystemInfo describes the active builder backend for the
 	// /api/v1/system/builder introspection endpoint. Populated at wire time in
 	// runWeb from the flags plus the resolved kube REST config.
@@ -45,6 +52,9 @@ type Config struct {
 	ArtifactsDir  string
 	KeysDir       string  // base directory for SecureBoot key sets
 	Hub           *ws.Hub // optional, created if nil
+	// Metrics holds the in-memory node metrics that heartbeats carry. Optional,
+	// created if nil.
+	Metrics *metrics.Buffer
 	// ISOServe serves a local artifact ISO over a tokenized, BMC-reachable URL
 	// for Redfish virtual-media deployments. Optional; when nil the Redfish
 	// deploy path requires an explicit imageUrl.
@@ -54,6 +64,9 @@ type Config struct {
 	// image-source settings' advertised URL until an operator overrides it at
 	// runtime.
 	RedfishServeURL string
+	// ExtensionCatalogs are the extension catalogs given at launch with
+	// --extensions-catalog. The UI offers them for every flavor.
+	ExtensionCatalogs []string
 	// BaseContext, when non-nil, is the parent context for background deploy
 	// goroutines so a server shutdown cancels in-flight Redfish deploys. Defaults
 	// to context.Background().
@@ -61,14 +74,15 @@ type Config struct {
 
 	// Rate limiting of the node-driven endpoints (registration, heartbeat, command
 	// polling) — fleet-server hardening, kairos-io/kairos#4117. It is on by
-	// default: zero RPS/Burst values fall back to the auth package defaults.
-	// Admin-authenticated requests (the UI and the CAPI infra provider) are never
-	// limited. DisableRateLimit turns the limiters off entirely.
+	// default: a zero RPS falls back to the auth package default, and a zero Burst
+	// to the larger of that package's burst floor and one second of the RPS in
+	// effect. Admin-authenticated requests (the UI and the CAPI infra provider)
+	// are never limited. DisableRateLimit turns the limiters off entirely.
 	DisableRateLimit       bool
 	NodeRateLimitRPS       float64 // per-node requests/sec for heartbeat + command polling
-	NodeRateLimitBurst     int     // per-node burst
+	NodeRateLimitBurst     int     // per-node instantaneous allowance
 	RegisterRateLimitRPS   float64 // per-IP requests/sec for registration
-	RegisterRateLimitBurst int     // per-IP burst
+	RegisterRateLimitBurst int     // per-IP instantaneous allowance
 }
 
 // firstPositive returns v if it is positive, otherwise fallback. It lets a zero
@@ -187,17 +201,35 @@ func New(cfg Config) *echo.Echo {
 	if deployHandler != nil {
 		nodeHandler.WithFinalizer(deployHandler.MaybeFinalizeForNode, cfg.BaseContext)
 	}
-	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub)
-	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	metricsBuf := cfg.Metrics
+	if metricsBuf == nil {
+		metricsBuf = metrics.NewBuffer(metrics.DefaultCapacity)
+	}
+	nodeHandler.SetMetrics(metricsBuf)
+	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
+	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	var extensionHandler *handlers.ExtensionHandler
+	if cfg.ExtensionBuilder != nil {
+		extensionHandler = handlers.NewExtensionHandler(
+			cfg.ExtensionBuilder, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore,
+			cfg.SecureBootKeySetStore, cfg.NodeExtensionStore, cfg.ArtifactsDir,
+		)
+	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
 	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
-		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL)
+		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL).
+		WithExtensionCatalogs(cfg.ExtensionCatalogs)
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
 		Hub:      hub,
 		Nodes:    cfg.NodeStore,
 		Commands: cfg.CommandStore,
+		// Agents report command results over the WS, so the node_extensions
+		// tracking write must hook in here too (not just on the REST
+		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
+		OnCommandStatus: cmdHandler.ApplyExtensionTracking,
+		Metrics:         metricsBuf,
 	}
 	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
 	// same auto eject-on-phone-home hook — a node that reports liveness only over
@@ -277,6 +309,9 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.PUT("/nodes/:nodeID/labels", nodeHandler.SetLabels)
 	adminGroup.PUT("/nodes/:nodeID/group", nodeHandler.SetGroup)
 	adminGroup.POST("/nodes/:nodeID/release", nodeHandler.Release)
+	metricsHandler := handlers.NewMetricsHandler(metricsBuf)
+	adminGroup.GET("/nodes/:nodeID/metrics", metricsHandler.GetNode)
+	adminGroup.GET("/metrics/latest", metricsHandler.GetLatest)
 	// GET /nodes/:nodeID/commands and PUT .../commands/:commandID/status are
 	// served by the shared agent-or-admin group above (single registration to
 	// avoid Echo route shadowing); they branch on the caller's identity.
@@ -304,6 +339,23 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/artifacts/:id/cancel", artifactHandler.Cancel)
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
+	adminGroup.GET("/artifacts/:id/bundle-extensions", artifactHandler.ListBundleExtensions)
+	adminGroup.PUT("/artifacts/:id/bundle-extensions", artifactHandler.SetBundleExtensions)
+	adminGroup.POST("/artifacts/:id/bundle-resolve", artifactHandler.ResolveBundle)
+
+	// Extension routes are registered only when the extension builder is wired
+	// (the in-process builder is constructed in internal/cmd/web.go).
+	if extensionHandler != nil {
+		adminGroup.POST("/extensions", extensionHandler.Create)
+		adminGroup.GET("/extensions", extensionHandler.List)
+		adminGroup.GET("/extensions/:id", extensionHandler.Get)
+		adminGroup.PATCH("/extensions/:id", extensionHandler.Update)
+		adminGroup.DELETE("/extensions/:id", extensionHandler.Delete)
+		adminGroup.GET("/extensions/:id/logs", extensionHandler.GetLogs)
+		adminGroup.POST("/extensions/:id/cancel", extensionHandler.Cancel)
+		adminGroup.GET("/extensions/:id/nodes", extensionHandler.ListNodesForExtension)
+		adminGroup.GET("/nodes/:nodeID/extensions", extensionHandler.ListNodeExtensions)
+	}
 
 	// Artifact downloads (fleet-server hardening, kairos-io/kairos#4117). Scoped so
 	// a node key can't pull arbitrary build artifacts. Registered before the admin
@@ -319,6 +371,17 @@ func New(cfg Config) *echo.Echo {
 	// command actually assigned this artifact to — never an arbitrary artifact.
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage,
 		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
+	// Extension downloads: admin, the extension's own download token, OR any
+	// authenticated node. Nodes need to fetch extensions bundled into an
+	// assigned upgrade command; per-command scoping analogous to
+	// ArtifactImageMiddleware is a follow-up. Admin may use ?token= here (the
+	// UI's download anchor cannot set a header), and so may the per-extension
+	// token, which is what an install command's source URL carries so that URL
+	// never holds the admin password. A node key stays header-only.
+	if extensionHandler != nil {
+		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download,
+			auth.ExtensionDownloadMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.ExtensionStore))
+	}
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,
 	// stored on the ArtifactRecord). Used by the operator backend's exporter
@@ -338,6 +401,8 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.POST("/settings/registration-token/rotate", settingsHandler.RotateRegistrationToken)
 	adminGroup.GET("/settings/image-source", settingsHandler.GetImageSource)
 	adminGroup.PUT("/settings/image-source", settingsHandler.UpdateImageSource)
+	adminGroup.GET("/settings/extension-catalogs", settingsHandler.GetExtensionCatalogs)
+	adminGroup.PUT("/settings/extension-catalogs", settingsHandler.UpdateExtensionCatalogs)
 
 	// SecureBoot key management
 	sbHandler := handlers.NewSecureBootHandler(cfg.SecureBootKeySetStore, cfg.KeysDir)

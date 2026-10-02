@@ -134,6 +134,31 @@ type BuildOptions struct {
 	HadronFirmware []string
 	HadronLayers   []string
 	HadronExtra    string
+
+	// Extensions are the catalog extensions to materialize in the ISO root,
+	// as name or name@version. The handler validates every entry before the
+	// build starts; the builder resolves them against ExtensionsCatalogs.
+	Extensions []string
+	// ExtensionsCatalogs are the catalog URLs or paths to search, in order.
+	// Empty means the build reads extensions.DefaultCatalog.
+	ExtensionsCatalogs []string
+
+	// ExtensionHierarchies carries the operator-supplied sysext/confext
+	// mount points. The handler validates and normalizes both lists; /usr
+	// (sysext) and /etc (confext) are implicit and never appear here. The
+	// local builder persists the pair on the artifact record so a full-row
+	// Save on cancel/complete cannot blank it out, and the handler bakes
+	// the matching SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES drop-in into the
+	// cloud-config so the built image boots with the requested scope set.
+	ExtensionHierarchies ExtensionHierarchies
+}
+
+// ExtensionHierarchies mirrors store.ExtensionHierarchies without importing
+// the store package. Slices are the normalized paths (validated by the
+// handler, /usr and /etc stripped).
+type ExtensionHierarchies struct {
+	Sysext  []string
+	Confext []string
 }
 
 // BuildStatus tracks the state of a build.

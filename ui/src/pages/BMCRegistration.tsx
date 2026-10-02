@@ -480,7 +480,6 @@ export function BMCRegistration() {
           Refresh all
         </Button>
         <Button
-          className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
           onClick={openAdd}
         >
           <Plus className="h-4 w-4 mr-2" />

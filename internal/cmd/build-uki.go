@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/kairos-io/AuroraBoot/internal/config"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/urfave/cli/v2"
@@ -80,6 +82,10 @@ var BuildUKICmd = cli.Command{
 			Aliases: []string{"x"},
 			Usage:   "Extend the default cmdline for the default 'norole' artifacts. This creates efi files with the default+provided cmdline.",
 		},
+		&cli.StringFlag{
+			Name:  "cloud-config",
+			Usage: "The cloud config to embed in the UKI",
+		},
 		&cli.StringSliceFlag{
 			Name:    "single-efi-cmdline",
 			Aliases: []string{"s"},
@@ -129,6 +135,14 @@ var BuildUKICmd = cli.Command{
 			Value: false,
 			Usage: "Try to find systemd-boot files in the source rootfs instead of using the bundled ones.",
 		},
+		&cli.StringSliceFlag{
+			Name:  "extension",
+			Usage: "Add an extension by name or name@version, or file://<path> to bake in a .raw image this host already has (repeatable)",
+		},
+		&cli.StringSliceFlag{
+			Name:  "extensions-catalog",
+			Usage: "Path or URL of an extension catalog, repeatable. Searched in order, the first catalog publishing the name wins. Defaults to the hadron-layers catalog",
+		},
 		AllowInsecureRegistriesFlag,
 	},
 	Before: func(ctx *cli.Context) error {
@@ -136,6 +150,11 @@ var BuildUKICmd = cli.Command{
 		// https://github.com/urfave/cli/blob/7ec374fe2abd3e9c75369f6bb4191fe7866bd89c/command.go#L128
 		if len(ctx.StringSlice("extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
 			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
+		}
+		for _, value := range ctx.StringSlice("extension") {
+			if _, err := extensions.ParseRequest(value); err != nil {
+				return err
+			}
 		}
 		if ctx.String("public-keys") == "" {
 			fmt.Println("Warning: public-keys directory is not set, Secure Boot auto enroll will not work. You can set it with --public-keys flag.")
@@ -153,6 +172,29 @@ var BuildUKICmd = cli.Command{
 			logLevel = "debug"
 		}
 		log := logger.NewKairosLogger("auroraboot", logLevel, false)
+		extensionRequests := make([]extensions.Request, 0, len(ctx.StringSlice("extension")))
+		for _, value := range ctx.StringSlice("extension") {
+			request, err := extensions.ParseRequest(value)
+			if err != nil {
+				return err
+			}
+			extensionRequests = append(extensionRequests, request)
+		}
+
+		cloudConfig := ""
+		ccPath := ctx.String("cloud-config")
+		if ccPath == "" && len(ctx.Lineage()) > 1 {
+			// A same-named app-level flag given before the subcommand would
+			// otherwise be shadowed by this command's flag.
+			ccPath = ctx.Lineage()[1].String("cloud-config")
+		}
+		if ccPath != "" {
+			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
+			if err != nil {
+				return fmt.Errorf("reading cloud config: %w", err)
+			}
+			cloudConfig = cc
+		}
 
 		return uki.Build(uki.Options{
 			Source:                  args.Get(0),
@@ -176,6 +218,9 @@ var BuildUKICmd = cli.Command{
 			CmdLinesV2:              ctx.Bool("cmd-lines-v2"),
 			SdBootInSource:          ctx.Bool("sdboot-in-source"),
 			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
+			Extensions:              extensionRequests,
+			ExtensionsCatalogs:      ctx.StringSlice("extensions-catalog"),
+			CloudConfig:             cloudConfig,
 			Logger:                  &log,
 		})
 	},

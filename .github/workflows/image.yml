@@ -136,6 +136,20 @@ jobs:
         id: metadata
         with:
           images: quay.io/kairos/auroraboot
+          # `latest` and the floating minor tag must only move for a real
+          # release, so both are gated on the tag carrying no prerelease
+          # suffix. Without the gate the default `latest=auto` promotes
+          # `latest` on any tag push, prereleases included.
+          flavor: |
+            latest=${{ !contains(github.ref_name, '-') }}
+          # `type=ref,event=tag` keeps the exact tag (`v0.27.0`), which is
+          # what the default rules already published and what the helm
+          # chart's appVersion and the per-arch tags use. The semver line
+          # adds the floating `v0.27`, so a user can track patches within
+          # a minor line.
+          tags: |
+            type=ref,event=tag
+            type=semver,pattern=v{{major}}.{{minor}},enable=${{ !contains(github.ref_name, '-') }}
       - name: Determine manifest sources
         id: sources
         run: |
