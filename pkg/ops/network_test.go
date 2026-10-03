@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -64,9 +65,18 @@ var _ = Describe("download", Label("network"), func() {
 		Expect(string(content)).To(Equal("payload"))
 	})
 
-	It("stops retrying and reports ctx's error when canceled during backoff", func() {
+	It("stops retrying and reports ctx's error when canceled after an attempt", func() {
 		var gets atomic.Int32
 		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// Cancel through the hook rather than off a wall-clock sleep: this
+		// pins the case where the attempt already failed with a transient
+		// error of its own, which is the one that used to be reported
+		// instead of the cancellation. A sleep raced the in-flight case and
+		// made this spec flaky on a loaded runner.
+		afterDownloadAttempt = cancel
+		DeferCleanup(func() { afterDownloadAttempt = nil })
 
 		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if notFoundOnHead(w, r) {
@@ -78,17 +88,63 @@ var _ = Describe("download", Label("network"), func() {
 		defer srv.Close()
 
 		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
+		_, err := download(ctx, srv.URL+"/testfile.bin", dst)
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
+			"a caller checking for cancellation must see it, got %v", err)
+		Expect(err.Error()).To(ContainSubstring("502"),
+			"the attempt's own error must survive in the message, got %v", err)
+		Expect(gets.Load()).To(Equal(int32(1)))
+	})
+
+	It("reports ctx's error when canceled while the transfer is in flight", func() {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// The response headers go out first and the body is held back, so the
+		// cancellation lands while downloadOnce is still waiting on the
+		// transfer rather than between two attempts.
+		//
+		// Holding the headers back too is what made this flaky. grab's
+		// Client.Do returns once the headers arrive, so a handler that sends
+		// nothing until after cancel() lets Do return with ctx already
+		// canceled AND the whole 7-byte body already copied, which closes
+		// resp.Done. Then both arms of downloadOnce's select are ready and Go
+		// picks one at random: when resp.Done wins, download returns a nil
+		// error and this spec fails. Forcing that interleaving (an 80ms sleep
+		// before the select) failed 21 of 60 runs.
+		//
+		// Flushing the headers and blocking the body instead means resp.Done
+		// can never close, so ctx.Done is the only arm that can fire.
+		inFlight := make(chan struct{})
+		release := make(chan struct{})
+		var once sync.Once
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if notFoundOnHead(w, r) {
+				return
+			}
+			w.WriteHeader(http.StatusOK)
+			flusher, ok := w.(http.Flusher)
+			Expect(ok).To(BeTrue(), "the test server must support flushing headers")
+			flusher.Flush()
+			once.Do(func() { close(inFlight) })
+			<-release
+			w.Write([]byte("payload"))
+		}))
+		defer srv.Close()
+		// Registered after srv.Close, so it runs before it: the handler is
+		// let go first, then srv.Close waits for it. DeferCleanup would run
+		// after this function's defers and deadlock srv.Close.
+		defer close(release)
 
 		go func() {
 			defer GinkgoRecover()
-			// Give the first attempt's GET time to fail and enter backoff,
-			// then cancel well before the (200ms) backoff elapses.
-			time.Sleep(30 * time.Millisecond)
+			<-inFlight
 			cancel()
 		}()
 
+		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
 		_, err := download(ctx, srv.URL+"/testfile.bin", dst)
-		Expect(errors.Is(err, context.Canceled)).To(BeTrue())
-		Expect(gets.Load()).To(Equal(int32(1)))
+		Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
+			"a caller checking for cancellation must see it, got %v", err)
 	})
 })
