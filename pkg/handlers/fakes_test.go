@@ -266,6 +266,11 @@ func (f *fakeNodeStore) Delete(_ context.Context, id string) error {
 type fakeCommandStore struct {
 	mu   sync.Mutex
 	cmds []*store.NodeCommand
+	// onClaim, when set, runs just before a command is claimed for delivery
+	// and stands in for the node reacting to the push: the agent can report a
+	// phase back while the caller is still inside pushCommand. It runs outside
+	// f.mu so the hook may call back into the store.
+	onClaim func(id string)
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, cmd *store.NodeCommand) error {
@@ -325,6 +330,9 @@ func (f *fakeCommandStore) MarkDelivered(_ context.Context, ids []string) error 
 }
 
 func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool, error) {
+	if f.onClaim != nil {
+		f.onClaim(id)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, cmd := range f.cmds {
@@ -389,6 +397,41 @@ func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadli
 		}
 	}
 	return nil
+}
+
+func (f *fakeCommandStore) ListByBatch(_ context.Context, batchID string) ([]*store.NodeCommand, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []*store.NodeCommand
+	for _, cmd := range f.cmds {
+		if batchID != "" && cmd.BatchID == batchID {
+			result = append(result, cmd)
+		}
+	}
+	return result, nil
+}
+
+// CancelPendingInBatch mirrors the gorm store: only the rows still Pending are
+// moved, so a command another path already claimed for delivery is left to
+// report its own result. A fake that moved every row regardless of phase would
+// pass a handler that cancels a running upgrade.
+func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, batchID string, reason string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if batchID == "" {
+		return 0, nil
+	}
+	now := time.Now()
+	n := 0
+	for _, cmd := range f.cmds {
+		if cmd.BatchID == batchID && cmd.Phase == store.CommandPending {
+			cmd.Phase = store.CommandCanceled
+			cmd.Result = reason
+			cmd.CompletedAt = &now
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeCommandStore) Delete(_ context.Context, id string) error {
