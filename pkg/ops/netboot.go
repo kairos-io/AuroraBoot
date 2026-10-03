@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/kairos/v4/sdk/iso"
@@ -55,13 +56,24 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
 			return err
 		}
+
+		// The livecd grub config holds the cmdline the ISO boots with, which
+		// the netboot cmdline is meant to match. Not every ISO has one, so a
+		// miss only costs the caller those options: hence the nil logger, the
+		// error of an expected miss does not belong on the Error channel.
+		artifact = filepath.Join(dst, fmt.Sprintf("%s-grub.cfg", prefix))
+		if err := iso.ExtractFileFromIso(filepath.Join(constants.GrubPrefixDir, constants.GrubCfg), src, artifact, nil); err != nil {
+			internal.Log.Logger.Warn().Err(err).Str("artifact", artifact).Str("source", src).Msg("No livecd grub config in the ISO, netboot will boot with the default cmdline")
+			_ = os.Remove(artifact)
+		}
+
 		internal.Log.Logger.Info().Msg("Artifacts extracted")
 
-		return err
+		return nil
 	}
 }
 
-func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGet, initrdFileGet, kernelFileGet valueGetOnCall, nb schema.NetBoot) func(ctx context.Context) error {
+func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGet, initrdFileGet, kernelFileGet, grubCfgFileGet valueGetOnCall, nb schema.NetBoot) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		internal.Log.Logger.Info().Msgf("Start pixiecore")
 		// do them in the context of the deployer so we can use the functions at the time of the call
@@ -69,14 +81,56 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 		initrdFile := initrdFileGet()
 		kernelFile := kernelFileGet()
 
-		configFile := cloudConfigFile
+		cmdLine := netbootCmdline(squashFSfile, cloudConfigFile, grubCfgFileGet, nb)
+		internal.Log.Logger.Info().Str("cmdline", cmdLine).Msg("Netbooting")
 
-		cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
-
-		if nb.Cmdline != "" {
-			cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
-		}
-
-		return netboot.Server(kernelFile, fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, initrdFile, true)
+		return netboot.Server(kernelFile, cmdLine, address, netbootPort, initrdFile, true)
 	}
+}
+
+// netbootCmdline builds the cmdline a netbooted node boots with.
+//
+// The pixiecore placeholders are expanded before anything else is merged in.
+// Everything appended afterwards is operator-supplied text, and a % in it
+// would otherwise be read as a format verb: fmt replaces it with %!(NOVERB)
+// and a stray verb can swallow the option that follows it.
+func netbootCmdline(squashFSfile, configFile string, grubCfgFileGet valueGetOnCall, nb schema.NetBoot) string {
+	if nb.Cmdline != "" {
+		base := fmt.Sprintf(`root=live:{{ ID "%s" }} config_url={{ ID "%s" }}`, squashFSfile, configFile)
+
+		return base + " " + nb.Cmdline
+	}
+
+	base := fmt.Sprintf(`rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, configFile)
+
+	// Without an explicit override, take the options the ISO itself boots
+	// with instead of leaving this list to drift away from it.
+	// See kairos-io/kairos#2573.
+	return withLiveCmdline(base, grubCfgFileGet)
+}
+
+// withLiveCmdline merges the livecd grub config extracted by ExtractNetboot
+// into the netboot cmdline. A grub config that is absent or unreadable is not
+// an error: the caller may be netbooting an ISO that has none, and the cmdline
+// is then used as it is.
+func withLiveCmdline(cmdLine string, grubCfgFileGet valueGetOnCall) string {
+	if grubCfgFileGet == nil {
+		return cmdLine
+	}
+
+	grubCfgFile := grubCfgFileGet()
+	if grubCfgFile == "" {
+		return cmdLine
+	}
+
+	grubCfg, err := os.ReadFile(grubCfgFile)
+	if err != nil {
+		internal.Log.Logger.Warn().Err(err).Str("grubCfg", grubCfgFile).Msg("Could not read the livecd grub config, netbooting with the default cmdline")
+		return cmdLine
+	}
+
+	merged := netboot.LiveCmdline(cmdLine, string(grubCfg))
+	internal.Log.Logger.Debug().Str("grubCfg", grubCfgFile).Msg("Netboot cmdline taken from the livecd grub config")
+
+	return merged
 }
