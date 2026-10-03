@@ -5,11 +5,16 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/diskfs/go-diskfs"
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
+	agentconstants "github.com/kairos-io/kairos/v4/agent/pkg/constants"
 	"github.com/kairos-io/kairos/v4/sdk/iso"
+	extensiontypes "github.com/kairos-io/kairos/v4/sdk/types/extensions"
+	"gopkg.in/yaml.v3"
 )
 
 // valueGetOnCall is a function type that returns a string value.
@@ -55,9 +60,17 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
 			return err
 		}
+		carried, err := extractNetbootExtensions(src, dst)
+		if err != nil {
+			internal.Log.Logger.Error().Err(err).Str("source", src).Str("destination", dst).Msg("Failed extracting the bundled extensions")
+			return err
+		}
+		if len(carried) > 0 {
+			internal.Log.Logger.Info().Strs("extensions", carried).Str("destination", dst).Msg("Extracted the bundled system extensions")
+		}
 		internal.Log.Logger.Info().Msg("Artifacts extracted")
 
-		return err
+		return nil
 	}
 }
 
@@ -79,4 +92,136 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 
 		return netboot.Server(kernelFile, fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, initrdFile, true)
 	}
+}
+
+// isoRootEntries lists the names of the plain files in the ISO root.
+func isoRootEntries(src string) ([]string, error) {
+	img, err := diskfs.Open(src, diskfs.WithOpenMode(diskfs.ReadOnly))
+	if err != nil {
+		return nil, err
+	}
+	defer img.Close()
+	fsys, err := img.GetFilesystem(0)
+	if err != nil {
+		return nil, err
+	}
+	// io/fs paths carry no leading slash, so the ISO root is ".".
+	entries, err := fsys.ReadDir(".")
+	if err != nil {
+		return nil, err
+	}
+	names := make([]string, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+		names = append(names, entry.Name())
+	}
+	return names, nil
+}
+
+// isoName normalizes an ISO directory entry for comparison. A plain ISO 9660
+// name carries a ";1" version suffix and is upper case; a Rock Ridge one, which
+// is what the Kairos ISOs are built with, does not. Comparing normalized names
+// reads both.
+func isoName(name string) string {
+	if i := strings.LastIndex(name, ";"); i > 0 {
+		name = name[:i]
+	}
+	return strings.ToLower(name)
+}
+
+// extractNetbootExtensions carries the bundled system extensions out of the
+// ISO root and into the netboot directory.
+//
+// A resolved extension image lands at the ISO root rather than inside
+// rootfs.squashfs: GenISO appends the materialized images to spec.Image, while
+// spec.RootFS is what becomes the squashfs. The three paths above are all a
+// netboot extraction used to read, so every bundled extension was dropped on
+// the way to the netboot artifacts. Refs kairos-io/kairos#5040.
+//
+// Which root files are extensions is recorded in the extensions.yaml that
+// materializeISOExtensions writes next to them, so that declaration is what is
+// read here. An ISO carrying no such file carries no bundled extension and
+// this is a no-op, and an --overlay-iso that happens to ship a .raw of its own
+// is not mistaken for one.
+//
+// It returns the names it wrote into dst.
+func extractNetbootExtensions(src, dst string) ([]string, error) {
+	entries, err := isoRootEntries(src)
+	if err != nil {
+		return nil, fmt.Errorf("listing the root of %s: %w", src, err)
+	}
+	onISO := make(map[string]string, len(entries))
+	for _, entry := range entries {
+		onISO[isoName(entry)] = entry
+	}
+	declaration, ok := onISO[isoName(isoExtensionsConfig)]
+	if !ok {
+		return nil, nil
+	}
+
+	tmp, err := os.MkdirTemp("", "auroraboot-netboot-extensions")
+	if err != nil {
+		return nil, fmt.Errorf("creating the declaration staging directory: %w", err)
+	}
+	defer os.RemoveAll(tmp)
+
+	local := filepath.Join(tmp, isoExtensionsConfig)
+	if err := iso.ExtractFileFromIso("/"+declaration, src, local, &internal.Log); err != nil {
+		return nil, fmt.Errorf("extracting %s: %w", isoExtensionsConfig, err)
+	}
+	declared, err := declaredExtensionImages(local)
+	if err != nil {
+		return nil, err
+	}
+
+	carried := make([]string, 0, len(declared))
+	for _, name := range declared {
+		entry, ok := onISO[isoName(name)]
+		if !ok {
+			// AuroraBoot wrote both the declaration and the image, so a
+			// declaration naming a file the root does not carry means the ISO
+			// is inconsistent. Say so rather than shipping a netboot tree that
+			// silently lacks an extension the ISO install gets.
+			return carried, fmt.Errorf("%s declares %s but the ISO root does not carry it", isoExtensionsConfig, name)
+		}
+		if err := iso.ExtractFileFromIso("/"+entry, src, filepath.Join(dst, name), &internal.Log); err != nil {
+			return carried, fmt.Errorf("extracting the bundled extension %s: %w", name, err)
+		}
+		carried = append(carried, name)
+	}
+	return carried, nil
+}
+
+// declaredExtensionImages reads the file names install.extensions points at on
+// the live media.
+//
+// Only an entry sitting directly under the live media directory names a file
+// on this ISO, because that is where materializeISOExtensions puts the images
+// it resolves: at the root. Everything else is the installed system's to fetch
+// rather than this build's to carry, whether it is an oci:// or https:// image
+// or a nested live-media path from an extensions.yaml AuroraBoot did not write,
+// so it is skipped rather than looked for at a root that does not hold it.
+func declaredExtensionImages(path string) ([]string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("reading %s: %w", isoExtensionsConfig, err)
+	}
+	var config struct {
+		Install struct {
+			Extensions extensiontypes.Extensions `yaml:"extensions"`
+		} `yaml:"install"`
+	}
+	if err := yaml.Unmarshal(content, &config); err != nil {
+		return nil, fmt.Errorf("parsing %s: %w", isoExtensionsConfig, err)
+	}
+	images := make([]string, 0, len(config.Install.Extensions))
+	for _, extension := range config.Install.Extensions {
+		if filepath.Dir(extension.Name) != agentconstants.LiveDir {
+			continue
+		}
+		images = append(images, filepath.Base(extension.Name))
+	}
+	return images, nil
 }
