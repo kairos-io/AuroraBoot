@@ -43,7 +43,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.2.2
 	github.com/kairos-io/kairos/v4 v4.3.1-0.20260921115150-170bfbb891c4
-	github.com/mudler/yip v1.26.2
+	github.com/mudler/yip v1.26.4
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.26.0
 	github.com/swaggo/swag v1.16.6
