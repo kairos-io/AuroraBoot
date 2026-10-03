@@ -1425,6 +1425,24 @@ export function ArtifactBuilder() {
       },
       // Send only the user's extra YAML — backend builds the canonical document.
       cloudConfig: advancedConfig.trim() || undefined,
+      // Both of these are collected on the Extensions step and both are
+      // validated and stored by the handler, so leaving them out of this
+      // literal discarded them at submit with no error anywhere: the picks
+      // simply were not on the artifact afterwards. They are built field by
+      // field rather than spread from `form`, so a field the form gains is
+      // silently dropped until it is named here.
+      extensionHierarchies:
+        (form.extensionHierarchies?.sysext?.length ?? 0) > 0 ||
+        (form.extensionHierarchies?.confext?.length ?? 0) > 0
+          ? {
+              sysext: form.extensionHierarchies?.sysext ?? [],
+              confext: form.extensionHierarchies?.confext ?? [],
+            }
+          : undefined,
+      bundledExtensions:
+        (form.bundledExtensions?.length ?? 0) > 0
+          ? form.bundledExtensions
+          : undefined,
     };
 
     const result = await createArtifact(input);
