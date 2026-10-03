@@ -34,6 +34,34 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		Expect(err).ToNot(HaveOccurred())
 	})
 	It("Should boot as expected", func() {
+		bootActive := os.Getenv("BOOT_ACTIVE") == "true"
+		// Boot-active images ship COS_STATE and must reach active on the very first boot, without a reset reboot
+		if bootActive {
+			By("Booting straight into active", func() {
+				stateAssertVM(vm, "boot", "active_boot")
+				boots, err := vm.Sudo("journalctl --list-boots --no-pager -q | wc -l")
+				Expect(err).ToNot(HaveOccurred(), boots)
+				Expect(strings.TrimSpace(boots)).To(Equal("1"))
+				out, err := vm.Sudo("ls /oem")
+				Expect(err).ToNot(HaveOccurred(), out)
+				Expect(out).To(ContainSubstring("01_layout.yaml"))
+				Expect(out).ToNot(ContainSubstring("01_reset.yaml"))
+			})
+			By("Shipping passive.img only when STATE has room for it", func() {
+				out, err := vm.Sudo("test -f /run/initramfs/cos-state/cOS/passive.img")
+				if os.Getenv("EXPECT_PASSIVE") == "true" {
+					Expect(err).ToNot(HaveOccurred(), out)
+				} else {
+					Expect(err).To(HaveOccurred(), out)
+				}
+			})
+			if os.Getenv("NO_RECOVERY") == "true" {
+				By("Having no recovery partition", func() {
+					out, err := vm.Sudo("blkid -L COS_RECOVERY")
+					Expect(err).To(HaveOccurred(), out)
+				})
+			}
+		}
 		// At first raw images boot on recovery and they reset the system and creates the partitions
 		// so it can take a while to boot in the active partition
 		// lets wait a bit checking
@@ -71,8 +99,13 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 			stateAssertVM(vm, "persistent.mounted", "true")
 			stateAssertVM(vm, "state.mounted", "true")
 			stateAssertVM(vm, "oem.type", "ext2")
-			stateAssertVM(vm, "persistent.type", "ext2")
-			stateAssertVM(vm, "state.type", "ext2")
+			// Boot-active images create state and persistent as ext4, like an install does
+			partitionFs := "ext2"
+			if bootActive {
+				partitionFs = "ext4"
+			}
+			stateAssertVM(vm, "persistent.type", partitionFs)
+			stateAssertVM(vm, "state.type", partitionFs)
 			stateAssertVM(vm, "oem.mount_point", "/oem")
 			stateAssertVM(vm, "persistent.mount_point", "/usr/local")
 			stateAssertVM(vm, "persistent.name", "/dev/vda")
