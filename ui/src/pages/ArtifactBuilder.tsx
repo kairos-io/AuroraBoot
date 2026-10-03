@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   createArtifact,
   getArtifact,
+  listBundleExtensions,
   listSecureBootKeySets,
   uploadOverlayFiles,
   type CreateArtifactInput,
@@ -1071,6 +1072,30 @@ export function ArtifactBuilder() {
           setExtensionsCatalogTouched(true);
         }
 
+        // The bundle is stored in its own table, so it is not on the artifact
+        // response and takes a second read. Applied with a functional update
+        // because both branches below replace the whole form synchronously;
+        // this callback is a promise continuation, so it always runs after
+        // them and merges into the form they built rather than racing it.
+        //
+        // A bundle that cannot be read must not cost the operator the clone,
+        // so the failure is swallowed the same way the outer read's is.
+        listBundleExtensions(cloneId)
+          .then((entries) => {
+            if (entries.length === 0) return;
+            const bundled = entries
+              .slice()
+              .sort((x, y) => x.order - y.order)
+              .map((e) => ({
+                name: e.extensionName,
+                type: e.extensionType === "confext" ? ("confext" as const) : ("sysext" as const),
+                pinnedVersion: e.pinnedVersion || undefined,
+                order: e.order,
+              }));
+            setForm((prev) => ({ ...prev, bundledExtensions: bundled }));
+          })
+          .catch(() => {});
+
         // Hadron branch: restore the composer state and land on Source so the
         // operator can edit firmware / layers / base before rebuilding. Auto-
         // opens the advanced expander when the source artifact carried
@@ -1123,6 +1148,13 @@ export function ArtifactBuilder() {
               trustedBoot: a.trustedBoot,
             },
             signing: { ...EMPTY_SIGNING },
+            // Already on the artifact response, so the clone has this in hand.
+            // Dropping it rebuilt an image that refuses overlays on the very
+            // paths the source artifact was built to accept.
+            extensionHierarchies: {
+              sysext: a.extensionHierarchies?.sysext ?? [],
+              confext: a.extensionHierarchies?.confext ?? [],
+            },
             provisioning: {
               autoInstall: a.autoInstall ?? true,
               registerAuroraBoot: a.registerAuroraBoot ?? true,
@@ -1171,6 +1203,12 @@ export function ArtifactBuilder() {
             trustedBoot: a.trustedBoot,
           },
           signing: { ...EMPTY_SIGNING },
+          // Same restore as the Hadron branch above: the hierarchies are on
+          // the artifact response and are the clone's to carry over.
+          extensionHierarchies: {
+            sysext: a.extensionHierarchies?.sysext ?? [],
+            confext: a.extensionHierarchies?.confext ?? [],
+          },
           provisioning: {
             autoInstall: a.autoInstall ?? true,
             registerAuroraBoot: a.registerAuroraBoot ?? true,
