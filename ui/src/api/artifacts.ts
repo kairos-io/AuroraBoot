@@ -281,3 +281,26 @@ export function resolveBundle(artifactId: string): Promise<ResolvedBundleEntry[]
     { method: "POST" },
   );
 }
+
+// BundleExtensionEntry is a stored bundle row, as the server keeps it. The
+// bundle lives in its own table and is not part of the artifact response, so
+// reading it back is a second request.
+export interface BundleExtensionEntry {
+  artifactId: string;
+  extensionName: string;
+  extensionType: string;
+  pinnedVersion?: string;
+  order: number;
+}
+
+// listBundleExtensions returns the raw bundle rows for an artifact. Unlike
+// resolveBundle, which resolves each entry to a concrete version for the
+// agent, this is the stored selection, which is what the builder needs to put
+// an existing bundle back in front of the operator.
+export function listBundleExtensions(
+  artifactId: string,
+): Promise<BundleExtensionEntry[]> {
+  return apiFetch<BundleExtensionEntry[]>(
+    `/api/v1/artifacts/${artifactId}/bundle-extensions`,
+  );
+}
