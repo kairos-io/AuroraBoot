@@ -5,10 +5,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
 	"path/filepath"
 	"sort"
-	"strings"
 	"sync"
 	"time"
 
@@ -247,17 +245,6 @@ type deployRedfishRequest struct {
 	EjectAfterInstall *bool `json:"ejectAfterInstall"`
 }
 
-// imageURLUsesHTTPS reports whether an operator-supplied media URL is fetched
-// over HTTPS, derived from its scheme. The InsertMedia TransferProtocolType must
-// match the URL the BMC actually fetches, so this keeps the two consistent.
-func imageURLUsesHTTPS(imageURL string) (bool, error) {
-	parsed, err := url.Parse(imageURL)
-	if err != nil {
-		return false, err
-	}
-	return strings.EqualFold(parsed.Scheme, "https"), nil
-}
-
 // resolveOperatorImageURL applies the operator-supplied image-URL precedence
 // (per-deploy > per-BMC > global default), all model (a). It returns "" when no
 // tier supplies a URL, signalling the caller to fall back to local serving
@@ -412,7 +399,7 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		if err := isoserve.ValidateMediaURL(imageURL); err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
 		}
-		useHTTPS, err = imageURLUsesHTTPS(imageURL)
+		useHTTPS, err = isoserve.URLUsesHTTPS(imageURL)
 		if err != nil {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid imageUrl: %v", err)})
 		}

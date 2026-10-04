@@ -120,6 +120,33 @@ func deriveServeBindAddr(serveURL string) (string, error) {
 	return parsed.Host, nil
 }
 
+// validateServeTLSFlags checks the local ISO server's TLS posture is internally
+// consistent before anything starts listening. --serve-tls is the single switch:
+// it needs a certificate pair, the pair does nothing without it, and the URL
+// advertised to the BMC has to carry the scheme the server actually speaks. A
+// disagreement is always an operator error, never a working deployment, because
+// the BMC fetches the advertised URL verbatim.
+func validateServeTLSFlags(serveTLS bool, certFile, keyFile, serveURL string) error {
+	if serveTLS && (certFile == "" || keyFile == "") {
+		return fmt.Errorf("--serve-tls with a local ISO requires --serve-tls-cert and --serve-tls-key (the BMC fetches over HTTPS)")
+	}
+	if !serveTLS && (certFile != "" || keyFile != "") {
+		return fmt.Errorf("--serve-tls-cert/--serve-tls-key without --serve-tls: pass --serve-tls to serve the local ISO over HTTPS, or drop the certificate flags")
+	}
+
+	urlHTTPS, err := isoserve.URLUsesHTTPS(serveURL)
+	if err != nil {
+		return fmt.Errorf("reading --redfish-serve-url scheme: %w", err)
+	}
+	switch {
+	case serveTLS && !urlHTTPS:
+		return fmt.Errorf("--serve-tls serves the local ISO over HTTPS but --redfish-serve-url %q is not https; the BMC would be told to fetch the wrong scheme", serveURL)
+	case !serveTLS && urlHTTPS:
+		return fmt.Errorf("--redfish-serve-url %q is https but the local ISO server has no certificate; pass --serve-tls with --serve-tls-cert and --serve-tls-key", serveURL)
+	}
+	return nil
+}
+
 var RedFishDeployCmd = cli.Command{
 	Name:  "redfish",
 	Usage: "Deploy ISO to server via RedFish (EXPERIMENTAL)",
@@ -279,10 +306,20 @@ var RedFishDeployCmd = cli.Command{
 				var (
 					serve      *isoserve.Server
 					serveToken string
+					useHTTPS   bool
 				)
 				switch {
 				case imageURL != "":
 					if err := isoserve.ValidateMediaURL(imageURL); err != nil {
+						return fmt.Errorf("validating --image-url: %w", err)
+					}
+					if serveTLS || serveTLSCert != "" || serveTLSKey != "" {
+						return fmt.Errorf("--serve-tls and --serve-tls-cert/--serve-tls-key configure the local ISO server, which --image-url bypasses; the transfer protocol follows the scheme of --image-url")
+					}
+					// The BMC fetches the operator's own URL, so the advertised
+					// TransferProtocolType has to follow that URL's scheme.
+					useHTTPS, err = isoserve.URLUsesHTTPS(imageURL)
+					if err != nil {
 						return fmt.Errorf("validating --image-url: %w", err)
 					}
 				case isoPath != "":
@@ -293,8 +330,8 @@ var RedFishDeployCmd = cli.Command{
 					if serveURL == "" {
 						return fmt.Errorf("serving a local ISO requires --redfish-serve-url (the base URL the BMC fetches the ISO from)")
 					}
-					if serveTLS && (serveTLSCert == "" || serveTLSKey == "") {
-						return fmt.Errorf("--serve-tls with a local ISO requires --serve-tls-cert and --serve-tls-key (the BMC fetches over HTTPS)")
+					if err := validateServeTLSFlags(serveTLS, serveTLSCert, serveTLSKey, serveURL); err != nil {
+						return err
 					}
 					if serveAddr == "" {
 						// Derive the bind address from the serve URL host:port rather
@@ -305,12 +342,20 @@ var RedFishDeployCmd = cli.Command{
 						}
 					}
 
-					serve = isoserve.New(isoserve.Config{
-						BaseURL:  serveURL,
-						BindAddr: serveAddr,
-						CertFile: serveTLSCert,
-						KeyFile:  serveTLSKey,
-					})
+					// --serve-tls is the switch; the certificate pair is what the
+					// server needs once it is on. Handing isoserve a cert and key
+					// without the switch is what used to serve HTTPS behind an
+					// http:// advertisement.
+					serveCfg := isoserve.Config{BaseURL: serveURL, BindAddr: serveAddr}
+					if serveTLS {
+						serveCfg.CertFile = serveTLSCert
+						serveCfg.KeyFile = serveTLSKey
+					}
+					serve = isoserve.New(serveCfg)
+					// The BMC fetches from this server, so the advertised
+					// TransferProtocolType follows what the server actually speaks.
+					useHTTPS = serve.UsesTLS()
+
 					if err := serve.Start(ctx); err != nil {
 						return fmt.Errorf("starting ISO-serve: %w", err)
 					}
@@ -372,7 +417,7 @@ var RedFishDeployCmd = cli.Command{
 					ImageURL:              imageURL,
 					BootTarget:            redfish.BootTargetCd,
 					BootMode:              bootMode,
-					TransferProtocolHTTPS: serveTLS,
+					TransferProtocolHTTPS: useHTTPS,
 				})
 				if err != nil {
 					return fmt.Errorf("deploying ISO: %w", err)
