@@ -162,4 +162,69 @@ describe("ArtifactBuilder: cloning carries the extension configuration", () => {
       expect(screen.getByText(/Clone: edge-gateway/)).toBeTruthy();
     });
   });
+
+  // A failed read used to be swallowed, so the review step showed the "None"
+  // of a source artifact that genuinely had no bundle, and the operator
+  // started a build believing nothing was lost.
+  it("says the bundle is unknown on review when the read fails", async () => {
+    vi.mocked(getArtifact).mockResolvedValue(SOURCE as never);
+    vi.mocked(listBundleExtensions).mockRejectedValue(new Error("boom"));
+
+    renderBuilder("/artifacts/new?clone=src-artifact-id");
+
+    await waitFor(() => {
+      expect(screen.getByText(/Clone: edge-gateway/)).toBeTruthy();
+    });
+
+    // The clone lands on Review, which is the last screen before Start build.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/could not be read from the cloned artifact/i),
+      ).toBeTruthy();
+    });
+    expect(screen.getByText("Unknown")).toBeTruthy();
+  });
+
+  it("keeps the failure on the Extensions step, where the empty list is shown", async () => {
+    vi.mocked(getArtifact).mockResolvedValue(SOURCE as never);
+    vi.mocked(listBundleExtensions).mockRejectedValue(new Error("boom"));
+
+    renderBuilder("/artifacts/new?clone=src-artifact-id");
+
+    await waitFor(() => {
+      expect(screen.getByText(/Clone: edge-gateway/)).toBeTruthy();
+    });
+    fireEvent.click(screen.getByRole("button", { name: /Extensions/ }));
+
+    // The toast is gone by the time the operator walks back to this step.
+    await waitFor(() => {
+      expect(
+        screen.getByText(/bundled extensions of the cloned artifact could not be read/i),
+      ).toBeTruthy();
+    });
+  });
+
+  // The mirror of the two cases above: a source that really has no bundle
+  // must not be labelled unknown, or the warning means nothing.
+  it("says None, not Unknown, when the source really has no bundle", async () => {
+    vi.mocked(getArtifact).mockResolvedValue(SOURCE as never);
+    vi.mocked(listBundleExtensions).mockResolvedValue([] as never);
+
+    renderBuilder("/artifacts/new?clone=src-artifact-id");
+
+    await waitFor(() => {
+      expect(screen.getByText(/Clone: edge-gateway/)).toBeTruthy();
+    });
+    expect(
+      screen.queryByText(/could not be read from the cloned artifact/i),
+    ).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: /Extensions/ }));
+    await waitFor(() => {
+      expect(screen.getByText("/etc/vendor-site")).toBeTruthy();
+    });
+    expect(
+      screen.queryByText(/bundled extensions of the cloned artifact could not be read/i),
+    ).toBeNull();
+  });
 });
