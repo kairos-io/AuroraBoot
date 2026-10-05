@@ -489,40 +489,31 @@ func (o Options) validate() error {
 }
 
 func resolveSdBootFiles(sourceDir, arch string, inSource bool) (stub, sdBoot, outEfi string, err error) {
+	// The ESP fallback name is the one thing both this function and imageFiles
+	// need, so it comes from a single place.
+	outEfi, err = utils.EfiFallbackName(arch)
+	if err != nil {
+		return "", "", "", err
+	}
+
+	var stubName, sdBootName, sdBootPath string
+	switch {
+	case utils.IsAmd64(arch):
+		stubName, sdBootName, sdBootPath = constants.UkiSystemdBootStubx86Name, constants.UkiSystemdBootx86Name, constants.UkiSystemdBootx86Path
+	case utils.IsArm64(arch):
+		stubName, sdBootName, sdBootPath = constants.UkiSystemdBootStubArmName, constants.UkiSystemdBootArmName, constants.UkiSystemdBootArmPath
+	default:
+		stubName, sdBootName, sdBootPath = constants.UkiSystemdBootStubRiscv64Name, constants.UkiSystemdBootRiscv64Name, constants.UkiSystemdBootRiscv64Path
+	}
+
 	if inSource {
-		switch {
-		case utils.IsAmd64(arch):
-			stub, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootStubx86Name)
-			if err != nil {
-				return "", "", "", fmt.Errorf("finding systemd-boot stub in source: %w", err)
-			}
-			sdBoot, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootx86Name)
-			if err != nil {
-				return "", "", "", fmt.Errorf("finding systemd-boot in source: %w", err)
-			}
-			outEfi = constants.EfiFallbackNamex86
-		case utils.IsArm64(arch):
-			stub, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootStubArmName)
-			if err != nil {
-				return "", "", "", fmt.Errorf("finding systemd-boot stub in source: %w", err)
-			}
-			sdBoot, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootArmName)
-			if err != nil {
-				return "", "", "", fmt.Errorf("finding systemd-boot in source: %w", err)
-			}
-			outEfi = constants.EfiFallbackNameArm
-		case utils.IsRiscv64(arch):
-			stub, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootStubRiscv64Name)
-			if err != nil {
-				return "", "", "", fmt.Errorf("finding systemd-boot stub in source: %w", err)
-			}
-			sdBoot, err = FindFirstFileInDir(sourceDir, constants.UkiSystemdBootRiscv64Name)
-			if err != nil {
-				return "", "", "", fmt.Errorf("finding systemd-boot in source: %w", err)
-			}
-			outEfi = constants.EfiFallbackNameRiscv64
-		default:
-			return "", "", "", fmt.Errorf("unsupported arch: %s", arch)
+		stub, err = FindFirstFileInDir(sourceDir, stubName)
+		if err != nil {
+			return "", "", "", fmt.Errorf("finding systemd-boot stub in source: %w", err)
+		}
+		sdBoot, err = FindFirstFileInDir(sourceDir, sdBootName)
+		if err != nil {
+			return "", "", "", fmt.Errorf("finding systemd-boot in source: %w", err)
 		}
 		return stub, sdBoot, outEfi, nil
 	}
@@ -531,16 +522,7 @@ func resolveSdBootFiles(sourceDir, arch string, inSource bool) (stub, sdBoot, ou
 	if err != nil {
 		return "", "", "", err
 	}
-	switch {
-	case utils.IsAmd64(arch):
-		return stub, constants.UkiSystemdBootx86Path, constants.EfiFallbackNamex86, nil
-	case utils.IsArm64(arch):
-		return stub, constants.UkiSystemdBootArmPath, constants.EfiFallbackNameArm, nil
-	case utils.IsRiscv64(arch):
-		return stub, constants.UkiSystemdBootRiscv64Path, constants.EfiFallbackNameRiscv64, nil
-	default:
-		return "", "", "", fmt.Errorf("unsupported arch: %s", arch)
-	}
+	return stub, sdBootPath, outEfi, nil
 }
 
 func checkBuildUKIDeps(arch string) error {
@@ -907,9 +889,9 @@ func stageExtensions(ctx context.Context, catalogs []string, requests []extensio
 }
 
 func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry, arch string) (map[string][]string, error) {
-	bootfile := "BOOTX64.EFI"
-	if utils.IsArm64(arch) {
-		bootfile = "BOOTAA64.EFI"
+	bootfile, err := utils.EfiFallbackName(arch)
+	if err != nil {
+		return nil, err
 	}
 	data := map[string][]string{
 		"EFI":            {},
