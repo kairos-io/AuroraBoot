@@ -448,9 +448,11 @@ func New(cfg Config) *echo.Echo {
 const noUIMessage = "This auroraboot binary was built without the web UI. The release binaries and the quay.io/kairos/auroraboot container image include it.\n"
 
 // setupSPA configures the Echo server to serve the SPA frontend from the
-// dist/ directory of assets. It serves static files and falls back to
-// index.html for any unmatched route that accepts text/html (SPA
-// client-side routing).
+// dist/ directory of assets. It serves static files under /assets/ and, for
+// any other path no route matches, a file from dist/ or, for requests that
+// accept text/html, index.html (SPA client-side routing). Registering it as
+// the not-found route keeps it away from every route the server defines,
+// such as /healthz, whatever the request accepts.
 func setupSPA(e *echo.Echo, assets fs.FS) {
 	distFS, err := fs.Sub(assets, "dist")
 	if err != nil {
@@ -458,58 +460,44 @@ func setupSPA(e *echo.Echo, assets fs.FS) {
 	}
 	httpFS := http.FS(distFS)
 
-	// Serve static files
 	e.GET("/assets/*", echo.WrapHandler(http.FileServer(httpFS)))
 
-	// SPA fallback: serve index.html for any unmatched route that accepts text/html
-	e.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
-			// Skip API routes
-			if strings.HasPrefix(c.Request().URL.Path, "/api/") {
-				return next(c)
-			}
-
-			// Try to serve the file from the filesystem
-			path := c.Request().URL.Path
-			if path == "/" {
-				path = "/index.html"
-			}
-
-			// Check if the file exists in the embedded FS
-			f, err := distFS.Open(strings.TrimPrefix(path, "/"))
-			if err == nil {
-				f.Close()
-				// File exists, serve it
-				http.FileServer(httpFS).ServeHTTP(c.Response(), c.Request())
-				return nil
-			}
-
-			// If the request accepts HTML, serve index.html (SPA fallback)
-			accept := c.Request().Header.Get("Accept")
-			if strings.Contains(accept, "text/html") {
-				indexFile, err := distFS.Open("index.html")
-				if errors.Is(err, fs.ErrNotExist) {
-					return c.String(http.StatusNotFound, noUIMessage)
-				}
-				if err != nil {
-					return next(c)
-				}
-				defer indexFile.Close()
-
-				stat, err := indexFile.Stat()
-				if err != nil {
-					return next(c)
-				}
-
-				rs, ok := indexFile.(io.ReadSeeker)
-				if !ok {
-					return next(c)
-				}
-				http.ServeContent(c.Response(), c.Request(), "index.html", stat.ModTime(), rs)
-				return nil
-			}
-
-			return next(c)
+	e.RouteNotFound("/*", func(c echo.Context) error {
+		path := c.Request().URL.Path
+		if strings.HasPrefix(path, "/api/") {
+			return echo.ErrNotFound
 		}
+		if path == "/" {
+			path = "/index.html"
+		}
+
+		if f, err := distFS.Open(strings.TrimPrefix(path, "/")); err == nil {
+			f.Close()
+			http.FileServer(httpFS).ServeHTTP(c.Response(), c.Request())
+			return nil
+		}
+
+		if !strings.Contains(c.Request().Header.Get("Accept"), "text/html") {
+			return echo.ErrNotFound
+		}
+		indexFile, err := distFS.Open("index.html")
+		if errors.Is(err, fs.ErrNotExist) {
+			return c.String(http.StatusNotFound, noUIMessage)
+		}
+		if err != nil {
+			return echo.ErrNotFound
+		}
+		defer indexFile.Close()
+
+		stat, err := indexFile.Stat()
+		if err != nil {
+			return echo.ErrNotFound
+		}
+		rs, ok := indexFile.(io.ReadSeeker)
+		if !ok {
+			return echo.ErrNotFound
+		}
+		http.ServeContent(c.Response(), c.Request(), "index.html", stat.ModTime(), rs)
+		return nil
 	})
 }
