@@ -42,7 +42,7 @@ jobs:
           driver-opts: network=host
       - name: Run tests
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
+          sudo go run github.com/onsi/ginkgo/v2/ginkgo --tags ui -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
       - name: Codecov
         uses: codecov/codecov-action@v7
         env:

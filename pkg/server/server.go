@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"errors"
 	"io"
 	"io/fs"
 	"log"
@@ -435,17 +436,21 @@ func New(cfg Config) *echo.Echo {
 	}
 
 	// SPA static files - serve from embedded UI assets
-	setupSPA(e)
+	setupSPA(e, ui.Assets)
 
 	return e
 }
 
-// setupSPA configures the Echo server to serve the SPA frontend.
-// It serves static files from the embedded UI assets and falls back to index.html
-// for any unmatched route that accepts text/html (SPA client-side routing).
-func setupSPA(e *echo.Echo) {
-	// Get the dist subdirectory from the embedded FS
-	distFS, err := fs.Sub(ui.Assets, "dist")
+// noUIMessage answers browser requests from a binary built without the web
+// UI, such as one from `go install`, instead of a bare 404.
+const noUIMessage = "This auroraboot binary was built without the web UI. Build it with `make build`, or use the container image.\n"
+
+// setupSPA configures the Echo server to serve the SPA frontend from the
+// dist/ directory of assets. It serves static files and falls back to
+// index.html for any unmatched route that accepts text/html (SPA
+// client-side routing).
+func setupSPA(e *echo.Echo, assets fs.FS) {
+	distFS, err := fs.Sub(assets, "dist")
 	if err != nil {
 		return
 	}
@@ -481,6 +486,9 @@ func setupSPA(e *echo.Echo) {
 			accept := c.Request().Header.Get("Accept")
 			if strings.Contains(accept, "text/html") {
 				indexFile, err := distFS.Open("index.html")
+				if errors.Is(err, fs.ErrNotExist) {
+					return c.String(http.StatusNotFound, noUIMessage)
+				}
 				if err != nil {
 					return next(c)
 				}
