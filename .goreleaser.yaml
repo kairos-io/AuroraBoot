@@ -15,6 +15,9 @@ builds:
   - id: auroraboot-amd64
     main: .
     binary: auroraboot
+    # The before hooks build the UI into internal/ui/dist; the ui tag embeds it.
+    tags:
+      - ui
     env:
       - CGO_ENABLED=1
       - CC=gcc
@@ -27,6 +30,9 @@ builds:
   - id: auroraboot-arm64
     main: .
     binary: auroraboot
+    # The before hooks build the UI into internal/ui/dist; the ui tag embeds it.
+    tags:
+      - ui
     env:
       - CGO_ENABLED=1
       - CC=aarch64-linux-gnu-gcc

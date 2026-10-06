@@ -86,7 +86,7 @@ ADD . .
 COPY --from=js /work/internal/ui/dist ./internal/ui/dist
 COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
-RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
+RUN go build -tags ui -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
