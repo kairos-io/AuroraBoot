@@ -442,8 +442,10 @@ func New(cfg Config) *echo.Echo {
 }
 
 // noUIMessage answers browser requests from a binary built without the web
-// UI, such as one from `go install`, instead of a bare 404.
-const noUIMessage = "This auroraboot binary was built without the web UI. Build it with `make build`, or use the container image.\n"
+// UI, such as one from `go install`, instead of a bare 404. It points at the
+// builds that carry the UI rather than at a source checkout the user may
+// not have.
+const noUIMessage = "This auroraboot binary was built without the web UI. The release binaries and the quay.io/kairos/auroraboot container image include it.\n"
 
 // setupSPA configures the Echo server to serve the SPA frontend from the
 // dist/ directory of assets. It serves static files and falls back to

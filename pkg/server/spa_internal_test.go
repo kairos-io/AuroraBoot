@@ -37,5 +37,7 @@ var _ = Describe("serving the web UI", func() {
 		rec := get(fstest.MapFS{}, "/")
 		Expect(rec.Code).To(Equal(http.StatusNotFound))
 		Expect(rec.Body.String()).To(ContainSubstring("built without the web UI"))
+		Expect(rec.Body.String()).To(ContainSubstring("release binaries"))
+		Expect(rec.Body.String()).ToNot(ContainSubstring("make"))
 	})
 })
