@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/imageref"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
@@ -209,6 +210,9 @@ func validateExtensionRequest(req createExtensionRequest) error {
 	case "image":
 		if req.Source.BaseImage == "" {
 			return fmt.Errorf("source.baseImage is required for mode=image")
+		}
+		if err := imageref.Validate("source.baseImage", req.Source.BaseImage); err != nil {
+			return err
 		}
 	case "artifact":
 		if req.Source.SourceArtifactID == "" {

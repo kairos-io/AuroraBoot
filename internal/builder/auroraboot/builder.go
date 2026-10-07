@@ -19,6 +19,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
+	"github.com/kairos-io/AuroraBoot/pkg/imageref"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
@@ -180,6 +181,11 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	// Reject unsafe admin-supplied values before any work starts. Covers
 	// kairos-init flag interpolation in the Dockerfile RUN line.
 	if err := validateKairosInitOptions(opts); err != nil {
+		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
+	}
+	// Covers the image references that reach a generated Dockerfile's FROM
+	// line, where a newline would add instructions of the caller's choosing.
+	if err := validateImageReferences(opts); err != nil {
 		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
 	}
 	// An extension name the catalog cannot be asked for is a bad request, not
@@ -575,6 +581,25 @@ func validateKairosInitOptions(opts builder.BuildOptions) error {
 	return nil
 }
 
+// validateImageReferences checks every caller-supplied image reference that is
+// spliced into a generated Dockerfile's FROM line: base image and kairos-init
+// image for the kairosify Dockerfile, Hadron base for the composed one. A
+// value carrying a newline would add instructions of the caller's choosing to
+// a build the operator believes is curated, so this runs before any build
+// starts. Empty fields are optional and are skipped by imageref.Validate.
+func validateImageReferences(opts builder.BuildOptions) error {
+	for _, f := range []struct{ field, value string }{
+		{"base image", opts.BaseImage},
+		{"kairos-init image", opts.KairosInitImage},
+		{"hadron base", opts.HadronBase},
+	} {
+		if err := imageref.Validate(f.field, f.value); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // ensureKairosified defensively checks whether an image is already a complete
 // Kairos image before deriving one with kairos-init.
 func (b *Builder) ensureKairosified(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
@@ -599,6 +624,18 @@ func (b *Builder) kairosify(ctx context.Context, image string, opts builder.Buil
 	}
 	if kairosInitImage == "" {
 		kairosInitImage = defaultKairosInitImage + ":" + defaultKairosInitVersion
+	}
+	// Second line of defence, on the values as they are about to be written
+	// rather than as they arrived: image is whatever Build resolved (a caller
+	// reference, or a tag this process built), and kairosInitImage can also
+	// come from KAIROS_INIT_IMAGE in the environment.
+	for _, f := range []struct{ field, value string }{
+		{"kairos-init image", kairosInitImage},
+		{"base image", image},
+	} {
+		if err := imageref.NoControlChars(f.field, f.value); err != nil {
+			return "", err
+		}
 	}
 
 	// Build kairos-init flags
@@ -762,6 +799,9 @@ func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, ou
 	// builds carry their own FROM and are written verbatim.
 	dockerfile := opts.Dockerfile
 	if opts.HadronBase != "" {
+		if err := imageref.NoControlChars("hadron base", opts.HadronBase); err != nil {
+			return "", err
+		}
 		dockerfile = "FROM " + opts.HadronBase + "\n" + dockerfile
 	}
 	dockerfilePath := filepath.Join(outputDir, "Dockerfile")

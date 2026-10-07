@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/imageref"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
 
@@ -283,6 +284,9 @@ func (b *ExtensionBuilder) resolveSource(ctx context.Context, opts builder.Exten
 		if opts.Source.BaseImage == "" {
 			return "", fmt.Errorf("source.baseImage required for mode=image")
 		}
+		if err := imageref.NoControlChars("source.baseImage", opts.Source.BaseImage); err != nil {
+			return "", err
+		}
 		return opts.Source.BaseImage, nil
 
 	case "artifact":
@@ -295,6 +299,11 @@ func (b *ExtensionBuilder) resolveSource(ctx context.Context, opts builder.Exten
 		}
 		if opts.Source.ExtraSteps == "" {
 			return art.ContainerImage, nil
+		}
+		// The artifact image is written straight into a FROM line, so it has
+		// to be free of newlines even though this process produced it.
+		if err := imageref.NoControlChars("artifact container image", art.ContainerImage); err != nil {
+			return "", err
 		}
 		dockerfile := fmt.Sprintf("FROM %s\n%s\n", art.ContainerImage, opts.Source.ExtraSteps)
 		return b.dockerBuildAndTag(ctx, opts.ID, dockerfile, opts.Source.BuildContextDir, outputDir, logger)
