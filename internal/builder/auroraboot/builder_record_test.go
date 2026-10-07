@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"sync"
-	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -159,6 +158,12 @@ var _ = Describe("AuroraBoot Builder record persistence of catalog extensions", 
 	It("persists Extensions and ExtensionsCatalogs", func() {
 		s := newRecStore()
 		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		// Same join as the spec above: the build keeps writing into the
+		// TempDir after Build returns. Waiting for a terminal phase instead
+		// is not a join, and it is not a wait this spec can size: the build
+		// shells out to `docker build`, so the time to leave Building is a
+		// question about the runner's registry access.
+		DeferCleanup(func() { Expect(b.Shutdown(context.Background())).To(Succeed()) })
 
 		_, err := b.Build(context.Background(), builder.BuildOptions{
 			ID:                 "with-extensions",
@@ -168,17 +173,9 @@ var _ = Describe("AuroraBoot Builder record persistence of catalog extensions", 
 		})
 		Expect(err).NotTo(HaveOccurred())
 
-		// Wait for the build goroutine to finish so the record is read after
-		// the post-build phase and file writes, and so the goroutine is not
-		// still writing into the TempDir when Ginkgo removes it.
-		Eventually(func() string {
-			r, err := s.GetByID(context.Background(), "with-extensions")
-			if err != nil {
-				return ""
-			}
-			return r.Phase
-		}, 10*time.Second).Should(BeElementOf(store.ArtifactReady, store.ArtifactError))
-
+		// The two fields under test are on the row store.Create wrote inside
+		// Build, and every later write to that row is a read-modify-write
+		// that carries them through, so nothing here waits on the build.
 		rec, err := s.GetByID(context.Background(), "with-extensions")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rec.Extensions).To(Equal([]string{"tailscale", "k3s@v1.31.4"}))
