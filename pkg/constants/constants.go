@@ -133,7 +133,25 @@ const (
 	// whole life. A live boot is identified by immucore's
 	// /run/cos/uki_install_mode sentinel instead, which is derived from
 	// removable-media boot. See kairos-io/kairos#5000.
-	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
+	//
+	// splash is here for the same reason: it has to be, because there is no
+	// other way to get it onto a Trusted Boot node. kairos-init installs and
+	// enables kairos-splash.service on every systemd image, and that unit is
+	// gated on ConditionKernelCommandLine=splash. On a GRUB system the token
+	// comes from BootArgsCfg; Trusted Boot does not read that file, so without
+	// this the unit is skipped on every boot of every UKI image. The token
+	// turns on the booted-system half only, which covers switch-root to the
+	// login prompt. The initramfs half cannot run on Trusted Boot at all: a
+	// UKI initrd is not built with dracut, so the 50kairos-splash dracut
+	// module is never installed in one. See kairos-io/kairos#5285.
+	//
+	// quiet is deliberately NOT here. kairos-io/kairos#5284 puts it on the
+	// GRUB entries that animate, where an operator can drop it at the boot
+	// menu. Here it could never be dropped, so a node would lose kernel
+	// messages on tty1 and ttyS0 for its whole life. The animation is still
+	// escapable without it: ESC streams /dev/kmsg, and
+	// `systemctl mask kairos-splash.service` turns it off for good.
+	UkiCmdline                    = "console=ttyS0 console=tty1 splash net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
 	UkiSystemdBootx86Name         = "systemd-bootx64.efi"
 	UkiSystemdBootx86Path         = "/amd/systemd-boot/" + UkiSystemdBootx86Name
 	UkiSystemdBootStubx86Name     = "linuxx64.efi.stub"
