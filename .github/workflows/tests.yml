@@ -42,7 +42,7 @@ jobs:
           driver-opts: network=host
       - name: Run tests
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
+          sudo go run github.com/onsi/ginkgo/v2/ginkgo --tags ui -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
       - name: Codecov
         uses: codecov/codecov-action@v7
         env:
@@ -57,7 +57,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v7
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.22.0
       - name: Install helm-unittest plugin
@@ -189,7 +189,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: auroraboot-image
           path: /tmp/
@@ -257,7 +257,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: auroraboot-image
           path: /tmp/
@@ -317,7 +317,7 @@ jobs:
         with:
           driver-opts: network=host
       - name: Download image artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: auroraboot-image
           path: /tmp/
@@ -355,7 +355,7 @@ jobs:
        with:
          driver-opts: network=host
      - name: Download image artifact
-       uses: actions/download-artifact@v7
+       uses: actions/download-artifact@v8
        with:
          name: auroraboot-image
          path: /tmp/

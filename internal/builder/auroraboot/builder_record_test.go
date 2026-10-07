@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -147,5 +148,40 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 		Expect(*rec.KubernetesEnabled).To(BeTrue())
 		Expect(rec.TargetGroupID).To(Equal("grp-1"))
 		Expect(rec.OverlayRootfs).To(Equal("/tmp/overlay"))
+	})
+})
+
+var _ = Describe("AuroraBoot Builder record persistence of catalog extensions", func() {
+	// The artifact page's Build summary and the Clone flow read the catalog
+	// extensions back from the row (kairos-io/kairos#5274). The handler's
+	// own record is skipped when the builder already wrote one, so the
+	// builder must persist them itself.
+	It("persists Extensions and ExtensionsCatalogs", func() {
+		s := newRecStore()
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+
+		_, err := b.Build(context.Background(), builder.BuildOptions{
+			ID:                 "with-extensions",
+			BaseImage:          "quay.io/kairos/hadron:latest",
+			Extensions:         []string{"tailscale", "k3s@v1.31.4"},
+			ExtensionsCatalogs: []string{"https://example.com/releases.json"},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		// Wait for the build goroutine to finish so the record is read after
+		// the post-build phase and file writes, and so the goroutine is not
+		// still writing into the TempDir when Ginkgo removes it.
+		Eventually(func() string {
+			r, err := s.GetByID(context.Background(), "with-extensions")
+			if err != nil {
+				return ""
+			}
+			return r.Phase
+		}, 10*time.Second).Should(BeElementOf(store.ArtifactReady, store.ArtifactError))
+
+		rec, err := s.GetByID(context.Background(), "with-extensions")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.Extensions).To(Equal([]string{"tailscale", "k3s@v1.31.4"}))
+		Expect(rec.ExtensionsCatalogs).To(Equal([]string{"https://example.com/releases.json"}))
 	})
 })

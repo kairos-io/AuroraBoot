@@ -8,7 +8,7 @@
     "cy:run": "cypress run"
   },
   "devDependencies": {
-    "cypress": "^15.17.0"
+    "cypress": "^16.0.0"
   },
   "overrides": {
     "qs": "6.16.0"

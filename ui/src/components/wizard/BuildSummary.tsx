@@ -14,6 +14,10 @@ export type BuildSummaryData = {
   kubernetes?: string;
   version: string;
   bundledExtensions: string[];
+  // Set when a clone could not read its source's bundle. The list is then
+  // empty for a reason the operator has to be told, because an empty list and
+  // an unreadable one are the same picture.
+  bundledExtensionsUnavailable?: boolean;
   catalogExtensions: string[];
   user: "default" | "custom" | "none";
   sshKeyCount: number;
@@ -111,7 +115,15 @@ function sections(d: BuildSummaryData): Section[] {
       title: "Extensions",
       step: "extensions",
       rows: [
-        { label: "Install after boot", value: list(d.bundledExtensions) },
+        {
+          label: "Install after boot",
+          // "None" here is a claim about the source artifact. When the read
+          // failed we do not know, so the row says that instead.
+          value: d.bundledExtensionsUnavailable ? "Unknown" : list(d.bundledExtensions),
+          warning: d.bundledExtensionsUnavailable
+            ? "could not be read from the cloned artifact, nothing carried over"
+            : undefined,
+        },
         { label: "Bake into the image", value: list(d.catalogExtensions) },
       ],
     },
