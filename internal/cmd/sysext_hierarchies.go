@@ -13,7 +13,8 @@ import (
 // mergedSysextHierarchies mirrors SYSTEMD_SYSEXT_HIERARCHIES as kairos-init
 // ships it in cloudconfigs/99_sysext.yaml. systemd merges nothing outside this
 // list, so anything else a sysext carries is packed into the image and then
-// never appears on the node.
+// never appears on the node. Nothing under /usr/local is merged: Kairos mounts
+// the persistent partition there, and a merged hierarchy turns read-only.
 //
 // The list cannot be read from the kairos module at run time: it lives inside
 // a yip cloud config, and the package that embeds it
@@ -22,12 +23,6 @@ import (
 // reads the yaml out of the kairos module instead and fails when the two
 // disagree, which is what turns a dependency bump into a visible decision.
 var mergedSysextHierarchies = []string{
-	"/usr/local/bin",
-	"/usr/local/sbin",
-	"/usr/local/include",
-	"/usr/local/lib",
-	"/usr/local/share",
-	"/usr/local/src",
 	"/usr/bin",
 	"/usr/share",
 	"/usr/lib",
