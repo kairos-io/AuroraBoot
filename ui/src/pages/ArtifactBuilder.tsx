@@ -3,6 +3,7 @@ import { Link, useNavigate, useSearchParams } from "react-router";
 import {
   createArtifact,
   getArtifact,
+  listBundleExtensions,
   listSecureBootKeySets,
   uploadOverlayFiles,
   type CreateArtifactInput,
@@ -624,6 +625,10 @@ export function ArtifactBuilder() {
   const [buildMode, setBuildMode] = useState<"image" | "dockerfile">("image");
   const [form, setForm] = useState<CreateArtifactInput>({ ...EMPTY_FORM, outputs: { ...EMPTY_OUTPUTS }, signing: { ...EMPTY_SIGNING }, provisioning: { ...EMPTY_PROVISIONING } });
   const [cloneSource, setCloneSource] = useState("");
+  // A clone reads its source's bundle in a second request. When that read
+  // fails the form cannot tell an empty bundle from an unknown one, so the
+  // failure is recorded and shown rather than rendered as "no extensions".
+  const [cloneBundleUnavailable, setCloneBundleUnavailable] = useState(false);
   const [customModel, setCustomModel] = useState(false);
   const [ukiKeyMode, setUkiKeyMode] = useState<"keyset" | "manual">("keyset");
   // Steps whose errors are on screen: a step joins once Next was tried on it,
@@ -1071,6 +1076,38 @@ export function ArtifactBuilder() {
           setExtensionsCatalogTouched(true);
         }
 
+        // The bundle is stored in its own table, so it is not on the artifact
+        // response and takes a second read. Applied with a functional update
+        // because both branches below replace the whole form synchronously;
+        // this callback is a promise continuation, so it always runs after
+        // them and merges into the form they built rather than racing it.
+        //
+        // A bundle that cannot be read must not cost the operator the clone,
+        // so the clone goes on. It must not read as an empty bundle either:
+        // that is indistinguishable from a source that had none, and the
+        // operator would start a build believing nothing was lost.
+        listBundleExtensions(cloneId)
+          .then((entries) => {
+            if (entries.length === 0) return;
+            const bundled = entries
+              .slice()
+              .sort((x, y) => x.order - y.order)
+              .map((e) => ({
+                name: e.extensionName,
+                type: e.extensionType === "confext" ? ("confext" as const) : ("sysext" as const),
+                pinnedVersion: e.pinnedVersion || undefined,
+                order: e.order,
+              }));
+            setForm((prev) => ({ ...prev, bundledExtensions: bundled }));
+          })
+          .catch(() => {
+            setCloneBundleUnavailable(true);
+            toast(
+              "Could not read the bundled extensions of the artifact being cloned. They are not carried over.",
+              "error",
+            );
+          });
+
         // Hadron branch: restore the composer state and land on Source so the
         // operator can edit firmware / layers / base before rebuilding. Auto-
         // opens the advanced expander when the source artifact carried
@@ -1123,6 +1160,13 @@ export function ArtifactBuilder() {
               trustedBoot: a.trustedBoot,
             },
             signing: { ...EMPTY_SIGNING },
+            // Already on the artifact response, so the clone has this in hand.
+            // Dropping it rebuilt an image that refuses overlays on the very
+            // paths the source artifact was built to accept.
+            extensionHierarchies: {
+              sysext: a.extensionHierarchies?.sysext ?? [],
+              confext: a.extensionHierarchies?.confext ?? [],
+            },
             provisioning: {
               autoInstall: a.autoInstall ?? true,
               registerAuroraBoot: a.registerAuroraBoot ?? true,
@@ -1171,6 +1215,12 @@ export function ArtifactBuilder() {
             trustedBoot: a.trustedBoot,
           },
           signing: { ...EMPTY_SIGNING },
+          // Same restore as the Hadron branch above: the hierarchies are on
+          // the artifact response and are the clone's to carry over.
+          extensionHierarchies: {
+            sysext: a.extensionHierarchies?.sysext ?? [],
+            confext: a.extensionHierarchies?.confext ?? [],
+          },
           provisioning: {
             autoInstall: a.autoInstall ?? true,
             registerAuroraBoot: a.registerAuroraBoot ?? true,
@@ -1188,7 +1238,11 @@ export function ArtifactBuilder() {
         }
         setStep("review");
         setMaxReached(BUILDER_STEPS.length - 1);
-      }).catch(() => {});
+      }).catch(() => {
+        // Without this the form silently stays an empty "new artifact" one,
+        // which looks like the clone link was never followed.
+        toast("Could not read the artifact to clone.", "error");
+      });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
@@ -1530,6 +1584,9 @@ export function ArtifactBuilder() {
         : undefined,
     version: form.kairosVersion || DEFAULT_ARTIFACT_VERSION,
     bundledExtensions: (form.bundledExtensions ?? []).map((e) => e.name),
+    // Review is the last screen before Start build, so an unread bundle has to
+    // say so here rather than show the "None" of a source that had no bundle.
+    bundledExtensionsUnavailable: cloneBundleUnavailable,
     catalogExtensions: catalogMissing ? [] : selectedExtensionNames,
     user: userMode,
     sshKeyCount: userMode === "none" ? 0 : sshKeys.split("\n").filter((l) => l.trim()).length,
@@ -2428,6 +2485,14 @@ export function ArtifactBuilder() {
               <strong className="text-foreground">Bake into the image</strong>: extensions from a catalog are
               written into the ISO.
             </p>
+            {/* A toast is gone by the time the operator reaches this step, so
+                the failed read is stated where the empty list is shown. */}
+            {cloneBundleUnavailable && (
+              <p className="text-sm text-destructive">
+                The bundled extensions of the cloned artifact could not be read, so none were
+                carried over. This list is not the source artifact&apos;s bundle.
+              </p>
+            )}
             {/* Bundled extensions: ride along with every upgrade to this artifact. */}
             <BundledExtensionsCard
               arch={form.arch}

@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,6 +43,11 @@ type LiveISO struct {
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO.
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline,omitempty" mapstructure:"extend-live-cmdline"`
 	LiveConsole       string `yaml:"live-console,omitempty" mapstructure:"live-console"`
+	// DefaultGrubEntry is the id (`--id`) of the live menu entry grub boots when
+	// the timeout expires. Left empty, the ISO boots the installer
+	// (constants.LiveGrubEntryInstall). Any value outside
+	// constants.LiveGrubEntries fails the build.
+	DefaultGrubEntry string `yaml:"default-grub-entry,omitempty" mapstructure:"default-grub-entry"`
 }
 
 // BuildConfig represents the config we need for building isos, raw images, artifacts
@@ -163,15 +169,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 			return err
 		}
 
-		spec := &LiveISO{
-			RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(src)},
-			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(tmp)},
-			Label:              constants.ISOLabel,
-			GrubEntry:          "Kairos",
-			BootloaderInRootFs: false,
-			ExtendLiveCmdline:  i.ExtendLiveCmdline,
-			LiveConsole:        i.LiveConsole,
-		}
+		spec := newLiveISOSpec(src, tmp, i)
 
 		if i.OverlayRootfs != "" {
 			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
@@ -194,6 +192,22 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 			internal.Log.Logger.Error().Msgf("Failed generating iso '%s' from '%s'. Error: %s", i.Name, src, err.Error())
 		}
 		return err
+	}
+}
+
+// newLiveISOSpec carries the ISO options the user gave over to the build spec.
+// A field left out here is parsed from the config and then dropped, which the
+// build has no way to report.
+func newLiveISOSpec(rootfs, isoRoot string, i schema.ISO) *LiveISO {
+	return &LiveISO{
+		RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(rootfs)},
+		Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(isoRoot)},
+		Label:              constants.ISOLabel,
+		GrubEntry:          constants.LiveGrubEntryInstall,
+		BootloaderInRootFs: false,
+		ExtendLiveCmdline:  i.ExtendLiveCmdline,
+		DefaultGrubEntry:   i.DefaultGrubEntry,
+		LiveConsole:        i.LiveConsole,
 	}
 }
 
@@ -397,16 +411,45 @@ func (b *BuildISOAction) ISORun() (err error) {
 	return err
 }
 
+// resolveDefaultGrubEntry checks the entry id a build named against the ids
+// the template defines, and returns the installer entry when the build named
+// none.
+//
+// Grub resolves `set default` against the ids and silently falls back to the
+// first entry when it matches nothing, so a typo is not a boot failure a user
+// can diagnose, it is a boot that lands somewhere else. The id also goes
+// inside a quoted grub assignment, where a value ending in a backslash
+// escapes the closing quote and swallows the lines that follow. Both cases
+// are the same mistake, and the build can only report it before it writes
+// the config.
+func resolveDefaultGrubEntry(defaultEntry string) (string, error) {
+	defaultEntry = strings.TrimSpace(defaultEntry)
+	if defaultEntry == "" {
+		return constants.LiveGrubEntryInstall, nil
+	}
+	if slices.Contains(constants.LiveGrubEntries, defaultEntry) {
+		return defaultEntry, nil
+	}
+	return "", fmt.Errorf(
+		"unknown default live grub entry %q: expected one of %s, or an empty value for %s",
+		defaultEntry, strings.Join(constants.LiveGrubEntries, ", "), constants.LiveGrubEntryInstall)
+}
+
 // applyGrubTemplate replaces placeholders in the grub config template.
-func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole string) []byte {
+func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole, defaultEntry string) ([]byte, error) {
 	liveConsole = strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(liveConsole))
 	if liveConsole == "" {
 		liveConsole = "console=ttyS0 console=tty1"
 	}
+	defaultEntry, err := resolveDefaultGrubEntry(defaultEntry)
+	if err != nil {
+		return nil, err
+	}
 	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", nomodeset)
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
 	out = strings.ReplaceAll(out, "{{LIVE_CONSOLE}}", liveConsole)
-	return []byte(out)
+	out = strings.ReplaceAll(out, "{{DEFAULT_ENTRY}}", defaultEntry)
+	return []byte(out), nil
 }
 
 // prepareBootArtifacts will write the needed artifacts for BIOS cd boot into the isoDir
@@ -442,7 +485,14 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 		if b.spec != nil {
 			liveConsole = b.spec.LiveConsole
 		}
-		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole)
+		defaultEntry := ""
+		if b.spec != nil {
+			defaultEntry = b.spec.DefaultGrubEntry
+		}
+		grubCfg, err := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole, defaultEntry)
+		if err != nil {
+			return err
+		}
 		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), grubCfg, constants.FilePerm)
 	} else {
 		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
