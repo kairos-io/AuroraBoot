@@ -8,6 +8,9 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 func TestUnmergedPrefix(t *testing.T) {
@@ -203,3 +206,19 @@ func TestMergedHierarchiesMatchKairos(t *testing.T) {
 		t.Fatalf("mergedSysextHierarchies has drifted from 99_sysext.yaml.\n  here:   %v\n  kairos: %v", got, want)
 	}
 }
+
+var _ = Describe("warnUnmergedHierarchies", func() {
+	// Kairos mounts the persistent partition at /usr/local and does not
+	// merge extensions over it, so a sysext carrying files there has to be
+	// told.
+	It("warns about files under /usr/local", func() {
+		root := GinkgoT().TempDir()
+		full := filepath.Join(root, "usr", "local", "bin", "hello.sh")
+		Expect(os.MkdirAll(filepath.Dir(full), 0o755)).To(Succeed())
+		Expect(os.WriteFile(full, []byte("#!/bin/sh\n"), 0o755)).To(Succeed())
+
+		var lines []string
+		Expect(warnUnmergedHierarchies(root, nil, func(l string) { lines = append(lines, l) })).To(Succeed())
+		Expect(lines).To(ConsistOf(ContainSubstring("/usr/local")))
+	})
+})
