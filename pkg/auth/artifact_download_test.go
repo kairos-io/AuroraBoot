@@ -41,6 +41,12 @@ func (f *fakeCommandStore) UpdateStatusForNode(context.Context, string, string, 
 func (f *fakeCommandStore) ExpireBefore(context.Context, string, time.Time) error { return nil }
 func (f *fakeCommandStore) Delete(context.Context, string) error                  { return nil }
 func (f *fakeCommandStore) DeleteTerminal(context.Context, string) error          { return nil }
+func (f *fakeCommandStore) ListByBatch(context.Context, string) ([]*store.NodeCommand, error) {
+	return nil, nil
+}
+func (f *fakeCommandStore) CancelPendingInBatch(context.Context, string, string) (int, error) {
+	return 0, nil
+}
 
 // fakeExtensionStore is a minimal store.ExtensionStore; only GetByID is
 // functional, which is all ExtensionDownloadMiddleware reads.

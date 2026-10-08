@@ -163,6 +163,12 @@ func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadli
 }
 func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }
+func (f *fakeCommandStore) ListByBatch(_ context.Context, _ string) ([]*store.NodeCommand, error) {
+	return nil, nil
+}
+func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, _ string, _ string) (int, error) {
+	return 0, nil
+}
 
 type fakeGroupStore struct{}
 
