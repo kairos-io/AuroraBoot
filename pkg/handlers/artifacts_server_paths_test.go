@@ -58,7 +58,7 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 		return id
 	}
 
-	Describe("Create refuses removed path fields", func() {
+	Describe("Create refuses fields naming server paths", func() {
 		DescribeTable("returns 400 naming the replacement and starts no build",
 			func(fragment, wantField, wantHint string) {
 				rec := create(`{"baseImage":"ubuntu:24.04","outputs":{"iso":true},` + fragment + `}`)
@@ -203,6 +203,47 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 			Expect(filepath.Join(artifactsDir, "overlays", id)).NotTo(BeADirectory())
 		})
 
+		// A cloned build carries the overlayId of the build it was cloned
+		// from, so several records can reference one overlay directory.
+		It("Delete keeps an overlay another record still references, and removes it with the last one", func() {
+			id := makeOverlay()
+			overlay := filepath.Join(artifactsDir, "overlays", id)
+			as.records = []*store.ArtifactRecord{
+				{ID: "art-1", Phase: store.ArtifactReady, OverlayID: id},
+				{ID: "art-2", Phase: store.ArtifactReady, OverlayID: id},
+			}
+
+			deleteRecord("art-1")
+			Expect(overlay).To(BeADirectory())
+
+			deleteRecord("art-2")
+			Expect(overlay).NotTo(BeADirectory())
+		})
+
+		It("ClearFailed keeps an overlay a record that is not failed still references", func() {
+			id := makeOverlay()
+			overlay := filepath.Join(artifactsDir, "overlays", id)
+			as.records = []*store.ArtifactRecord{
+				{ID: "art-err", Phase: store.ArtifactError, OverlayID: id},
+				{ID: "art-ok", Phase: store.ArtifactReady, OverlayID: id},
+			}
+
+			clearFailed()
+			Expect(overlay).To(BeADirectory())
+		})
+
+		It("ClearFailed removes an overlay shared only by failed records", func() {
+			id := makeOverlay()
+			overlay := filepath.Join(artifactsDir, "overlays", id)
+			as.records = []*store.ArtifactRecord{
+				{ID: "art-err1", Phase: store.ArtifactError, OverlayID: id},
+				{ID: "art-err2", Phase: store.ArtifactError, OverlayID: id},
+			}
+
+			clearFailed()
+			Expect(overlay).NotTo(BeADirectory())
+		})
+
 		DescribeTable("Delete refuses a stored overlay ID that is not a UUID",
 			func(stored string) {
 				stored = strings.ReplaceAll(stored, "{dir}", artifactsDir)
@@ -212,12 +253,7 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 				Expect(filepath.Join(artifactsDir, "overlays")).To(BeADirectory())
 				Expect(artifactsDir).To(BeADirectory())
 			},
-			Entry("parent traversal", "../victim"),
-			Entry("empty-looking dot", "."),
-			Entry("parent dir", ".."),
-			Entry("absolute path", "/tmp"),
-			Entry("path under the artifacts dir that climbs out of it", "{dir}/overlays/../victim"),
-			Entry("artifacts dir itself", "{dir}"),
+			refusedOverlayIDEntries(),
 		)
 
 		DescribeTable("ClearFailed refuses a stored overlay ID that is not a UUID",
@@ -229,12 +265,7 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 				Expect(filepath.Join(artifactsDir, "overlays")).To(BeADirectory())
 				Expect(artifactsDir).To(BeADirectory())
 			},
-			Entry("parent traversal", "../victim"),
-			Entry("empty-looking dot", "."),
-			Entry("parent dir", ".."),
-			Entry("absolute path", "/tmp"),
-			Entry("path under the artifacts dir that climbs out of it", "{dir}/overlays/../victim"),
-			Entry("artifacts dir itself", "{dir}"),
+			refusedOverlayIDEntries(),
 		)
 	})
 })
@@ -259,3 +290,17 @@ var _ = Describe("ExtensionHandler.Create: no server paths in the API", func() {
 		Expect(fb.lastOpts.ID).To(BeEmpty())
 	})
 })
+
+// refusedOverlayIDEntries lists stored overlay IDs that cleanup must refuse.
+// "{dir}" stands for the test's artifacts dir, which is only known once a
+// spec runs, so the table body substitutes it.
+func refusedOverlayIDEntries() []TableEntry {
+	return []TableEntry{
+		Entry("parent traversal", "../victim"),
+		Entry("empty-looking dot", "."),
+		Entry("parent dir", ".."),
+		Entry("absolute path", "{dir}/victim"),
+		Entry("path under the artifacts dir that climbs out of it", "{dir}/overlays/../victim"),
+		Entry("artifacts dir itself", "{dir}"),
+	}
+}

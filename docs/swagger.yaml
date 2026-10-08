@@ -1146,6 +1146,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Upload a rootfs overlay

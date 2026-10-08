@@ -27,11 +27,20 @@ import (
 const redfishDeployTimeout = 30 * time.Minute
 
 // DeployHandler handles deployment-related REST endpoints.
+// netbootController is the part of netbootmgr.Manager the netboot endpoints
+// drive.
+type netbootController interface {
+	Start(artifactsDir, artifactID string) error
+	Stop() error
+	GetStatus() netbootmgr.Status
+	GetLogs() string
+}
+
 type DeployHandler struct {
 	artifacts    store.ArtifactStore
 	deployments  store.DeploymentStore
 	bmcTargets   store.BMCTargetStore
-	netboot      *netbootmgr.Manager
+	netboot      netbootController
 	artifactsDir string
 	// isoServe serves a local artifact ISO over a tokenized, BMC-reachable URL.
 	// May be nil, in which case a Redfish deploy must supply an explicit imageUrl.
@@ -79,17 +88,21 @@ func NewDeployHandler(
 	isoServe *isoserve.Server,
 	hub *ws.Hub,
 ) *DeployHandler {
-	return &DeployHandler{
+	h := &DeployHandler{
 		artifacts:    artifacts,
 		deployments:  deployments,
 		bmcTargets:   bmcTargets,
-		netboot:      nb,
 		artifactsDir: artifactsDir,
 		isoServe:     isoServe,
 		hub:          hub,
 		baseCtx:      context.Background(),
 		runs:         make(map[string]context.CancelFunc),
 	}
+	// Leave the interface nil rather than holding a typed nil pointer.
+	if nb != nil {
+		h.netboot = nb
+	}
+	return h
 }
 
 // WithBaseContext sets the parent context for background deploy goroutines so a
@@ -187,9 +200,21 @@ func (h *DeployHandler) StartNetboot(c echo.Context) error {
 	if req.ArtifactID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "artifactId is required"})
 	}
+	// The ID becomes a directory under the artifacts dir, so it must be a
+	// single path segment naming a known artifact.
+	if err := safePathSegment(req.ArtifactID); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid artifactId"})
+	}
+	if h.artifacts != nil {
+		if _, err := h.artifacts.GetByID(c.Request().Context(), req.ArtifactID); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "artifact not found"})
+		}
+	}
 
 	if err := h.netboot.Start(h.artifactsDir, req.ArtifactID); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		// The detail names files on this server, so it goes to the log only.
+		log.Printf("netboot start for artifact %q failed: %v", req.ArtifactID, err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start netboot server; see the server log"})
 	}
 
 	return c.JSON(http.StatusOK, h.netboot.GetStatus())

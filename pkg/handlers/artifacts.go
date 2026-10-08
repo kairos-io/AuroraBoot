@@ -132,7 +132,7 @@ type createArtifactRequest struct {
 	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
 
 	// The fields below name paths on this server and are not part of the
-	// API. They are decoded only so rejectServerPathFields can refuse a
+	// API. They are decoded only so serverPathFieldError can refuse a
 	// request carrying them; Echo would otherwise drop them silently and the
 	// build would run without the overlay or build context the client meant.
 	BuildContextDir string `json:"buildContextDir"`
@@ -140,20 +140,19 @@ type createArtifactRequest struct {
 	OutputDir       string `json:"outputDir"`
 }
 
-// rejectServerPathFields returns the error to report when the request
-// carries a field that names a path on this server, or "" when it carries
-// none.
-func (r *createArtifactRequest) rejectServerPathFields() string {
+// serverPathFieldError reports the first field of the request that names a
+// path on this server, or nil when it carries none.
+func (r *createArtifactRequest) serverPathFieldError() error {
 	switch {
 	case r.OverlayRootfs != "":
-		return "overlayRootfs is not accepted: use overlayId"
+		return errors.New("overlayRootfs is not accepted: use overlayId")
 	case r.BuildContextDir != "":
-		return "buildContextDir is no longer accepted"
+		return errors.New("buildContextDir is no longer accepted")
 	case r.OutputDir != "":
-		return "outputDir is no longer accepted"
+		return errors.New("outputDir is no longer accepted")
 	}
 	if r.Signing == nil {
-		return ""
+		return nil
 	}
 	for _, f := range []struct{ name, value string }{
 		{"ukiSecureBootKey", r.Signing.UKISecureBootKey},
@@ -162,10 +161,10 @@ func (r *createArtifactRequest) rejectServerPathFields() string {
 		{"ukiPublicKeysDir", r.Signing.UKIPublicKeysDir},
 	} {
 		if f.value != "" {
-			return "signing." + f.name + " is not accepted: use signing.ukiKeySetId"
+			return fmt.Errorf("signing.%s is not accepted: use signing.ukiKeySetId", f.name)
 		}
 	}
-	return ""
+	return nil
 }
 
 type extensionHierarchiesReq struct {
@@ -199,7 +198,7 @@ type signingConfig struct {
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
 
 	// Key file paths on this server are not part of the API; they are
-	// decoded only so rejectServerPathFields can refuse them.
+	// decoded only so serverPathFieldError can refuse them.
 	UKISecureBootKey  string `json:"ukiSecureBootKey"`
 	UKISecureBootCert string `json:"ukiSecureBootCert"`
 	UKITPMPCRKey      string `json:"ukiTpmPcrKey"`
@@ -247,8 +246,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if msg := req.rejectServerPathFields(); msg != "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": msg})
+	if err := req.serverPathFieldError(); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	var overlayRootfs string
@@ -942,13 +941,14 @@ func (h *ArtifactHandler) ClearFailed(c echo.Context) error {
 	// here should not block DB cleanup, since the row is what the UI keys
 	// off, and Cancel is idempotent on both backends.
 	if records, err := h.store.List(ctx); err == nil {
+		failed := func(r *store.ArtifactRecord) bool { return r.Phase == store.ArtifactError }
 		for _, r := range records {
-			if r.Phase == store.ArtifactError {
+			if failed(r) {
 				if cancelErr := h.builder.Cancel(ctx, r.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
 					fmt.Fprintf(os.Stderr, "clear-failed: builder.Cancel(%q) failed: %v\n", r.ID, cancelErr)
 				}
 				os.RemoveAll(filepath.Join(h.artifactsDir, r.ID))
-				h.removeOverlay(r.OverlayID)
+				h.removeOverlay(records, r.OverlayID, failed)
 			}
 		}
 	}
@@ -994,7 +994,11 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 	outputDir := filepath.Join(h.artifactsDir, id)
 	os.RemoveAll(outputDir)
 
-	h.removeOverlay(rec.OverlayID)
+	if records, err := h.store.List(ctx); err == nil {
+		h.removeOverlay(records, rec.OverlayID, func(r *store.ArtifactRecord) bool { return r.ID == id })
+	} else {
+		fmt.Fprintf(os.Stderr, "delete: keeping overlay %q, cannot list artifacts: %v\n", rec.OverlayID, err)
+	}
 
 	// Remove Docker image.
 	if rec.ContainerImage != "" {
@@ -1060,11 +1064,18 @@ func (h *ArtifactHandler) overlayDir(id string) (string, error) {
 	return filepath.Join(h.artifactsDir, "overlays", id), nil
 }
 
-// removeOverlay deletes the uploaded overlay with the given ID. An empty or
-// malformed ID removes nothing.
-func (h *ArtifactHandler) removeOverlay(id string) {
+// removeOverlay deletes the uploaded overlay with the given ID unless a
+// record in records that is not being deleted still references it. A cloned
+// build carries the overlayId of its source, so one overlay can back several
+// records. An empty or malformed ID removes nothing.
+func (h *ArtifactHandler) removeOverlay(records []*store.ArtifactRecord, id string, beingDeleted func(*store.ArtifactRecord) bool) {
 	if id == "" {
 		return
+	}
+	for _, r := range records {
+		if r.OverlayID == id && !beingDeleted(r) {
+			return
+		}
 	}
 	dir, err := h.overlayDir(id)
 	if err != nil {
@@ -1093,6 +1104,7 @@ type UploadOverlayResponse struct {
 //	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
 //	@Success		200		{object}	UploadOverlayResponse
 //	@Failure		400		{object}	APIError
+//	@Failure		500		{object}	APIError
 //	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
 	id := uuid.New().String()

@@ -90,7 +90,7 @@ type extensionSourceReq struct {
 	// BuildContextDir names a directory on this server and is not part of
 	// the API. It is decoded only so Create can refuse a request carrying
 	// it instead of silently building without it.
-	BuildContextDir string `json:"buildContextDir,omitempty" swaggerignore:"true"`
+	BuildContextDir string `json:"buildContextDir" swaggerignore:"true"`
 }
 
 // Create handles POST /api/v1/extensions.
