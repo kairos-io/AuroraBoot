@@ -58,6 +58,36 @@ var _ = Describe("ExtensionHandler.Create", func() {
 	})
 })
 
+var _ = Describe("ExtensionHandler.Create — image reference validation", func() {
+	var (
+		e       *echo.Echo
+		fb      *fakeExtensionBuilder
+		handler *handlers.ExtensionHandler
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		fb = &fakeExtensionBuilder{}
+		handler = handlers.NewExtensionHandler(fb, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, "")
+	})
+
+	post := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/extensions", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		Expect(handler.Create(c)).To(Succeed())
+		return rec
+	}
+
+	It("rejects a base image that would add lines to the generated Dockerfile", func() {
+		rec := post(`{"name":"x","type":"sysext","arch":"amd64","source":{"mode":"image","baseImage":"ubuntu:24.04\nRUN id"}}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("source.baseImage"))
+		Expect(fb.lastOpts.Name).To(BeEmpty())
+	})
+})
+
 var _ = Describe("ExtensionHandler.Create — hierarchies validation", func() {
 	var (
 		e       *echo.Echo
