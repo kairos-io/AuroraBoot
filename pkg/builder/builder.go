@@ -90,13 +90,23 @@ type BuildOptions struct {
 	// LogRedactValues are substrings the builder scrubs from every log line
 	// before persisting to the store or broadcasting to the UI. The Create
 	// handler populates this with per-build secrets it just injected into
-	// the cloud-config (registration token, default node password) so a
-	// build step that echoes the cloud-config cannot land those values in
-	// the GET /logs response or the live log pane. Best-effort: values
-	// shorter than 8 characters are skipped to avoid replacing unrelated
-	// text that happens to contain them, and only verbatim occurrences
-	// are redacted - anything transformed (base64, JSON-escaped) still
-	// passes.
+	// the cloud-config (registration token, default node password) plus the
+	// UploadToken above, which reaches the operator backend's exporter Job
+	// through a Secret and whose pod logs are streamed back through this
+	// same redacting path - a step that echoes its environment would
+	// otherwise publish a live bearer for PUT /upload. So a build step that
+	// echoes the cloud-config cannot land those values in the GET /logs
+	// response or the live log pane.
+	//
+	// This list is only the secrets AuroraBoot itself supplied and knows the
+	// value of. Secrets a user wrote into their own cloud-config are not in
+	// it and cannot be, which is why the builder never writes that document
+	// to the log in the first place.
+	//
+	// Best-effort: values shorter than 8 characters are skipped to avoid
+	// replacing unrelated text that happens to contain them, and only
+	// verbatim occurrences are redacted - anything transformed (base64,
+	// JSON-escaped) still passes.
 	LogRedactValues []string
 
 	// Grouped options (preferred for new code).
