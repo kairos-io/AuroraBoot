@@ -154,29 +154,19 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 	}
 }
 
-// KairosInitImageFromEnv returns the kairos-init image named by
-// KAIROS_INIT_IMAGE, or the pinned default when it is unset. The value is
-// written into the kairosify Dockerfile as a FROM line, so it is validated
-// here, once, at startup.
-func KairosInitImageFromEnv() (string, error) {
-	ref := os.Getenv("KAIROS_INIT_IMAGE")
-	if ref == "" {
-		return defaultKairosInitImage + ":" + defaultKairosInitVersion, nil
-	}
-	if err := builder.ValidateImageRef("KAIROS_INIT_IMAGE", ref); err != nil {
-		return "", err
-	}
-	return ref, nil
-}
-
 // WithKairosInitImage sets the kairos-init image used for builds that do not
-// name one. The caller is responsible for validating ref, for example with
-// KairosInitImageFromEnv. An empty ref keeps the pinned default.
-func (b *Builder) WithKairosInitImage(ref string) *Builder {
-	if ref != "" {
-		b.kairosInitImage = ref
+// name one. It becomes a FROM line in the kairosify Dockerfile, so it is
+// validated here, once, rather than on every build. An empty ref keeps the
+// pinned default.
+func (b *Builder) WithKairosInitImage(ref string) (*Builder, error) {
+	if ref == "" {
+		return b, nil
 	}
-	return b
+	if err := builder.ValidateImageRef("kairos-init image", ref); err != nil {
+		return nil, err
+	}
+	b.kairosInitImage = ref
+	return b, nil
 }
 
 // WithUKIBuildFunc swaps the pkg/uki.Build implementation used by buildUKI.

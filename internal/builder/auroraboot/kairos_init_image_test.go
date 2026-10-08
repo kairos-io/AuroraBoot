@@ -11,30 +11,18 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 )
 
-var _ = Describe("KairosInitImageFromEnv", func() {
-	It("names the pinned default when KAIROS_INIT_IMAGE is unset", func() {
-		GinkgoT().Setenv("KAIROS_INIT_IMAGE", "")
-		Expect(os.Unsetenv("KAIROS_INIT_IMAGE")).To(Succeed())
-
-		ref, err := KairosInitImageFromEnv()
+var _ = Describe("WithKairosInitImage", func() {
+	It("keeps the pinned default for an empty reference", func() {
+		b, err := New(GinkgoT().TempDir(), nil, nil).WithKairosInitImage("")
 		Expect(err).NotTo(HaveOccurred())
-		Expect(ref).To(Equal(defaultKairosInitImage + ":" + defaultKairosInitVersion))
-	})
-
-	It("returns the configured reference", func() {
-		GinkgoT().Setenv("KAIROS_INIT_IMAGE", "localhost:5000/kairos/kairos-init:dev")
-
-		ref, err := KairosInitImageFromEnv()
-		Expect(err).NotTo(HaveOccurred())
-		Expect(ref).To(Equal("localhost:5000/kairos/kairos-init:dev"))
+		Expect(b.kairosInitImage).To(Equal(defaultKairosInitImage + ":" + defaultKairosInitVersion))
 	})
 
 	It("refuses a reference that would add lines to the kairosify Dockerfile", func() {
-		GinkgoT().Setenv("KAIROS_INIT_IMAGE", "quay.io/kairos/kairos-init:v0.5.0\nRUN id")
-
-		_, err := KairosInitImageFromEnv()
+		b, err := New(GinkgoT().TempDir(), nil, nil).WithKairosInitImage("quay.io/kairos/kairos-init:v0.5.0\nRUN id")
 		Expect(err).To(HaveOccurred())
-		Expect(err.Error()).To(ContainSubstring("KAIROS_INIT_IMAGE"))
+		Expect(err.Error()).To(ContainSubstring("kairos-init image"))
+		Expect(b).To(BeNil())
 	})
 })
 
@@ -64,13 +52,15 @@ var _ = Describe("kairosify kairos-init image", func() {
 	})
 
 	It("uses the image the builder was configured with", func() {
-		b := New(outputDir, nil, &kairosifyTestStore{}).WithKairosInitImage("localhost:5000/kairos/kairos-init:dev")
+		b, err := New(outputDir, nil, &kairosifyTestStore{}).WithKairosInitImage("localhost:5000/kairos/kairos-init:dev")
+		Expect(err).NotTo(HaveOccurred())
 		Expect(render(b, builder.BuildOptions{ID: "a-1"})).To(HavePrefix(
 			"FROM localhost:5000/kairos/kairos-init:dev AS kairos-init\n"))
 	})
 
 	It("prefers the image the build request names", func() {
-		b := New(outputDir, nil, &kairosifyTestStore{}).WithKairosInitImage("localhost:5000/kairos/kairos-init:dev")
+		b, err := New(outputDir, nil, &kairosifyTestStore{}).WithKairosInitImage("localhost:5000/kairos/kairos-init:dev")
+		Expect(err).NotTo(HaveOccurred())
 		Expect(render(b, builder.BuildOptions{ID: "a-1", KairosInitImage: "quay.io/kairos/kairos-init:v0.5.0"})).To(HavePrefix(
 			"FROM quay.io/kairos/kairos-init:v0.5.0 AS kairos-init\n"))
 	})
