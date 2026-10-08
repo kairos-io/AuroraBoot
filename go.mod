@@ -10,19 +10,19 @@ require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
 	github.com/containerd/containerd/v2 v2.4.1
 	github.com/diskfs/go-diskfs v1.9.4
-	github.com/foxboron/go-uefi v0.0.0-20251010190908-d29549a44f29
+	github.com/foxboron/go-uefi v0.0.0-20261004203234-c7f1f57bdc6e
 	github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb
 	github.com/gofrs/uuid v4.4.0+incompatible
 	github.com/google/go-containerregistry v0.22.1
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.5.2
-	github.com/kairos-io/netboot v0.0.0-20260921125349-ba8ed34a440d
-	github.com/klauspost/compress v1.20.0
-	github.com/labstack/echo/v4 v4.15.4
+	github.com/kairos-io/netboot v0.0.0-20260923193508-f2590943fb41
+	github.com/klauspost/compress v1.20.1
+	github.com/labstack/echo/v4 v4.16.0
 	github.com/mudler/go-processmanager v0.1.2
 	github.com/onsi/ginkgo/v2 v2.33.0
-	github.com/onsi/gomega v1.43.1
+	github.com/onsi/gomega v1.44.0
 	github.com/otiai10/copy v1.14.1
 	github.com/phayes/freeport v0.0.0-20220201140144-74d24b5ae9f5 // indirect
 	github.com/sanity-io/litter v1.5.8
@@ -31,7 +31,7 @@ require (
 	github.com/spf13/viper v1.21.0 // agent can't use 1.20.0 due to some marshalling changes
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
-	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba
+	golang.org/x/exp v0.0.0-20261005173118-76772065c9b0
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0
@@ -42,10 +42,10 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.2.2
-	github.com/kairos-io/kairos/v4 v4.3.1-0.20260921115150-170bfbb891c4
-	github.com/mudler/yip v1.26.2
+	github.com/kairos-io/kairos/v4 v4.3.1-0.20261006130410-70e24cf14996
+	github.com/mudler/yip v1.26.4
 	github.com/rs/zerolog v1.35.1
-	github.com/stmcginnis/gofish v0.26.0
+	github.com/stmcginnis/gofish v0.27.0
 	github.com/swaggo/swag v1.16.6
 	github.com/urfave/cli/v2 v2.27.7
 	golang.org/x/time v0.16.0
@@ -55,7 +55,7 @@ require (
 	k8s.io/api v0.37.1
 	k8s.io/apimachinery v0.37.1
 	k8s.io/client-go v0.37.1
-	sigs.k8s.io/controller-runtime v0.25.1
+	sigs.k8s.io/controller-runtime v0.25.2
 )
 
 require (
@@ -74,6 +74,7 @@ require (
 	github.com/avast/retry-go v3.0.0+incompatible // indirect
 	github.com/aybabtme/rgbterm v0.0.0-20170906152045-cc83f3b3ce59 // indirect
 	github.com/ayoubfaouzi/pkcs7 v0.2.3 // indirect
+	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/bramvdbogaerde/go-scp v1.5.0 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
@@ -196,6 +197,10 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pkg/xattr v0.4.12 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
+	github.com/prometheus/client_golang v1.24.1 // indirect
+	github.com/prometheus/client_model v0.6.2 // indirect
+	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/pterm/pterm v0.12.83 // indirect
 	github.com/qeesung/image2ascii v1.0.1 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
@@ -245,7 +250,7 @@ require (
 	golang.org/x/sync v0.23.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	golang.org/x/tools v0.50.0 // indirect
+	golang.org/x/tools v0.51.0 // indirect
 	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.13.0 // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

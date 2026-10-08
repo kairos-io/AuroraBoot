@@ -69,7 +69,8 @@ type ArtifactHandler struct {
 	artifactsDir   string
 }
 
-// NewArtifactHandler creates a new ArtifactHandler.
+// NewArtifactHandler creates a new ArtifactHandler. The builder is wrapped so
+// every request's image references are validated before any backend sees them.
 func NewArtifactHandler(
 	b builder.ArtifactBuilder,
 	artifactStore store.ArtifactStore,
@@ -82,7 +83,7 @@ func NewArtifactHandler(
 	aurorabootURL string,
 ) *ArtifactHandler {
 	return &ArtifactHandler{
-		builder:        b,
+		builder:        builder.NewValidatingArtifactBuilder(b),
 		store:          artifactStore,
 		groups:         groups,
 		secureBootKeys: secureBootKeys,
