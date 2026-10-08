@@ -127,9 +127,9 @@ Precedence when multiple are set: `--password` > `--password-file` > env var > `
 | `--image-url` | | URL the BMC fetches the ISO from. Mutually exclusive with a local ISO path. |
 | `--redfish-serve-url` | | Advertised base URL for the local ISO server (e.g. `http://10.0.0.5:8090`). Required when passing a local ISO path. |
 | `--redfish-serve-addr` | derived from `--redfish-serve-url` | Bind address for the local server. |
-| `--serve-tls` | false | Use HTTPS for the local ISO server. Requires `--serve-tls-cert` and `--serve-tls-key`. |
-| `--serve-tls-cert` | | TLS certificate file for the local ISO server. |
-| `--serve-tls-key` | | TLS key file for the local ISO server. |
+| `--serve-tls` | false | Use HTTPS for the local ISO server. Requires `--serve-tls-cert`, `--serve-tls-key`, and an `https://` `--redfish-serve-url`. Not valid with `--image-url`, which bypasses the local server. |
+| `--serve-tls-cert` | | TLS certificate file for the local ISO server. Only valid with `--serve-tls`. |
+| `--serve-tls-key` | | TLS key file for the local ISO server. Only valid with `--serve-tls`. |
 | `--vendor` | `generic` | Hardware profile: `generic`, `dmtf`, `ilo`, `supermicro`. |
 | `--verify-ssl` | true | Verify TLS certificates when connecting to the BMC endpoint. |
 | `--min-memory` | 4 | Minimum required system memory in GiB. Deploy aborts if below this. |
@@ -151,6 +151,12 @@ and the BMC are on an isolated, trusted management network (a common data-centre
 topology). Integrity of the payload is delegated to the Kairos image signature and
 SecureBoot rather than the transport. If your environment requires encryption on the
 management network, set `--serve-tls` and provide a certificate the BMC trusts.
+
+The `TransferProtocolType` AuroraBoot advertises on InsertMedia is derived from the URL
+the BMC is handed, never from a flag: the scheme of `--image-url` in URL-pull mode, and
+whether the local ISO server has a certificate in local-serve mode. A `--serve-tls` that
+disagreed with `--redfish-serve-url` would leave the BMC fetching the wrong scheme, so
+the deploy refuses to start instead.
 
 ### Vendor profiles
 

@@ -140,3 +140,78 @@ func TestResolveRedfishPassword(t *testing.T) {
 		})
 	}
 }
+
+func TestValidateServeTLSFlags(t *testing.T) {
+	tests := []struct {
+		name      string
+		serveTLS  bool
+		cert      string
+		key       string
+		serveURL  string
+		errSubstr string
+	}{
+		{
+			name:     "plain HTTP serve with an http URL",
+			serveURL: "http://10.0.0.5:8090",
+		},
+		{
+			name:     "TLS serve with a cert pair and an https URL",
+			serveTLS: true,
+			cert:     "/etc/ssl/bmc.crt",
+			key:      "/etc/ssl/bmc.key",
+			serveURL: "https://10.0.0.5:8090",
+		},
+		{
+			name:      "--serve-tls without a cert",
+			serveTLS:  true,
+			key:       "/etc/ssl/bmc.key",
+			serveURL:  "https://10.0.0.5:8090",
+			errSubstr: "requires --serve-tls-cert and --serve-tls-key",
+		},
+		{
+			name:      "--serve-tls without a key",
+			serveTLS:  true,
+			cert:      "/etc/ssl/bmc.crt",
+			serveURL:  "https://10.0.0.5:8090",
+			errSubstr: "requires --serve-tls-cert and --serve-tls-key",
+		},
+		{
+			name:      "a cert pair without --serve-tls",
+			cert:      "/etc/ssl/bmc.crt",
+			key:       "/etc/ssl/bmc.key",
+			serveURL:  "https://10.0.0.5:8090",
+			errSubstr: "without --serve-tls",
+		},
+		{
+			name:      "--serve-tls with an http serve URL",
+			serveTLS:  true,
+			cert:      "/etc/ssl/bmc.crt",
+			key:       "/etc/ssl/bmc.key",
+			serveURL:  "http://10.0.0.5:8090",
+			errSubstr: "is not https",
+		},
+		{
+			name:      "an https serve URL with no certificate",
+			serveURL:  "https://10.0.0.5:8090",
+			errSubstr: "has no certificate",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := validateServeTLSFlags(tc.serveTLS, tc.cert, tc.key, tc.serveURL)
+			if tc.errSubstr == "" {
+				if err != nil {
+					t.Fatalf("validateServeTLSFlags() = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatalf("validateServeTLSFlags() = nil, want an error containing %q", tc.errSubstr)
+			}
+			if !strings.Contains(err.Error(), tc.errSubstr) {
+				t.Fatalf("validateServeTLSFlags() = %q, want it to contain %q", err.Error(), tc.errSubstr)
+			}
+		})
+	}
+}
