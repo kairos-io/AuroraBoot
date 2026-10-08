@@ -986,6 +986,9 @@ export function ArtifactBuilder() {
       ? keySets.find((k) => k.name === sign.ukiKeySetName)?.id || ""
       : "";
 
+    // The listed file names describe an upload made in this form; the
+    // imported config names its overlay by ID only.
+    setOverlayFiles([]);
     setForm({
       ...EMPTY_FORM,
       name: parsed.name || "",
@@ -1242,6 +1245,22 @@ export function ArtifactBuilder() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams]);
+
+  // uploadOverlay stores the files on the server and attaches the overlay ID
+  // it returns to the build.
+  async function uploadOverlay(files: File[]) {
+    if (files.length === 0) return;
+    setOverlayUploading(true);
+    try {
+      const id = await uploadOverlayFiles(files);
+      update("overlayId", id);
+      setOverlayFiles(files.map((f) => f.name));
+    } catch (err) {
+      toast(`Overlay upload failed: ${(err as Error).message}`, "error");
+    } finally {
+      setOverlayUploading(false);
+    }
+  }
 
   function update(field: keyof CreateArtifactInput, value: unknown) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -3153,7 +3172,7 @@ export function ArtifactBuilder() {
 
             <div className="lg:col-span-2 space-y-6">
               {/* Overlay Files */}
-              <Card>
+              <Card role="region" aria-label="Overlay Files">
                 <CardHeader className="pb-3">
                   <CardTitle className="text-sm">Overlay Files</CardTitle>
                 </CardHeader>
@@ -3161,18 +3180,10 @@ export function ArtifactBuilder() {
                   <div
                     onDragOver={(e) => { e.preventDefault(); setDragOver(true); }}
                     onDragLeave={() => setDragOver(false)}
-                    onDrop={async (e) => {
+                    onDrop={(e) => {
                       e.preventDefault();
                       setDragOver(false);
-                      setOverlayUploading(true);
-                      try {
-                        const id = await uploadOverlayFiles(e.dataTransfer.files);
-                        update("overlayId", id);
-                        setOverlayFiles(Array.from(e.dataTransfer.files).map(f => f.name));
-                      } catch (err) {
-                        toast(`Overlay upload failed: ${err instanceof Error ? err.message : "request failed"}`, "error");
-                      }
-                      setOverlayUploading(false);
+                      void uploadOverlay(Array.from(e.dataTransfer.files));
                     }}
                     className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors ${
                       dragOver ? "border-primary bg-primary-soft" : "border-muted-foreground/25 hover:border-muted-foreground/50"
@@ -3196,7 +3207,7 @@ export function ArtifactBuilder() {
                           // A clone or an imported config carries the overlay
                           // by ID only; its file names are not on the record.
                           <p className="text-sm text-muted-foreground">
-                            Uses the overlay of the source artifact
+                            Uses a previously uploaded overlay
                           </p>
                         )}
                         <button
@@ -3223,18 +3234,11 @@ export function ArtifactBuilder() {
                       type="file"
                       multiple
                       className="hidden"
-                      onChange={async (e) => {
-                        if (!e.target.files?.length) return;
-                        setOverlayUploading(true);
-                        try {
-                          const id = await uploadOverlayFiles(e.target.files);
-                          update("overlayId", id);
-                          setOverlayFiles(Array.from(e.target.files).map(f => f.name));
-                        } catch (err) {
-                          toast(`Overlay upload failed: ${err instanceof Error ? err.message : "request failed"}`, "error");
-                        }
-                        setOverlayUploading(false);
+                      onChange={(e) => {
+                        const files = Array.from(e.target.files ?? []);
+                        // Reset the input so the same files can be picked again.
                         e.target.value = "";
+                        void uploadOverlay(files);
                       }}
                     />
                   </div>

@@ -36,7 +36,9 @@ vi.mock("@/api/groups", () => ({
 
 import { ArtifactBuilder } from "@/pages/ArtifactBuilder";
 import { Toaster } from "@/components/ui/toaster";
+import { ApiError } from "@/api/client";
 import { createArtifact, getArtifact, uploadOverlayFiles } from "@/api/artifacts";
+import { BUILD_CONFIG_KIND, BUILD_CONFIG_VERSION } from "@/lib/buildConfig";
 
 const OVERLAY_ID = "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a";
 
@@ -102,12 +104,11 @@ async function cloneAndOpenOutput(overrides: Record<string, unknown> = {}) {
     expect(screen.getByText(/Clone: edge-gateway/)).toBeTruthy();
   });
   fireEvent.click(screen.getByRole("button", { name: /^Output/ }));
-  await screen.findByText("Overlay Files");
+  await screen.findByRole("region", { name: "Overlay Files" });
 }
 
-// The card around the "Overlay Files" title: title, then header, then card.
 function overlayCard(): HTMLElement {
-  return screen.getByText("Overlay Files").parentElement!.parentElement as HTMLElement;
+  return screen.getByRole("region", { name: "Overlay Files" });
 }
 
 async function startBuild() {
@@ -135,13 +136,15 @@ describe("ArtifactBuilder: overlay files", () => {
   });
 
   it("reports a failed upload and attaches no overlay", async () => {
-    vi.mocked(uploadOverlayFiles).mockRejectedValue(new Error("Upload failed"));
+    vi.mocked(uploadOverlayFiles).mockRejectedValue(
+      new ApiError(400, { error: "no files uploaded" }, ""),
+    );
     await cloneAndOpenOutput();
 
     const input = overlayCard().querySelector("input[type='file']") as HTMLInputElement;
     fireEvent.change(input, { target: { files: [new File(["x"], "motd")] } });
 
-    expect(await screen.findByText("Overlay upload failed: Upload failed")).toBeTruthy();
+    expect(await screen.findByText("Overlay upload failed: no files uploaded")).toBeTruthy();
     expect(within(overlayCard()).getByText(/Drop files or a .tar.gz here/)).toBeTruthy();
 
     const body = await startBuild();
@@ -151,7 +154,7 @@ describe("ArtifactBuilder: overlay files", () => {
   it("carries the overlay of the cloned artifact and says so", async () => {
     await cloneAndOpenOutput({ overlayId: OVERLAY_ID });
 
-    expect(within(overlayCard()).getByText(/overlay of the source artifact/i)).toBeTruthy();
+    expect(within(overlayCard()).getByText("Uses a previously uploaded overlay")).toBeTruthy();
 
     const body = await startBuild();
     expect(body.overlayId).toBe(OVERLAY_ID);
@@ -168,6 +171,76 @@ describe("ArtifactBuilder: overlay files", () => {
   });
 });
 
+describe("ArtifactBuilder: overlay of a Hadron clone", () => {
+  it("carries the overlay of the cloned Hadron artifact", async () => {
+    await cloneAndOpenOutput({
+      hadronBase: "ghcr.io/kairos-io/hadron:v0.0.1",
+      overlayId: OVERLAY_ID,
+    });
+
+    expect(within(overlayCard()).getByText("Uses a previously uploaded overlay")).toBeTruthy();
+  });
+});
+
+describe("ArtifactBuilder: overlay of an imported config", () => {
+  async function importConfig(config: Record<string, unknown>) {
+    const input = document.querySelector(
+      "input[accept='application/json,.json']",
+    ) as HTMLInputElement;
+    const file = new File([JSON.stringify(config)], "build.json", { type: "application/json" });
+    fireEvent.change(input, { target: { files: [file] } });
+    await screen.findByText("Config imported");
+    // An import lands on Base; walk to Output the way the operator would.
+    for (const next of ["System", "Extensions", "Access", "Output"]) {
+      fireEvent.click(screen.getByRole("button", { name: `Next: ${next}` }));
+    }
+    await screen.findByRole("region", { name: "Overlay Files" });
+  }
+
+  const CONFIG = {
+    kind: BUILD_CONFIG_KIND,
+    version: BUILD_CONFIG_VERSION,
+    buildMode: "image",
+    name: "imported",
+    source: {
+      baseImage: "ghcr.io/kairos-io/ubuntu:24.04",
+      kairosVersion: "v1.0",
+      arch: "amd64",
+      model: "generic",
+      variant: "core",
+    },
+    outputs: { iso: true },
+  };
+
+  async function uploadMotd() {
+    vi.mocked(uploadOverlayFiles).mockResolvedValue("11111111-2222-4333-8444-555555555555");
+    await cloneAndOpenOutput();
+    const input = overlayCard().querySelector("input[type='file']") as HTMLInputElement;
+    fireEvent.change(input, { target: { files: [new File(["x"], "motd")] } });
+    await waitFor(() => expect(within(overlayCard()).getByText("motd")).toBeTruthy());
+  }
+
+  it("shows the imported overlay, not the file names of an earlier upload", async () => {
+    await uploadMotd();
+
+    await importConfig({ ...CONFIG, overlayId: OVERLAY_ID });
+
+    expect(within(overlayCard()).queryByText("motd")).toBeNull();
+    expect(within(overlayCard()).getByText("Uses a previously uploaded overlay")).toBeTruthy();
+  });
+
+  it("drops an earlier upload when the imported config has no overlay", async () => {
+    await uploadMotd();
+
+    await importConfig(CONFIG);
+
+    expect(within(overlayCard()).queryByText("motd")).toBeNull();
+    expect(within(overlayCard()).getByText(/Drop files or a .tar.gz here/)).toBeTruthy();
+    // The build summary beside the step counts no files either.
+    expect(screen.getByText("0 files")).toBeTruthy();
+  });
+});
+
 describe("ArtifactBuilder: UKI signing", () => {
   it("signs with a saved key set and offers no server path inputs", async () => {
     await cloneAndOpenOutput({ uki: true });
@@ -178,11 +251,12 @@ describe("ArtifactBuilder: UKI signing", () => {
     expect(screen.getByText("Enrollment Policy")).toBeTruthy();
   });
 
-  it("requires a saved key set when UKI is enabled", async () => {
-    await cloneAndOpenOutput({ uki: true });
+  it("refuses to start a UKI build without a saved key set", async () => {
+    vi.mocked(getArtifact).mockResolvedValue(source({ uki: true }) as never);
+    renderBuilder("/artifacts/new?clone=src-artifact-id");
 
-    // The Output step holds the build back until a key set is picked.
-    fireEvent.click(screen.getByRole("button", { name: "Next: Review" }));
+    // A clone lands on Review, where Start Build checks every step.
+    fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
 
     expect(
       (await screen.findAllByText(/A secure boot key set must be selected when UKI is enabled/)).length,

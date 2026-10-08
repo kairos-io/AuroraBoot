@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchText } from "./client";
+import { apiErrorFrom, apiFetch, apiFetchText } from "./client";
 
 /** Discriminates the build pipeline. Empty and "kairos" are the classic path. */
 export type ArtifactKind = "" | "kairos";
@@ -264,7 +264,7 @@ export async function uploadOverlayFiles(files: FileList | File[]): Promise<stri
     headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) throw await apiErrorFrom(res);
   const data = await res.json();
   if (typeof data?.id !== "string" || !data.id) throw new Error("Upload returned no overlay ID");
   return data.id;
