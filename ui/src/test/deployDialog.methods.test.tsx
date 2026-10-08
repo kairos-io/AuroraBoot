@@ -1,8 +1,11 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { DeployDialog } from "@/components/DeployDialog";
+import { Toaster } from "@/components/ui/toaster";
+import { ApiError } from "@/api/client";
+import { startNetboot } from "@/api/deployments";
 
 vi.mock("@/api/deployments", () => ({
   getNetbootStatus: vi.fn().mockResolvedValue({ running: false, artifactId: "", address: "", port: "" }),
@@ -30,6 +33,7 @@ function renderDialog(props: {
 }) {
   return render(
     <MemoryRouter>
+      <Toaster />
       <DeployDialog
         artifactId="artifact-1"
         artifactFiles={props.files}
@@ -86,5 +90,18 @@ describe("DeployDialog methods", () => {
     renderDialog({ files: ["kairos.iso"], netboot: false, defaultMethod: "pxe" });
 
     expect(screen.getByRole("tab", { name: /RedFish/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("shows the reason the server gives when netboot cannot start", async () => {
+    vi.mocked(startNetboot).mockRejectedValueOnce(
+      new ApiError(400, { error: "artifact has no netboot files" }, ""),
+    );
+    renderDialog({ files: ["kairos.squashfs"], netboot: true });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Netboot" }));
+
+    expect(
+      await screen.findByText("Could not start netboot: artifact has no netboot files"),
+    ).toBeInTheDocument();
   });
 });

@@ -24,7 +24,7 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
     kubernetesDistro: "",
     kubernetesVersion: "",
     dockerfile: "",
-    overlayRootfs: "",
+    overlayId: "",
     kairosInitImage: "",
     outputs: {
       iso: true,
@@ -41,10 +41,6 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
     },
     signing: {
       ukiKeySetId: "",
-      ukiSecureBootKey: "",
-      ukiSecureBootCert: "",
-      ukiTpmPcrKey: "",
-      ukiPublicKeysDir: "",
       ukiSecureBootEnroll: "if-safe",
     },
     provisioning: {
@@ -194,10 +190,6 @@ describe("payloadFromBuilder", () => {
         },
         signing: {
           ukiKeySetId: "ks-1",
-          ukiSecureBootKey: "",
-          ukiSecureBootCert: "",
-          ukiTpmPcrKey: "",
-          ukiPublicKeysDir: "",
           ukiSecureBootEnroll: "if-safe",
         },
       }),
@@ -214,18 +206,9 @@ describe("payloadFromBuilder", () => {
     expect(p.signing.ukiKeySetName).toBe("prod-keys");
   });
 
-  it("never serializes manual UKI key paths or passwords", () => {
+  it("never serializes passwords", () => {
     const p = payloadFromBuilder({
-      form: makeForm({
-        signing: {
-          ukiKeySetId: "",
-          ukiSecureBootKey: "/instance/local/db.key",
-          ukiSecureBootCert: "/instance/local/db.pem",
-          ukiTpmPcrKey: "/instance/local/tpm.pem",
-          ukiPublicKeysDir: "/instance/local/keys",
-          ukiSecureBootEnroll: "if-safe",
-        },
-      }),
+      form: makeForm(),
       buildMode: "image",
       groups,
       keySets,
@@ -235,15 +218,42 @@ describe("payloadFromBuilder", () => {
       advancedConfig: "",
     });
 
-    // A JSON round-trip is the surest way to prove nothing leaked.
     const serialized = JSON.stringify(p);
-    expect(serialized).not.toContain("/instance/local");
     expect(p.signing).toEqual({
       ukiSecureBootEnroll: "if-safe",
-      // no ukiKeySetName (none selected), no raw paths
     });
-    // No "password" key should appear at all.
     expect(serialized).not.toMatch(/"password"/);
+  });
+
+  it("carries the uploaded overlay by ID", () => {
+    const p = payloadFromBuilder({
+      form: makeForm({ overlayId: "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a" }),
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+
+    expect(p.overlayId).toBe("6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a");
+    expect(JSON.stringify(p)).not.toMatch(/overlayRootfs/);
+  });
+
+  it("leaves overlayId out when no overlay was uploaded", () => {
+    const p = payloadFromBuilder({
+      form: makeForm(),
+      buildMode: "image",
+      groups,
+      keySets,
+      userMode: "default",
+      username: "",
+      sshKeys: "",
+      advancedConfig: "",
+    });
+
+    expect(p.overlayId).toBeUndefined();
   });
 
   it("includes username only when userMode=custom", () => {
@@ -455,6 +465,19 @@ describe("payloadFromArtifact", () => {
     expect(p.provisioning.targetGroupName).toBeUndefined();
   });
 
+  it("carries the overlay ID of the built artifact", () => {
+    const p = payloadFromArtifact(
+      makeArtifact({ overlayId: "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a" }),
+      groups,
+    );
+    expect(p.overlayId).toBe("6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a");
+  });
+
+  it("leaves overlayId out when the artifact was built without an overlay", () => {
+    const p = payloadFromArtifact(makeArtifact(), groups);
+    expect(p.overlayId).toBeUndefined();
+  });
+
   it("round-trips through JSON without throwing", () => {
     const p = payloadFromArtifact(makeArtifact(), groups);
     const serialized = JSON.stringify(p);
@@ -470,7 +493,7 @@ describe("sanitizeImportedBuildConfig", () => {
       name: "my-build",
       buildMode: "dockerfile",
       dockerfile: "FROM alpine",
-      overlayRootfs: "/overlay",
+      overlayId: "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a",
       advancedCloudConfig: "#cloud-config",
       source: { baseImage: "ubuntu:24.04" },
       provisioning: { autoInstall: true },
@@ -481,7 +504,7 @@ describe("sanitizeImportedBuildConfig", () => {
       name: "my-build",
       buildMode: "dockerfile",
       dockerfile: "FROM alpine",
-      overlayRootfs: "/overlay",
+      overlayId: "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a",
       advancedCloudConfig: "#cloud-config",
       source: { baseImage: "ubuntu:24.04" },
       provisioning: { autoInstall: true },
@@ -495,13 +518,13 @@ describe("sanitizeImportedBuildConfig", () => {
       name: 42,
       buildMode: { nested: true },
       dockerfile: ["FROM alpine"],
-      overlayRootfs: null,
+      overlayId: null,
       advancedCloudConfig: false,
     });
     expect(out.name).toBeUndefined();
     expect(out.buildMode).toBeUndefined();
     expect(out.dockerfile).toBeUndefined();
-    expect(out.overlayRootfs).toBeUndefined();
+    expect(out.overlayId).toBeUndefined();
     expect(out.advancedCloudConfig).toBeUndefined();
   });
 

@@ -465,10 +465,6 @@ const EMPTY_OUTPUTS = {
 
 const EMPTY_SIGNING = {
   ukiKeySetId: "",
-  ukiSecureBootKey: "",
-  ukiSecureBootCert: "",
-  ukiTpmPcrKey: "",
-  ukiPublicKeysDir: "",
   ukiSecureBootEnroll: "if-safe",
 };
 
@@ -500,7 +496,7 @@ const EMPTY_FORM: CreateArtifactInput = {
   kubernetesEnabled: true,
   "allow-insecure-registries": false,
   dockerfile: "",
-  overlayRootfs: "",
+  overlayId: "",
   kairosInitImage: "",
   outputs: { ...EMPTY_OUTPUTS },
   signing: { ...EMPTY_SIGNING },
@@ -630,7 +626,6 @@ export function ArtifactBuilder() {
   // failure is recorded and shown rather than rendered as "no extensions".
   const [cloneBundleUnavailable, setCloneBundleUnavailable] = useState(false);
   const [customModel, setCustomModel] = useState(false);
-  const [ukiKeyMode, setUkiKeyMode] = useState<"keyset" | "manual">("keyset");
   // Steps whose errors are on screen: a step joins once Next was tried on it,
   // and "all" follows a submit attempt. The messages themselves are computed
   // from the current state on every render, so an error goes away as soon as
@@ -1004,7 +999,7 @@ export function ArtifactBuilder() {
       kubernetesEnabled: src.kubernetesEnabled ?? true,
       "allow-insecure-registries": src["allow-insecure-registries"] ?? false,
       dockerfile: parsed.dockerfile || "",
-      overlayRootfs: parsed.overlayRootfs || "",
+      overlayId: parsed.overlayId || "",
       kairosInitImage: src.kairosInitImage || "",
       outputs: { ...EMPTY_OUTPUTS, ...out },
       signing: {
@@ -1030,7 +1025,6 @@ export function ArtifactBuilder() {
     // didn't load even though the form state is correct.
     setSelectedTemplate("Custom");
     setCustomModel(false);
-    setUkiKeyMode(resolvedKeySetId ? "keyset" : "keyset");
     setUserMode((prov.userMode as UserMode) || "default");
     setUsername(prov.username || "kairos");
     setPassword("kairos");
@@ -1146,6 +1140,7 @@ export function ArtifactBuilder() {
             kubernetesVersion: a.kubernetesVersion || "",
             kubernetesEnabled: a.variant === "standard" ? a.kubernetesEnabled ?? true : true,
             kairosInitImage: a.kairosInitImage || "",
+            overlayId: a.overlayId || "",
             outputs: {
               iso: a.iso,
               cloudImage: a.cloudImage,
@@ -1201,6 +1196,7 @@ export function ArtifactBuilder() {
           "allow-insecure-registries": a["allow-insecure-registries"] ?? false,
           dockerfile: a.dockerfile || "",
           kairosInitImage: a.kairosInitImage || "",
+          overlayId: a.overlayId || "",
           outputs: {
             iso: a.iso,
             cloudImage: a.cloudImage,
@@ -1368,15 +1364,7 @@ export function ArtifactBuilder() {
         });
       }
       if (form.outputs.uki) {
-        if (ukiKeyMode === "manual") {
-          if (!form.signing.ukiSecureBootKey.trim() || !form.signing.ukiSecureBootCert.trim()) {
-            errs.push({
-              field: "ukiSecureBootKey",
-              step: "output",
-              message: "UKI secure boot key and cert are required when UKI is enabled.",
-            });
-          }
-        } else if (!form.signing.ukiKeySetId) {
+        if (!form.signing.ukiKeySetId) {
           errs.push({
             field: "ukiKeySetId",
             step: "output",
@@ -1466,7 +1454,7 @@ export function ArtifactBuilder() {
         (!hadronBuild || extensionsCatalog.trim() !== DEFAULT_EXTENSIONS_CATALOG)
           ? [extensionsCatalog.trim()]
           : undefined,
-      overlayRootfs: form.overlayRootfs || undefined,
+      overlayId: form.overlayId || undefined,
       kairosInitImage: form.kairosInitImage || undefined,
       outputs: { ...form.outputs },
       signing: { ...form.signing },
@@ -1599,6 +1587,7 @@ export function ArtifactBuilder() {
     trustedBoot: form.outputs.trustedBoot,
     outputs: selectedOutputItems.map((i) => i.label),
     overlayFiles: overlayFiles.length,
+    overlayAttached: !!form.overlayId,
     autoInstall: form.provisioning.autoInstall,
     // Like the build request, the flag only applies to an image build.
     insecureRegistries: buildMode === "image" && !!form["allow-insecure-registries"],
@@ -3117,26 +3106,13 @@ export function ArtifactBuilder() {
                     </CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <div className="flex gap-2">
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={ukiKeyMode === "keyset" ? "default" : "outline"}
-                        onClick={() => setUkiKeyMode("keyset")}
-                      >
-                        Saved Key Set
-                      </Button>
-                      <Button
-                        type="button"
-                        size="sm"
-                        variant={ukiKeyMode === "manual" ? "default" : "outline"}
-                        onClick={() => setUkiKeyMode("manual")}
-                      >
-                        Manual Paths
-                      </Button>
-                    </div>
-
-                    {ukiKeyMode === "keyset" ? (
+                    <div className="grid gap-1">
+                      <Label className="text-xs">
+                        Key Set
+                        <InfoTooltip>
+                          Secure boot key set stored on this AuroraBoot server. Create or import one under Certificates.
+                        </InfoTooltip>
+                      </Label>
                       <Select
                         value={form.signing.ukiKeySetId || "__none__"}
                         onValueChange={(v) => updateSigning("ukiKeySetId", v === "__none__" ? "" : v)}
@@ -3153,86 +3129,23 @@ export function ArtifactBuilder() {
                           ))}
                         </SelectContent>
                       </Select>
-                    ) : (
-                      <div className="grid gap-3">
-                        <div className="grid gap-1">
-                          <Label className="text-xs">
-                            Secure Boot Key
-                            <InfoTooltip>
-                              PEM private key that signs the UKI. Must match the enrolled PK/KEK/db on the target firmware.{" "}
-                              <a
-                                href="https://kairos.io/docs/reference/auroraboot/"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className="underline"
-                              >
-                                Docs
-                              </a>
-                            </InfoTooltip>
-                          </Label>
-                          <Input
-                            ref={bindRef("ukiSecureBootKey")}
-                            placeholder="/path/to/sb.key"
-                            value={form.signing.ukiSecureBootKey}
-                            onChange={(e) => updateSigning("ukiSecureBootKey", e.target.value)}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-xs">
-                            Secure Boot Cert
-                            <InfoTooltip>
-                              PEM certificate paired with the signing key. Used at sign time and enrolled into the firmware.
-                            </InfoTooltip>
-                          </Label>
-                          <Input
-                            placeholder="/path/to/sb.pem"
-                            value={form.signing.ukiSecureBootCert}
-                            onChange={(e) => updateSigning("ukiSecureBootCert", e.target.value)}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-xs">
-                            TPM PCR Key
-                            <InfoTooltip>
-                              Private key used to sign the EFI PCR policy. PEM path or a PKCS11 URI.
-                            </InfoTooltip>
-                          </Label>
-                          <Input
-                            placeholder="/path/to/pcr.key"
-                            value={form.signing.ukiTpmPcrKey}
-                            onChange={(e) => updateSigning("ukiTpmPcrKey", e.target.value)}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-xs">Public Keys Dir</Label>
-                          <Input
-                            placeholder="/path/to/public-keys/"
-                            value={form.signing.ukiPublicKeysDir}
-                            onChange={(e) => updateSigning("ukiPublicKeysDir", e.target.value)}
-                            className="font-mono text-xs"
-                          />
-                        </div>
-                        <div className="grid gap-1">
-                          <Label className="text-xs">Enrollment Policy</Label>
-                          <Select
-                            value={form.signing.ukiSecureBootEnroll}
-                            onValueChange={(v) => updateSigning("ukiSecureBootEnroll", v)}
-                          >
-                            <SelectTrigger>
-                              <SelectValue />
-                            </SelectTrigger>
-                            <SelectContent>
-                              <SelectItem value="if-safe">if-safe</SelectItem>
-                              <SelectItem value="force">force</SelectItem>
-                              <SelectItem value="manual">manual</SelectItem>
-                            </SelectContent>
-                          </Select>
-                        </div>
-                      </div>
-                    )}
+                    </div>
+                    <div className="grid gap-1">
+                      <Label className="text-xs">Enrollment Policy</Label>
+                      <Select
+                        value={form.signing.ukiSecureBootEnroll}
+                        onValueChange={(v) => updateSigning("ukiSecureBootEnroll", v)}
+                      >
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="if-safe">if-safe</SelectItem>
+                          <SelectItem value="force">force</SelectItem>
+                          <SelectItem value="manual">manual</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </CardContent>
                 </Card>
               )}
@@ -3253,10 +3166,12 @@ export function ArtifactBuilder() {
                       setDragOver(false);
                       setOverlayUploading(true);
                       try {
-                        const path = await uploadOverlayFiles(e.dataTransfer.files);
-                        update("overlayRootfs", path);
+                        const id = await uploadOverlayFiles(e.dataTransfer.files);
+                        update("overlayId", id);
                         setOverlayFiles(Array.from(e.dataTransfer.files).map(f => f.name));
-                      } catch { /* ignore */ }
+                      } catch (err) {
+                        toast(`Overlay upload failed: ${err instanceof Error ? err.message : "request failed"}`, "error");
+                      }
                       setOverlayUploading(false);
                     }}
                     className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-colors ${
@@ -3269,19 +3184,27 @@ export function ArtifactBuilder() {
                         <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
                         <span className="text-sm text-muted-foreground">Uploading...</span>
                       </div>
-                    ) : overlayFiles.length > 0 ? (
+                    ) : form.overlayId ? (
                       <div className="space-y-2">
-                        <div className="flex flex-wrap gap-1.5 justify-center">
-                          {overlayFiles.map((name) => (
-                            <span key={name} className="text-xs bg-secondary px-2 py-1 rounded font-mono">{name}</span>
-                          ))}
-                        </div>
+                        {overlayFiles.length > 0 ? (
+                          <div className="flex flex-wrap gap-1.5 justify-center">
+                            {overlayFiles.map((name) => (
+                              <span key={name} className="text-xs bg-secondary px-2 py-1 rounded font-mono">{name}</span>
+                            ))}
+                          </div>
+                        ) : (
+                          // A clone or an imported config carries the overlay
+                          // by ID only; its file names are not on the record.
+                          <p className="text-sm text-muted-foreground">
+                            Uses the overlay of the source artifact
+                          </p>
+                        )}
                         <button
                           type="button"
                           className="text-xs text-red-500 hover:text-red-700 flex items-center gap-1 mx-auto"
                           onClick={(e) => {
                             e.stopPropagation();
-                            update("overlayRootfs", "");
+                            update("overlayId", "");
                             setOverlayFiles([]);
                           }}
                         >
@@ -3304,10 +3227,12 @@ export function ArtifactBuilder() {
                         if (!e.target.files?.length) return;
                         setOverlayUploading(true);
                         try {
-                          const path = await uploadOverlayFiles(e.target.files);
-                          update("overlayRootfs", path);
+                          const id = await uploadOverlayFiles(e.target.files);
+                          update("overlayId", id);
                           setOverlayFiles(Array.from(e.target.files).map(f => f.name));
-                        } catch { /* ignore */ }
+                        } catch (err) {
+                          toast(`Overlay upload failed: ${err instanceof Error ? err.message : "request failed"}`, "error");
+                        }
                         setOverlayUploading(false);
                         e.target.value = "";
                       }}

@@ -36,6 +36,7 @@ import {
 import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
 import { ansiToHtml } from "@/lib/ansi";
+import { toast } from "@/hooks/useToast";
 
 // Memoized per-line renderer, same reasoning as ArtifactDetail's build-log
 // LogLine: a live netboot session appends one chunk at a time, and without
@@ -245,6 +246,7 @@ export function DeployDialog({
 
   async function handlePxeToggle() {
     setPxeLoading(true);
+    const action = netbootStatus?.running ? "stop" : "start";
     try {
       if (netbootStatus?.running) {
         await stopNetboot();
@@ -259,8 +261,9 @@ export function DeployDialog({
       }
       const status = await getNetbootStatus();
       setNetbootStatus(status);
-    } catch {
-      // ignore
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "request failed";
+      toast(`Could not ${action} netboot: ${reason}`, "error");
     } finally {
       setPxeLoading(false);
     }

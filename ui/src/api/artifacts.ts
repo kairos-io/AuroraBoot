@@ -45,6 +45,9 @@ export interface Artifact {
   kubernetesVersion?: string;
   kubernetesEnabled?: boolean;
   targetGroupId?: string;
+  // Uploaded overlay the artifact was built with, as returned by
+  // uploadOverlayFiles.
+  overlayId?: string;
   containerImage?: string;
   artifacts: string[];
   // Hierarchies the operator declared at build time. Used by the extension
@@ -71,10 +74,6 @@ export interface CreateArtifactOutputs {
 
 export interface CreateArtifactSigning {
   ukiKeySetId: string;
-  ukiSecureBootKey: string;
-  ukiSecureBootCert: string;
-  ukiTpmPcrKey: string;
-  ukiPublicKeysDir: string;
   ukiSecureBootEnroll: string;
 }
 
@@ -119,7 +118,9 @@ export interface CreateArtifactInput {
   // out means the server resolves them against its default catalog.
   extensions?: string[];
   extensionsCatalogs?: string[];
-  overlayRootfs?: string;
+  // ID returned by uploadOverlayFiles; the server copies that overlay on top
+  // of the built rootfs.
+  overlayId?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;
   signing: CreateArtifactSigning;
@@ -250,6 +251,8 @@ export function clearFailedArtifacts(): Promise<void> {
   return apiFetch("/api/v1/artifacts/failed", { method: "DELETE" });
 }
 
+// Stores the files as a rootfs overlay on the server and returns its ID, to
+// be sent as CreateArtifactInput.overlayId.
 export async function uploadOverlayFiles(files: FileList | File[]): Promise<string> {
   const formData = new FormData();
   for (const file of Array.from(files)) {
@@ -263,7 +266,8 @@ export async function uploadOverlayFiles(files: FileList | File[]): Promise<stri
   });
   if (!res.ok) throw new Error("Upload failed");
   const data = await res.json();
-  return data.path;
+  if (typeof data?.id !== "string" || !data.id) throw new Error("Upload returned no overlay ID");
+  return data.id;
 }
 
 export interface ResolvedBundleEntry {
