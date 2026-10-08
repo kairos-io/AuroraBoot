@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/http"
@@ -212,8 +213,15 @@ func (h *DeployHandler) StartNetboot(c echo.Context) error {
 	}
 
 	if err := h.netboot.Start(h.artifactsDir, req.ArtifactID); err != nil {
-		// The detail names files on this server, so it goes to the log only.
+		// The detail can name files on this server, so it goes to the log
+		// only and the response carries a fixed message.
 		log.Printf("netboot start for artifact %q failed: %v", req.ArtifactID, err)
+		switch {
+		case errors.Is(err, netbootmgr.ErrAlreadyRunning):
+			return c.JSON(http.StatusConflict, map[string]string{"error": "netboot server is already running"})
+		case errors.Is(err, netbootmgr.ErrNoNetbootFiles):
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "artifact has no netboot files"})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start netboot server; see the server log"})
 	}
 

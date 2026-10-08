@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -81,6 +82,20 @@ var _ = Describe("DeployHandler.StartNetboot", func() {
 		rec := start("art-1")
 		Expect(rec.Code).To(Equal(http.StatusOK))
 		Expect(nb.startCalls).To(ConsistOf("art-1"))
+	})
+
+	It("returns 409 with a path-free reason when the server is already running", func() {
+		nb.startErr = netbootmgr.ErrAlreadyRunning
+		rec := start("art-1")
+		Expect(rec.Code).To(Equal(http.StatusConflict))
+		Expect(rec.Body.String()).To(MatchJSON(`{"error":"netboot server is already running"}`))
+	})
+
+	It("returns 400 with a path-free reason when the artifact has no netboot files", func() {
+		nb.startErr = fmt.Errorf("%w: %s", netbootmgr.ErrNoNetbootFiles, artifactsDir+"/art-1/netboot/kairos-kernel")
+		rec := start("art-1")
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(MatchJSON(`{"error":"artifact has no netboot files"}`))
 	})
 
 	It("does not put server paths in the error body when the start fails", func() {
