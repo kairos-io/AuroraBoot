@@ -669,6 +669,9 @@ definitions:
       lastReset:
         description: LastReset is when the most recent automatic reset completed successfully.
         type: string
+      lastUpgrade:
+        description: LastUpgrade is when the most recent upgrade completed successfully.
+        type: string
       machineID:
         type: string
       osRelease:
@@ -700,6 +703,20 @@ definitions:
           "" (none) | pending | in-progress | done | failed.
         type: string
       updatedAt:
+        type: string
+      upgradeRequestedAt:
+        description: |-
+          UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set
+          to pending); nil when no upgrade has been requested.
+        type: string
+      upgradeState:
+        description: |-
+          UpgradeState tracks the upgrade lifecycle across the reboot an upgrade
+          command triggers. The agent acks the command once the new image is staged,
+          before it reboots into it, so a Completed upgrade command only means the
+          upgrade was scheduled; the real outcome is resolved here when the node
+          re-registers and reports its post-reboot boot state. One of:
+          "" (none) | pending | done | failed.
         type: string
     type: object
   store.MemoryMetrics:

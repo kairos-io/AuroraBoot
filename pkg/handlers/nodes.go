@@ -126,6 +126,31 @@ func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode,
 	}
 }
 
+// resolveUpgrade advances a node's upgrade lifecycle when it re-registers after
+// the upgrade reboot. A Register from a node whose UpgradeState is pending means
+// it rebooted; the reported boot state gives the outcome:
+//   - active           → done (the node came back up on the upgraded image),
+//     stamping LastUpgrade
+//   - passive/recovery → failed (the upgraded active image did not boot and the
+//     node fell back)
+//
+// Any other boot state leaves the upgrade pending. Transitions are
+// compare-and-set so concurrent re-registers resolve exactly once. Best-effort:
+// a store error is ignored and the next boot retries. A node not awaiting an
+// upgrade is left untouched.
+func (h *NodeHandler) resolveUpgrade(ctx context.Context, node *store.ManagedNode, bootState string) {
+	if node.UpgradeState != store.UpgradeStatePending {
+		return
+	}
+	inFlight := []string{store.UpgradeStatePending}
+	switch bootState {
+	case store.BootStateActive:
+		_, _ = h.nodes.AdvanceUpgrade(ctx, node.ID, inFlight, store.UpgradeStateDone, true)
+	case store.BootStatePassive, store.BootStateRecovery:
+		_, _ = h.nodes.AdvanceUpgrade(ctx, node.ID, inFlight, store.UpgradeStateFailed, false)
+	}
+}
+
 // registerRequest is the expected body for node registration.
 type registerRequest struct {
 	RegistrationToken string              `json:"registrationToken"`
@@ -165,9 +190,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// A re-register is a strong "OS is up" signal too (a freshly-installed node
 		// phones home on first boot): attempt the auto eject-on-phone-home.
 		h.triggerFinalize(existing.ID)
-		// If this node is coming back from a reset reboot, resolve the reset
-		// lifecycle from the reported boot state (kairos-io/kairos#4255).
+		// If this node is coming back from a reset or upgrade reboot, resolve
+		// that lifecycle from the reported boot state (kairos-io/kairos#4255).
 		h.resolveReset(c.Request().Context(), existing, req.BootState)
+		h.resolveUpgrade(c.Request().Context(), existing, req.BootState)
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,

@@ -58,6 +58,12 @@ func (a *NodeStoreAdapter) SetResetPending(ctx context.Context, nodeID string) e
 func (a *NodeStoreAdapter) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	return a.S.AdvanceReset(ctx, nodeID, fromStates, to, stampLastReset)
 }
+func (a *NodeStoreAdapter) SetUpgradePending(ctx context.Context, nodeID string) error {
+	return a.S.SetUpgradePending(ctx, nodeID)
+}
+func (a *NodeStoreAdapter) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
+	return a.S.AdvanceUpgrade(ctx, nodeID, fromStates, to, stampLastUpgrade)
+}
 func (a *NodeStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.NodeDelete(ctx, id)
 }

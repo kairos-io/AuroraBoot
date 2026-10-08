@@ -2630,6 +2630,10 @@
                     "description": "LastReset is when the most recent automatic reset completed successfully.",
                     "type": "string"
                 },
+                "lastUpgrade": {
+                    "description": "LastUpgrade is when the most recent upgrade completed successfully.",
+                    "type": "string"
+                },
                 "machineID": {
                     "type": "string"
                 },
@@ -2655,6 +2659,14 @@
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                },
+                "upgradeRequestedAt": {
+                    "description": "UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set\nto pending); nil when no upgrade has been requested.",
+                    "type": "string"
+                },
+                "upgradeState": {
+                    "description": "UpgradeState tracks the upgrade lifecycle across the reboot an upgrade\ncommand triggers. The agent acks the command once the new image is staged,\nbefore it reboots into it, so a Completed upgrade command only means the\nupgrade was scheduled; the real outcome is resolved here when the node\nre-registers and reports its post-reboot boot state. One of:\n\"\" (none) | pending | done | failed.",
                     "type": "string"
                 }
             }
