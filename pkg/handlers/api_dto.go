@@ -179,7 +179,7 @@ type APICreateArtifactRequest struct {
 	HadronFirmware          []string                `json:"hadronFirmware"`
 	HadronLayers            []string                `json:"hadronLayers"`
 	HadronExtra             string                  `json:"hadronExtra"`
-	OverlayRootfs           string                  `json:"overlayRootfs"`
+	OverlayID               string                  `json:"overlayId" format:"uuid"` // ID returned by POST /api/v1/artifacts/upload-overlay
 	KairosInitImage         string                  `json:"kairosInitImage"`
 	Outputs                 APIArtifactOutputs      `json:"outputs"`
 	Signing                 APIArtifactSigning      `json:"signing"`
@@ -210,10 +210,6 @@ type APIArtifactOutputs struct {
 // APIArtifactSigning holds SecureBoot signing options for UKI builds.
 type APIArtifactSigning struct {
 	UKIKeySetID         string `json:"ukiKeySetId"`
-	UKISecureBootKey    string `json:"ukiSecureBootKey"`
-	UKISecureBootCert   string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll" enums:"off,manual,if-safe,force"`
 }
 

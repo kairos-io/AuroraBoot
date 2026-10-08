@@ -123,6 +123,7 @@ type BuildOptions struct {
 
 	// Customization options:
 	OverlayRootfs   string // path to overlay dir (files copied on top of rootfs)
+	OverlayID       string // uploaded overlay OverlayRootfs was resolved from, recorded on the artifact
 	Dockerfile      string // optional Dockerfile content (builds image via docker before ISO)
 	BuildContextDir string // directory with files available to COPY in Dockerfile
 	KairosInitImage string

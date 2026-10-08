@@ -108,15 +108,16 @@ var _ = Describe("ArtifactHandler UploadOverlay extraction", func() {
 		Expect(rec.Code).To(Equal(http.StatusOK))
 
 		var resp struct {
-			Path string `json:"path"`
+			ID string `json:"id"`
 		}
 		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
-		Expect(resp.Path).NotTo(BeEmpty())
+		Expect(resp.ID).NotTo(BeEmpty())
+		overlayDir := filepath.Join(artifactsDir, "overlays", resp.ID)
 
-		data, err := os.ReadFile(filepath.Join(resp.Path, "etc/config.yaml"))
+		data, err := os.ReadFile(filepath.Join(overlayDir, "etc/config.yaml"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(data).To(Equal([]byte("foo: bar\n")))
-		data, err = os.ReadFile(filepath.Join(resp.Path, "opt/app/run.sh"))
+		data, err = os.ReadFile(filepath.Join(overlayDir, "opt/app/run.sh"))
 		Expect(err).NotTo(HaveOccurred())
 		Expect(data).To(Equal([]byte("#!/bin/sh\n")))
 	})

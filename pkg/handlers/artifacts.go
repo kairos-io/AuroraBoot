@@ -112,16 +112,15 @@ type createArtifactRequest struct {
 	HadronFirmware          []string `json:"hadronFirmware"`
 	HadronLayers            []string `json:"hadronLayers"`
 	HadronExtra             string   `json:"hadronExtra"`
-	BuildContextDir         string   `json:"buildContextDir"`
-	OverlayRootfs           string   `json:"overlayRootfs"`
-	KairosInitImage         string `json:"kairosInitImage"`
+	// OverlayID names an overlay uploaded through upload-overlay.
+	OverlayID       string `json:"overlayId"`
+	KairosInitImage string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
 	Signing      *signingConfig     `json:"signing,omitempty"`
 	Provisioning provisioningConfig `json:"provisioning"`
 
 	CloudConfig string `json:"cloudConfig"`
-	OutputDir   string `json:"outputDir"`
 
 	ExtensionHierarchies *extensionHierarchiesReq `json:"extensionHierarchies,omitempty"`
 	BundledExtensions    []createBundleEntry      `json:"bundledExtensions,omitempty"`
@@ -131,6 +130,42 @@ type createArtifactRequest struct {
 	// they are resolved against; empty means extensions.DefaultCatalog.
 	Extensions         []string `json:"extensions,omitempty"`
 	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
+
+	// The fields below name paths on this server and are not part of the
+	// API. They are decoded only so rejectServerPathFields can refuse a
+	// request carrying them; Echo would otherwise drop them silently and the
+	// build would run without the overlay or build context the client meant.
+	BuildContextDir string `json:"buildContextDir"`
+	OverlayRootfs   string `json:"overlayRootfs"`
+	OutputDir       string `json:"outputDir"`
+}
+
+// rejectServerPathFields returns the error to report when the request
+// carries a field that names a path on this server, or "" when it carries
+// none.
+func (r *createArtifactRequest) rejectServerPathFields() string {
+	switch {
+	case r.OverlayRootfs != "":
+		return "overlayRootfs is not accepted: use overlayId"
+	case r.BuildContextDir != "":
+		return "buildContextDir is no longer accepted"
+	case r.OutputDir != "":
+		return "outputDir is no longer accepted"
+	}
+	if r.Signing == nil {
+		return ""
+	}
+	for _, f := range []struct{ name, value string }{
+		{"ukiSecureBootKey", r.Signing.UKISecureBootKey},
+		{"ukiSecureBootCert", r.Signing.UKISecureBootCert},
+		{"ukiTpmPcrKey", r.Signing.UKITPMPCRKey},
+		{"ukiPublicKeysDir", r.Signing.UKIPublicKeysDir},
+	} {
+		if f.value != "" {
+			return "signing." + f.name + " is not accepted: use signing.ukiKeySetId"
+		}
+	}
+	return ""
 }
 
 type extensionHierarchiesReq struct {
@@ -161,11 +196,14 @@ type artifactOutputs struct {
 
 type signingConfig struct {
 	UKIKeySetID         string `json:"ukiKeySetId"`
-	UKISecureBootKey    string `json:"ukiSecureBootKey"`
-	UKISecureBootCert   string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
+
+	// Key file paths on this server are not part of the API; they are
+	// decoded only so rejectServerPathFields can refuse them.
+	UKISecureBootKey  string `json:"ukiSecureBootKey"`
+	UKISecureBootCert string `json:"ukiSecureBootCert"`
+	UKITPMPCRKey      string `json:"ukiTpmPcrKey"`
+	UKIPublicKeysDir  string `json:"ukiPublicKeysDir"`
 }
 
 type provisioningConfig struct {
@@ -208,6 +246,21 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	var req createArtifactRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if msg := req.rejectServerPathFields(); msg != "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": msg})
+	}
+
+	var overlayRootfs string
+	if req.OverlayID != "" {
+		dir, err := h.overlayDir(req.OverlayID)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "overlayId: " + err.Error()})
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "overlayId: no uploaded overlay with this ID"})
+		}
+		overlayRootfs = dir
 	}
 
 	ctx := c.Request().Context()
@@ -292,10 +345,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// UKI key set resolution.
 	var ukiSBKey, ukiSBCert, ukiTPMKey, ukiPubKeysDir string
 	if req.Signing != nil {
-		ukiSBKey = req.Signing.UKISecureBootKey
-		ukiSBCert = req.Signing.UKISecureBootCert
-		ukiTPMKey = req.Signing.UKITPMPCRKey
-		ukiPubKeysDir = req.Signing.UKIPublicKeysDir
 		if req.Signing.UKIKeySetID != "" && h.secureBootKeys != nil {
 			ks, err := h.secureBootKeys.GetByID(ctx, req.Signing.UKIKeySetID)
 			if err != nil {
@@ -350,10 +399,9 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		CloudImage:        req.Outputs.CloudImage,
 		Netboot:           req.Outputs.Netboot,
 		CloudConfig:       req.CloudConfig,
-		OutputDir:         req.OutputDir,
-		OverlayRootfs:     req.OverlayRootfs,
+		OverlayRootfs:     overlayRootfs,
+		OverlayID:         req.OverlayID,
 		Dockerfile:        req.Dockerfile,
-		BuildContextDir:   req.BuildContextDir,
 		KairosInitImage:   req.KairosInitImage,
 		HadronBase:        req.HadronBase,
 		HadronFirmware:    req.HadronFirmware,
@@ -521,7 +569,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			KubernetesVersion:       req.KubernetesVersion,
 			KubernetesEnabled:       boolPtr(kubernetesEnabled),
 			TargetGroupID:           req.Provisioning.TargetGroupId,
-			OverlayRootfs:           req.OverlayRootfs,
+			OverlayID:               req.OverlayID,
 			ExtensionHierarchies: store.ExtensionHierarchies{
 				Sysext:  sysHierarchies,
 				Confext: conHierarchies,
@@ -900,9 +948,7 @@ func (h *ArtifactHandler) ClearFailed(c echo.Context) error {
 					fmt.Fprintf(os.Stderr, "clear-failed: builder.Cancel(%q) failed: %v\n", r.ID, cancelErr)
 				}
 				os.RemoveAll(filepath.Join(h.artifactsDir, r.ID))
-				if r.OverlayRootfs != "" && strings.HasPrefix(r.OverlayRootfs, h.artifactsDir) {
-					os.RemoveAll(r.OverlayRootfs)
-				}
+				h.removeOverlay(r.OverlayID)
 			}
 		}
 	}
@@ -948,10 +994,7 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 	outputDir := filepath.Join(h.artifactsDir, id)
 	os.RemoveAll(outputDir)
 
-	// Remove uploaded overlay directory if present.
-	if rec.OverlayRootfs != "" && strings.HasPrefix(rec.OverlayRootfs, h.artifactsDir) {
-		os.RemoveAll(rec.OverlayRootfs)
-	}
+	h.removeOverlay(rec.OverlayID)
 
 	// Remove Docker image.
 	if rec.ContainerImage != "" {
@@ -1005,9 +1048,52 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 	return c.JSON(http.StatusOK, rec)
 }
 
+// overlayDir returns the directory of the uploaded overlay with the given ID.
+// The ID must be a UUID in its canonical form, so the result is always a
+// direct child of <artifactsDir>/overlays and never anything a crafted value
+// could steer elsewhere.
+func (h *ArtifactHandler) overlayDir(id string) (string, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.String() != id {
+		return "", fmt.Errorf("must be an overlay ID returned by upload-overlay")
+	}
+	return filepath.Join(h.artifactsDir, "overlays", id), nil
+}
+
+// removeOverlay deletes the uploaded overlay with the given ID. An empty or
+// malformed ID removes nothing.
+func (h *ArtifactHandler) removeOverlay(id string) {
+	if id == "" {
+		return
+	}
+	dir, err := h.overlayDir(id)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "overlay cleanup: refusing stored overlay ID %q: %v\n", id, err)
+		return
+	}
+	os.RemoveAll(dir)
+}
+
+// UploadOverlayResponse is the body returned by UploadOverlay.
+type UploadOverlayResponse struct {
+	// ID references the overlay in a build request's overlayId.
+	ID string `json:"id" format:"uuid"`
+}
+
 // UploadOverlay handles POST /api/v1/artifacts/upload-overlay.
 // Accepts multipart file upload. If the file is .tar.gz/.tgz, extracts it.
-// Otherwise saves files directly. Returns the server-side directory path.
+// Otherwise saves files directly. Returns the overlay ID to pass as overlayId.
+//
+//	@Summary		Upload a rootfs overlay
+//	@Description	Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build.
+//	@Tags			Artifacts
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
+//	@Success		200		{object}	UploadOverlayResponse
+//	@Failure		400		{object}	APIError
+//	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
 	id := uuid.New().String()
 	overlayDir := filepath.Join(h.artifactsDir, "overlays", id)
@@ -1050,7 +1136,7 @@ func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
 		src.Close()
 	}
 
-	return c.JSON(200, map[string]string{"path": overlayDir})
+	return c.JSON(200, UploadOverlayResponse{ID: id})
 }
 
 // maxOverlaySize caps the total uncompressed bytes extracted from a single

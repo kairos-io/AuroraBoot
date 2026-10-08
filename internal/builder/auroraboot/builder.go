@@ -277,7 +277,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			KubernetesVersion: opts.Source.KubernetesVersion,
 			KubernetesEnabled: &kubernetesEnabled,
 			TargetGroupID:     opts.Provisioning.TargetGroupID,
-			OverlayRootfs:     opts.OverlayRootfs,
+			OverlayID:         opts.OverlayID,
 			// The artifact page's Build summary and the Clone flow read the
 			// catalog extensions back from the row (kairos-io/kairos#5274).
 			Extensions:         opts.Extensions,
