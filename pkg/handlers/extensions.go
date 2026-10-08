@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -44,7 +45,8 @@ type ExtensionHandler struct {
 
 // NewExtensionHandler constructs a handler. Any of the dependencies may be
 // nil to opt out of the corresponding behaviour (e.g. pass nil for
-// secureBootKeys when signing isn't configured).
+// secureBootKeys when signing isn't configured). The builder is wrapped so
+// every request's source image is validated before any backend sees it.
 func NewExtensionHandler(
 	b builder.ExtensionBuilder,
 	s store.ExtensionStore,
@@ -54,7 +56,7 @@ func NewExtensionHandler(
 	artifactsDir string,
 ) *ExtensionHandler {
 	return &ExtensionHandler{
-		builder:        b,
+		builder:        builder.NewValidatingExtensionBuilder(b),
 		store:          s,
 		bundles:        bs,
 		secureBootKeys: sb,
@@ -84,7 +86,6 @@ type extensionSourceReq struct {
 	BaseImage        string `json:"baseImage,omitempty"`
 	Dockerfile       string `json:"dockerfile,omitempty"`
 	ExtraSteps       string `json:"extraSteps,omitempty"`
-	BuildContextDir  string `json:"buildContextDir,omitempty"`
 }
 
 // Create handles POST /api/v1/extensions.
@@ -173,7 +174,6 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 			BaseImage:        req.Source.BaseImage,
 			Dockerfile:       req.Source.Dockerfile,
 			ExtraSteps:       req.Source.ExtraSteps,
-			BuildContextDir:  req.Source.BuildContextDir,
 		},
 		Signing:       signing,
 		Hierarchies:   req.Hierarchies,
@@ -191,6 +191,9 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 
 	status, err := h.builder.Build(ctx, opts)
 	if err != nil {
+		if errors.Is(err, builder.ErrInvalidBuildOptions) {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start build"})
 	}
 	return c.JSON(http.StatusCreated, status)

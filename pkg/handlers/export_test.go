@@ -85,3 +85,14 @@ func SetDockerCaptureForTest(f func(ctx context.Context, args ...string) ([]byte
 	dockerCapture = f
 	return func() { dockerCapture = prev }
 }
+
+// NetbootController is the test-visible alias of the unexported
+// netbootController interface, so external tests can stand in for the
+// netboot manager without launching a PXE server.
+type NetbootController = netbootController
+
+// WithTestNetboot replaces the handler's netboot manager. Test-only.
+func (h *DeployHandler) WithTestNetboot(nb NetbootController) *DeployHandler {
+	h.netboot = nb
+	return h
+}

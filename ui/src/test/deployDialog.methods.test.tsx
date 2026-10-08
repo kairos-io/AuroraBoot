@@ -1,8 +1,10 @@
 import { describe, it, expect, vi } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { DeployDialog } from "@/components/DeployDialog";
+import { ApiError } from "@/api/client";
+import { getNetbootStatus, startNetboot } from "@/api/deployments";
 
 vi.mock("@/api/deployments", () => ({
   getNetbootStatus: vi.fn().mockResolvedValue({ running: false, artifactId: "", address: "", port: "" }),
@@ -86,5 +88,54 @@ describe("DeployDialog methods", () => {
     renderDialog({ files: ["kairos.iso"], netboot: false, defaultMethod: "pxe" });
 
     expect(screen.getByRole("tab", { name: /RedFish/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("shows the reason the server gives when netboot cannot start", async () => {
+    vi.mocked(startNetboot).mockRejectedValueOnce(
+      new ApiError(400, { error: "artifact has no netboot files" }, ""),
+    );
+    renderDialog({ files: ["kairos.squashfs"], netboot: true });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Netboot" }));
+
+    expect(
+      await screen.findByText("Could not start netboot: artifact has no netboot files"),
+    ).toBeInTheDocument();
+  });
+
+  it("shows the running server when netboot is already running", async () => {
+    vi.mocked(startNetboot).mockRejectedValueOnce(
+      new ApiError(409, { error: "netboot server is already running" }, ""),
+    );
+    renderDialog({ files: ["kairos.squashfs"], netboot: true });
+    const start = await screen.findByRole("button", { name: "Start Netboot" });
+    vi.mocked(getNetbootStatus).mockResolvedValueOnce({
+      running: true,
+      artifactId: "other-artifact",
+      address: "0.0.0.0",
+      port: "8090",
+    });
+
+    fireEvent.click(start);
+
+    expect(
+      await screen.findByText("Could not start netboot: netboot server is already running"),
+    ).toBeInTheDocument();
+    expect(await screen.findByRole("button", { name: "Stop Netboot" })).toBeInTheDocument();
+  });
+
+  it("clears the netboot error when the operator tries again", async () => {
+    vi.mocked(startNetboot)
+      .mockRejectedValueOnce(new ApiError(500, { error: "internal error" }, ""))
+      .mockResolvedValueOnce(undefined);
+    renderDialog({ files: ["kairos.squashfs"], netboot: true });
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Netboot" }));
+    expect(await screen.findByText("Could not start netboot: internal error")).toBeInTheDocument();
+
+    fireEvent.click(await screen.findByRole("button", { name: "Start Netboot" }));
+    await waitFor(() =>
+      expect(screen.queryByText("Could not start netboot: internal error")).not.toBeInTheDocument(),
+    );
   });
 });
