@@ -112,6 +112,7 @@ var WebCMD = cli.Command{
 		&cli.Float64Flag{Name: "register-rate-limit", Usage: "Per-client-IP registration requests/sec (0 = generous default)", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT"}},
 		&cli.IntFlag{Name: "node-rate-limit-burst", Usage: "Per-node instantaneous allowance for heartbeat and command polling (0 = the larger of 20 and one second of --node-rate-limit)", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT_BURST"}},
 		&cli.IntFlag{Name: "register-rate-limit-burst", Usage: "Per-client-IP instantaneous registration allowance (0 = the larger of 20 and one second of --register-rate-limit). Lower it to tighten a token brute-force at a low sustained rate", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT_BURST"}},
+		&cli.DurationFlag{Name: "reset-timeout", Value: handlers.DefaultResetTimeout, Usage: "Fail pending or in-progress resets that have not returned within this duration. The clock restarts when a node re-registers mid-reset, so a long wipe is not reported failed; set a negative duration to disable", EnvVars: []string{"AURORABOOT_RESET_TIMEOUT"}},
 	},
 	Action: runWeb,
 }
@@ -138,6 +139,7 @@ func runWeb(c *cli.Context) error {
 	redfishServeTLSCert := c.String("redfish-serve-tls-cert")
 	redfishServeTLSKey := c.String("redfish-serve-tls-key")
 	redfishQuirksDir := c.String("redfish-quirks-dir")
+	resetTimeout := c.Duration("reset-timeout")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -394,6 +396,7 @@ func runWeb(c *cli.Context) error {
 		NodeRateLimitBurst:     c.Int("node-rate-limit-burst"),
 		RegisterRateLimitRPS:   c.Float64("register-rate-limit"),
 		RegisterRateLimitBurst: c.Int("register-rate-limit-burst"),
+		ResetTimeout:           resetTimeout,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
