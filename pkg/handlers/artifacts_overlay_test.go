@@ -98,6 +98,108 @@ var _ = Describe("ArtifactHandler UploadOverlay extraction", func() {
 		return rec
 	}
 
+	// postForm posts a hand-built multipart body and returns the recorder.
+	postForm := func(build func(w *multipart.Writer)) *httptest.ResponseRecorder {
+		var buf bytes.Buffer
+		w := multipart.NewWriter(&buf)
+		build(w)
+		Expect(w.Close()).To(Succeed())
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/upload-overlay", &buf)
+		req.Header.Set(echo.HeaderContentType, w.FormDataContentType())
+		rec := httptest.NewRecorder()
+		Expect(handler.UploadOverlay(e.NewContext(req, rec))).To(Succeed())
+		return rec
+	}
+
+	addFile := func(w *multipart.Writer, name string, data []byte) {
+		fw, err := w.CreateFormFile("files", name)
+		Expect(err).NotTo(HaveOccurred())
+		_, err = fw.Write(data)
+		Expect(err).NotTo(HaveOccurred())
+	}
+
+	// overlayDirs lists what exists under <artifactsDir>/overlays.
+	overlayDirs := func() []string {
+		entries, err := os.ReadDir(filepath.Join(artifactsDir, "overlays"))
+		if os.IsNotExist(err) {
+			return nil
+		}
+		Expect(err).NotTo(HaveOccurred())
+		var names []string
+		for _, en := range entries {
+			names = append(names, en.Name())
+		}
+		return names
+	}
+
+	It("saves plain files by base name and returns the overlay ID", func() {
+		rec := postForm(func(w *multipart.Writer) {
+			addFile(w, "motd", []byte("hello\n"))
+			addFile(w, "../../issue", []byte("kairos\n"))
+		})
+		Expect(rec.Code).To(Equal(http.StatusOK))
+
+		var resp struct {
+			ID string `json:"id"`
+		}
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(overlayDirs()).To(Equal([]string{resp.ID}))
+		overlayDir := filepath.Join(artifactsDir, "overlays", resp.ID)
+		Expect(os.ReadFile(filepath.Join(overlayDir, "motd"))).To(Equal([]byte("hello\n")))
+		Expect(os.ReadFile(filepath.Join(overlayDir, "issue"))).To(Equal([]byte("kairos\n")))
+	})
+
+	It("rejects a form without files and creates no overlay", func() {
+		rec := postForm(func(w *multipart.Writer) {
+			Expect(w.WriteField("note", "no files here")).To(Succeed())
+		})
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).NotTo(ContainSubstring(`"id"`))
+		Expect(overlayDirs()).To(BeEmpty())
+	})
+
+	It("rejects a body that is not a multipart form and creates no overlay", func() {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/upload-overlay", bytes.NewBufferString("not a form"))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		rec := httptest.NewRecorder()
+		Expect(handler.UploadOverlay(e.NewContext(req, rec))).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(overlayDirs()).To(BeEmpty())
+	})
+
+	It("removes the overlay when an archive is rejected after other files were saved", func() {
+		rec := postForm(func(w *multipart.Writer) {
+			addFile(w, "motd", []byte("hello\n"))
+			addFile(w, "overlay.tar.gz", makeOverlayTarGz([]overlayEntry{
+				{name: "../escape", data: []byte("PWNED"), mode: 0o644},
+			}))
+		})
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).NotTo(ContainSubstring(`"id"`))
+		Expect(overlayDirs()).To(BeEmpty())
+	})
+
+	It("rejects an archive that is not gzip and leaves no overlay behind", func() {
+		rec := postForm(func(w *multipart.Writer) {
+			addFile(w, "overlay.tgz", []byte("plain text, not gzip"))
+		})
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(overlayDirs()).To(BeEmpty())
+	})
+
+	It("fails the upload when a file cannot be saved and leaves no overlay behind", func() {
+		rec := postForm(func(w *multipart.Writer) {
+			addFile(w, "overlay.tar.gz", makeOverlayTarGz([]overlayEntry{
+				{name: "etc/", typeflag: tar.TypeDir, mode: 0o755},
+			}))
+			// A plain file named like the extracted directory cannot be created.
+			addFile(w, "etc", []byte("clash\n"))
+		})
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		Expect(rec.Body.String()).NotTo(ContainSubstring(`"id"`))
+		Expect(overlayDirs()).To(BeEmpty())
+	})
+
 	It("extracts a valid overlay archive correctly", func() {
 		body := makeOverlayTarGz([]overlayEntry{
 			{name: "etc/", typeflag: tar.TypeDir, mode: 0o755},

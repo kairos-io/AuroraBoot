@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -1094,9 +1095,11 @@ type UploadOverlayResponse struct {
 // UploadOverlay handles POST /api/v1/artifacts/upload-overlay.
 // Accepts multipart file upload. If the file is .tar.gz/.tgz, extracts it.
 // Otherwise saves files directly. Returns the overlay ID to pass as overlayId.
+// The overlay is all or nothing: if any part fails, the overlay directory is
+// removed and no ID is returned.
 //
 //	@Summary		Upload a rootfs overlay
-//	@Description	Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build.
+//	@Description	Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build. If any file is rejected or cannot be stored, nothing is kept.
 //	@Tags			Artifacts
 //	@Accept			multipart/form-data
 //	@Produce		json
@@ -1107,48 +1110,60 @@ type UploadOverlayResponse struct {
 //	@Failure		500		{object}	APIError
 //	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
+	}
+	files := form.File["files"]
+	if len(files) == 0 {
+		return c.JSON(400, map[string]string{"error": "no files in the files field"})
+	}
+
 	id := uuid.New().String()
 	overlayDir := filepath.Join(h.artifactsDir, "overlays", id)
 	if err := os.MkdirAll(overlayDir, 0755); err != nil {
 		return c.JSON(500, map[string]string{"error": "failed to create overlay directory"})
 	}
 
-	form, err := c.MultipartForm()
-	if err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
-	}
-
-	files := form.File["files"]
 	for _, fh := range files {
-		src, err := fh.Open()
-		if err != nil {
-			continue
+		if status, msg := saveOverlayPart(fh, overlayDir); status != 0 {
+			_ = os.RemoveAll(overlayDir)
+			return c.JSON(status, map[string]string{"error": msg})
 		}
-
-		name := filepath.Base(fh.Filename)
-
-		// If .tar.gz or .tgz, extract it with full path containment.
-		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
-			if err := extractOverlayTarGz(src, overlayDir); err != nil {
-				src.Close()
-				return c.JSON(400, map[string]string{"error": fmt.Sprintf("failed to extract %s: %v", name, err)})
-			}
-			src.Close()
-			continue
-		}
-
-		// Otherwise save the file directly
-		dst, err := os.Create(filepath.Join(overlayDir, name))
-		if err != nil {
-			src.Close()
-			continue
-		}
-		io.Copy(dst, src)
-		dst.Close()
-		src.Close()
 	}
 
 	return c.JSON(200, UploadOverlayResponse{ID: id})
+}
+
+// saveOverlayPart stores one uploaded file in overlayDir: a .tar.gz or .tgz
+// is extracted, anything else is written under its base name. On failure it
+// returns the HTTP status and a message that names the file but no server
+// path; on success the status is 0.
+func saveOverlayPart(fh *multipart.FileHeader, overlayDir string) (int, string) {
+	name := filepath.Base(fh.Filename)
+	src, err := fh.Open()
+	if err != nil {
+		return 500, fmt.Sprintf("failed to read uploaded file %s", name)
+	}
+	defer func() { _ = src.Close() }()
+
+	if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+		if err := extractOverlayTarGz(src, overlayDir); err != nil {
+			return 400, fmt.Sprintf("failed to extract %s: %v", name, err)
+		}
+		return 0, ""
+	}
+
+	dst, err := os.Create(filepath.Join(overlayDir, name))
+	if err != nil {
+		return 500, fmt.Sprintf("failed to save %s", name)
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil || closeErr != nil {
+		return 500, fmt.Sprintf("failed to save %s", name)
+	}
+	return 0, ""
 }
 
 // maxOverlaySize caps the total uncompressed bytes extracted from a single

@@ -99,7 +99,7 @@ const docTemplate = `{
                         "AdminBearer": []
                     }
                 ],
-                "description": "Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build.",
+                "description": "Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build. If any file is rejected or cannot be stored, nothing is kept.",
                 "consumes": [
                     "multipart/form-data"
                 ],
