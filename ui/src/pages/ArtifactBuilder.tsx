@@ -242,7 +242,7 @@ const HADRON_VERSION = "v0.5.3";
 // renovate: datasource=github-releases depName=kairos-io/kairos
 const KAIROS_VERSION = "v4.3.0";
 // renovate: datasource=docker depName=ubuntu
-const UBUNTU_VERSION = "24.04";
+const UBUNTU_VERSION = "26.04";
 // renovate: datasource=docker depName=fedora
 const FEDORA_VERSION = "44";
 // renovate: datasource=docker depName=opensuse/leap
