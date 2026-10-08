@@ -31,7 +31,7 @@
 //	overlayID, err := cli.Artifacts.UploadOverlay(ctx,
 //	    client.OverlayFile{Name: "overlay.tar.gz", Content: archive})
 //	art, err := cli.Artifacts.Create(ctx, client.CreateArtifactRequest{
-//	    BaseImage: "quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.4.2",
+//	    BaseImage: baseImage, // e.g. "quay.io/kairos/ubuntu:<tag>"
 //	    OverlayID: overlayID,
 //	    Outputs:   client.ArtifactOutputs{UKI: true},
 //	    Signing:   client.ArtifactSigning{UKIKeySetID: keySet.ID},

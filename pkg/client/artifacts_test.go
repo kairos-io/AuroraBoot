@@ -3,16 +3,56 @@ package client_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
+	"sync/atomic"
+	"testing/iotest"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gleak"
 
 	"github.com/kairos-io/AuroraBoot/pkg/client"
 )
+
+// endlessReader yields zero bytes forever.
+type endlessReader struct{}
+
+func (endlessReader) Read(p []byte) (int, error) {
+	clear(p)
+	return len(p), nil
+}
+
+// gatedReader blocks in its first Read until release is closed, then
+// reports EOF.
+type gatedReader struct {
+	entered chan struct{}
+	release chan struct{}
+	once    sync.Once
+	opened  sync.Once
+}
+
+func (g *gatedReader) open() {
+	g.opened.Do(func() { close(g.release) })
+}
+
+func newGatedReader() *gatedReader {
+	return &gatedReader{entered: make(chan struct{}), release: make(chan struct{})}
+}
+
+func (g *gatedReader) Read([]byte) (int, error) {
+	g.once.Do(func() { close(g.entered) })
+	<-g.release
+	return 0, io.EOF
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
 
 type receivedPart struct {
 	field    string
@@ -23,25 +63,42 @@ type receivedPart struct {
 var _ = Describe("ArtifactsService", func() {
 	Describe("UploadOverlay", func() {
 		var (
-			server      *httptest.Server
-			gotMethod   string
-			gotPath     string
-			gotAuth     string
-			gotParts    []receivedPart
-			status      int
-			replyBody   string
-			parseErrMsg string
+			server        *httptest.Server
+			requests      atomic.Int32
+			gotMethod     string
+			gotPath       string
+			gotAuth       string
+			gotLength     int64
+			gotParts      []receivedPart
+			status        int
+			replyBody     string
+			parseErrMsg   string
+			ctx           context.Context
+			cli           *client.Client
+			uploadRunning = func() bool {
+				for _, g := range gleak.Goroutines() {
+					if strings.Contains(g.Backtrace, "(*ArtifactsService).UploadOverlay") {
+						return true
+					}
+				}
+				return false
+			}
 		)
 
 		BeforeEach(func() {
+			requests.Store(0)
 			gotMethod, gotPath, gotAuth, parseErrMsg = "", "", "", ""
+			gotLength = 0
 			gotParts = nil
 			status = http.StatusOK
 			replyBody = `{"id":"6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a"}`
+			ctx = context.Background()
 			server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
 				gotMethod = r.Method
 				gotPath = r.URL.Path
 				gotAuth = r.Header.Get("Authorization")
+				gotLength = r.ContentLength
 				mr, err := r.MultipartReader()
 				if err != nil {
 					parseErrMsg = err.Error()
@@ -67,16 +124,15 @@ var _ = Describe("ArtifactsService", func() {
 				w.WriteHeader(status)
 				_, _ = io.WriteString(w, replyBody)
 			}))
+			cli = client.New(server.URL, client.WithAdminPassword("s3cret"))
 		})
 
 		AfterEach(func() {
 			server.Close()
 		})
 
-		It("posts every file as a multipart part named files and returns the ID", func() {
-			cli := client.New(server.URL, client.WithAdminPassword("s3cret"))
-
-			id, err := cli.Artifacts.UploadOverlay(context.Background(),
+		It("streams every file as a multipart part named files and returns the ID", func() {
+			id, err := cli.Artifacts.UploadOverlay(ctx,
 				client.OverlayFile{Name: "motd", Content: strings.NewReader("hello\n")},
 				client.OverlayFile{Name: "overlay.tar.gz", Content: strings.NewReader("\x1f\x8bbinary\x00data")},
 			)
@@ -87,36 +143,134 @@ var _ = Describe("ArtifactsService", func() {
 			Expect(gotMethod).To(Equal(http.MethodPost))
 			Expect(gotPath).To(Equal("/api/v1/artifacts/upload-overlay"))
 			Expect(gotAuth).To(Equal("Bearer s3cret"))
+			Expect(gotLength).To(Equal(int64(-1)), "a buffered body would carry a Content-Length")
 			Expect(gotParts).To(Equal([]receivedPart{
 				{field: "files", filename: "motd", content: "hello\n"},
 				{field: "files", filename: "overlay.tar.gz", content: "\x1f\x8bbinary\x00data"},
 			}))
+			Eventually(uploadRunning).Should(BeFalse())
 		})
 
 		It("returns an APIError carrying the status for a non-2xx response", func() {
 			status = http.StatusBadRequest
 			replyBody = `{"error":"invalid multipart form"}`
-			cli := client.New(server.URL, client.WithAdminPassword("s3cret"))
 
-			id, err := cli.Artifacts.UploadOverlay(context.Background(),
+			id, err := cli.Artifacts.UploadOverlay(ctx,
 				client.OverlayFile{Name: "motd", Content: strings.NewReader("hello\n")},
 			)
 
 			Expect(id).To(BeEmpty())
 			var apiErr *client.APIError
-			Expect(err).To(BeAssignableToTypeOf(apiErr))
-			apiErr = err.(*client.APIError)
+			Expect(errors.As(err, &apiErr)).To(BeTrue())
 			Expect(apiErr.StatusCode).To(Equal(http.StatusBadRequest))
 			Expect(apiErr.ErrorMsg).To(Equal("invalid multipart form"))
 		})
 
-		It("refuses to upload without any file", func() {
-			cli := client.New(server.URL, client.WithAdminPassword("s3cret"))
+		It("fails when the reply carries no ID", func() {
+			replyBody = `{}`
 
-			_, err := cli.Artifacts.UploadOverlay(context.Background())
+			id, err := cli.Artifacts.UploadOverlay(ctx,
+				client.OverlayFile{Name: "motd", Content: strings.NewReader("hello\n")},
+			)
 
 			Expect(err).To(HaveOccurred())
-			Expect(gotMethod).To(BeEmpty())
+			Expect(id).To(BeEmpty())
+		})
+
+		It("returns the error of a file that cannot be read", func() {
+			readErr := errors.New("disk on fire")
+
+			_, err := cli.Artifacts.UploadOverlay(ctx,
+				client.OverlayFile{Name: "motd", Content: iotest.ErrReader(readErr)},
+			)
+
+			Expect(err).To(MatchError(readErr))
+			Eventually(uploadRunning).Should(BeFalse())
+		})
+
+		DescribeTable("refuses an invalid file list without sending a request",
+			func(files []client.OverlayFile) {
+				_, err := cli.Artifacts.UploadOverlay(ctx, files...)
+
+				Expect(err).To(HaveOccurred())
+				Expect(requests.Load()).To(BeZero())
+			},
+			Entry("no files", nil),
+			Entry("a file without a name", []client.OverlayFile{{Content: strings.NewReader("x")}}),
+			Entry("a file without content", []client.OverlayFile{{Name: "motd"}}),
+		)
+
+		Context("when the server does not consume the body", func() {
+			var (
+				stalled *httptest.Server
+				stop    chan struct{}
+			)
+
+			BeforeEach(func() {
+				stop = make(chan struct{})
+				stalled = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					select {
+					case <-r.Context().Done():
+					case <-stop:
+					}
+				}))
+				cli = client.New(stalled.URL, client.WithAdminPassword("s3cret"))
+			})
+
+			AfterEach(func() {
+				close(stop)
+				stalled.Close()
+			})
+
+			It("returns on context cancellation and stops reading the files", func() {
+				cctx, cancel := context.WithCancel(ctx)
+				result := make(chan error, 1)
+				go func() {
+					defer GinkgoRecover()
+					_, err := cli.Artifacts.UploadOverlay(cctx,
+						client.OverlayFile{Name: "big.img", Content: endlessReader{}},
+					)
+					result <- err
+				}()
+
+				Eventually(uploadRunning).Should(BeTrue())
+				cancel()
+
+				Eventually(result).Should(Receive(MatchError(context.Canceled)))
+				Eventually(uploadRunning).Should(BeFalse())
+			})
+		})
+
+		It("does not return while a file read is still in progress", func() {
+			// RoundTrippers may return before they are done with the
+			// request body, so the guarantee has to come from the client.
+			early := roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				body := r.Body
+				go func() { _, _ = io.Copy(io.Discard, body) }()
+				<-r.Context().Done()
+				go func() { _ = body.Close() }()
+				return nil, r.Context().Err()
+			})
+			cli = client.New(server.URL, client.WithHTTPClient(&http.Client{Transport: early}))
+			reader := newGatedReader()
+			DeferCleanup(reader.open)
+			cctx, cancel := context.WithCancel(ctx)
+			result := make(chan error, 1)
+			go func() {
+				defer GinkgoRecover()
+				_, err := cli.Artifacts.UploadOverlay(cctx,
+					client.OverlayFile{Name: "motd", Content: reader},
+				)
+				result <- err
+			}()
+
+			Eventually(reader.entered).Should(BeClosed())
+			cancel()
+			Consistently(result, "200ms").ShouldNot(Receive())
+
+			reader.open()
+			Eventually(result).Should(Receive(MatchError(context.Canceled)))
+			Eventually(uploadRunning).Should(BeFalse())
 		})
 	})
 

@@ -92,6 +92,9 @@ func (s *ArtifactsService) Download(ctx context.Context, id, filename string) (i
 // the server stores it under (only its base name is kept). A name ending
 // in .tar.gz or .tgz marks an archive, which the server extracts into
 // the overlay instead of storing as is.
+//
+// Content may be read at any point until UploadOverlay returns, and
+// never after. The client does not close it.
 type OverlayFile struct {
 	Name    string
 	Content io.Reader
@@ -102,31 +105,53 @@ type OverlayFile struct {
 // the overlay on top of a build's rootfs.
 //
 // The files are streamed as a multipart form, one "files" part each, so
-// large archives are not buffered in memory.
+// large archives are not buffered in memory. The call returns only once
+// it has stopped reading every Content, so a Read that blocks also
+// delays the return after ctx is cancelled. Closing Content is up to
+// the caller.
 func (s *ArtifactsService) UploadOverlay(ctx context.Context, files ...OverlayFile) (string, error) {
 	if len(files) == 0 {
-		return "", errors.New("upload overlay: no files given")
+		return "", errors.New("client: UploadOverlay requires at least one file")
 	}
 	for i, f := range files {
 		if f.Name == "" {
-			return "", fmt.Errorf("upload overlay: file %d has no name", i)
+			return "", fmt.Errorf("client: overlay file %d has no name", i)
 		}
 		if f.Content == nil {
-			return "", fmt.Errorf("upload overlay: file %q has no content", f.Name)
+			return "", fmt.Errorf("client: overlay file %q has no content", f.Name)
 		}
 	}
 
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
+	contentType := mw.FormDataContentType()
+	done := make(chan struct{})
+	var writeErr error
 	go func() {
-		pw.CloseWithError(writeOverlayParts(mw, files))
+		defer close(done)
+		writeErr = writeOverlayParts(mw, files)
+		_ = pw.CloseWithError(writeErr)
 	}()
-	// Closing the read side unblocks the writer goroutine when the
-	// request ends before the whole form was consumed.
-	defer pr.Close()
+	// stopWriter makes the writer goroutine give up and waits for it, so
+	// no Content is read once UploadOverlay returns. Closing the read side
+	// fails the writer's next pipe write; a Read already in progress has
+	// to return on its own.
+	stopWriter := func() {
+		_ = pr.Close()
+		<-done
+	}
+	defer stopWriter()
 
-	body, _, err := s.c.doRaw(ctx, http.MethodPost, "/api/v1/artifacts/upload-overlay", nil, pr, mw.FormDataContentType())
+	body, _, err := s.c.doRaw(ctx, http.MethodPost, "/api/v1/artifacts/upload-overlay", nil, pr, contentType)
 	if err != nil {
+		stopWriter()
+		// A failed file read is the root cause of the request failing,
+		// unless the server answered first or the pipe was closed by
+		// stopWriter.
+		var apiErr *APIError
+		if writeErr != nil && !errors.As(err, &apiErr) && !errors.Is(writeErr, io.ErrClosedPipe) {
+			return "", writeErr
+		}
 		return "", err
 	}
 	defer body.Close()
@@ -137,7 +162,7 @@ func (s *ArtifactsService) UploadOverlay(ctx context.Context, files ...OverlayFi
 		return "", fmt.Errorf("decode response: %w", err)
 	}
 	if out.ID == "" {
-		return "", errors.New("upload overlay: server returned no overlay ID")
+		return "", errors.New("decode response: no overlay id")
 	}
 	return out.ID, nil
 }
@@ -146,10 +171,10 @@ func writeOverlayParts(mw *multipart.Writer, files []OverlayFile) error {
 	for _, f := range files {
 		part, err := mw.CreateFormFile("files", f.Name)
 		if err != nil {
-			return fmt.Errorf("create part for %q: %w", f.Name, err)
+			return fmt.Errorf("create overlay part %q: %w", f.Name, err)
 		}
 		if _, err := io.Copy(part, f.Content); err != nil {
-			return fmt.Errorf("write part for %q: %w", f.Name, err)
+			return fmt.Errorf("copy overlay file %q: %w", f.Name, err)
 		}
 	}
 	return mw.Close()
