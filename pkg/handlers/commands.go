@@ -81,6 +81,11 @@ func (h *CommandHandler) Create(c echo.Context) error {
 	if cmd.Command == store.CmdReset {
 		_ = h.nodes.SetResetPending(c.Request().Context(), nodeID)
 	}
+	// An upgrade also reboots the node, into the new image, so the agent's ack
+	// only means the upgrade is scheduled. Track it the same way. Best-effort.
+	if cmd.Command == store.CmdUpgrade {
+		_ = h.nodes.SetUpgradePending(c.Request().Context(), nodeID)
+	}
 
 	// Push command via WebSocket if node is online.
 	h.pushCommand(c.Request().Context(), cmd)
@@ -134,6 +139,9 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		if req.Command == store.CmdReset {
 			_ = h.nodes.SetResetPending(ctx, node.ID)
 		}
+		if req.Command == store.CmdUpgrade {
+			_ = h.nodes.SetUpgradePending(ctx, node.ID)
+		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
 	}
@@ -176,6 +184,9 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		// Create (kairos-io/kairos#4255). Best-effort.
 		if req.Command == store.CmdReset {
 			_ = h.nodes.SetResetPending(ctx, node.ID)
+		}
+		if req.Command == store.CmdUpgrade {
+			_ = h.nodes.SetUpgradePending(ctx, node.ID)
 		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
