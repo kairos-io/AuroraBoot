@@ -3,6 +3,7 @@ package auroraboot
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"os"
@@ -92,8 +93,11 @@ type buildState struct {
 // out to any subscribed UI clients so they can render logs in real time.
 // redactValues are substrings scrubbed from every flushed chunk before
 // either sink sees it, so a build step that echoes the injected
-// cloud-config does not persist the fleet registration token or the
-// default node password.
+// cloud-config does not persist the fleet registration token, the default
+// node password or the per-build upload token. It covers only what
+// AuroraBoot injected and knows the value of; secrets the user supplied in
+// their own cloud-config are unknown here, which is why writeBuildHeader
+// summarises that document instead of printing it.
 type dbLogWriter struct {
 	store        store.ArtifactStore
 	id           string
@@ -283,6 +287,40 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 	}, nil
 }
 
+// writeBuildHeader writes the summary of what is about to be built into the
+// build log.
+//
+// The cloud-config is summarised here, never printed. It carries user
+// passwords, SSH keys and join tokens, and unlike the CLI's build-iso path
+// (AuroraBoot#888) there is no log level to hide it behind: this log is
+// appended to the artifact row and fanned out to every subscribed UI client,
+// so anything written here is stored and broadcast. redactValues cannot stand
+// in for leaving it out, because it only holds the secrets AuroraBoot itself
+// injected (the registration token, the default node password and the upload
+// token) and knows nothing about what the user put in the document.
+//
+// The size and digest are what the log is for: they tell two builds apart and
+// confirm which document a build used, without reproducing any of it.
+func writeBuildHeader(w io.Writer, opts builder.BuildOptions, containerImage, outputDir string) {
+	fmt.Fprintf(w, "=== Starting AuroraBoot build ===\n")
+	fmt.Fprintf(w, "Image: %s\n", containerImage)
+	if opts.ISO {
+		fmt.Fprintf(w, "Output: ISO\n")
+	}
+	if opts.CloudImage {
+		fmt.Fprintf(w, "Output: Cloud Image (raw disk)\n")
+	}
+	if opts.Netboot {
+		fmt.Fprintf(w, "Output: Netboot\n")
+	}
+	fmt.Fprintf(w, "Output dir: %s\n", outputDir)
+	if opts.CloudConfig != "" {
+		fmt.Fprintf(w, "Cloud config: %d bytes, sha256:%x\n",
+			len(opts.CloudConfig), sha256.Sum256([]byte(opts.CloudConfig)))
+	}
+	fmt.Fprintf(w, "\n")
+}
+
 func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOptions, outputDir string) {
 	b.setPhase(bs, builder.BuildBuilding, "")
 
@@ -358,22 +396,7 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 
 	// Step 2: Assemble AuroraBoot config and run deployer.
 	if logWriter != nil {
-		fmt.Fprintf(logWriter, "=== Starting AuroraBoot build ===\n")
-		fmt.Fprintf(logWriter, "Image: %s\n", containerImage)
-		if opts.ISO {
-			fmt.Fprintf(logWriter, "Output: ISO\n")
-		}
-		if opts.CloudImage {
-			fmt.Fprintf(logWriter, "Output: Cloud Image (raw disk)\n")
-		}
-		if opts.Netboot {
-			fmt.Fprintf(logWriter, "Output: Netboot\n")
-		}
-		fmt.Fprintf(logWriter, "Output dir: %s\n", outputDir)
-		if opts.CloudConfig != "" {
-			fmt.Fprintf(logWriter, "Cloud config:\n%s\n", opts.CloudConfig)
-		}
-		fmt.Fprintf(logWriter, "\n")
+		writeBuildHeader(logWriter, opts, containerImage, outputDir)
 		logWriter.Flush()
 	}
 	config, artifact, err := b.assembleConfig(opts, containerImage, outputDir)
