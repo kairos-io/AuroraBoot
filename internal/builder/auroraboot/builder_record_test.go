@@ -132,7 +132,8 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 				KubernetesEnabled: true,
 				TargetGroupID:     "grp-1",
 			},
-			OverlayRootfs: "/tmp/overlay",
+			OverlayRootfs: "/srv/artifacts/overlays/6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a",
+			OverlayID:     "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a",
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -144,7 +145,7 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 		Expect(rec.KubernetesEnabled).NotTo(BeNil())
 		Expect(*rec.KubernetesEnabled).To(BeTrue())
 		Expect(rec.TargetGroupID).To(Equal("grp-1"))
-		Expect(rec.OverlayRootfs).To(Equal("/tmp/overlay"))
+		Expect(rec.OverlayID).To(Equal("6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a"))
 	})
 })
 

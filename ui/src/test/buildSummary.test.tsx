@@ -57,6 +57,12 @@ describe("BuildSummary", () => {
     }
   });
 
+  it("says an overlay is attached when its file names are not known", () => {
+    render(<BuildSummary data={{ ...data, overlayFiles: 0, overlayAttached: true }} variant="full" />);
+    expect(screen.getByText("Attached")).toBeInTheDocument();
+    expect(screen.queryByText("0 files")).not.toBeInTheDocument();
+  });
+
   it("renders warnings with the warning tone", () => {
     render(<BuildSummary data={data} variant="aside" />);
     expect(screen.getByText("default password")).toHaveClass("text-warning-foreground");
@@ -165,6 +171,14 @@ describe("summaryFromArtifact", () => {
     expect(
       summaryFromArtifact({ ...a, autoInstall: true, "allow-insecure-registries": true }),
     ).toMatchObject({ autoInstall: true, insecureRegistries: true });
+  });
+
+  it("marks the overlay attached when the artifact has one", () => {
+    const base = { artifacts: [] } as unknown as Artifact;
+    expect(summaryFromArtifact(base).overlayAttached).toBeFalsy();
+    expect(
+      summaryFromArtifact({ ...base, overlayId: "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a" }).overlayAttached,
+    ).toBe(true);
   });
 
   it("leaves Kubernetes empty on core or when disabled", () => {

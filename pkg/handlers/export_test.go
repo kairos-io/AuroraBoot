@@ -29,3 +29,14 @@ var ImageURLUsesHTTPS = imageURLUsesHTTPS
 // the per-deploy > per-BMC > global-default selection can be unit-tested
 // directly, without driving the async deploy goroutine.
 var ResolveOperatorImageURL = resolveOperatorImageURL
+
+// NetbootController is the test-visible alias of the unexported
+// netbootController interface, so external tests can stand in for the
+// netboot manager without launching a PXE server.
+type NetbootController = netbootController
+
+// WithTestNetboot replaces the handler's netboot manager. Test-only.
+func (h *DeployHandler) WithTestNetboot(nb NetbootController) *DeployHandler {
+	h.netboot = nb
+	return h
+}

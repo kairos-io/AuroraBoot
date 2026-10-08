@@ -25,6 +25,19 @@ export class ApiError extends Error {
   }
 }
 
+// apiErrorFrom builds the ApiError for a failed response, reading the
+// server's {"error": "..."} body when there is one.
+export async function apiErrorFrom(res: Response): Promise<ApiError> {
+  const text = await res.text();
+  let body: unknown = text;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    /* keep body as raw text */
+  }
+  return new ApiError(res.status, body, text);
+}
+
 export function getToken(): string | null {
   return localStorage.getItem(TOKEN_KEY);
 }
@@ -92,14 +105,7 @@ export async function apiFetch<T>(
   }
 
   if (!res.ok) {
-    const text = await res.text();
-    let body: unknown = text;
-    try {
-      body = JSON.parse(text);
-    } catch {
-      /* keep body as raw text */
-    }
-    throw new ApiError(res.status, body, text);
+    throw await apiErrorFrom(res);
   }
 
   if (res.status === 204) {

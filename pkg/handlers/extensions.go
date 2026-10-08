@@ -86,7 +86,6 @@ type extensionSourceReq struct {
 	BaseImage        string `json:"baseImage,omitempty"`
 	Dockerfile       string `json:"dockerfile,omitempty"`
 	ExtraSteps       string `json:"extraSteps,omitempty"`
-	BuildContextDir  string `json:"buildContextDir,omitempty"`
 }
 
 // Create handles POST /api/v1/extensions.
@@ -175,7 +174,6 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 			BaseImage:        req.Source.BaseImage,
 			Dockerfile:       req.Source.Dockerfile,
 			ExtraSteps:       req.Source.ExtraSteps,
-			BuildContextDir:  req.Source.BuildContextDir,
 		},
 		Signing:       signing,
 		Hierarchies:   req.Hierarchies,
