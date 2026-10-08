@@ -2,7 +2,10 @@ package client
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 )
 
@@ -83,4 +86,71 @@ func (s *ArtifactsService) Update(ctx context.Context, id string, req UpdateArti
 func (s *ArtifactsService) Download(ctx context.Context, id, filename string) (io.ReadCloser, error) {
 	body, _, err := s.c.doRaw(ctx, http.MethodGet, "/api/v1/artifacts/"+id+"/download/"+filename, nil, nil, "")
 	return body, err
+}
+
+// OverlayFile is one file sent to UploadOverlay. Name is the file name
+// the server stores it under (only its base name is kept). A name ending
+// in .tar.gz or .tgz marks an archive, which the server extracts into
+// the overlay instead of storing as is.
+type OverlayFile struct {
+	Name    string
+	Content io.Reader
+}
+
+// UploadOverlay stores files as a rootfs overlay on the server and
+// returns its ID. Pass the ID as CreateArtifactRequest.OverlayID to copy
+// the overlay on top of a build's rootfs.
+//
+// The files are streamed as a multipart form, one "files" part each, so
+// large archives are not buffered in memory.
+func (s *ArtifactsService) UploadOverlay(ctx context.Context, files ...OverlayFile) (string, error) {
+	if len(files) == 0 {
+		return "", errors.New("upload overlay: no files given")
+	}
+	for i, f := range files {
+		if f.Name == "" {
+			return "", fmt.Errorf("upload overlay: file %d has no name", i)
+		}
+		if f.Content == nil {
+			return "", fmt.Errorf("upload overlay: file %q has no content", f.Name)
+		}
+	}
+
+	pr, pw := io.Pipe()
+	mw := multipart.NewWriter(pw)
+	go func() {
+		pw.CloseWithError(writeOverlayParts(mw, files))
+	}()
+	// Closing the read side unblocks the writer goroutine when the
+	// request ends before the whole form was consumed.
+	defer pr.Close()
+
+	body, _, err := s.c.doRaw(ctx, http.MethodPost, "/api/v1/artifacts/upload-overlay", nil, pr, mw.FormDataContentType())
+	if err != nil {
+		return "", err
+	}
+	defer body.Close()
+	var out struct {
+		ID string `json:"id"`
+	}
+	if err := decodeJSON(body, &out); err != nil {
+		return "", fmt.Errorf("decode response: %w", err)
+	}
+	if out.ID == "" {
+		return "", errors.New("upload overlay: server returned no overlay ID")
+	}
+	return out.ID, nil
+}
+
+func writeOverlayParts(mw *multipart.Writer, files []OverlayFile) error {
+	for _, f := range files {
+		part, err := mw.CreateFormFile("files", f.Name)
+		if err != nil {
+			return fmt.Errorf("create part for %q: %w", f.Name, err)
+		}
+		if _, err := io.Copy(part, f.Content); err != nil {
+			return fmt.Errorf("write part for %q: %w", f.Name, err)
+		}
+	}
+	return mw.Close()
 }
