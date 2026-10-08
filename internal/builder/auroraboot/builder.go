@@ -36,6 +36,13 @@ type DeployerFunc func(ctx context.Context, config schema.Config, artifact schem
 // capture the options we pass without running a real build.
 type UKIBuildFunc func(opts uki.Options) error
 
+// KairosifyFunc abstracts the kairos-init derivation step so tests can run the
+// build goroutine end to end without a container runtime. ensureKairosified
+// short-circuits when the Builder has no store, but a test that asserts on the
+// persisted artifact record must pass one, so that short circuit is not
+// available to it and the step would shell out to `docker build` for real.
+type KairosifyFunc func(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logSink io.Writer) (string, error)
+
 // DefaultDeployerFunc runs AuroraBoot for real. When logSink is non-nil the
 // per-Deployer logger is wired to tee stdout + logSink so the UI's live-log
 // pane receives the same progress lines the operator sees in their terminal.
@@ -77,6 +84,7 @@ type Builder struct {
 	baseDir        string
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
+	kairosifyFn    KairosifyFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
 	netbootManager *netbootmgr.Manager
@@ -173,6 +181,15 @@ func (b *Builder) WithKairosInitImage(ref string) (*Builder, error) {
 // Tests use this to capture the uki.Options we pass through.
 func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 	b.ukiBuildFn = fn
+	return b
+}
+
+// WithKairosifyFunc swaps the kairos-init derivation step. Tests that need a
+// store use this to keep the build goroutine off `docker build`, which would
+// otherwise pull the base and kairos-init images and run for minutes on a
+// machine that has a container runtime.
+func (b *Builder) WithKairosifyFunc(fn KairosifyFunc) *Builder {
+	b.kairosifyFn = fn
 	return b
 }
 
@@ -602,7 +619,9 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 		// Test mode — skip kairosification (no Docker available)
 		return image, nil
 	}
-	if b.isKairosified(ctx, image) {
+	// The probe below is itself a `docker run`, so an injected derivation step
+	// has to take precedence over it, not only over the build it guards.
+	if b.kairosifyFn == nil && b.isKairosified(ctx, image) {
 		return image, nil
 	}
 	return b.kairosify(ctx, image, opts, outputDir, logWriter)
@@ -612,6 +631,15 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 func (b *Builder) kairosify(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
+	}
+	// Checked after validation so an injected step can never be handed options
+	// the real one would have refused.
+	if b.kairosifyFn != nil {
+		var sink io.Writer
+		if logWriter != nil {
+			sink = logWriter
+		}
+		return b.kairosifyFn(ctx, image, opts, outputDir, sink)
 	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
