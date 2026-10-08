@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/google/uuid"
@@ -19,8 +20,8 @@ import (
 
 // The HTTP API never takes a filesystem path on the server. Overlays are
 // referenced by the ID upload-overlay returns, signing goes through a key
-// set, and the fields that would name a server path are refused outright so
-// a client sending them learns why instead of building without them.
+// set, extension catalogs are remote URLs, and a path sent under a field the
+// API does not have is dropped by decoding before it can reach the builder.
 var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 	var (
 		e            *echo.Echo
@@ -85,6 +86,27 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 			Expect(fb.lastOpts.Signing.UKISecureBootEnroll).To(Equal("if-safe"))
 			Expect(fb.lastOpts.Signing.UKISecureBootKey).To(BeEmpty())
+		})
+
+		DescribeTable("returns 400 for an extension catalog that is not an http(s) URL",
+			func(catalog string) {
+				rec := create(`{"baseImage":"ubuntu:24.04","outputs":{"iso":true},"extensions":["nvidia"],` +
+					`"extensionsCatalogs":["https://example.test/releases.json",` + strconv.Quote(catalog) + `]}`)
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+				Expect(errorOf(rec)).To(ContainSubstring("extensionsCatalogs"))
+				Expect(fb.builds).To(BeEmpty())
+			},
+			Entry("absolute path", "/etc/passwd"),
+			Entry("relative path", "../secrets/catalog.json"),
+			Entry("file URL", "file:///etc/passwd"),
+			Entry("URL without a host", "https:///releases.json"),
+		)
+
+		It("passes http(s) extension catalogs to the builder", func() {
+			rec := create(`{"baseImage":"ubuntu:24.04","outputs":{"iso":true},"extensions":["nvidia"],` +
+				`"extensionsCatalogs":["https://example.test/releases.json","http://mirror.test/releases.json"]}`)
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.lastOpts.ExtensionsCatalogs).To(Equal([]string{"https://example.test/releases.json", "http://mirror.test/releases.json"}))
 		})
 	})
 

@@ -128,7 +128,8 @@ type createArtifactRequest struct {
 
 	// Extensions are catalog extension names (name or name@version) to
 	// materialize in the built ISO. ExtensionsCatalogs overrides the catalog
-	// they are resolved against; empty means extensions.DefaultCatalog.
+	// they are resolved against; empty means extensions.DefaultCatalog. Each
+	// catalog must be an http or https URL.
 	Extensions         []string `json:"extensions,omitempty"`
 	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
 }
@@ -326,6 +327,11 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	for _, request := range parsedExtensions {
 		if _, isFile := request.FilePath(); isFile {
 			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("extension %q names a local file, which is not allowed over the API", request.Name)})
+		}
+	}
+	for _, catalog := range req.ExtensionsCatalogs {
+		if err := validateCatalogURL(catalog); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "extensionsCatalogs: " + err.Error()})
 		}
 	}
 

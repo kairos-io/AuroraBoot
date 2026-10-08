@@ -187,7 +187,7 @@ type APICreateArtifactRequest struct {
 	CloudConfig             string                  `json:"cloudConfig"`
 	// Extensions are catalog extension names (name or name@version) to place
 	// in the built ISO. ExtensionsCatalogs replaces the default catalog they
-	// resolve against.
+	// resolve against; each one must be an http or https URL.
 	Extensions         []string `json:"extensions"`
 	ExtensionsCatalogs []string `json:"extensionsCatalogs"`
 }

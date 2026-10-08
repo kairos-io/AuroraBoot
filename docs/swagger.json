@@ -1900,7 +1900,7 @@
                     "type": "string"
                 },
                 "extensions": {
-                    "description": "Extensions are catalog extension names (name or name@version) to place\nin the built ISO. ExtensionsCatalogs replaces the default catalog they\nresolve against.",
+                    "description": "Extensions are catalog extension names (name or name@version) to place\nin the built ISO. ExtensionsCatalogs replaces the default catalog they\nresolve against; each one must be an http or https URL.",
                     "type": "array",
                     "items": {
                         "type": "string"

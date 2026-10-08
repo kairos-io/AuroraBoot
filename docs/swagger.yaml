@@ -106,7 +106,7 @@ definitions:
         description: |-
           Extensions are catalog extension names (name or name@version) to place
           in the built ISO. ExtensionsCatalogs replaces the default catalog they
-          resolve against.
+          resolve against; each one must be an http or https URL.
         items:
           type: string
         type: array
