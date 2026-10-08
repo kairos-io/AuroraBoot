@@ -86,11 +86,6 @@ type extensionSourceReq struct {
 	BaseImage        string `json:"baseImage,omitempty"`
 	Dockerfile       string `json:"dockerfile,omitempty"`
 	ExtraSteps       string `json:"extraSteps,omitempty"`
-
-	// BuildContextDir names a directory on this server and is not part of
-	// the API. It is decoded only so Create can refuse a request carrying
-	// it instead of silently building without it.
-	BuildContextDir string `json:"buildContextDir" swaggerignore:"true"`
 }
 
 // Create handles POST /api/v1/extensions.
@@ -109,9 +104,6 @@ func (h *ExtensionHandler) Create(c echo.Context) error {
 	var req createExtensionRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-	}
-	if req.Source.BuildContextDir != "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "source.buildContextDir is no longer accepted"})
 	}
 
 	if req.Type != "sysext" && req.Type != "confext" {

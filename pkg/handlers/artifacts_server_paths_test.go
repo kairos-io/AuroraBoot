@@ -58,24 +58,26 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 		return id
 	}
 
-	Describe("Create refuses fields naming server paths", func() {
-		DescribeTable("returns 400 naming the replacement and starts no build",
-			func(fragment, wantField, wantHint string) {
+	Describe("Create takes no server paths", func() {
+		DescribeTable("a path sent in a field outside the API never reaches the builder",
+			func(fragment string) {
 				rec := create(`{"baseImage":"ubuntu:24.04","outputs":{"iso":true},` + fragment + `}`)
-				Expect(rec.Code).To(Equal(http.StatusBadRequest))
-				msg := errorOf(rec)
-				Expect(msg).To(ContainSubstring(wantField))
-				Expect(msg).To(ContainSubstring(wantHint))
-				Expect(fb.builds).To(BeEmpty())
-				Expect(as.records).To(BeEmpty())
+				Expect(rec.Code).To(Equal(http.StatusCreated))
+				Expect(fb.lastOpts.OverlayRootfs).To(BeEmpty())
+				Expect(fb.lastOpts.BuildContextDir).To(BeEmpty())
+				Expect(fb.lastOpts.OutputDir).To(BeEmpty())
+				Expect(fb.lastOpts.Signing.UKISecureBootKey).To(BeEmpty())
+				Expect(fb.lastOpts.Signing.UKISecureBootCert).To(BeEmpty())
+				Expect(fb.lastOpts.Signing.UKITPMPCRKey).To(BeEmpty())
+				Expect(fb.lastOpts.Signing.UKIPublicKeysDir).To(BeEmpty())
 			},
-			Entry("overlayRootfs", `"overlayRootfs":"/etc"`, "overlayRootfs", "use overlayId"),
-			Entry("buildContextDir", `"buildContextDir":"/etc"`, "buildContextDir", "no longer accepted"),
-			Entry("outputDir", `"outputDir":"/tmp/out"`, "outputDir", "no longer accepted"),
-			Entry("signing.ukiSecureBootKey", `"signing":{"ukiSecureBootKey":"/k/db.key"}`, "signing.ukiSecureBootKey", "use signing.ukiKeySetId"),
-			Entry("signing.ukiSecureBootCert", `"signing":{"ukiSecureBootCert":"/k/db.pem"}`, "signing.ukiSecureBootCert", "use signing.ukiKeySetId"),
-			Entry("signing.ukiTpmPcrKey", `"signing":{"ukiTpmPcrKey":"/k/tpm.pem"}`, "signing.ukiTpmPcrKey", "use signing.ukiKeySetId"),
-			Entry("signing.ukiPublicKeysDir", `"signing":{"ukiPublicKeysDir":"/k"}`, "signing.ukiPublicKeysDir", "use signing.ukiKeySetId"),
+			Entry("overlayRootfs", `"overlayRootfs":"/etc"`),
+			Entry("buildContextDir", `"buildContextDir":"/etc"`),
+			Entry("outputDir", `"outputDir":"/tmp/out"`),
+			Entry("signing.ukiSecureBootKey", `"signing":{"ukiSecureBootKey":"/k/db.key"}`),
+			Entry("signing.ukiSecureBootCert", `"signing":{"ukiSecureBootCert":"/k/db.pem"}`),
+			Entry("signing.ukiTpmPcrKey", `"signing":{"ukiTpmPcrKey":"/k/tpm.pem"}`),
+			Entry("signing.ukiPublicKeysDir", `"signing":{"ukiPublicKeysDir":"/k"}`),
 		)
 
 		It("keeps accepting ukiSecureBootEnroll without a key set", func() {
@@ -271,7 +273,7 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 })
 
 var _ = Describe("ExtensionHandler.Create: no server paths in the API", func() {
-	It("returns 400 for source.buildContextDir and starts no build", func() {
+	It("never hands a build context path to the builder", func() {
 		e := echo.New()
 		fb := &fakeExtensionBuilder{}
 		handler := handlers.NewExtensionHandler(fb, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, "")
@@ -282,12 +284,8 @@ var _ = Describe("ExtensionHandler.Create: no server paths in the API", func() {
 		rec := httptest.NewRecorder()
 		Expect(handler.Create(e.NewContext(req, rec))).To(Succeed())
 
-		Expect(rec.Code).To(Equal(http.StatusBadRequest))
-		var resp map[string]string
-		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
-		Expect(resp["error"]).To(ContainSubstring("buildContextDir"))
-		Expect(resp["error"]).To(ContainSubstring("no longer accepted"))
-		Expect(fb.lastOpts.ID).To(BeEmpty())
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(fb.lastOpts.Source.BuildContextDir).To(BeEmpty())
 	})
 })
 

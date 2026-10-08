@@ -131,41 +131,6 @@ type createArtifactRequest struct {
 	// they are resolved against; empty means extensions.DefaultCatalog.
 	Extensions         []string `json:"extensions,omitempty"`
 	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
-
-	// The fields below name paths on this server and are not part of the
-	// API. They are decoded only so serverPathFieldError can refuse a
-	// request carrying them; Echo would otherwise drop them silently and the
-	// build would run without the overlay or build context the client meant.
-	BuildContextDir string `json:"buildContextDir"`
-	OverlayRootfs   string `json:"overlayRootfs"`
-	OutputDir       string `json:"outputDir"`
-}
-
-// serverPathFieldError reports the first field of the request that names a
-// path on this server, or nil when it carries none.
-func (r *createArtifactRequest) serverPathFieldError() error {
-	switch {
-	case r.OverlayRootfs != "":
-		return errors.New("overlayRootfs is not accepted: use overlayId")
-	case r.BuildContextDir != "":
-		return errors.New("buildContextDir is no longer accepted")
-	case r.OutputDir != "":
-		return errors.New("outputDir is no longer accepted")
-	}
-	if r.Signing == nil {
-		return nil
-	}
-	for _, f := range []struct{ name, value string }{
-		{"ukiSecureBootKey", r.Signing.UKISecureBootKey},
-		{"ukiSecureBootCert", r.Signing.UKISecureBootCert},
-		{"ukiTpmPcrKey", r.Signing.UKITPMPCRKey},
-		{"ukiPublicKeysDir", r.Signing.UKIPublicKeysDir},
-	} {
-		if f.value != "" {
-			return fmt.Errorf("signing.%s is not accepted: use signing.ukiKeySetId", f.name)
-		}
-	}
-	return nil
 }
 
 type extensionHierarchiesReq struct {
@@ -197,13 +162,6 @@ type artifactOutputs struct {
 type signingConfig struct {
 	UKIKeySetID         string `json:"ukiKeySetId"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
-
-	// Key file paths on this server are not part of the API; they are
-	// decoded only so serverPathFieldError can refuse them.
-	UKISecureBootKey  string `json:"ukiSecureBootKey"`
-	UKISecureBootCert string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey      string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir  string `json:"ukiPublicKeysDir"`
 }
 
 type provisioningConfig struct {
@@ -246,9 +204,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	var req createArtifactRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
-	}
-	if err := req.serverPathFieldError(); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	var overlayRootfs string
