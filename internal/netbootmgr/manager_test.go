@@ -2,6 +2,7 @@ package netbootmgr
 
 import (
 	"context"
+	"errors"
 	"net"
 	"os"
 	"path/filepath"
@@ -273,8 +274,8 @@ func TestStartWithPathsSharesStateWithStart(t *testing.T) {
 	// Same guard Start has: a second start while one is already running is
 	// rejected, not queued or silently collided with -- this is the bug that
 	// prompted StartWithPaths to exist, reproduced directly.
-	if err := m.StartWithPaths(artifactID, "", "x", "y", "z", ""); err == nil {
-		t.Error("StartWithPaths while already running: got nil error, want one")
+	if err := m.StartWithPaths(artifactID, "", "x", "y", "z", ""); !errors.Is(err, ErrAlreadyRunning) {
+		t.Errorf("StartWithPaths while already running: got %v, want ErrAlreadyRunning", err)
 	}
 }
 

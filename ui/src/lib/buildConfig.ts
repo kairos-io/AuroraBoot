@@ -61,7 +61,7 @@ export interface BuildConfigPayload {
     "allow-insecure-registries"?: boolean;
   };
   dockerfile?: string;
-  overlayRootfs?: string;
+  overlayId?: string;
   outputs: CreateArtifactInput["outputs"];
   signing: {
     ukiKeySetName?: string;
@@ -118,7 +118,7 @@ export function payloadFromBuilder(args: {
         buildMode === "image" ? form["allow-insecure-registries"] || undefined : undefined,
     },
     dockerfile: buildMode === "dockerfile" ? form.dockerfile : undefined,
-    overlayRootfs: form.overlayRootfs || undefined,
+    overlayId: form.overlayId || undefined,
     outputs: { ...form.outputs },
     signing: {
       ukiKeySetName: keySetName,
@@ -168,6 +168,7 @@ export function payloadFromArtifact(artifact: Artifact, groups: Group[]): BuildC
         buildMode === "image" ? artifact["allow-insecure-registries"] || undefined : undefined,
     },
     dockerfile: buildMode === "dockerfile" ? artifact.dockerfile : undefined,
+    overlayId: artifact.overlayId || undefined,
     outputs: {
       iso: artifact.iso,
       cloudImage: artifact.cloudImage,
@@ -204,7 +205,7 @@ export interface ImportedBuildConfig {
   name?: string;
   buildMode?: string;
   dockerfile?: string;
-  overlayRootfs?: string;
+  overlayId?: string;
   advancedCloudConfig?: string;
   source?: Partial<BuildConfigPayload["source"]>;
   provisioning?: Partial<BuildConfigPayload["provisioning"]>;
@@ -230,7 +231,7 @@ export function sanitizeImportedBuildConfig(
     name: str(raw.name),
     buildMode: str(raw.buildMode),
     dockerfile: str(raw.dockerfile),
-    overlayRootfs: str(raw.overlayRootfs),
+    overlayId: str(raw.overlayId),
     advancedCloudConfig: str(raw.advancedCloudConfig),
     source: obj<BuildConfigPayload["source"]>(raw.source),
     provisioning: obj<BuildConfigPayload["provisioning"]>(raw.provisioning),

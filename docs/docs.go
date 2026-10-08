@@ -92,6 +92,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/artifacts/upload-overlay": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build. If any file is rejected or cannot be stored, nothing is kept.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Upload a rootfs overlay",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Overlay files or a .tar.gz archive",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.UploadOverlayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/artifacts/{id}": {
             "get": {
                 "security": [
@@ -1813,12 +1862,6 @@ const docTemplate = `{
                 "ukiKeySetId": {
                     "type": "string"
                 },
-                "ukiPublicKeysDir": {
-                    "type": "string"
-                },
-                "ukiSecureBootCert": {
-                    "type": "string"
-                },
                 "ukiSecureBootEnroll": {
                     "type": "string",
                     "enum": [
@@ -1827,12 +1870,6 @@ const docTemplate = `{
                         "if-safe",
                         "force"
                     ]
-                },
-                "ukiSecureBootKey": {
-                    "type": "string"
-                },
-                "ukiTpmPcrKey": {
-                    "type": "string"
                 }
             }
         },
@@ -1870,7 +1907,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "extensions": {
-                    "description": "Extensions are catalog extension names (name or name@version) to place\nin the built ISO. ExtensionsCatalogs replaces the default catalog they\nresolve against.",
+                    "description": "Extensions are catalog extension names (name or name@version) to place\nin the built ISO. ExtensionsCatalogs replaces the default catalog they\nresolve against; each one must be an http or https URL.",
                     "type": "array",
                     "items": {
                         "type": "string"
@@ -1930,8 +1967,10 @@ const docTemplate = `{
                 "outputs": {
                     "$ref": "#/definitions/handlers.APIArtifactOutputs"
                 },
-                "overlayRootfs": {
-                    "type": "string"
+                "overlayId": {
+                    "description": "ID returned by POST /api/v1/artifacts/upload-overlay",
+                    "type": "string",
+                    "format": "uuid"
                 },
                 "provisioning": {
                     "$ref": "#/definitions/handlers.APIArtifactProvisioning"
@@ -2231,6 +2270,16 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.UploadOverlayResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "ID references the overlay in a build request's overlayId.",
+                    "type": "string",
+                    "format": "uuid"
+                }
+            }
+        },
         "handlers.createExtensionRequest": {
             "type": "object",
             "properties": {
@@ -2300,9 +2349,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "baseImage": {
-                    "type": "string"
-                },
-                "buildContextDir": {
                     "type": "string"
                 },
                 "dockerfile": {
@@ -2504,7 +2550,7 @@ const docTemplate = `{
                 "netboot": {
                     "type": "boolean"
                 },
-                "overlayRootfs": {
+                "overlayId": {
                     "type": "string"
                 },
                 "phase": {
