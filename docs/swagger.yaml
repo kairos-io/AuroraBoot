@@ -1147,6 +1147,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
         "500":
           description: Internal Server Error
           schema:
@@ -1727,6 +1731,10 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       summary: Register a node
       tags:
       - Agent bootstrap
@@ -1831,6 +1839,10 @@ paths:
             $ref: '#/definitions/store.SecureBootKeySet'
         "409":
           description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:

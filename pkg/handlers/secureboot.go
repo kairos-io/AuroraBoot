@@ -264,6 +264,7 @@ func (h *SecureBootHandler) ExportKeys(c echo.Context) error {
 //	@Param		file	formData	file	true	"tar.gz produced by the export endpoint"
 //	@Success	201		{object}	store.SecureBootKeySet
 //	@Failure	409		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/secureboot-keys/import [post]
 func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	ctx := c.Request().Context()

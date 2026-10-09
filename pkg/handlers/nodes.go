@@ -148,6 +148,7 @@ type registerRequest struct {
 //	@Success		201		{object}	APIRegisterResponse
 //	@Failure		400		{object}	APIError
 //	@Failure		401		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/register [post]
 func (h *NodeHandler) Register(c echo.Context) error {
 	var req registerRequest

@@ -1071,6 +1071,7 @@ type UploadOverlayResponse struct {
 //	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
 //	@Success		200		{object}	UploadOverlayResponse
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Failure		500		{object}	APIError
 //	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
