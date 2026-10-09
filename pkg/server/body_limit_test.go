@@ -124,6 +124,15 @@ var _ = Describe("Request body limits", func() {
 		})
 	})
 
+	Describe("the node registration", func() {
+		It("reads no more than 64 KiB of a body of unknown length", func() {
+			body := &countingReader{size: 1 * mib}
+			rec := serve(http.MethodPost, "/api/v1/nodes/register", body, -1, "application/json")
+			expectTooLarge(rec)
+			Expect(body.read).To(BeNumerically("<=", 64*1024+1))
+		})
+	})
+
 	Describe("the overlay upload", func() {
 		It("accepts more than 4 MiB", func() {
 			body, ct := multipartBody("files", "big.bin", 5*mib)

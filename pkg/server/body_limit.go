@@ -13,9 +13,12 @@ import (
 // the JSON API takes a few KiB per request, so 4 MiB is generous headroom.
 const maxRequestBodyBytes = 4 * 1024 * 1024
 
-// ownBodyLimitRoutes are the routes, as "METHOD path-template", whose handlers
-// carry file uploads and enforce a larger limit of their own.
+// ownBodyLimitRoutes are the routes, as "METHOD path-template", that enforce
+// a limit of their own: the file uploads, which need a larger one, and node
+// registration, whose middleware reads at most 64 KiB of an unauthenticated
+// body and must be the first to read it.
 var ownBodyLimitRoutes = map[string]bool{
+	http.MethodPost + " /api/v1/nodes/register":           true,
 	http.MethodPost + " /api/v1/artifacts/upload-overlay": true,
 	http.MethodPost + " /api/v1/secureboot-keys/import":   true,
 	http.MethodPut + " /api/v1/artifacts/:id/upload/*":    true,
