@@ -79,6 +79,7 @@ type generateKeysRequest struct {
 //	@Security	AdminBearer
 //	@Param		body	body		APIGenerateKeySetRequest	true	"Key set name + enroll mode"
 //	@Success	201		{object}	store.SecureBootKeySet
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/secureboot-keys/generate [post]
 func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 	var req generateKeysRequest

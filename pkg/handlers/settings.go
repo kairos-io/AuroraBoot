@@ -103,6 +103,7 @@ func (h *SettingsHandler) GetRegistrationToken(c echo.Context) error {
 //	@Produce		json
 //	@Security		AdminBearer
 //	@Success		200	{object}	APIRegistrationTokenResponse
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/settings/registration-token/rotate [post]
 func (h *SettingsHandler) RotateRegistrationToken(c echo.Context) error {
 	h.mu.Lock()
@@ -199,6 +200,7 @@ type updateImageSourceRequest struct {
 //	@Produce		json
 //	@Security		AdminBearer
 //	@Success		200	{object}	imageSourceResponse
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/settings/image-source [put]
 func (h *SettingsHandler) UpdateImageSource(c echo.Context) error {
 	ctx := c.Request().Context()

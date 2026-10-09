@@ -34,6 +34,7 @@ type createGroupRequest struct {
 //	@Param			body	body		APICreateGroupRequest	true	"Group payload"
 //	@Success		201		{object}	store.NodeGroup
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/groups [post]
 func (h *GroupHandler) Create(c echo.Context) error {
 	var req createGroupRequest
@@ -134,6 +135,7 @@ type updateGroupRequest struct {
 //	@Param		body	body		APIUpdateGroupRequest	true	"Update payload"
 //	@Success	200		{object}	store.NodeGroup
 //	@Failure	404		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/groups/{id} [put]
 func (h *GroupHandler) Update(c echo.Context) error {
 	id := c.Param("id")

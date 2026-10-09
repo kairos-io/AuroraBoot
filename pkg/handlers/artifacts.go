@@ -200,6 +200,7 @@ var phonehomeSafeDefaults = []string{"upgrade", "upgrade-recovery", "reboot", "u
 //	@Param			body	body		APICreateArtifactRequest	true	"Build specification"
 //	@Success		201		{object}	store.ArtifactRecord
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/artifacts [post]
 func (h *ArtifactHandler) Create(c echo.Context) error {
 	var req createArtifactRequest
@@ -813,6 +814,7 @@ func safePathSegment(s string) error {
 //	@Security	AdminBearer
 //	@Param		id	path	string	true	"Artifact ID"
 //	@Success	200
+//	@Failure	413	{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/cancel [post]
 func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
@@ -988,6 +990,7 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 //	@Param		id		path		string						true	"Artifact ID"
 //	@Param		body	body		APIUpdateArtifactRequest	true	"Fields to update"
 //	@Success	200		{object}	store.ArtifactRecord
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/artifacts/{id} [patch]
 func (h *ArtifactHandler) Update(c echo.Context) error {
 	id := c.Param("id")
@@ -1596,6 +1599,7 @@ type setBundleEntry struct {
 //	@Success	200		{array}	store.ArtifactExtensionBundle
 //	@Failure	400		{object}	APIError
 //	@Failure	404		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/bundle-extensions [put]
 func (h *ArtifactHandler) SetBundleExtensions(c echo.Context) error {
 	if h.bundles == nil || h.extensions == nil || h.store == nil {
@@ -1677,6 +1681,7 @@ type ResolvedBundleEntry struct {
 //	@Success		200	{array}	ResolvedBundleEntry
 //	@Failure		400	{object}	APIError
 //	@Failure		404	{object}	APIError
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/artifacts/{id}/bundle-resolve [post]
 func (h *ArtifactHandler) ResolveBundle(c echo.Context) error {
 	if h.bundles == nil || h.extensions == nil || h.store == nil {
