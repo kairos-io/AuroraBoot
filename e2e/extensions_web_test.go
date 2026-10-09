@@ -218,8 +218,8 @@ var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered,
 			Expect(phase).To(Equal("Ready"))
 		})
 
-		It("builds a sysext from a Dockerfile", func() {
-			_, phase := ws.buildExtension(map[string]any{
+		It("builds a sysext from a Dockerfile and stores its build log", func() {
+			id, phase := ws.buildExtension(map[string]any{
 				"name": "web-df", "type": "sysext", "arch": "amd64", "version": "v0.1",
 				"source": map[string]any{
 					"mode":       "dockerfile",
@@ -227,6 +227,12 @@ var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered,
 				},
 			})
 			Expect(phase).To(Equal("Ready"))
+
+			// The builder ignores log append errors, so a broken append only
+			// shows as a log missing the docker build output.
+			resp, logs := ws.do(http.MethodGet, "/api/v1/extensions/"+id+"/logs", nil)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(string(logs)).To(ContainSubstring("apk add"))
 		})
 	})
 
