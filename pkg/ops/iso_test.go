@@ -346,7 +346,8 @@ var _ = Describe("prepareBootArtifacts", Label("iso"), func() {
 		isoDir := GinkgoT().TempDir()
 		Expect(os.MkdirAll(filepath.Join(isoDir, "boot"), 0o755)).To(Succeed())
 
-		cfg := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		cfg, err := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		Expect(err).ToNot(HaveOccurred())
 		Expect(NewBuildISOAction(cfg, spec).prepareBootArtifacts(isoDir)).To(Succeed())
 
 		written, err := os.ReadFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))
@@ -369,9 +370,10 @@ var _ = Describe("prepareBootArtifacts", Label("iso"), func() {
 	It("fails the build on an entry id the template does not define", func() {
 		isoDir := GinkgoT().TempDir()
 		Expect(os.MkdirAll(filepath.Join(isoDir, "boot"), 0o755)).To(Succeed())
-		cfg := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		cfg, err := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		Expect(err).ToNot(HaveOccurred())
 
-		err := NewBuildISOAction(cfg, &LiveISO{DefaultGrubEntry: "kairos-interactive"}).
+		err = NewBuildISOAction(cfg, &LiveISO{DefaultGrubEntry: "kairos-interactive"}).
 			prepareBootArtifacts(isoDir)
 		Expect(err).To(MatchError(ContainSubstring("unknown default live grub entry")))
 		Expect(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg)).ToNot(BeAnExistingFile())
@@ -384,7 +386,8 @@ var _ = Describe("prepareBootArtifacts", Label("iso"), func() {
 		Expect(os.MkdirAll(filepath.Join(isoDir, constants.GrubPrefixDir), 0o755)).To(Succeed())
 		own := filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg)
 		Expect(os.WriteFile(own, []byte("# shipped by the rootfs\n"), 0o644)).To(Succeed())
-		cfg := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		cfg, err := NewBuildConfig(WithLogger(logger.NewKairosLogger("test", "error", false)))
+		Expect(err).ToNot(HaveOccurred())
 
 		Expect(NewBuildISOAction(cfg, &LiveISO{DefaultGrubEntry: "kairos-interactive"}).
 			prepareBootArtifacts(isoDir)).To(Succeed())

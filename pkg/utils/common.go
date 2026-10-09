@@ -54,9 +54,13 @@ func CreateSquashFS(runner runner.Runner, logger logger.KairosLogger, source str
 	return nil
 }
 
+// GolangArchToArch maps a Go architecture name onto the name Kairos uses for
+// the same architecture. It mirrors the SDK's platform.golangArchToArch, so it
+// also accepts the Kairos names themselves and returns them unchanged: an arch
+// read out of a rootfs with GetArchFromRootfs is already x86_64, not amd64.
 func GolangArchToArch(arch string) (string, error) {
 	switch strings.ToLower(arch) {
-	case constants.ArchAmd64:
+	case constants.ArchAmd64, constants.Archx86:
 		return constants.Archx86, nil
 	case constants.ArchArm64:
 		return constants.ArchArm64, nil
