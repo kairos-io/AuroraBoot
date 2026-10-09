@@ -147,7 +147,13 @@ func downloadOnce(ctx context.Context, url, dst string) (string, error) {
 	client := grab.NewClient()
 	// https://github.com/cavaliergopher/grab/issues/104
 	client.UserAgent = UserAgent
-	req, _ := grab.NewRequest(dst, url)
+	// grab.NewRequest returns a nil Request when net/http cannot parse the
+	// URL. The URL is built from the user's repository, release version and
+	// flavor, so an unusable one has to be reported, not dereferenced.
+	req, err := grab.NewRequest(dst, url)
+	if err != nil {
+		return dst, fmt.Errorf("cannot download %q: %w", url, err)
+	}
 
 	// start download
 	// Without ctx on the request, cancelling only ends the progress loop
