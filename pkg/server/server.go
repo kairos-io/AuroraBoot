@@ -152,6 +152,7 @@ func New(cfg Config) *echo.Echo {
 		},
 	}))
 	e.Use(middleware.Recover())
+	e.Use(bodyLimit(maxRequestBodyBytes, skipOwnBodyLimit))
 
 	regToken := cfg.RegToken
 

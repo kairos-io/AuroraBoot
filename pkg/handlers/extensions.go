@@ -99,6 +99,7 @@ type extensionSourceReq struct {
 //	@Param			body	body		createExtensionRequest	true	"Build specification"
 //	@Success		201		{object}	builder.ExtensionBuildStatus
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/extensions [post]
 func (h *ExtensionHandler) Create(c echo.Context) error {
 	var req createExtensionRequest

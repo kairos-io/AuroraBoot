@@ -16,6 +16,10 @@ import (
 // ContextKeyNodeID is the key used to store the authenticated node ID in the echo context.
 const ContextKeyNodeID = "nodeID"
 
+// maxRegistrationBodyBytes caps the unauthenticated registration body: it
+// carries a token and a little node metadata, a few KiB at most.
+const maxRegistrationBodyBytes = 64 * 1024
+
 // secureCompare reports whether a and b are equal using a constant-time
 // comparison, so a bearer-token / admin-password check does not leak, via
 // response timing, how many leading bytes of the secret matched. Plain string
@@ -287,7 +291,9 @@ func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, 
 
 // RegistrationTokenAuth returns an Echo middleware that reads the JSON body,
 // checks for a "registrationToken" field matching the expected token, and
-// resets the body so downstream handlers can read it again.
+// resets the body so downstream handlers can read it again. The body is read
+// through a limit, so a client without a token can make it hold no more than
+// maxRegistrationBodyBytes; a larger body is refused with 413.
 //
 // The token is supplied as a pointer because SettingsHandler.RotateRegistrationToken
 // updates it in place; the middleware must read the current value on every
@@ -297,9 +303,15 @@ func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, 
 func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			bodyBytes, err := io.ReadAll(c.Request().Body)
+			if c.Request().ContentLength > maxRegistrationBodyBytes {
+				return registrationBodyTooLarge(c)
+			}
+			bodyBytes, err := io.ReadAll(io.LimitReader(c.Request().Body, maxRegistrationBodyBytes+1))
 			if err != nil {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot read body"})
+			}
+			if len(bodyBytes) > maxRegistrationBodyBytes {
+				return registrationBodyTooLarge(c)
 			}
 
 			var body struct {
@@ -323,6 +335,10 @@ func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func registrationBodyTooLarge(c echo.Context) error {
+	return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
 }
 
 func extractBearer(header string) string {

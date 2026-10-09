@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -42,17 +43,23 @@ const (
 	webAdminPassword = "e2e-admin"
 	webRegToken      = "e2e-reg"
 	webContainerName = "auroraboot-e2e-web"
-	webListenPort    = "18080"
 )
 
 type webServer struct {
 	baseURL string
+	// port is the host port the server listens on, picked free at start
+	// because the container shares the host network.
+	port string
 }
 
 // startWebServer launches `auroraboot web` in a container on the host network
 // and waits for /healthz. The returned cleanup removes the container.
 func startWebServer(image string) (*webServer, func()) {
 	_ = exec.Command("docker", "rm", "-f", webContainerName).Run()
+
+	freePort, err := getFreePort()
+	Expect(err).ToNot(HaveOccurred())
+	webListenPort := strconv.Itoa(freePort)
 
 	args := []string{
 		"run", "-d", "--name", webContainerName,
@@ -74,7 +81,7 @@ func startWebServer(image string) (*webServer, func()) {
 	out, err := exec.Command("docker", args...).CombinedOutput()
 	Expect(err).ToNot(HaveOccurred(), string(out))
 
-	ws := &webServer{baseURL: "http://localhost:" + webListenPort}
+	ws := &webServer{baseURL: "http://localhost:" + webListenPort, port: webListenPort}
 	cleanup := func() {
 		logs, _ := exec.Command("docker", "logs", "--tail", "40", webContainerName).CombinedOutput()
 		if CurrentSpecReport().Failed() {
@@ -218,8 +225,8 @@ var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered,
 			Expect(phase).To(Equal("Ready"))
 		})
 
-		It("builds a sysext from a Dockerfile", func() {
-			_, phase := ws.buildExtension(map[string]any{
+		It("builds a sysext from a Dockerfile and stores its build log", func() {
+			id, phase := ws.buildExtension(map[string]any{
 				"name": "web-df", "type": "sysext", "arch": "amd64", "version": "v0.1",
 				"source": map[string]any{
 					"mode":       "dockerfile",
@@ -227,6 +234,12 @@ var _ = Describe("extensions REST API", Label("extensions-web", "e2e"), Ordered,
 				},
 			})
 			Expect(phase).To(Equal("Ready"))
+
+			// The builder ignores log append errors, so a broken append only
+			// shows as a log missing the docker build output.
+			resp, logs := ws.do(http.MethodGet, "/api/v1/extensions/"+id+"/logs", nil)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			Expect(string(logs)).To(ContainSubstring("apk add"))
 		})
 	})
 
@@ -439,7 +452,7 @@ var _ = Describe("extensions agent flow", Label("extensions-agent", "e2e"), Orde
 		// Node cloud-config: opt the `extension` command into the allow list.
 		Expect(os.MkdirAll(agentOemDir, 0o755)).To(Succeed())
 		Expect(os.MkdirAll(agentNodeDir, 0o755)).To(Succeed())
-		cc := "#cloud-config\nphonehome:\n  url: http://localhost:" + webListenPort + "\n" +
+		cc := "#cloud-config\nphonehome:\n  url: http://localhost:" + ws.port + "\n" +
 			"  registration_token: " + webRegToken + "\n" +
 			"  allowed_commands:\n    - extension\n    - upgrade\n    - upgrade-recovery\n"
 		Expect(os.WriteFile(agentOemDir+"/01-phonehome.yaml", []byte(cc), 0o644)).To(Succeed())

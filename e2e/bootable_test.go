@@ -280,9 +280,11 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 	return opts
 }
 
+// getFreePort returns a TCP port that is free on every interface, so it also
+// suits a server that listens on all of them.
 func getFreePort() (port int, err error) {
 	var a *net.TCPAddr
-	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+	if a, err = net.ResolveTCPAddr("tcp", ":0"); err == nil {
 		var l *net.TCPListener
 		if l, err = net.ListenTCP("tcp", a); err == nil {
 			defer l.Close()
