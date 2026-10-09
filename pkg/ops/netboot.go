@@ -69,14 +69,33 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 		initrdFile := initrdFileGet()
 		kernelFile := kernelFileGet()
 
-		configFile := cloudConfigFile
+		cmdLine := netbootCmdline(squashFSfile, cloudConfigFile, nb)
+		internal.Log.Logger.Info().Str("cmdline", cmdLine).Msg("Netbooting")
 
-		cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
-
-		if nb.Cmdline != "" {
-			cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
-		}
-
-		return netboot.Server(kernelFile, fmt.Sprintf(cmdLine, squashFSfile, configFile), address, netbootPort, initrdFile, true)
+		return netboot.Server(kernelFile, cmdLine, address, netbootPort, initrdFile, true)
 	}
+}
+
+// netbootCmdline builds the cmdline a netbooted node boots with.
+//
+// The default carries install-mode because a netboot is an install. The
+// keyword is what makes 52_installer.yaml write kairos-installer.service, and
+// that unit is the only thing that runs the install: kairos-agent start stands
+// aside on a netboot when the config asks for an unattended install, and the
+// pairing code a node with no config has to show comes from the same unit. The
+// rest of that guard already holds on a netboot, because a cmdline carrying
+// netboot is a LiveCD boot to kairos-sdk and immucore writes
+// /run/cos/live_mode for it. See kairos-io/kairos#5373.
+//
+// An explicit netboot.cmdline replaces the whole default, keeping only the two
+// keys netboot has to control, so an operator who wants a live node that does
+// not install still has a way to ask for one.
+func netbootCmdline(squashFSfile, configFile string, nb schema.NetBoot) string {
+	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
+
+	if nb.Cmdline != "" {
+		cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
+	}
+
+	return fmt.Sprintf(cmdLine, squashFSfile, configFile)
 }
