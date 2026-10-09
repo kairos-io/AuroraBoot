@@ -147,4 +147,34 @@ var _ = Describe("download", Label("network"), func() {
 		Expect(errors.Is(err, context.Canceled)).To(BeTrue(),
 			"a caller checking for cancellation must see it, got %v", err)
 	})
+
+	It("reports a host it cannot reach instead of panicking", func() {
+		// grab's Client.Do leaves Response.HTTPResponse nil when the HTTP
+		// request itself never completed (DNS failure, connection refused,
+		// TLS error): doHTTPRequest returns (nil, err) and the state machine
+		// goes straight to closeResponse. Reading .Status off it is a nil
+		// dereference, which takes the whole process down and defeats the
+		// retry loop above.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+		url := srv.URL + "/testfile.bin"
+		srv.Close() // nothing listens on that port any more
+
+		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
+		_, err := download(context.Background(), url, dst)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("connect"),
+			"the connection failure must reach the caller, got %v", err)
+	})
+
+	It("reports a URL it cannot parse instead of panicking", func() {
+		// grab.NewRequest returns a nil Request with an error on a URL
+		// net/http cannot parse. Passing that nil to Client.Do dereferences
+		// it. The URL reaches here from --cloud-config/--source and from the
+		// netboot and ISO fields of a deployment, so it is user input.
+		dst := filepath.Join(GinkgoT().TempDir(), "testfile.bin")
+		_, err := download(context.Background(), "http://%zz", dst)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).To(ContainSubstring("%zz"),
+			"the unusable URL must be named, got %v", err)
+	})
 })
