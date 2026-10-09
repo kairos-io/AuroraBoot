@@ -2,6 +2,7 @@ package gorm
 
 import (
 	"fmt"
+	"strings"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -24,8 +25,11 @@ const logTruncatedMarker = "[earlier log output truncated]\n"
 // behind logTruncatedMarker. A capped log is the marker plus logCap
 // characters, so any later append pushes the old marker out of the kept tail
 // and markers never stack. The SQL sticks to length, substr with a positive
-// start and ||, which SQLite and Postgres treat alike.
+// start and ||, which SQLite and Postgres treat alike. NUL bytes are dropped
+// first: SQLite's length stops counting at the first one, which would let the
+// row grow past the cap, and Postgres refuses them in text.
 func cappedLogAppend(chunk string) clause.Expr {
+	chunk = strings.ReplaceAll(chunk, "\x00", "")
 	appended := "COALESCE(logs, '') || ?"
 	sql := fmt.Sprintf("CASE WHEN length(%[1]s) > %[2]d THEN ? || substr(%[1]s, length(%[1]s) - %[2]d + 1) ELSE %[1]s END",
 		appended, logCap)

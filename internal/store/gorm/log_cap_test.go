@@ -114,6 +114,19 @@ var _ = Describe("Stored log cap", func() {
 				}
 			})
 
+			It("drops NUL bytes so they cannot hide text from the cap", func() {
+				Expect(target.append(ctx, s, "rec-1", "start\x00of build\n")).To(Succeed())
+				Expect(target.logs(ctx, s, "rec-1")).To(Equal("start" + "of build\n"))
+
+				for range 20 {
+					Expect(target.append(ctx, s, "rec-1", "more\x00output\n")).To(Succeed())
+				}
+				got := target.logs(ctx, s, "rec-1")
+				Expect(got).NotTo(ContainSubstring("\x00"))
+				Expect(got).To(HavePrefix(gormstore.LogTruncatedMarker))
+				Expect(got).To(HaveLen(len(gormstore.LogTruncatedMarker) + smallCap))
+			})
+
 			It("leaves a truncated log as it is when an empty chunk is appended", func() {
 				chunk := strings.Repeat("x", smallCap+10)
 				Expect(target.append(ctx, s, "rec-1", chunk)).To(Succeed())
