@@ -60,6 +60,12 @@ var upgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
 
+// maxMessageBytes caps one incoming WebSocket message on the agent and UI
+// connections: agent messages are small JSON envelopes and the UI sends next
+// to nothing, so 4 MiB is generous. A larger message makes gorilla close the
+// connection with 1009 (message too big) and fail the pending read.
+const maxMessageBytes = 4 * 1024 * 1024
+
 // finalizeTimeout bounds one auto eject-on-phone-home attempt fired from a WS
 // heartbeat, mirroring the REST handlers' budget (pkg/handlers/finalize.go).
 const finalizeTimeout = 2 * time.Minute
@@ -157,6 +163,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		return err
 	}
 	defer conn.Close()
+	conn.SetReadLimit(maxMessageBytes)
 
 	// Captured once: the connection's remote address does not change over its
 	// life, and the read loop below no longer has c in scope by the time a
@@ -233,6 +240,8 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 			switch {
 			case websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure):
 				log.Printf("ws read error for node %s: %v", node.ID, err)
+			case errors.Is(err, websocket.ErrReadLimit):
+				log.Printf("ws: node %s sent a message over %d bytes, dropping connection", node.ID, maxMessageBytes)
 			case errors.Is(err, os.ErrDeadlineExceeded):
 				// Worth its own line: this is the silent-peer case, and it is
 				// not an abnormal close, so IsUnexpectedCloseError says nothing
@@ -405,6 +414,7 @@ func (h *UIHandler) HandleUIWS(c echo.Context) error {
 		return err
 	}
 	defer conn.Close()
+	conn.SetReadLimit(maxMessageBytes)
 
 	// Register with UIHub for broadcast support. wc wraps conn with a
 	// per-connection write lock; the ping ticker below writes through it so it

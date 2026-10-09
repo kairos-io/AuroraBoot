@@ -414,6 +414,59 @@ var _ = Describe("WebSocket Handler", func() {
 		})
 	})
 
+	Describe("Message size limit", func() {
+		oversized := strings.Repeat("x", 4*1024*1024+1)
+
+		// expectClosedByServer reads until the connection fails and checks the
+		// server closed it for the message size.
+		expectClosedByServer := func(conn *websocket.Conn) {
+			GinkgoHelper()
+			Expect(conn.SetReadDeadline(time.Now().Add(10 * time.Second))).To(Succeed())
+			var err error
+			for err == nil {
+				_, _, err = conn.ReadMessage()
+			}
+			Expect(websocket.IsCloseError(err, websocket.CloseMessageTooBig)).To(BeTrue(), "got %v", err)
+		}
+
+		It("closes an agent connection that sends a message over 4 MiB and marks the node offline", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+
+			Expect(conn.WriteMessage(websocket.TextMessage, []byte(oversized))).To(Succeed())
+			expectClosedByServer(conn)
+
+			Eventually(func() bool {
+				return hub.IsOnline(nodeID)
+			}, 10*time.Second, 100*time.Millisecond).Should(BeFalse())
+			Eventually(func() string {
+				node, _ := nodes.GetByID(bg, nodeID)
+				if node == nil {
+					return ""
+				}
+				return node.Phase
+			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.PhaseOffline))
+		})
+
+		It("closes a UI connection that sends a message over 4 MiB and unregisters it", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws/ui")
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Eventually(hub.UI.Count, 10*time.Second, 100*time.Millisecond).Should(Equal(1))
+
+			Expect(conn.WriteMessage(websocket.TextMessage, []byte(oversized))).To(Succeed())
+			expectClosedByServer(conn)
+
+			Eventually(hub.UI.Count, 10*time.Second, 100*time.Millisecond).Should(Equal(0))
+		})
+	})
+
 	// A node that vanishes without closing its socket (power cut, network
 	// partition, a NAT or load balancer dropping the flow) leaves the server
 	// blocked in ReadMessage forever. Nothing else in AuroraBoot ever writes
