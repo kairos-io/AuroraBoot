@@ -686,6 +686,9 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 //	@Failure	413	{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/upload/{filename} [put]
 func (h *ArtifactHandler) Upload(c echo.Context) error {
+	if c.Request().ContentLength > maxUploadBytes {
+		return bodyTooLarge(c)
+	}
 	id := c.Param("id")
 	filename := c.Param("*")
 	ctx := c.Request().Context()
@@ -1071,8 +1074,14 @@ type UploadOverlayResponse struct {
 //	@Failure		500		{object}	APIError
 //	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
+	if ok, err := limitBody(c, maxOverlayRequestBytes); !ok {
+		return err
+	}
 	form, err := c.MultipartForm()
 	if err != nil {
+		if isBodyTooLarge(err) {
+			return bodyTooLarge(c)
+		}
 		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
 	}
 	files := form.File["files"]

@@ -268,8 +268,14 @@ func (h *SecureBootHandler) ExportKeys(c echo.Context) error {
 func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	if ok, err := limitBody(c, maxImportRequestBytes); !ok {
+		return err
+	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
+		if isBodyTooLarge(err) {
+			return bodyTooLarge(c)
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "missing file field"})
 	}
 	src, err := fileHeader.Open()
