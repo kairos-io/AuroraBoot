@@ -70,19 +70,22 @@ type BuildISOAction struct {
 type BuildISOActionOption func(a *BuildISOAction)
 type GenericOptions func(a *sdkConfig.Config) error
 
-func NewBuildConfig(opts ...GenericOptions) *BuildConfig {
-	b := &BuildConfig{
-		Config: *NewConfig(opts...),
-		Name:   constants.BuildImgName,
+func NewBuildConfig(opts ...GenericOptions) (*BuildConfig, error) {
+	c, err := NewConfig(opts...)
+	if err != nil {
+		return nil, err
 	}
-	return b
+
+	return &BuildConfig{
+		Config: *c,
+		Name:   constants.BuildImgName,
+	}, nil
 }
 
-func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
+func NewConfig(opts ...GenericOptions) (*sdkConfig.Config, error) {
 	arch, err := utils.GolangArchToArch(runtime.GOARCH)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("invalid arch")
-		return nil
+		return nil, fmt.Errorf("invalid host arch %s: %w", runtime.GOARCH, err)
 	}
 
 	c := &sdkConfig.Config{
@@ -96,8 +99,7 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	for _, o := range opts {
 		err := o(c)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("error applying config option")
-			return nil
+			return nil, fmt.Errorf("applying config option: %w", err)
 		}
 	}
 
@@ -120,7 +122,7 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	}
 	litter.Config.HidePrivateFields = false
 
-	return c
+	return c, nil
 }
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
@@ -149,9 +151,12 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 		}
 
 		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
-		cfg := NewBuildConfig(
+		cfg, err := NewBuildConfig(
 			WithLogger(internal.Log),
 		)
+		if err != nil {
+			return err
+		}
 		if arch, err := utils.GetArchFromRootfs(src, internal.Log); err == nil && arch != "" {
 			cfg.Arch = arch
 		} else if err != nil {

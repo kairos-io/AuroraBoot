@@ -32,14 +32,15 @@ func DumpSource(image string, dstFunc valueGetOnCall, arch string, allowInsecure
 		if arch != "" {
 			opts = append(opts, WithArch(arch))
 		}
-		cfg := NewConfig(opts...)
-		if cfg != nil {
-			internal.Log.Logger.Debug().Str("arch", cfg.Arch).Msg("DumpSource: config arch after NewConfig")
-			if cfg.Platform != nil {
-				internal.Log.Logger.Debug().Str("platform", cfg.Platform.String()).Msg("DumpSource: config platform after NewConfig")
-			} else {
-				internal.Log.Logger.Debug().Msg("DumpSource: config platform is nil after NewConfig")
-			}
+		cfg, err := NewConfig(opts...)
+		if err != nil {
+			return fmt.Errorf("building the config to dump %s: %w", image, err)
+		}
+		internal.Log.Logger.Debug().Str("arch", cfg.Arch).Msg("DumpSource: config arch after NewConfig")
+		if cfg.Platform != nil {
+			internal.Log.Logger.Debug().Str("platform", cfg.Platform.String()).Msg("DumpSource: config platform after NewConfig")
+		} else {
+			internal.Log.Logger.Debug().Msg("DumpSource: config platform is nil after NewConfig")
 		}
 		e := elemental.NewElemental(cfg)
 

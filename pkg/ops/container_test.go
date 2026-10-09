@@ -23,6 +23,7 @@ import (
 	"github.com/google/go-containerregistry/pkg/v1/remote"
 	"github.com/google/go-containerregistry/pkg/v1/tarball"
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -237,5 +238,45 @@ var _ = Describe("DumpSource on a pull that breaks part-way through", Label("ops
 		content, err := os.ReadFile(filepath.Join(destDir, "hello.txt"))
 		Expect(err).ToNot(HaveOccurred())
 		Expect(string(content)).To(Equal("hello insecure registry"))
+	})
+})
+
+// An option that fails used to make NewConfig return a nil *Config, which
+// DumpSource then handed to elemental. herd runs the callback in a goroutine
+// it never recovers, so the whole auroraboot process died on SIGSEGV with no
+// message. kairos-io/kairos#5357.
+var _ = Describe("DumpSource with an architecture the config layer rejects", Label("ops"), func() {
+	It("returns the error instead of dereferencing a nil config", func() {
+		dst := GinkgoT().TempDir()
+		fn := DumpSource("docker://quay.io/kairos/fixture:latest",
+			func() string { return dst }, "sparc", false)
+
+		err := fn(context.Background())
+		Expect(err).To(MatchError(ContainSubstring("invalid architecture sparc")))
+	})
+})
+
+var _ = Describe("NewConfig", Label("ops"), func() {
+	It("reports a failing option rather than returning a nil config", func() {
+		cfg, err := NewConfig(WithArch("sparc"))
+		Expect(err).To(MatchError(ContainSubstring("invalid architecture sparc")))
+		Expect(cfg).To(BeNil())
+	})
+
+	// x86_64 is what GetArchFromRootfs reads out of KAIROS_ARCH, and what
+	// the arch: key of a config file is likely to say.
+	It("accepts x86_64, the name the rest of AuroraBoot uses for amd64", func() {
+		cfg, err := NewConfig(WithArch("x86_64"))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(cfg.Arch).To(Equal(constants.Archx86))
+		Expect(cfg.Platform.String()).To(Equal("linux/amd64"))
+	})
+
+	It("builds a usable BuildConfig for every supported architecture", func() {
+		for _, arch := range []string{"amd64", "x86_64", "arm64", "riscv64"} {
+			cfg, err := NewBuildConfig(WithArch(arch))
+			Expect(err).ToNot(HaveOccurred(), "arch %s", arch)
+			Expect(cfg.Name).To(Equal(constants.BuildImgName))
+		}
 	})
 })
