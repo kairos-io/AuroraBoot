@@ -16,6 +16,10 @@ import (
 // ContextKeyNodeID is the key used to store the authenticated node ID in the echo context.
 const ContextKeyNodeID = "nodeID"
 
+// maxRegistrationBodyBytes caps the unauthenticated registration body: it
+// carries a token and a little node metadata, a few KiB at most.
+const maxRegistrationBodyBytes = 64 * 1024
+
 // secureCompare reports whether a and b are equal using a constant-time
 // comparison, so a bearer-token / admin-password check does not leak, via
 // response timing, how many leading bytes of the secret matched. Plain string
@@ -284,10 +288,6 @@ func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, 
 	}
 	return false
 }
-
-// maxRegistrationBodyBytes caps the unauthenticated registration body: it
-// carries a token and a little node metadata, a few KiB at most.
-const maxRegistrationBodyBytes = 64 * 1024
 
 // RegistrationTokenAuth returns an Echo middleware that reads the JSON body,
 // checks for a "registrationToken" field matching the expected token, and
