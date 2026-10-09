@@ -141,12 +141,25 @@ func downloadOnce(ctx context.Context, url, dst string) (string, error) {
 	client := grab.NewClient()
 	// https://github.com/cavaliergopher/grab/issues/104
 	client.UserAgent = UserAgent
-	req, _ := grab.NewRequest(dst, url)
+	// grab.NewRequest returns a nil Request when net/http cannot parse the
+	// URL. The URL is built from the user's repository, release version and
+	// flavor, so an unusable one has to be reported, not dereferenced.
+	req, err := grab.NewRequest(dst, url)
+	if err != nil {
+		return dst, fmt.Errorf("cannot download %q: %w", url, err)
+	}
 
 	// start download
 	internal.Log.Logger.Info().Msgf("Downloading %v...", req.URL())
 	resp := client.Do(req)
-	internal.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
+	// Response.HTTPResponse stays nil when the HTTP request never completed
+	// at all -- DNS failure, connection refused, TLS error. grab reports that
+	// through Response.Err, which the loop below already reads, so only the
+	// status line has to be skipped. Reading .Status unconditionally made a
+	// transient network failure panic the process instead of being retried.
+	if resp.HTTPResponse != nil {
+		internal.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
+	}
 
 	// start UI loop
 	t := time.NewTicker(500 * time.Millisecond)
