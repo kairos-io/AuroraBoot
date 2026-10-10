@@ -1,5 +1,5 @@
 ARG FEDORA_VERSION=42
-ARG LUET_VERSION=0.36.5
+ARG LUET_VERSION=0.37.0
 ARG SWAGGER_STAGE=with-swagger
 
 FROM quay.io/luet/base:$LUET_VERSION AS luet
@@ -8,23 +8,28 @@ FROM tonistiigi/xx AS xx
 # UI is pre-built and passed via build context (internal/ui/dist)
 # This avoids QEMU emulation issues on riscv64 runners.
 
-FROM --platform=$BUILDPLATFORM golang:1.26 AS with-swagger
+FROM --platform=$BUILDPLATFORM golang:1.27 AS with-swagger
 WORKDIR /app
-RUN go install github.com/swaggo/swag/cmd/swag@latest
+# Build the swag CLI from the version go.mod pins through its tool directive.
+# "go install ...@latest" fetched an unpinned CLI on every build, so the
+# generated docs could change with no code change, and a proxy.golang.org
+# hiccup failed the whole image build.
+COPY go.mod go.sum ./
+RUN go build -o /usr/local/bin/swag github.com/swaggo/swag/cmd/swag
 COPY . .
 RUN swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
-FROM --platform=$BUILDPLATFORM golang:1.26 AS without-swagger
+FROM --platform=$BUILDPLATFORM golang:1.27 AS without-swagger
 WORKDIR /app
 
 FROM ${SWAGGER_STAGE} AS swagger
 
 # builder cross-compiles natively on $BUILDPLATFORM instead of emulating the target via
-# QEMU (that emulation was 77% of the whole image build, see mission-control#527).
+# QEMU (that emulation was 77% of the whole image build).
 # CGO stays on: github.com/go-piv/piv-go/v2 (via sbctl) links against libpcsclite, and
 # without it (CGO_ENABLED=0) its PCSC files are silently dropped from the build, which
 # fails later with "undefined: pkcs11.Ctx" / "undefined: scTx" instead of a clear error.
-FROM --platform=$BUILDPLATFORM golang:1.26 AS builder
+FROM --platform=$BUILDPLATFORM golang:1.27 AS builder
 COPY --from=xx / /
 ARG VERSION=v0.0.0
 ARG TARGETPLATFORM
@@ -49,7 +54,7 @@ ADD . .
 COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
 ENV CGO_ENABLED=1
-RUN xx-go build -ldflags "-X main.version=${VERSION}" -o auroraboot && xx-verify auroraboot
+RUN xx-go build -tags ui -ldflags "-X main.version=${VERSION}" -o auroraboot && xx-verify auroraboot
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
 FROM fedorariscv/base:44 AS riscv64

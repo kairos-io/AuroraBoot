@@ -20,11 +20,15 @@ var ErrNoClaimCapacity = errors.New("no unclaimed node available in group")
 
 // NodeGroup represents a logical group/environment for nodes (e.g., "production", "staging").
 type NodeGroup struct {
-	ID          string    `json:"id" gorm:"primaryKey"`
-	Name        string    `json:"name" gorm:"uniqueIndex"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"createdAt"`
-	UpdatedAt   time.Time `json:"updatedAt"`
+	ID          string `json:"id" gorm:"primaryKey"`
+	Name        string `json:"name" gorm:"uniqueIndex"`
+	Description string `json:"description"`
+	// NodeCount is the number of nodes in the group. It is not stored. List and
+	// Get always set it (0 included); a group embedded in a node payload leaves
+	// it nil, so it is omitted there.
+	NodeCount *int      `json:"node_count,omitempty" gorm:"-"`
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
 }
 
 // ManagedNode represents a Kairos node managed by auroraboot.
@@ -58,6 +62,12 @@ type ManagedNode struct {
 	// and backward-compatible: an agent that does not send them leaves the list
 	// empty. Stored as JSON, mirroring OSRelease/Labels.
 	Addresses []NodeAddress `json:"addresses,omitempty" gorm:"serializer:json"`
+	// RemoteIP is the IP the server observed the node connect from at register or
+	// heartbeat time (kairos-io/kairos#4590), independent of Addresses: the node
+	// does not report it, and it survives even when an agent sends no addresses at
+	// all (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP
+	// changes because every heartbeat re-observes and overwrites it.
+	RemoteIP string `json:"remoteIP,omitempty"`
 	// BootState is the node's reported boot state for day-2 lifecycle (e.g. a node
 	// that booted the passive image signals a broken active image). Known values:
 	// active | passive | recovery | autoreset — but unknown values are accepted
@@ -152,6 +162,7 @@ const (
 	CmdApplyCloudConfig = "apply-cloud-config"
 	CmdUpgradeRecovery  = "upgrade-recovery"
 	CmdReboot           = "reboot"
+	CmdExtension        = "extension"
 )
 
 // CommandSelector targets nodes for bulk command operations.
@@ -169,6 +180,9 @@ type GroupStore interface {
 	List(ctx context.Context) ([]*NodeGroup, error)
 	Update(ctx context.Context, group *NodeGroup) error
 	Delete(ctx context.Context, id string) error
+	// NodeCounts returns the number of nodes per group ID. Groups with no
+	// nodes have no key.
+	NodeCounts(ctx context.Context) (map[string]int, error)
 }
 
 // NodeStore manages node registration and state.
@@ -181,7 +195,13 @@ type NodeStore interface {
 	ListByGroup(ctx context.Context, groupID string) ([]*ManagedNode, error)
 	ListByLabels(ctx context.Context, labels map[string]string) ([]*ManagedNode, error)
 	ListBySelector(ctx context.Context, sel CommandSelector) ([]*ManagedNode, error)
-	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string) error
+	// UpdateHeartbeat records a heartbeat: it stamps LastHeartbeat, moves the node
+	// to Online, and applies whatever the report carried. agentVersion and
+	// osRelease are always written; addresses, bootState, hostname and remoteIP are
+	// only written when non-empty, so a caller that does not collect a field (an
+	// older agent, or a transport that does not carry it) preserves the stored
+	// value instead of blanking it.
+	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string, remoteIP string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
 	SetGroup(ctx context.Context, nodeID string, groupID string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
@@ -233,51 +253,61 @@ type CommandStore interface {
 	// instead of silently succeeding on a foreign or missing command.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error
 	ListByNode(ctx context.Context, nodeID string) ([]*NodeCommand, error)
+	// ExpireBefore moves every command of nodeID that carries an ExpiresAt at
+	// or before deadline, and has not reached a terminal phase, into
+	// CommandExpired. GetPending already refuses to deliver such a command, so
+	// without this transition the row is stranded in a phase nothing can ever
+	// advance: DeleteTerminal does not collect it and the dashboard offers no
+	// delete button for a Pending command.
+	ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error
 	Delete(ctx context.Context, id string) error
+	// DeleteTerminal removes every command of nodeID that reached a terminal
+	// phase: Completed, Failed or Expired.
 	DeleteTerminal(ctx context.Context, nodeID string) error
 }
 
 // ArtifactRecord stores a build artifact and its metadata.
 type ArtifactRecord struct {
-	ID                      string   `json:"id" gorm:"primaryKey"`
-	Name                    string   `json:"name,omitempty"`
-	Saved                   bool     `json:"saved,omitempty"`
-	Phase                   string   `json:"phase"`
-	Message                 string   `json:"message"`
-	BaseImage               string   `json:"baseImage"`
-	KairosVersion           string   `json:"kairosVersion"`
-	Model                   string   `json:"model"`
-	ISO                     bool     `json:"iso"`
-	CloudImage              bool     `json:"cloudImage"`
-	Netboot                 bool     `json:"netboot"`
-	FIPS                    bool     `json:"fips"`
-	TrustedBoot             bool     `json:"trustedBoot"`
-	Arch                    string   `json:"arch,omitempty"`
-	Variant                 string   `json:"variant,omitempty"`
-	AllowInsecureRegistries bool     `json:"allow-insecure-registries" gorm:"column:insecure"`
-	RawDisk                 bool     `json:"rawDisk"`
-	Tar                     bool     `json:"tar"`
-	GCE                     bool     `json:"gce"`
-	VHD                     bool     `json:"vhd"`
-	MAAS                    bool     `json:"maas"`
-	UKI                     bool     `json:"uki"`
-	KairosInitImage         string   `json:"kairosInitImage,omitempty"`
-	AutoInstall             bool     `json:"autoInstall"`
-	RegisterAuroraBoot      bool     `json:"registerAuroraBoot"`
-	Dockerfile              string   `json:"dockerfile,omitempty"`
-	HadronBase              string   `json:"hadronBase,omitempty"`
-	HadronFirmware          []string `json:"hadronFirmware,omitempty" gorm:"serializer:json"`
-	HadronLayers            []string `json:"hadronLayers,omitempty" gorm:"serializer:json"`
-	HadronExtra             string   `json:"hadronExtra,omitempty" gorm:"type:text"`
-	CloudConfig             string   `json:"cloudConfig,omitempty" gorm:"type:text"`
-	KubernetesDistro        string   `json:"kubernetesDistro,omitempty"`
-	KubernetesVersion       string   `json:"kubernetesVersion,omitempty"`
-	KubernetesEnabled       *bool    `json:"kubernetesEnabled,omitempty"`
-	TargetGroupID           string   `json:"targetGroupId,omitempty"`
-	ContainerImage          string   `json:"containerImage,omitempty"`
-	OverlayRootfs           string   `json:"overlayRootfs,omitempty"`
-	ArtifactFiles           []string `json:"artifacts" gorm:"serializer:json"`
-	Logs                    string   `json:"-" gorm:"type:text"`
+	ID                      string               `json:"id" gorm:"primaryKey"`
+	Name                    string               `json:"name,omitempty"`
+	Saved                   bool                 `json:"saved,omitempty"`
+	Phase                   string               `json:"phase"`
+	Message                 string               `json:"message"`
+	BaseImage               string               `json:"baseImage"`
+	KairosVersion           string               `json:"kairosVersion"`
+	Model                   string               `json:"model"`
+	ISO                     bool                 `json:"iso"`
+	CloudImage              bool                 `json:"cloudImage"`
+	Netboot                 bool                 `json:"netboot"`
+	FIPS                    bool                 `json:"fips"`
+	TrustedBoot             bool                 `json:"trustedBoot"`
+	Arch                    string               `json:"arch,omitempty"`
+	Variant                 string               `json:"variant,omitempty"`
+	AllowInsecureRegistries bool                 `json:"allow-insecure-registries" gorm:"column:insecure"`
+	RawDisk                 bool                 `json:"rawDisk"`
+	Tar                     bool                 `json:"tar"`
+	GCE                     bool                 `json:"gce"`
+	VHD                     bool                 `json:"vhd"`
+	MAAS                    bool                 `json:"maas"`
+	UKI                     bool                 `json:"uki"`
+	KairosInitImage         string               `json:"kairosInitImage,omitempty"`
+	AutoInstall             bool                 `json:"autoInstall"`
+	RegisterAuroraBoot      bool                 `json:"registerAuroraBoot"`
+	Dockerfile              string               `json:"dockerfile,omitempty"`
+	HadronBase              string               `json:"hadronBase,omitempty"`
+	HadronFirmware          []string             `json:"hadronFirmware,omitempty" gorm:"serializer:json"`
+	HadronLayers            []string             `json:"hadronLayers,omitempty" gorm:"serializer:json"`
+	HadronExtra             string               `json:"hadronExtra,omitempty" gorm:"type:text"`
+	CloudConfig             string               `json:"cloudConfig,omitempty" gorm:"type:text"`
+	KubernetesDistro        string               `json:"kubernetesDistro,omitempty"`
+	KubernetesVersion       string               `json:"kubernetesVersion,omitempty"`
+	KubernetesEnabled       *bool                `json:"kubernetesEnabled,omitempty"`
+	TargetGroupID           string               `json:"targetGroupId,omitempty"`
+	ContainerImage          string               `json:"containerImage,omitempty"`
+	OverlayID               string               `json:"overlayId,omitempty"`
+	ArtifactFiles           []string             `json:"artifacts" gorm:"serializer:json"`
+	ExtensionHierarchies    ExtensionHierarchies `gorm:"serializer:json" json:"extensionHierarchies"`
+	Logs                    string               `json:"-" gorm:"type:text"`
 	// UploadToken holds the sha256 hex digest of the per-build bearer the
 	// operator backend's exporter Job uses to PUT /api/v1/artifacts/:id/upload/:file.
 	// The plaintext token is minted by the handler on Create, injected into
@@ -289,6 +319,96 @@ type ArtifactRecord struct {
 	UploadToken string    `json:"-"`
 	CreatedAt   time.Time `json:"createdAt"`
 	UpdatedAt   time.Time `json:"updatedAt"`
+	// Extensions and ExtensionsCatalogs record the catalog extensions this
+	// artifact was built with, so cloning it rebuilds with the same ones. An
+	// empty catalog list means the build read extensions.DefaultCatalog,
+	// which keeps a stored build following that default when it moves.
+	Extensions         []string `json:"extensions,omitempty" gorm:"serializer:json"`
+	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty" gorm:"serializer:json"`
+}
+
+// ExtensionHierarchies records the SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES paths
+// declared at artifact build time so the Extensions UI can cross-check what
+// scopes an OS image supports. /usr (sysext) and /etc (confext) are implicit
+// and never stored in either slice.
+type ExtensionHierarchies struct {
+	Sysext  []string `json:"sysext"`
+	Confext []string `json:"confext"`
+}
+
+// ExtensionRecord is one sysext or confext build managed by AuroraBoot.
+// .raw output lives at <artifactsDir>/extensions/<ID>/<Name>.<Type>.raw.
+type ExtensionRecord struct {
+	ID      string `gorm:"primaryKey" json:"id"`
+	Name    string `gorm:"index"      json:"name"`
+	Type    string `json:"type"`  // "sysext" | "confext"
+	Phase   string `json:"phase"` // Pending | Building | Ready | Error
+	Message string `json:"message"`
+
+	Arch    string `json:"arch"`
+	Version string `json:"version"`
+
+	SourceMode       string `json:"sourceMode"` // artifact | image | dockerfile
+	SourceArtifactID string `json:"sourceArtifactId"`
+	SourceImage      string `json:"sourceImage"`
+	Dockerfile       string `gorm:"type:text" json:"dockerfile,omitempty"`
+	ExtraSteps       string `gorm:"type:text" json:"extraSteps,omitempty"`
+
+	SigningKeySetID string   `json:"signingKeySetId"`
+	Hierarchies     []string `gorm:"serializer:json" json:"hierarchies"`
+	ServiceReload   bool     `json:"serviceReload"`
+
+	ContainerImage string `json:"containerImage"`
+	RawFilename    string `json:"rawFilename"`
+
+	// DownloadToken authorizes GET /extensions/:id/download/:filename for
+	// this one extension and nothing else. It exists so the install command's
+	// "source" URL -- which AuroraBoot pushes to every node in the selector,
+	// stores in the commands table and renders in the UI's command preview --
+	// does not have to carry the admin password. The scope is read-only, one
+	// extension, and revoking it is a rebuild.
+	//
+	// Unlike ArtifactRecord.UploadToken this is the plaintext, not a digest:
+	// the operator may open the Install dialog at any time after the build, so
+	// the value has to be retrievable, and a digest cannot be. Both routes
+	// that return it are admin-authenticated, so it reaches nobody who does
+	// not already hold the admin password. Keep it that way: do not serialize
+	// an ExtensionRecord on a node-facing route.
+	DownloadToken string `json:"downloadToken,omitempty"`
+
+	Logs string `gorm:"type:text" json:"-"`
+
+	CreatedAt time.Time `json:"createdAt"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// NodeExtensionRow is the per-node tracking that drives the Install dialog's
+// pre-action diff and the node detail page's "Installed extensions" section.
+// The agent's REST status callback writes/deletes rows on each successful
+// install / disable / remove.
+type NodeExtensionRow struct {
+	NodeID      string    `gorm:"primaryKey" json:"nodeId"`
+	Name        string    `gorm:"primaryKey" json:"name"`
+	Type        string    `gorm:"primaryKey" json:"type"`      // sysext | confext
+	BootState   string    `gorm:"primaryKey" json:"bootState"` // active | passive | recovery | common
+	ExtensionID string    `                  json:"extensionId,omitempty"`
+	Version     string    `                  json:"version"`
+	InstalledAt time.Time `                  json:"installedAt"`
+	UpdatedAt   time.Time `                  json:"updatedAt"`
+}
+
+// ArtifactExtensionBundle links an artifact to an extension that should ride
+// with every upgrade to that artifact. Entries are by (ArtifactID,
+// ExtensionName) -- the actual extension UUID is resolved at dispatch time so
+// the bundle survives rebuilds of the named extension.
+type ArtifactExtensionBundle struct {
+	ArtifactID    string `gorm:"primaryKey" json:"artifactId"`
+	ExtensionName string `gorm:"primaryKey" json:"extensionName"`
+	ExtensionType string `                  json:"extensionType"` // sysext | confext
+	PinnedVersion string `                  json:"pinnedVersion,omitempty"`
+	Order         int    `                  json:"order"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // Artifact phases.
@@ -326,6 +446,35 @@ type ArtifactStore interface {
 	DeleteByPhase(ctx context.Context, phase string) error
 	GetLogs(ctx context.Context, id string) (string, error)
 	AppendLog(ctx context.Context, id string, text string) error
+}
+
+// ExtensionStore manages sysext / confext extension records.
+type ExtensionStore interface {
+	Create(ctx context.Context, e *ExtensionRecord) error
+	GetByID(ctx context.Context, id string) (*ExtensionRecord, error)
+	List(ctx context.Context) ([]ExtensionRecord, error)
+	Delete(ctx context.Context, id string) error
+	FindLatestReadyByName(ctx context.Context, extType, name string) (*ExtensionRecord, error)
+	FindByNameAndVersion(ctx context.Context, extType, name, version string) (*ExtensionRecord, error)
+	AppendLog(ctx context.Context, id, chunk string) error
+}
+
+// ArtifactExtensionBundleStore manages the per-artifact list of bundled
+// extensions that ride along with every upgrade to that artifact.
+type ArtifactExtensionBundleStore interface {
+	ListForArtifact(ctx context.Context, artifactID string) ([]ArtifactExtensionBundle, error)
+	ReplaceForArtifact(ctx context.Context, artifactID string, entries []ArtifactExtensionBundle) error
+	ArtifactsReferencingExtension(ctx context.Context, extensionName string) ([]string, error)
+}
+
+// NodeExtensionStore manages per-node installed extension tracking rows
+// updated by the agent's status callback on install / disable / remove.
+type NodeExtensionStore interface {
+	Upsert(ctx context.Context, row *NodeExtensionRow) error
+	ListForNode(ctx context.Context, nodeID string) ([]NodeExtensionRow, error)
+	ListForExtensionByName(ctx context.Context, extType, name string) ([]NodeExtensionRow, error)
+	DeleteByScope(ctx context.Context, nodeID, extType, name, bootState string) error
+	DeleteByName(ctx context.Context, nodeID, extType, name string) error
 }
 
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.

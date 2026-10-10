@@ -18,7 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
-import { listArtifacts, Artifact } from "@/api/artifacts";
+import { listArtifacts, resolveBundle, Artifact, type ResolvedBundleEntry } from "@/api/artifacts";
 import {
   ArrowUpCircle,
   RotateCcw,
@@ -113,8 +113,8 @@ const COMMANDS: CommandDef[] = [
 // background and the action-card hover affordance.
 const TONE_CLASSES: Record<CommandDef["tone"], { chip: string; hover: string }> = {
   orange: {
-    chip: "bg-[#EE5007]/10 text-[#EE5007]",
-    hover: "hover:border-[#EE5007]/60 hover:bg-[#EE5007]/5",
+    chip: "bg-primary/10 text-primary",
+    hover: "hover:border-primary/60 hover:bg-primary-soft",
   },
   blue: {
     chip: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
@@ -158,8 +158,15 @@ export function CommandDialog({
     useState<UpgradeSourceMode>("image");
   const [artifacts, setArtifacts] = useState<Artifact[]>([]);
   const [selectedArtifactId, setSelectedArtifactId] = useState("");
-  const [resetOem, setResetOem] = useState(false);
-  const [resetConfig, setResetConfig] = useState("");
+  // The resolved bundle is stored together with the artifact it belongs to, so
+  // switching artifacts never shows the previous artifact's extensions while the
+  // new resolve is in flight -- and so the effect below never has to clear state
+  // synchronously (react-hooks/set-state-in-effect).
+  const [bundleState, setBundleState] = useState<{
+    artifactId: string;
+    rows: ResolvedBundleEntry[];
+  }>({ artifactId: "", rows: [] });
+  const [bundlePicks, setBundlePicks] = useState<Record<string, boolean>>({});
 
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
@@ -183,8 +190,6 @@ export function CommandDialog({
       setShellCmd("");
       setUpgradeSourceMode("image");
       setSelectedArtifactId("");
-      setResetOem(false);
-      setResetConfig("");
     }
   } else if (open && defaultCommand !== prevDefaultCommand) {
     setPrevDefaultCommand(defaultCommand);
@@ -203,6 +208,39 @@ export function CommandDialog({
     }
   }, [open, isUpgrade, upgradeSourceMode]);
 
+  // Resolve the artifact's bundled extensions whenever the operator picks one.
+  // Every entry is pre-selected; the operator can untick to drop individual
+  // bundled extensions from this upgrade.
+  useEffect(() => {
+    if (!isUpgrade || upgradeSourceMode !== "artifact" || !selectedArtifactId) {
+      return;
+    }
+    let cancelled = false;
+    resolveBundle(selectedArtifactId)
+      .then((rows) => {
+        if (cancelled) return;
+        setBundleState({ artifactId: selectedArtifactId, rows });
+        setBundlePicks(
+          Object.fromEntries(rows.map((r) => [`${r.type}/${r.name}`, true])),
+        );
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setBundleState({ artifactId: selectedArtifactId, rows: [] });
+        setBundlePicks({});
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isUpgrade, upgradeSourceMode, selectedArtifactId]);
+
+  const bundle =
+    isUpgrade &&
+    upgradeSourceMode === "artifact" &&
+    bundleState.artifactId === selectedArtifactId
+      ? bundleState.rows
+      : [];
+
   function handleSubmit() {
     if (!command) return;
     const args: Record<string, unknown> = {};
@@ -210,17 +248,20 @@ export function CommandDialog({
     if (isUpgrade) {
       if (upgradeSourceMode === "artifact") {
         args.source = "artifact:" + selectedArtifactId;
+        // Attach bundled extensions for the agent. Omitted entirely when the
+        // operator unticks every entry so back-compat behavior is preserved.
+        const picked = bundle.filter(
+          (e) => bundlePicks[`${e.type}/${e.name}`],
+        );
+        if (picked.length > 0) {
+          args.extensions = JSON.stringify(picked);
+        }
       } else if (imageArg) {
         args.source = "oci:" + imageArg;
       }
       if (command === "upgrade-recovery") {
         args.recovery = "true";
       }
-    }
-
-    if (command === "reset") {
-      if (resetOem) args["reset-oem"] = "true";
-      if (resetConfig.trim()) args.config = resetConfig.trim();
     }
 
     if (command === "apply-config") {
@@ -412,42 +453,60 @@ export function CommandDialog({
                         </SelectContent>
                       </Select>
                     )}
+
+                    {bundle.length > 0 && (
+                      <div className="mt-4">
+                        <div className="text-xs text-muted-foreground mb-1.5">
+                          Also push these extensions
+                        </div>
+                        <div className="grid gap-1">
+                          {bundle.map((entry) => {
+                            const k = `${entry.type}/${entry.name}`;
+                            const checked = bundlePicks[k] ?? false;
+                            return (
+                              <label
+                                key={k}
+                                className="flex items-center gap-2 text-sm px-2 py-1.5 rounded-md border"
+                              >
+                                <input
+                                  type="checkbox"
+                                  aria-label={`include ${entry.name}`}
+                                  checked={checked}
+                                  onChange={(e) =>
+                                    setBundlePicks((prev) => ({
+                                      ...prev,
+                                      [k]: e.target.checked,
+                                    }))
+                                  }
+                                />
+                                <span className="font-medium">{entry.name}</span>
+                                <span className="text-xs text-muted-foreground">
+                                  {entry.type} · {entry.version}
+                                </span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </>
             )}
 
             {command === "reset" && (
-              <>
-                <div className="grid gap-3">
-                  <Label>Reset options</Label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={resetOem}
-                      onChange={(e) => setResetOem(e.target.checked)}
-                      className="rounded border-input"
-                    />
-                    Reset OEM partition
-                  </label>
-                  <p className="text-xs text-amber-700 dark:text-amber-300">
-                    Reset will wipe all persistent data on the node. This action is irreversible.
-                  </p>
-                </div>
-                <div className="grid gap-2">
-                  <Label>Cloud config to apply after reset (optional)</Label>
-                  <Textarea
-                    placeholder={"#cloud-config\ninstall:\n  auto: true"}
-                    value={resetConfig}
-                    onChange={(e) => setResetConfig(e.target.value)}
-                    rows={5}
-                    className="font-mono text-sm"
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Written to /oem after reset completes. If OEM is wiped, this becomes the only config.
-                  </p>
-                </div>
-              </>
+              <div className="grid gap-3">
+                <Label>Reset options</Label>
+                <p className="text-sm text-muted-foreground">
+                  Automatic state reset takes no options. The node reboots into
+                  the state-reset entry, resets itself there and comes back on
+                  its active entry. The OEM partition is kept, so the
+                  cloud-config already on the node is what provisions it again.
+                </p>
+                <p className="text-xs text-amber-700 dark:text-amber-300">
+                  Reset will wipe all persistent data on the node. This action is irreversible.
+                </p>
+              </div>
             )}
 
             {command === "apply-config" && (
@@ -494,7 +553,6 @@ export function CommandDialog({
           </Button>
           {!onPickStep && (
             <Button
-              className="bg-[#EE5007] hover:bg-[#FF7442] text-white"
               onClick={handleSubmit}
               disabled={!canSubmit}
             >

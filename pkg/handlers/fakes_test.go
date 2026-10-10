@@ -119,7 +119,7 @@ func (f *fakeNodeStore) ListBySelector(_ context.Context, sel store.CommandSelec
 	return f.nodes, nil
 }
 
-func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
+func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string, remoteIP string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
@@ -132,6 +132,12 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, id string, agentVersi
 			}
 			if bootState != "" {
 				n.BootState = bootState
+			}
+			if hostname != "" {
+				n.Hostname = hostname
+			}
+			if remoteIP != "" {
+				n.RemoteIP = remoteIP
 			}
 			return nil
 		}
@@ -283,15 +289,24 @@ func (f *fakeCommandStore) GetByID(_ context.Context, id string) (*store.NodeCom
 func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	now := time.Now()
 	var result []*store.NodeCommand
 	for _, cmd := range f.cmds {
-		if cmd.ManagedNodeID == nodeID && cmd.Phase == store.CommandPending {
-			// Return a copy, not the stored pointer: real gorm GetPending
-			// materializes a fresh struct per query, so callers (e.g. concurrent
-			// polls in GetCommands) must each get their own object to mutate.
-			cp := *cmd
-			result = append(result, &cp)
+		if cmd.ManagedNodeID != nodeID || cmd.Phase != store.CommandPending {
+			continue
 		}
+		// Mirror the real query's deadline clause. Without it the fake hands
+		// back commands the gorm store would never deliver, and any handler
+		// that relies on an overdue command staying undelivered passes here
+		// while failing in production.
+		if cmd.ExpiresAt != nil && !cmd.ExpiresAt.After(now) {
+			continue
+		}
+		// Return a copy, not the stored pointer: real gorm GetPending
+		// materializes a fresh struct per query, so callers (e.g. concurrent
+		// polls in GetCommands) must each get their own object to mutate.
+		cp := *cmd
+		result = append(result, &cp)
 	}
 	return result, nil
 }
@@ -359,6 +374,23 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 	return result, nil
 }
 
+func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadline time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	now := time.Now()
+	for _, cmd := range f.cmds {
+		if cmd.ManagedNodeID != nodeID || cmd.ExpiresAt == nil || cmd.ExpiresAt.After(deadline) {
+			continue
+		}
+		switch cmd.Phase {
+		case store.CommandPending, store.CommandDelivered, store.CommandRunning:
+			cmd.Phase = store.CommandExpired
+			cmd.CompletedAt = &now
+		}
+	}
+	return nil
+}
+
 func (f *fakeCommandStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -376,7 +408,8 @@ func (f *fakeCommandStore) DeleteTerminal(_ context.Context, nodeID string) erro
 	defer f.mu.Unlock()
 	var remaining []*store.NodeCommand
 	for _, cmd := range f.cmds {
-		if cmd.ManagedNodeID == nodeID && (cmd.Phase == store.CommandCompleted || cmd.Phase == store.CommandFailed) {
+		if cmd.ManagedNodeID == nodeID &&
+			(cmd.Phase == store.CommandCompleted || cmd.Phase == store.CommandFailed || cmd.Phase == store.CommandExpired) {
 			continue
 		}
 		remaining = append(remaining, cmd)
@@ -510,8 +543,23 @@ func (f *fakeArtifactStore) AppendLog(_ context.Context, id string, text string)
 
 // fakeGroupStore implements store.GroupStore for testing.
 type fakeGroupStore struct {
-	mu     sync.Mutex
-	groups []*store.NodeGroup
+	mu       sync.Mutex
+	groups   []*store.NodeGroup
+	counts   map[string]int
+	countErr error
+}
+
+func (f *fakeGroupStore) NodeCounts(_ context.Context) (map[string]int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.countErr != nil {
+		return nil, f.countErr
+	}
+	out := make(map[string]int, len(f.counts))
+	for k, v := range f.counts {
+		out[k] = v
+	}
+	return out, nil
 }
 
 func (f *fakeGroupStore) Create(_ context.Context, g *store.NodeGroup) error {
@@ -744,4 +792,239 @@ func (f *fakeSecureBootKeySetStore) Delete(_ context.Context, id string) error {
 		}
 	}
 	return fmt.Errorf("not found")
+}
+
+// --- fakeNodeExtensionStore --------------------------------------------
+
+type fakeNodeExtensionStore struct {
+	mu   sync.Mutex
+	rows []store.NodeExtensionRow
+}
+
+func newFakeNodeExtensionStore() *fakeNodeExtensionStore {
+	return &fakeNodeExtensionStore{}
+}
+
+func (f *fakeNodeExtensionStore) Upsert(_ context.Context, row *store.NodeExtensionRow) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for i, r := range f.rows {
+		if r.NodeID == row.NodeID && r.Name == row.Name && r.Type == row.Type && r.BootState == row.BootState {
+			f.rows[i] = *row
+			return nil
+		}
+	}
+	f.rows = append(f.rows, *row)
+	return nil
+}
+
+func (f *fakeNodeExtensionStore) ListForNode(_ context.Context, nodeID string) ([]store.NodeExtensionRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []store.NodeExtensionRow{}
+	for _, r := range f.rows {
+		if r.NodeID == nodeID {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeNodeExtensionStore) ListForExtensionByName(_ context.Context, extType, name string) ([]store.NodeExtensionRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := []store.NodeExtensionRow{}
+	for _, r := range f.rows {
+		if r.Type == extType && r.Name == name {
+			out = append(out, r)
+		}
+	}
+	return out, nil
+}
+
+func (f *fakeNodeExtensionStore) DeleteByScope(_ context.Context, nodeID, extType, name, bootState string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.rows[:0]
+	for _, r := range f.rows {
+		if r.NodeID == nodeID && r.Type == extType && r.Name == name && r.BootState == bootState {
+			continue
+		}
+		out = append(out, r)
+	}
+	f.rows = out
+	return nil
+}
+
+func (f *fakeNodeExtensionStore) DeleteByName(_ context.Context, nodeID, extType, name string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := f.rows[:0]
+	for _, r := range f.rows {
+		if r.NodeID == nodeID && r.Type == extType && r.Name == name {
+			continue
+		}
+		out = append(out, r)
+	}
+	f.rows = out
+	return nil
+}
+
+// --- fakeExtensionBuilder -----------------------------------------------
+
+type fakeExtensionBuilder struct {
+	mu       sync.Mutex
+	lastOpts builder.ExtensionBuildOptions
+	buildErr error
+	cancels  []string
+}
+
+func (f *fakeExtensionBuilder) Build(_ context.Context, opts builder.ExtensionBuildOptions) (*builder.ExtensionBuildStatus, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.lastOpts = opts
+	if f.buildErr != nil {
+		return nil, f.buildErr
+	}
+	return &builder.ExtensionBuildStatus{ID: opts.ID, Phase: builder.BuildPending}, nil
+}
+func (f *fakeExtensionBuilder) Status(_ context.Context, id string) (*builder.ExtensionBuildStatus, error) {
+	return &builder.ExtensionBuildStatus{ID: id, Phase: builder.BuildReady}, nil
+}
+func (f *fakeExtensionBuilder) List(_ context.Context) ([]*builder.ExtensionBuildStatus, error) {
+	return nil, nil
+}
+func (f *fakeExtensionBuilder) Cancel(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.cancels = append(f.cancels, id)
+	return nil
+}
+
+// --- fakeExtensionStore -------------------------------------------------
+
+type fakeExtensionStore struct {
+	mu   sync.Mutex
+	rows map[string]*store.ExtensionRecord
+}
+
+func newFakeExtensionStore() *fakeExtensionStore {
+	return &fakeExtensionStore{rows: map[string]*store.ExtensionRecord{}}
+}
+
+func (f *fakeExtensionStore) Create(_ context.Context, r *store.ExtensionRecord) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	cp := *r
+	f.rows[r.ID] = &cp
+	return nil
+}
+func (f *fakeExtensionStore) GetByID(_ context.Context, id string) (*store.ExtensionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r, ok := f.rows[id]; ok {
+		cp := *r
+		return &cp, nil
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeExtensionStore) List(context.Context) ([]store.ExtensionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	out := make([]store.ExtensionRecord, 0, len(f.rows))
+	for _, r := range f.rows {
+		out = append(out, *r)
+	}
+	return out, nil
+}
+func (f *fakeExtensionStore) Delete(_ context.Context, id string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	delete(f.rows, id)
+	return nil
+}
+func (f *fakeExtensionStore) FindLatestReadyByName(_ context.Context, extType, name string) (*store.ExtensionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var newest *store.ExtensionRecord
+	for _, r := range f.rows {
+		if r.Type != extType || r.Name != name || r.Phase != "Ready" {
+			continue
+		}
+		if newest == nil || r.CreatedAt.After(newest.CreatedAt) {
+			cp := *r
+			newest = &cp
+		}
+	}
+	if newest == nil {
+		return nil, fmt.Errorf("not found")
+	}
+	return newest, nil
+}
+func (f *fakeExtensionStore) FindByNameAndVersion(_ context.Context, extType, name, version string) (*store.ExtensionRecord, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.rows {
+		if r.Type == extType && r.Name == name && r.Version == version && r.Phase == "Ready" {
+			cp := *r
+			return &cp, nil
+		}
+	}
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeExtensionStore) AppendLog(_ context.Context, id, chunk string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if r, ok := f.rows[id]; ok {
+		r.Logs += chunk
+	}
+	return nil
+}
+
+// --- fakeBundleStore ----------------------------------------------------
+
+type fakeBundleStore struct {
+	mu     sync.Mutex
+	rowsBy map[string][]store.ArtifactExtensionBundle // keyed by artifact id
+	byName map[string][]string                        // extension name -> artifact ids
+}
+
+func newFakeBundleStore() *fakeBundleStore {
+	return &fakeBundleStore{
+		rowsBy: map[string][]store.ArtifactExtensionBundle{},
+		byName: map[string][]string{},
+	}
+}
+
+func (f *fakeBundleStore) ListForArtifact(_ context.Context, artifactID string) ([]store.ArtifactExtensionBundle, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]store.ArtifactExtensionBundle(nil), f.rowsBy[artifactID]...), nil
+}
+func (f *fakeBundleStore) ReplaceForArtifact(_ context.Context, artifactID string, entries []store.ArtifactExtensionBundle) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, old := range f.rowsBy[artifactID] {
+		f.removeNameMapLocked(old.ExtensionName, artifactID)
+	}
+	f.rowsBy[artifactID] = append([]store.ArtifactExtensionBundle(nil), entries...)
+	for _, e := range entries {
+		f.byName[e.ExtensionName] = append(f.byName[e.ExtensionName], artifactID)
+	}
+	return nil
+}
+func (f *fakeBundleStore) ArtifactsReferencingExtension(_ context.Context, name string) ([]string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return append([]string(nil), f.byName[name]...), nil
+}
+func (f *fakeBundleStore) removeNameMapLocked(name, artifactID string) {
+	ids := f.byName[name]
+	out := ids[:0]
+	for _, id := range ids {
+		if id != artifactID {
+			out = append(out, id)
+		}
+	}
+	f.byName[name] = out
 }

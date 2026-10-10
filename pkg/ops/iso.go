@@ -6,27 +6,32 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/kairos-io/AuroraBoot/internal"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	"github.com/otiai10/copy"
 	"github.com/twpayne/go-vfs/v5"
 
 	"github.com/kairos-io/kairos/v4/agent/pkg/cloudinit"
+	agentconstants "github.com/kairos-io/kairos/v4/agent/pkg/constants"
 	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
 	"github.com/kairos-io/kairos/v4/agent/pkg/implementations/http"
 	"github.com/kairos-io/kairos/v4/agent/pkg/implementations/runner"
 	"github.com/kairos-io/kairos/v4/agent/pkg/implementations/syscall"
 	sdkConfig "github.com/kairos-io/kairos/v4/sdk/types/config"
+	extensiontypes "github.com/kairos-io/kairos/v4/sdk/types/extensions"
 	imagetypes "github.com/kairos-io/kairos/v4/sdk/types/images"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	"github.com/kairos-io/kairos/v4/sdk/types/platform"
 	sdkutils "github.com/kairos-io/kairos/v4/sdk/utils"
 	"github.com/sanity-io/litter"
+	"gopkg.in/yaml.v3"
 )
 
 type LiveISO struct {
@@ -38,6 +43,11 @@ type LiveISO struct {
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO.
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline,omitempty" mapstructure:"extend-live-cmdline"`
 	LiveConsole       string `yaml:"live-console,omitempty" mapstructure:"live-console"`
+	// DefaultGrubEntry is the id (`--id`) of the live menu entry grub boots when
+	// the timeout expires. Left empty, the ISO boots the installer
+	// (constants.LiveGrubEntryInstall). Any value outside
+	// constants.LiveGrubEntries fails the build.
+	DefaultGrubEntry string `yaml:"default-grub-entry,omitempty" mapstructure:"default-grub-entry"`
 }
 
 // BuildConfig represents the config we need for building isos, raw images, artifacts
@@ -114,7 +124,7 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 }
 
 // GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
+func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
 		src := srcFunc()
@@ -151,15 +161,15 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		cfg.OutDir = dst
 		cfg.Date = i.IncludeDate
 
-		spec := &LiveISO{
-			RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(src)},
-			Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(tmp)},
-			Label:              constants.ISOLabel,
-			GrubEntry:          "Kairos",
-			BootloaderInRootFs: false,
-			ExtendLiveCmdline:  i.ExtendLiveCmdline,
-			LiveConsole:        i.LiveConsole,
+		extensionArch := targetArch
+		if extensionArch == "" {
+			extensionArch = cfg.Arch
 		}
+		if err := materializeISOExtensions(ctx, i, extensionArch, tmp, insecure); err != nil {
+			return err
+		}
+
+		spec := newLiveISOSpec(src, tmp, i)
 
 		if i.OverlayRootfs != "" {
 			spec.RootFS = append(spec.RootFS, imagetypes.NewDirSrc(i.OverlayRootfs))
@@ -183,6 +193,76 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO) func(ctx context.Cont
 		}
 		return err
 	}
+}
+
+// newLiveISOSpec carries the ISO options the user gave over to the build spec.
+// A field left out here is parsed from the config and then dropped, which the
+// build has no way to report.
+func newLiveISOSpec(rootfs, isoRoot string, i schema.ISO) *LiveISO {
+	return &LiveISO{
+		RootFS:             []*imagetypes.ImageSource{imagetypes.NewDirSrc(rootfs)},
+		Image:              []*imagetypes.ImageSource{imagetypes.NewDirSrc(isoRoot)},
+		Label:              constants.ISOLabel,
+		GrubEntry:          constants.LiveGrubEntryInstall,
+		BootloaderInRootFs: false,
+		ExtendLiveCmdline:  i.ExtendLiveCmdline,
+		DefaultGrubEntry:   i.DefaultGrubEntry,
+		LiveConsole:        i.LiveConsole,
+	}
+}
+
+var materializeExtensionArtifacts = extensions.Materialize
+
+// isoExtensionsConfig is the cloud-config written next to the materialized
+// extensions in the ISO root. The agent reads every config in the live media
+// root, so it merges this one with the user's config.yaml, and a list of maps
+// such as install.extensions is concatenated, not replaced.
+const isoExtensionsConfig = "extensions.yaml"
+
+func materializeISOExtensions(ctx context.Context, i schema.ISO, architecture, isoRoot string, insecure bool) error {
+	if len(i.Extensions) == 0 {
+		return nil
+	}
+	paths, err := materializeExtensionArtifacts(ctx, i.ExtensionsCatalogs, i.Extensions, architecture, isoRoot, insecure)
+	if err != nil {
+		return err
+	}
+	return declareISOExtensions(isoRoot, paths)
+}
+
+// declareISOExtensions lists the materialized images under install.extensions.
+//
+// Placing an image on the live media is not enough on a classic install: the
+// installer stages only what install.extensions declares, and the image is
+// gone with the live media after the first reboot. The UKI installer copies
+// every *.sysext.raw of the live media on its own, but that is a different
+// build path (pkg/uki), so this only runs for the classic ISO.
+func declareISOExtensions(isoRoot string, paths []string) error {
+	if len(paths) == 0 {
+		return nil
+	}
+	declared := make(extensiontypes.Extensions, 0, len(paths))
+	for _, path := range paths {
+		declared = append(declared, extensiontypes.Extension{
+			// The ISO root is mounted here when the node boots from it.
+			Name: filepath.Join(agentconstants.LiveDir, filepath.Base(path)),
+		})
+	}
+	var config struct {
+		Install struct {
+			Extensions extensiontypes.Extensions `yaml:"extensions"`
+		} `yaml:"install"`
+	}
+	config.Install.Extensions = declared
+	body, err := yaml.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("render the extension declaration: %w", err)
+	}
+	content := append([]byte("#cloud-config\n"), body...)
+	if err := os.WriteFile(filepath.Join(isoRoot, isoExtensionsConfig), content, 0o644); err != nil {
+		return fmt.Errorf("write the extension declaration: %w", err)
+	}
+	return nil
 }
 
 func InjectISO(dstFunc, isoFunc valueGetOnCall, i schema.ISO) func(ctx context.Context) error {
@@ -331,16 +411,45 @@ func (b *BuildISOAction) ISORun() (err error) {
 	return err
 }
 
+// resolveDefaultGrubEntry checks the entry id a build named against the ids
+// the template defines, and returns the installer entry when the build named
+// none.
+//
+// Grub resolves `set default` against the ids and silently falls back to the
+// first entry when it matches nothing, so a typo is not a boot failure a user
+// can diagnose, it is a boot that lands somewhere else. The id also goes
+// inside a quoted grub assignment, where a value ending in a backslash
+// escapes the closing quote and swallows the lines that follow. Both cases
+// are the same mistake, and the build can only report it before it writes
+// the config.
+func resolveDefaultGrubEntry(defaultEntry string) (string, error) {
+	defaultEntry = strings.TrimSpace(defaultEntry)
+	if defaultEntry == "" {
+		return constants.LiveGrubEntryInstall, nil
+	}
+	if slices.Contains(constants.LiveGrubEntries, defaultEntry) {
+		return defaultEntry, nil
+	}
+	return "", fmt.Errorf(
+		"unknown default live grub entry %q: expected one of %s, or an empty value for %s",
+		defaultEntry, strings.Join(constants.LiveGrubEntries, ", "), constants.LiveGrubEntryInstall)
+}
+
 // applyGrubTemplate replaces placeholders in the grub config template.
-func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole string) []byte {
+func applyGrubTemplate(cfg []byte, nomodeset, extendCmdline, liveConsole, defaultEntry string) ([]byte, error) {
 	liveConsole = strings.NewReplacer("\n", "", "\r", "").Replace(strings.TrimSpace(liveConsole))
 	if liveConsole == "" {
 		liveConsole = "console=ttyS0 console=tty1"
 	}
+	defaultEntry, err := resolveDefaultGrubEntry(defaultEntry)
+	if err != nil {
+		return nil, err
+	}
 	out := strings.ReplaceAll(string(cfg), "{{NOMODESET}}", nomodeset)
 	out = strings.ReplaceAll(out, "{{EXTEND_CMDLINE}}", extendCmdline)
 	out = strings.ReplaceAll(out, "{{LIVE_CONSOLE}}", liveConsole)
-	return []byte(out)
+	out = strings.ReplaceAll(out, "{{DEFAULT_ENTRY}}", defaultEntry)
+	return []byte(out), nil
 }
 
 // prepareBootArtifacts will write the needed artifacts for BIOS cd boot into the isoDir
@@ -376,7 +485,14 @@ func (b *BuildISOAction) prepareBootArtifacts(isoDir string) error {
 		if b.spec != nil {
 			liveConsole = b.spec.LiveConsole
 		}
-		grubCfg := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole)
+		defaultEntry := ""
+		if b.spec != nil {
+			defaultEntry = b.spec.DefaultGrubEntry
+		}
+		grubCfg, err := applyGrubTemplate(constants.GrubLiveBiosCfg, nomodeset, extendCmdline, liveConsole, defaultEntry)
+		if err != nil {
+			return err
+		}
 		return os.WriteFile(filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg), grubCfg, constants.FilePerm)
 	} else {
 		b.cfg.Logger.Logger.Warn().Msgf("Grub config already exists at %s, skipping using default one", filepath.Join(isoDir, constants.GrubPrefixDir, constants.GrubCfg))

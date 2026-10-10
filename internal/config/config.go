@@ -116,9 +116,21 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 		return c, r, err
 	}
 
-	yaml.Unmarshal(y, c)
-	yaml.Unmarshal(y, r)
-	yaml.Unmarshal(y, &templateValues)
+	// Apply the --set values (as YAML) onto each target, surfacing type
+	// mismatches instead of dropping them. One loop rather than three copies so
+	// the single error path is exercised by any target's failure.
+	for _, target := range []struct {
+		dst   any
+		label string
+	}{
+		{c, "config"},
+		{r, "release artifact"},
+		{&templateValues, "template values"},
+	} {
+		if err := yaml.Unmarshal(y, target.dst); err != nil {
+			return c, r, fmt.Errorf("applying --set values to %s: %w", target.label, err)
+		}
+	}
 
 	if cloudConfig != "" {
 		var err error

@@ -179,6 +179,7 @@ func isoServeMux(isoFile string, log logger.KairosLogger) *http.ServeMux {
 // serveHTTP starts an HTTP server that serves the specified ISO file for all requests.
 func serveHTTP(isoFile string, log logger.KairosLogger) error {
 	srv := &http.Server{Addr: ":80", Handler: isoServeMux(isoFile, log)}
+	internal.WarnUnauthenticatedServe(":80", "UKI PXE ISO server")
 	log.Logger.Info().Str("subsystem", "HTTP").Msg("Listening for requests on :80")
 	err := srv.ListenAndServe()
 	if err != nil {

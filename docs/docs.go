@@ -92,6 +92,55 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/artifacts/upload-overlay": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build. If any file is rejected or cannot be stored, nothing is kept.",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Upload a rootfs overlay",
+                "parameters": [
+                    {
+                        "type": "file",
+                        "description": "Overlay files or a .tar.gz archive",
+                        "name": "files",
+                        "in": "formData",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.UploadOverlayResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/artifacts/{id}": {
             "get": {
                 "security": [
@@ -194,6 +243,152 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/store.ArtifactRecord"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}/bundle-extensions": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "List bundled extensions for an artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.ArtifactExtensionBundle"
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Replace bundled extensions for an artifact",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Replacement set",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.setBundleEntry"
+                            }
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.ArtifactExtensionBundle"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}/bundle-resolve": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the bundle entries with concrete download URLs and resolved versions, ready to be passed as the ` + "`" + `extensions` + "`" + ` arg of an ` + "`" + `upgrade` + "`" + ` phonehome command.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Resolve bundled extensions for upgrade dispatch",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/handlers.ResolvedBundleEntry"
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }
@@ -312,6 +507,87 @@ const docTemplate = `{
                         "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/extensions": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Kicks off an async sysext/confext build. Subscribe to /api/v1/ws/ui or poll GET /api/v1/extensions/{id}.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "Start an extension build",
+                "parameters": [
+                    {
+                        "description": "Build specification",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.createExtensionRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/builder.ExtensionBuildStatus"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/extensions/{id}/nodes": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "List nodes that have a given extension installed",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Extension ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.NodeExtensionRow"
+                            }
                         }
                     }
                 }
@@ -558,6 +834,65 @@ const docTemplate = `{
                         "description": "No unclaimed node available (code=NoCapacity)",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/metrics/latest": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the latest resource sample of every node that has one, keyed by node ID. Samples are kept in memory only.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get the latest metrics of every node",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "$ref": "#/definitions/store.NodeMetrics"
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/netboot/logs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the current (or most recent) PXE/netboot session's captured output as text/plain. For real-time updates subscribe to the UI WebSocket and filter {type:\"netboot-log\"} envelopes.",
+                "produces": [
+                    "text/plain"
+                ],
+                "tags": [
+                    "Netboot"
+                ],
+                "summary": "Get netboot server log snapshot",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "string"
                         }
                     }
                 }
@@ -815,6 +1150,42 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/nodes/{nodeID}/extensions": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Extensions"
+                ],
+                "summary": "List extensions installed on a node",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "array",
+                            "items": {
+                                "$ref": "#/definitions/store.NodeExtensionRow"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/nodes/{nodeID}/group": {
             "put": {
                 "security": [
@@ -861,7 +1232,7 @@ const docTemplate = `{
                         "NodeAPIKey": []
                     }
                 ],
-                "description": "Transitions the node to Online and records the latest agent version and OS info.",
+                "description": "Transitions the node to Online and records the latest agent version, OS info and hostname.",
                 "consumes": [
                     "application/json"
                 ],
@@ -932,6 +1303,46 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/{nodeID}/metrics": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns the latest resource sample of a node and its recent samples, oldest first. Samples are kept in memory only. A node without samples returns a null latest and an empty samples list.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Nodes"
+                ],
+                "summary": "Get node metrics",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Node ID",
+                        "name": "nodeID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APINodeMetricsResponse"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1174,6 +1585,56 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/settings/extension-catalogs": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Read the configured extension catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.extensionCatalogsResponse"
+                        }
+                    }
+                }
+            },
+            "put": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Replaces the catalogs saved from the UI. The catalogs given at launch with --extensions-catalog are not affected.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Settings"
+                ],
+                "summary": "Replace the saved extension catalogs",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.extensionCatalogsResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/settings/image-source": {
             "get": {
                 "security": [
@@ -1299,6 +1760,26 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "builder.ExtensionBuildStatus": {
+            "type": "object",
+            "properties": {
+                "containerImage": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "rawFile": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.APIArtifactOutputs": {
             "type": "object",
             "properties": {
@@ -1381,12 +1862,6 @@ const docTemplate = `{
                 "ukiKeySetId": {
                     "type": "string"
                 },
-                "ukiPublicKeysDir": {
-                    "type": "string"
-                },
-                "ukiSecureBootCert": {
-                    "type": "string"
-                },
                 "ukiSecureBootEnroll": {
                     "type": "string",
                     "enum": [
@@ -1395,12 +1870,6 @@ const docTemplate = `{
                         "if-safe",
                         "force"
                     ]
-                },
-                "ukiSecureBootKey": {
-                    "type": "string"
-                },
-                "ukiTpmPcrKey": {
-                    "type": "string"
                 }
             }
         },
@@ -1436,6 +1905,19 @@ const docTemplate = `{
                 },
                 "dockerfile": {
                     "type": "string"
+                },
+                "extensions": {
+                    "description": "Extensions are catalog extension names (name or name@version) to place\nin the built ISO. ExtensionsCatalogs replaces the default catalog they\nresolve against; each one must be an http or https URL.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extensionsCatalogs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "hadronBase": {
                     "type": "string"
@@ -1485,8 +1967,10 @@ const docTemplate = `{
                 "outputs": {
                     "$ref": "#/definitions/handlers.APIArtifactOutputs"
                 },
-                "overlayRootfs": {
-                    "type": "string"
+                "overlayId": {
+                    "description": "ID returned by POST /api/v1/artifacts/upload-overlay",
+                    "type": "string",
+                    "format": "uuid"
                 },
                 "provisioning": {
                     "$ref": "#/definitions/handlers.APIArtifactProvisioning"
@@ -1591,16 +2075,43 @@ const docTemplate = `{
                     "type": "string",
                     "example": "active"
                 },
+                "hostname": {
+                    "description": "Hostname is the node's current hostname (optional). Reported on every\nheartbeat, not only at registration, so a hostname that cloud-init applies\nafter phone-home has registered, or a later rename, reaches the record. When\nomitted the stored hostname is preserved.",
+                    "type": "string",
+                    "example": "kairos-node-01"
+                },
                 "labels": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
                     }
                 },
+                "metrics": {
+                    "description": "Metrics is an optional resource sample. The server keeps recent samples in\nmemory. A sample that does not decode is ignored and does not fail the\nheartbeat.",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/store.NodeMetrics"
+                        }
+                    ]
+                },
                 "osRelease": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.APINodeMetricsResponse": {
+            "type": "object",
+            "properties": {
+                "latest": {
+                    "$ref": "#/definitions/store.NodeMetrics"
+                },
+                "samples": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeMetrics"
                     }
                 }
             }
@@ -1742,6 +2253,65 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.ResolvedBundleEntry": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "source": {
+                    "type": "string"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.UploadOverlayResponse": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "description": "ID references the overlay in a build request's overlayId.",
+                    "type": "string",
+                    "format": "uuid"
+                }
+            }
+        },
+        "handlers.createExtensionRequest": {
+            "type": "object",
+            "properties": {
+                "arch": {
+                    "type": "string"
+                },
+                "hierarchies": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "name": {
+                    "type": "string"
+                },
+                "serviceReload": {
+                    "type": "boolean"
+                },
+                "signingKeySetId": {
+                    "type": "string"
+                },
+                "source": {
+                    "$ref": "#/definitions/handlers.extensionSourceReq"
+                },
+                "type": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.decommissionResponse": {
             "type": "object",
             "properties": {
@@ -1750,6 +2320,45 @@ const docTemplate = `{
                 },
                 "nodeOnline": {
                     "type": "boolean"
+                }
+            }
+        },
+        "handlers.extensionCatalogsResponse": {
+            "type": "object",
+            "properties": {
+                "launch": {
+                    "description": "Launch are the catalogs given with --extensions-catalog. Read-only.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "saved": {
+                    "description": "Saved are the catalogs an operator added at runtime.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "handlers.extensionSourceReq": {
+            "type": "object",
+            "properties": {
+                "artifactId": {
+                    "type": "string"
+                },
+                "baseImage": {
+                    "type": "string"
+                },
+                "dockerfile": {
+                    "type": "string"
+                },
+                "extraSteps": {
+                    "type": "string"
+                },
+                "mode": {
+                    "type": "string"
                 }
             }
         },
@@ -1782,6 +2391,50 @@ const docTemplate = `{
                 },
                 "localServe": {
                     "$ref": "#/definitions/handlers.imageSourceLocalServe"
+                }
+            }
+        },
+        "handlers.setBundleEntry": {
+            "type": "object",
+            "properties": {
+                "extensionName": {
+                    "type": "string"
+                },
+                "extensionType": {
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "pinnedVersion": {
+                    "type": "string"
+                }
+            }
+        },
+        "store.ArtifactExtensionBundle": {
+            "type": "object",
+            "properties": {
+                "artifactId": {
+                    "type": "string"
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "extensionName": {
+                    "type": "string"
+                },
+                "extensionType": {
+                    "description": "sysext | confext",
+                    "type": "string"
+                },
+                "order": {
+                    "type": "integer"
+                },
+                "pinnedVersion": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
                 }
             }
         },
@@ -1820,6 +2473,22 @@ const docTemplate = `{
                 },
                 "dockerfile": {
                     "type": "string"
+                },
+                "extensionHierarchies": {
+                    "$ref": "#/definitions/store.ExtensionHierarchies"
+                },
+                "extensions": {
+                    "description": "Extensions and ExtensionsCatalogs record the catalog extensions this\nartifact was built with, so cloning it rebuilds with the same ones. An\nempty catalog list means the build read extensions.DefaultCatalog,\nwhich keeps a stored build following that default when it moves.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "extensionsCatalogs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "fips": {
                     "type": "boolean"
@@ -1881,7 +2550,7 @@ const docTemplate = `{
                 "netboot": {
                     "type": "boolean"
                 },
-                "overlayRootfs": {
+                "overlayId": {
                     "type": "string"
                 },
                 "phase": {
@@ -1916,6 +2585,48 @@ const docTemplate = `{
                 },
                 "vhd": {
                     "type": "boolean"
+                }
+            }
+        },
+        "store.CPUMetrics": {
+            "type": "object",
+            "properties": {
+                "usedPercent": {
+                    "type": "number"
+                }
+            }
+        },
+        "store.DiskMetrics": {
+            "type": "object",
+            "properties": {
+                "label": {
+                    "type": "string"
+                },
+                "mount": {
+                    "type": "string"
+                },
+                "totalBytes": {
+                    "type": "integer"
+                },
+                "usedBytes": {
+                    "type": "integer"
+                }
+            }
+        },
+        "store.ExtensionHierarchies": {
+            "type": "object",
+            "properties": {
+                "confext": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "sysext": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -1984,6 +2695,10 @@ const docTemplate = `{
                 "phase": {
                     "type": "string"
                 },
+                "remoteIP": {
+                    "description": "RemoteIP is the IP the server observed the node connect from at register or\nheartbeat time (kairos-io/kairos#4590), independent of Addresses: the node\ndoes not report it, and it survives even when an agent sends no addresses at\nall (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP\nchanges because every heartbeat re-observes and overwrites it.",
+                    "type": "string"
+                },
                 "resetRequestedAt": {
                     "description": "ResetRequestedAt is when the reset command was issued (ResetState set to\npending); nil when no reset has been requested.",
                     "type": "string"
@@ -1994,6 +2709,17 @@ const docTemplate = `{
                 },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "store.MemoryMetrics": {
+            "type": "object",
+            "properties": {
+                "availableBytes": {
+                    "type": "integer"
+                },
+                "totalBytes": {
+                    "type": "integer"
                 }
             }
         },
@@ -2046,6 +2772,37 @@ const docTemplate = `{
                 }
             }
         },
+        "store.NodeExtensionRow": {
+            "type": "object",
+            "properties": {
+                "bootState": {
+                    "description": "active | passive | recovery | common",
+                    "type": "string"
+                },
+                "extensionId": {
+                    "type": "string"
+                },
+                "installedAt": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "nodeId": {
+                    "type": "string"
+                },
+                "type": {
+                    "description": "sysext | confext",
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                },
+                "version": {
+                    "type": "string"
+                }
+            }
+        },
         "store.NodeGroup": {
             "type": "object",
             "properties": {
@@ -2061,8 +2818,44 @@ const docTemplate = `{
                 "name": {
                     "type": "string"
                 },
+                "node_count": {
+                    "description": "NodeCount is the number of nodes in the group. It is not stored. List and\nGet always set it (0 included); a group embedded in a node payload leaves\nit nil, so it is omitted there.",
+                    "type": "integer"
+                },
                 "updatedAt": {
                     "type": "string"
+                }
+            }
+        },
+        "store.NodeMetrics": {
+            "type": "object",
+            "properties": {
+                "cpu": {
+                    "$ref": "#/definitions/store.CPUMetrics"
+                },
+                "disks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.DiskMetrics"
+                    }
+                },
+                "load": {
+                    "type": "array",
+                    "items": {
+                        "type": "number"
+                    }
+                },
+                "memory": {
+                    "$ref": "#/definitions/store.MemoryMetrics"
+                },
+                "sampledAt": {
+                    "type": "string"
+                },
+                "temperatureC": {
+                    "type": "number"
+                },
+                "uptimeSeconds": {
+                    "type": "integer"
                 }
             }
         },

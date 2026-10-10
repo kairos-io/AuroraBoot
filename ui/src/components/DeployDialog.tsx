@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import { Link } from "react-router";
 import {
   Dialog,
@@ -31,8 +31,20 @@ import {
   getNetbootStatus,
   startNetboot,
   stopNetboot,
+  getNetbootLogs,
 } from "@/api/deployments";
 import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
+import { useUIWebSocket } from "@/hooks/useUIWebSocket";
+import { ansiToHtml } from "@/lib/ansi";
+
+// Memoized per-line renderer, same reasoning as ArtifactDetail's build-log
+// LogLine: a live netboot session appends one chunk at a time, and without
+// memo every chunk would re-run ansiToHtml over every prior line.
+const NetbootLogLine = memo(function NetbootLogLine({ line }: { line: string }) {
+  return (
+    <div dangerouslySetInnerHTML={{ __html: ansiToHtml(line) || "&nbsp;" }} />
+  );
+});
 
 // Minimum hardware AuroraBoot wants before deploying. Kept deliberately simple
 // and visible: a node below either threshold raises a warning that the operator
@@ -44,21 +56,44 @@ interface DeployDialogProps {
   artifactId: string;
   artifactFiles: string[];
   hasNetboot: boolean;
+  // The tab to open on, when that method is available. Falls back to the
+  // first available method otherwise.
+  defaultMethod?: "pxe" | "redfish";
   onClose: () => void;
 }
+
+// Shown on a disabled method tab: why it is unavailable and how to get it.
+const NO_NETBOOT_REASON = "This artifact has no Netboot output. Clone it and enable Netboot.";
+const NO_ISO_REASON = "This artifact has no ISO output. Clone it and enable ISO.";
 
 export function DeployDialog({
   artifactId,
   artifactFiles,
   hasNetboot,
+  defaultMethod,
   onClose,
 }: DeployDialogProps) {
   const hasIso = artifactFiles.some((f) => f.endsWith(".iso"));
-  const defaultTab = hasNetboot ? "pxe" : "redfish";
+  const available = { pxe: hasNetboot, redfish: hasIso };
+  const defaultTab =
+    defaultMethod && available[defaultMethod] ? defaultMethod : hasNetboot || !hasIso ? "pxe" : "redfish";
+  const methodNames = [hasNetboot && "PXE boot", hasIso && "RedFish BMC"].filter(Boolean);
+  const description = methodNames.length
+    ? `Deploy this artifact to bare-metal nodes via ${methodNames.join(" or ")}.`
+    : "This artifact has no output that can be deployed. Clone it and enable Netboot or ISO.";
 
   // PXE state
   const [netbootStatus, setNetbootStatus] = useState<NetbootStatus | null>(null);
   const [pxeLoading, setPxeLoading] = useState(false);
+  const [pxeError, setPxeError] = useState("");
+  const [netbootLogs, setNetbootLogs] = useState("");
+  const logPaneRef = useRef<HTMLDivElement | null>(null);
+  // Bumped whenever a new netboot session starts, so a getNetbootLogs()
+  // response from before Start (or from a stale reconnect resync) can be
+  // told apart from the current session and dropped instead of overwriting
+  // a freshly-cleared pane (kairos-io/AuroraBoot#806 review).
+  const netbootEpochRef = useRef(0);
+  const netbootStatusRef = useRef<NetbootStatus | null>(null);
 
   // RedFish state
   const [bmcTargets, setBmcTargets] = useState<BMCTarget[]>([]);
@@ -106,12 +141,65 @@ export function DeployDialog({
   useEffect(() => {
     if (hasNetboot) {
       getNetbootStatus().then(setNetbootStatus).catch(() => {});
+      const epoch = netbootEpochRef.current;
+      getNetbootLogs()
+        .then((text) => {
+          if (netbootEpochRef.current === epoch) setNetbootLogs(text);
+        })
+        .catch(() => {});
     }
     if (hasIso) {
       listBMCTargets().then(setBmcTargets).catch(() => {});
       listQuirkProfiles().then(setProfiles).catch(() => {});
     }
   }, [hasNetboot, hasIso]);
+
+  useEffect(() => {
+    netbootStatusRef.current = netbootStatus;
+  });
+
+  // Pre-split once per update so ansiToHtml runs per-line (SGR color state
+  // from one line must not bleed into the next) instead of over the whole
+  // buffer.
+  const netbootLogLines = useMemo(
+    () => (netbootLogs ? netbootLogs.split("\n") : []),
+    [netbootLogs],
+  );
+
+  // Live PXE server output (kairos-io/kairos#4596): the snapshot fetch above
+  // gets you caught up, this keeps you live while the dialog is open. There
+  // is at most one netboot session at a time, so every chunk belongs to the
+  // session currently shown here — no id to filter on.
+  const { connected: wsConnected } = useUIWebSocket((msg) => {
+    if (msg.type !== "netboot-log" || !hasNetboot) return;
+    const data = msg.data as { chunk?: string };
+    if (!data.chunk) return;
+    setNetbootLogs((prev) => prev + data.chunk);
+  });
+
+  // Re-sync the log snapshot once per WebSocket (re)connection, the same
+  // pattern ArtifactDetail uses for build logs: a drop that misses live
+  // chunks would otherwise leave the pane silently incomplete. Guarded by
+  // the same epoch as the initial fetch, so a resync racing a fresh Start
+  // can't overwrite it either.
+  const lastWsConnected = useRef(false);
+  useEffect(() => {
+    const justConnected = wsConnected && !lastWsConnected.current;
+    lastWsConnected.current = wsConnected;
+    if (!justConnected || !hasNetboot || !netbootStatusRef.current?.running) return;
+    const epoch = netbootEpochRef.current;
+    getNetbootLogs()
+      .then((text) => {
+        if (netbootEpochRef.current === epoch) setNetbootLogs(text);
+      })
+      .catch(() => {});
+  }, [wsConnected, hasNetboot]);
+
+  // Auto-scroll the log pane to the newest line as chunks arrive.
+  useEffect(() => {
+    const el = logPaneRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [netbootLogs]);
 
   // Poll netboot status while running
   useEffect(() => {
@@ -158,16 +246,29 @@ export function DeployDialog({
 
   async function handlePxeToggle() {
     setPxeLoading(true);
+    setPxeError("");
+    const action = netbootStatus?.running ? "stop" : "start";
     try {
       if (netbootStatus?.running) {
         await stopNetboot();
       } else {
+        // A fresh session gets a fresh pane: the server resets its own log
+        // buffer on Start, so stale text from a previous run must not linger.
+        // Bump the epoch first so any in-flight getNetbootLogs() response
+        // from before this Start is recognized as stale and dropped.
+        netbootEpochRef.current += 1;
+        setNetbootLogs("");
         await startNetboot(artifactId);
       }
       const status = await getNetbootStatus();
       setNetbootStatus(status);
-    } catch {
-      // ignore
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "request failed";
+      setPxeError(`Could not ${action} netboot: ${reason}`);
+      // The server may be in another state than the dialog shows, as when
+      // another session already started it, so the badge and button follow
+      // the server.
+      getNetbootStatus().then(setNetbootStatus).catch(() => {});
     } finally {
       setPxeLoading(false);
     }
@@ -208,23 +309,24 @@ export function DeployDialog({
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Deploy Artifact</DialogTitle>
-          <DialogDescription>
-            Deploy this artifact to bare-metal nodes via PXE boot or RedFish BMC.
-          </DialogDescription>
+          <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
 
         <Tabs defaultValue={defaultTab}>
           <TabsList className="w-full">
-            {hasNetboot && (
-              <TabsTrigger value="pxe" className="flex-1 gap-2">
+            {/* Both methods are always listed. A disabled trigger has no
+                pointer events, so the reason sits on a wrapper to keep the
+                tooltip working on hover. */}
+            <span className="flex flex-1" title={hasNetboot ? undefined : NO_NETBOOT_REASON}>
+              <TabsTrigger value="pxe" className="flex-1 gap-2" disabled={!hasNetboot}>
                 <Wifi className="h-4 w-4" /> PXE Boot
               </TabsTrigger>
-            )}
-            {hasIso && (
-              <TabsTrigger value="redfish" className="flex-1 gap-2">
+            </span>
+            <span className="flex flex-1" title={hasIso ? undefined : NO_ISO_REASON}>
+              <TabsTrigger value="redfish" className="flex-1 gap-2" disabled={!hasIso}>
                 <Server className="h-4 w-4" /> RedFish
               </TabsTrigger>
-            )}
+            </span>
           </TabsList>
 
           {hasNetboot && (
@@ -236,7 +338,7 @@ export function DeployDialog({
                 </div>
                 {netbootStatus?.running && (
                   <div className="text-xs text-muted-foreground space-y-1">
-                    <p>Address: <span className="font-mono">{netbootStatus.address}:{netbootStatus.port}</span></p>
+                    <p>Address: <span className="font-mono">{netbootStatus.advertisedAddress || netbootStatus.address}:{netbootStatus.port}</span></p>
                     <p>Artifact: <span className="font-mono">{netbootStatus.artifactId.slice(0, 12)}</span></p>
                   </div>
                 )}
@@ -249,7 +351,37 @@ export function DeployDialog({
                   {pxeLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   {netbootStatus?.running ? "Stop Netboot" : "Start Netboot"}
                 </Button>
+                {pxeError && (
+                  <div className="bg-red-500/10 border border-red-500/25 text-red-700 rounded-md p-3 text-sm">
+                    {pxeError}
+                  </div>
+                )}
               </div>
+
+              {/* Live PXE server log, so a stalled/failed boot is debuggable
+                  instead of just a status badge (kairos-io/kairos#4596). Shown
+                  once a session has produced any output, and kept visible
+                  after Stop so a failure can still be read back. */}
+              {netbootLogs && (
+                <div className="rounded-md border">
+                  <div className="flex items-center justify-between px-3 py-2 border-b">
+                    <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+                      Netboot Log
+                    </span>
+                    {netbootStatus?.running && (
+                      <span className="text-xs text-muted-foreground">live</span>
+                    )}
+                  </div>
+                  <div
+                    ref={logPaneRef}
+                    className="text-xs font-mono bg-muted/50 rounded-b-md p-3 max-h-64 overflow-y-auto overflow-x-auto whitespace-pre-wrap"
+                  >
+                    {netbootLogLines.map((line, i) => (
+                      <NetbootLogLine key={i} line={line} />
+                    ))}
+                  </div>
+                </div>
+              )}
             </TabsContent>
           )}
 
@@ -261,7 +393,7 @@ export function DeployDialog({
                   <Label>BMC Target</Label>
                   <Link
                     to="/bmc"
-                    className="text-xs text-[#EE5007] hover:underline"
+                    className="text-xs text-primary hover:underline"
                     onClick={onClose}
                   >
                     Manage BMCs →
@@ -283,7 +415,7 @@ export function DeployDialog({
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="text-xs text-[#EE5007]"
+                    className="text-xs text-primary"
                     onClick={() => setShowNewTarget(!showNewTarget)}
                   >
                     {showNewTarget ? "Cancel" : "+ Add new target"}

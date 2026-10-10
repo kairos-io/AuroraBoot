@@ -42,14 +42,16 @@ cd AuroraBoot
 docker compose up --build -d
 ```
 
-On first boot AuroraBoot generates an admin password and a node registration token under `./data/secrets/`:
+On first boot AuroraBoot generates an admin password and a node registration token. `docker-compose.yml` keeps `/data` in a named volume, not a bind mount, so read them from inside the container:
 
 ```bash
-cat data/secrets/admin-password
-cat data/secrets/registration-token
+docker compose exec auroraboot cat /data/secrets/admin-password
+docker compose exec auroraboot cat /data/secrets/registration-token
 ```
 
 Open **http://localhost:9099**, sign in, and the welcome wizard walks you through the three steps: build an artifact, deploy it, manage the nodes that come online.
+
+If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL` to that reachable address before starting the stack. Left unset, AuroraBoot falls back to the container's hostname, which nodes can't resolve, so they can't phone home. See `--url` below. Its host is also the address the Deploy dialog reports for the netboot server; with no `AURORABOOT_URL` that dialog reports a local interface address instead.
 
 ### What you get
 
@@ -69,8 +71,41 @@ Open **http://localhost:9099**, sign in, and the welcome wizard walks you throug
 | `--url https://…` | External URL of this instance, injected into cloud-configs so nodes know where to phone home |
 | `AURORABOOT_ADMIN_PASSWORD` | Override admin password |
 | `AURORABOOT_REG_TOKEN` | Override registration token |
+| `--disable-rate-limit` | Turn off per-identity rate limiting of the node-driven endpoints |
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
+
+### Rate limiting
+
+The node-driven endpoints — registration, heartbeat and command polling — are
+rate-limited **on by default** so a single misbehaving node, or a leaked
+registration token, can't flood the fleet server. Registration is limited per
+client IP; heartbeat and command polling are limited per node. Admin/UI/API
+traffic (including the CAPI infra provider, which authenticates as admin) is
+**never** rate-limited.
+
+The defaults are generous and only ever bite a runaway or a flood. Tune or
+disable them if needed:
+
+- `--node-rate-limit <rps>` / `AURORABOOT_NODE_RATE_LIMIT` — per-node requests/sec
+- `--register-rate-limit <rps>` / `AURORABOOT_REGISTER_RATE_LIMIT` — per-IP requests/sec
+- `--node-rate-limit-burst <n>` / `AURORABOOT_NODE_RATE_LIMIT_BURST` — per-node burst
+- `--register-rate-limit-burst <n>` / `AURORABOOT_REGISTER_RATE_LIMIT_BURST` — per-IP burst
+- `--disable-rate-limit` / `AURORABOOT_DISABLE_RATE_LIMIT` — turn it off entirely
+
+Rate is the sustained refill; burst is how many requests one identity may make in
+the same instant. Left unset, burst is the larger of 20 and one second of the
+configured rate, so raising a rate raises the peak with it and the generous
+defaults keep their 20. Set a burst explicitly to go either way — for example a
+low `--register-rate-limit` paired with a low `--register-rate-limit-burst` to
+leave a token brute-force no free instant allowance.
+
+If a whole rack of nodes registers at once from behind a single NAT egress IP,
+they share one per-IP registration bucket; raise `--register-rate-limit` or
+disable rate limiting for that deployment. The per-IP key is the client address
+as the server sees it (honouring `X-Forwarded-For` behind a trusted proxy), so
+it's a flood speed-bump rather than a hard boundary — the registration token
+remains the actual access control.
 
 ### Hadron builds
 
@@ -98,6 +133,29 @@ the normal Kairos wizard:
 
 A live Dockerfile preview is always visible in the panel so you can verify the
 rendered output before committing to a build.
+
+### System extensions at build time
+
+The Output step of the Artifact Builder lists the extensions a catalog
+publishes and writes the ones you select into the built ISO, so the installed
+system carries them without pulling anything on first boot. The catalog field
+is pre-filled with the
+[hadron-layers](https://kairos-io.github.io/hadron-layers/releases.json)
+catalog, the same index a node reads, and can be pointed at your own. Only
+extensions published for the architecture being built are offered, and each
+one can be pinned to a version or left on the catalog's latest.
+
+On a classic (non-UKI) ISO, the build also writes `extensions.yaml` to the ISO
+root. It declares each image under `install.extensions`, which is what the
+installer stages onto the installed system. This needs a kairos-agent that
+reads `install.extensions`, which is newer than v4.3.0.
+
+The same `iso.extensions` and `iso.extensions_catalogs` keys drive a raw disk
+or cloud image build, so an artifact spec names its extensions once and each
+artifact type decides where they go. A raw disk is assembled rather than
+installed, so the images ride in the OEM partition and the first-boot reset
+moves them onto the persistent one. Either way the extension is merged with no
+network access at install time.
 
 ### Cloning Hadron artifacts as templates
 
@@ -130,6 +188,8 @@ docker run --rm -ti --net host quay.io/kairos/auroraboot \
 ```
 
 This downloads the needed artifacts, bakes your cloud-config into a custom ISO, and serves it over the network.
+
+> **Security note:** the netboot HTTP server is **unauthenticated by design**. A PXE/HTTP-booting machine can't present a credential, so everything it needs — kernel, initrd, squashfs, and the cloud-config baked into the ISO (which may carry a registration token, SSH keys or passwords) — is served over plain HTTP to anyone who can reach it. By default it binds all interfaces on `:8080`. Run it only on a **trusted, isolated provisioning network**, and prefer binding a specific interface with `--set listen_addr=<host>:8080` over exposing it everywhere. AuroraBoot logs a warning at startup to make this boundary explicit.
 
 Supported architectures:
 - `amd64` (default, matches x86_64)
@@ -207,6 +267,13 @@ auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6
 auroraboot build-uki --image quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
     --output-dir ./out
 
+# Build an ISO carrying system extensions from a catalog. Names resolve against
+# the hadron-layers catalog unless --extensions-catalog names another one, and
+# an extension can be pinned with name@version. Both flags are repeatable, and
+# catalogs are searched in order, so your own index can shadow a published name.
+auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+    --extension nvidia --extension tailscale@v1.2.3 --output ./out
+
 # Generate a SecureBoot key set
 auroraboot genkey my-keys --output ./keys
 
@@ -243,11 +310,14 @@ Run `auroraboot help` for the full list.
 # Backend (Go 1.26+)
 go build ./...
 go test ./...
+go run . web --listen :8080   # serves the API the frontend dev server proxies to
 
-# Frontend (Node 22+)
+# Frontend (Node 22+) — in a second terminal, with the backend above running:
 cd ui
 npm install
-npm run dev     # Vite dev server on :5173, proxies /api to :8080
+npm run dev             # Vite dev server on localhost:5173, proxies /api to :8080
+npm run dev -- --host   # same, but reachable from other machines (Vite binds localhost only by default)
+VITE_ALLOWED_HOSTS=my-machine.local npm run dev -- --host   # also needed to reach it by a LAN/mDNS name
 npm run build
 npm test
 

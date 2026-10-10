@@ -1,5 +1,5 @@
 ARG FEDORA_VERSION=44
-ARG LUET_VERSION=0.36.5
+ARG LUET_VERSION=0.37.0
 ARG SWAGGER_STAGE=with-swagger
 ARG TARGETARCH
 
@@ -58,18 +58,23 @@ RUN dnf in -y bc \
               zstd
 
 
-FROM golang:1.26 AS with-swagger
+FROM golang:1.27 AS with-swagger
 WORKDIR /app
-RUN go install github.com/swaggo/swag/cmd/swag@latest
+# Build the swag CLI from the version go.mod pins through its tool directive.
+# "go install ...@latest" fetched an unpinned CLI on every build, so the
+# generated docs could change with no code change, and a proxy.golang.org
+# hiccup failed the whole image build.
+COPY go.mod go.sum ./
+RUN go build -o /usr/local/bin/swag github.com/swaggo/swag/cmd/swag
 COPY . .
 RUN swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
-FROM golang:1.26 AS without-swagger
+FROM golang:1.27 AS without-swagger
 WORKDIR /app
 
 FROM ${SWAGGER_STAGE} AS swagger
 
-FROM golang:1.26 AS builder
+FROM golang:1.27 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
 # libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive via sbctl)
@@ -81,7 +86,7 @@ ADD . .
 COPY --from=js /work/internal/ui/dist ./internal/ui/dist
 COPY --from=swagger /app/docs ./docs
 ENV VERSION=$VERSION
-RUN go build -ldflags "-X main.version=${VERSION}" -o auroraboot
+RUN go build -tags ui -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64

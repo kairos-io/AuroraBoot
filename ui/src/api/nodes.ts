@@ -11,6 +11,16 @@ export interface Node {
   osRelease: Record<string, string> | null;
   agentVersion: string;
   lastHeartbeat: string | null;
+  // The IP the server observed the node connect from at register or heartbeat
+  // time. Server-side, not agent-reported, so it tracks a DHCP/NAT change even
+  // when the agent sends no addresses at all.
+  remoteIP?: string;
+  // Addresses the agent reported for its interfaces.
+  addresses?: { type: string; address: string }[];
+  // Which image the node booted: "active", "passive" or "recovery".
+  bootState?: string;
+  resetState?: string;
+  lastReset?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -64,18 +74,24 @@ export function decommissionNode(id: string): Promise<DecommissionResult> {
   });
 }
 
+// setLabels replaces a node's labels. It resolves with nothing: the endpoint
+// answers `{"status":"ok"}`, not the updated node, so a caller that wants the
+// new state has to re-read the node. Declaring a `Node` here is what let a
+// `{status: "ok"}` reach the page as if it were one.
 export function setLabels(
   id: string,
   labels: Record<string, string>
-): Promise<Node> {
-  return apiFetch<Node>(`/api/v1/nodes/${id}/labels`, {
+): Promise<void> {
+  return apiFetch<void>(`/api/v1/nodes/${id}/labels`, {
     method: "PUT",
     body: JSON.stringify({ labels }),
   });
 }
 
-export function setGroup(id: string, groupID: string): Promise<Node> {
-  return apiFetch<Node>(`/api/v1/nodes/${id}/group`, {
+// setGroup assigns a node to a group. Same contract as setLabels: no node comes
+// back, re-read to see the change.
+export function setGroup(id: string, groupID: string): Promise<void> {
+  return apiFetch<void>(`/api/v1/nodes/${id}/group`, {
     method: "PUT",
     body: JSON.stringify({ groupID }),
   });

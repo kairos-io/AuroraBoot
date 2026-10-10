@@ -72,7 +72,7 @@ func New(dsn string) (*Store, error) {
 		}
 	}
 
-	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.Setting{}); err != nil {
+	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.Setting{}, &store.ExtensionRecord{}, &store.ArtifactExtensionBundle{}, &store.NodeExtensionRow{}); err != nil {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 
@@ -121,6 +121,27 @@ func (s *Store) List(ctx context.Context) ([]*store.NodeGroup, error) {
 		return nil, err
 	}
 	return groups, nil
+}
+
+// GroupNodeCounts returns the number of nodes per group ID in one grouped
+// query. Ungrouped nodes and groups with no nodes are not in the map.
+func (s *Store) GroupNodeCounts(ctx context.Context) (map[string]int, error) {
+	var rows []struct {
+		GroupID string
+		Count   int
+	}
+	if err := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Select("group_id, COUNT(*) AS count").
+		Where("group_id <> ''").
+		Group("group_id").
+		Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	counts := make(map[string]int, len(rows))
+	for _, r := range rows {
+		counts[r.GroupID] = r.Count
+	}
+	return counts, nil
 }
 
 func (s *Store) Update(ctx context.Context, group *store.NodeGroup) error {
@@ -258,7 +279,7 @@ func (s *Store) ListBySelector(ctx context.Context, sel store.CommandSelector) (
 	return nodes, nil
 }
 
-func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string) error {
+func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string, remoteIP string) error {
 	var n store.ManagedNode
 	if err := s.db.WithContext(ctx).First(&n, "id = ?", id).Error; err != nil {
 		return err
@@ -278,6 +299,22 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	}
 	if bootState != "" {
 		n.BootState = bootState
+	}
+	// The hostname a node registered with is the one it had at registration time,
+	// which for a templated hostname (hostname: kairos-{{ trunc 4 .MachineID }})
+	// is the image default, because phone-home can register before cloud-init has
+	// applied the final one. Re-applying it from every heartbeat is what lets the
+	// stored value catch up, here and for any later rename
+	// (kairos-io/kairos#4196). Same non-empty guard as above: an agent that does
+	// not report a hostname must not blank the one already on record.
+	if hostname != "" {
+		n.Hostname = hostname
+	}
+	// Same non-empty guard: a caller that cannot resolve a remote IP (a unit test,
+	// or a future transport that does not expose one) must not blank a value a
+	// prior heartbeat recorded.
+	if remoteIP != "" {
+		n.RemoteIP = remoteIP
 	}
 	return s.db.WithContext(ctx).Save(&n).Error
 }
@@ -562,9 +599,28 @@ func (s *Store) CommandDelete(ctx context.Context, id string) error {
 
 func (s *Store) CommandDeleteTerminal(ctx context.Context, nodeID string) error {
 	return s.db.WithContext(ctx).Where(
-		"managed_node_id = ? AND (phase = ? OR phase = ?)",
-		nodeID, store.CommandCompleted, store.CommandFailed,
+		"managed_node_id = ? AND phase IN ?",
+		nodeID, []string{store.CommandCompleted, store.CommandFailed, store.CommandExpired},
 	).Delete(&store.NodeCommand{}).Error
+}
+
+// CommandExpireBefore transitions this node's overdue commands to Expired.
+//
+// The WHERE is the complement of the one GetPending uses to hide them: a
+// non-null expires_at that has passed. Restricting it to the three
+// non-terminal phases is what makes the UPDATE idempotent and safe against a
+// late agent report — a command the node did finish keeps its real outcome,
+// and re-running the statement rewrites nothing. completed_at is stamped for
+// the same reason Completed and Failed stamp it: the row has stopped moving.
+func (s *Store) CommandExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error {
+	now := time.Now()
+	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+		Where("managed_node_id = ? AND expires_at IS NOT NULL AND expires_at <= ? AND phase IN ?",
+			nodeID, deadline, []string{store.CommandPending, store.CommandDelivered, store.CommandRunning}).
+		Updates(map[string]any{
+			"phase":        store.CommandExpired,
+			"completed_at": &now,
+		}).Error
 }
 
 // --- ArtifactStore ---
@@ -856,6 +912,133 @@ func (s *Store) SettingGetAll(ctx context.Context) (map[string]string, error) {
 		out[setting.Key] = setting.Value
 	}
 	return out, nil
+}
+
+// --- ExtensionStore ---
+
+func (s *Store) ExtensionCreate(ctx context.Context, e *store.ExtensionRecord) error {
+	return s.db.WithContext(ctx).Save(e).Error
+}
+
+func (s *Store) ExtensionGetByID(ctx context.Context, id string) (*store.ExtensionRecord, error) {
+	var rec store.ExtensionRecord
+	if err := s.db.WithContext(ctx).First(&rec, "id = ?", id).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+func (s *Store) ExtensionList(ctx context.Context) ([]store.ExtensionRecord, error) {
+	var out []store.ExtensionRecord
+	if err := s.db.WithContext(ctx).Order("created_at DESC").Find(&out).Error; err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (s *Store) ExtensionDelete(ctx context.Context, id string) error {
+	return s.db.WithContext(ctx).Delete(&store.ExtensionRecord{}, "id = ?", id).Error
+}
+
+func (s *Store) ExtensionFindLatestReadyByName(ctx context.Context, extType, name string) (*store.ExtensionRecord, error) {
+	var rec store.ExtensionRecord
+	q := s.db.WithContext(ctx).
+		Where("type = ? AND name = ? AND phase = ?", extType, name, "Ready").
+		Order("created_at DESC").Limit(1)
+	if err := q.First(&rec).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+func (s *Store) ExtensionFindByNameAndVersion(ctx context.Context, extType, name, version string) (*store.ExtensionRecord, error) {
+	var rec store.ExtensionRecord
+	q := s.db.WithContext(ctx).
+		Where("type = ? AND name = ? AND version = ? AND phase = ?", extType, name, version, "Ready").
+		Limit(1)
+	if err := q.First(&rec).Error; err != nil {
+		return nil, err
+	}
+	return &rec, nil
+}
+
+func (s *Store) ExtensionAppendLog(ctx context.Context, id, chunk string) error {
+	return s.db.WithContext(ctx).
+		Model(&store.ExtensionRecord{}).
+		Where("id = ?", id).
+		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", chunk)).Error
+}
+
+// --- ArtifactExtensionBundleStore ---
+
+func (s *Store) BundleListForArtifact(ctx context.Context, artifactID string) ([]store.ArtifactExtensionBundle, error) {
+	var out []store.ArtifactExtensionBundle
+	err := s.db.WithContext(ctx).
+		Where("artifact_id = ?", artifactID).
+		Order(`"order" ASC`).
+		Find(&out).Error
+	return out, err
+}
+
+func (s *Store) BundleReplaceForArtifact(ctx context.Context, artifactID string, entries []store.ArtifactExtensionBundle) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("artifact_id = ?", artifactID).Delete(&store.ArtifactExtensionBundle{}).Error; err != nil {
+			return err
+		}
+		if len(entries) == 0 {
+			return nil
+		}
+		for i := range entries {
+			entries[i].ArtifactID = artifactID
+		}
+		return tx.Create(&entries).Error
+	})
+}
+
+func (s *Store) BundleArtifactsReferencingExtension(ctx context.Context, extensionName string) ([]string, error) {
+	var ids []string
+	err := s.db.WithContext(ctx).
+		Model(&store.ArtifactExtensionBundle{}).
+		Where("extension_name = ?", extensionName).
+		Distinct("artifact_id").
+		Pluck("artifact_id", &ids).Error
+	return ids, err
+}
+
+// --- NodeExtensionStore ---
+
+func (s *Store) NodeExtensionUpsert(ctx context.Context, row *store.NodeExtensionRow) error {
+	row.UpdatedAt = time.Now().UTC()
+	if row.InstalledAt.IsZero() {
+		row.InstalledAt = row.UpdatedAt
+	}
+	return s.db.WithContext(ctx).Save(row).Error
+}
+
+func (s *Store) NodeExtensionListForNode(ctx context.Context, nodeID string) ([]store.NodeExtensionRow, error) {
+	var out []store.NodeExtensionRow
+	err := s.db.WithContext(ctx).Where("node_id = ?", nodeID).Find(&out).Error
+	return out, err
+}
+
+func (s *Store) NodeExtensionListForExtensionByName(ctx context.Context, extType, name string) ([]store.NodeExtensionRow, error) {
+	var out []store.NodeExtensionRow
+	err := s.db.WithContext(ctx).Where("type = ? AND name = ?", extType, name).Find(&out).Error
+	return out, err
+}
+
+func (s *Store) NodeExtensionDeleteByScope(ctx context.Context, nodeID, extType, name, bootState string) error {
+	return s.db.WithContext(ctx).Where(
+		"node_id = ? AND type = ? AND name = ? AND boot_state = ?",
+		nodeID, extType, name, bootState,
+	).Delete(&store.NodeExtensionRow{}).Error
+}
+
+func (s *Store) NodeExtensionDeleteByName(ctx context.Context, nodeID, extType, name string) error {
+	return s.db.WithContext(ctx).Where(
+		"node_id = ? AND type = ? AND name = ?",
+		nodeID, extType, name,
+	).Delete(&store.NodeExtensionRow{}).Error
 }
 
 // Close closes the underlying database connection.

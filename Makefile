@@ -50,7 +50,7 @@ ui-test: ui-install ## Run the React UI test suite
 # Build Go binary
 build-go: ## Build the Go binary
 	@echo "Building Go binary..."
-	go build -ldflags "-X main.version=v0.0.0" -o auroraboot
+	go build -tags ui -ldflags "-X main.version=v0.0.0" -o auroraboot
 	@echo "Go binary built successfully!"
 
 # Build everything
@@ -110,8 +110,7 @@ lint: ## Lint Go code
 
 # Generate OpenAPI spec from swag annotations on internal/cmd/web.go
 openapi: ## Regenerate Swagger/OpenAPI documentation
-	@which swag >/dev/null 2>&1 || go install github.com/swaggo/swag/cmd/swag@latest
-	swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
+	go tool swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
 # Backwards-compat alias
 swagger: openapi

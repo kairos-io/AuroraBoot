@@ -56,6 +56,15 @@ function renderBuilder(initialEntry: string) {
   );
 }
 
+// A template click keeps the Base step; the Hadron cards are on the System
+// step, and Next needs a name first.
+function gotoSystemStep() {
+  fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
+    target: { value: "edge" },
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
+}
+
 describe("ArtifactBuilder: Hadron peer template", () => {
   it("renders Hadron as the first template tile", async () => {
     renderBuilder("/artifacts/new");
@@ -76,6 +85,7 @@ describe("ArtifactBuilder: Hadron peer template", () => {
     renderBuilder("/artifacts/new");
 
     fireEvent.click(await screen.findByText(/^Hadron v/));
+    gotoSystemStep();
 
     await waitFor(() => {
       expect(
@@ -93,6 +103,7 @@ describe("ArtifactBuilder: Hadron peer template", () => {
   it("reveals the Kubernetes card when Standard is picked from a Hadron build", async () => {
     renderBuilder("/artifacts/new");
     fireEvent.click(await screen.findByText(/^Hadron v/));
+    gotoSystemStep();
 
     const standardCopy = await screen.findByText(
       /OS bundled with a Kubernetes distribution/i,
@@ -124,6 +135,7 @@ describe("ArtifactBuilder: Hadron clone", () => {
       kubernetesDistro: "k3s",
       kubernetesVersion: "v1.31.4+k3s1",
       kubernetesEnabled: true,
+      kairosInitImage: "quay.io/kairos/kairos-init:v0.5.0",
       iso: true,
       cloudImage: false,
       netboot: false,
@@ -153,6 +165,17 @@ describe("ArtifactBuilder: Hadron clone", () => {
     // The Kubernetes version input should carry the cloned version.
     expect(
       screen.getByDisplayValue(/v1\.31\.4\+k3s1/),
+    ).toBeInTheDocument();
+
+    // The kairos-init OCI image should also carry over (regression for the
+    // clone silently dropping this field on Hadron-based sources). It lives
+    // on the Output step, in the collapsed Advanced card.
+    fireEvent.click(screen.getByRole("button", { name: /Output/i }));
+    fireEvent.click(
+      screen.getByRole("button", { name: /Advanced.*Cloud config/i }),
+    );
+    expect(
+      screen.getByDisplayValue(/quay\.io\/kairos\/kairos-init:v0\.5\.0/),
     ).toBeInTheDocument();
   });
 });

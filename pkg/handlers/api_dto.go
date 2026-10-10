@@ -92,6 +92,23 @@ type APIHeartbeatRequest struct {
 	// BootState is the node's current boot state (optional): one of
 	// active | passive | recovery | autoreset (unknown values pass through).
 	BootState string `json:"bootState,omitempty" example:"active"`
+	// Hostname is the node's current hostname (optional). Reported on every
+	// heartbeat, not only at registration, so a hostname that cloud-init applies
+	// after phone-home has registered, or a later rename, reaches the record. When
+	// omitted the stored hostname is preserved.
+	Hostname string `json:"hostname,omitempty" example:"kairos-node-01"`
+	// Metrics is an optional resource sample. The server keeps recent samples in
+	// memory. A sample that does not decode is ignored and does not fail the
+	// heartbeat.
+	Metrics *store.NodeMetrics `json:"metrics,omitempty"`
+}
+
+// APINodeMetricsResponse is the JSON body returned by
+// GET /api/v1/nodes/:nodeID/metrics. Latest is null when the node has no
+// samples. Samples are oldest first and never null.
+type APINodeMetricsResponse struct {
+	Latest  *store.NodeMetrics  `json:"latest"`
+	Samples []store.NodeMetrics `json:"samples"`
 }
 
 // APISetLabelsRequest is the JSON body of PUT /api/v1/nodes/:nodeID/labels.
@@ -162,12 +179,17 @@ type APICreateArtifactRequest struct {
 	HadronFirmware          []string                `json:"hadronFirmware"`
 	HadronLayers            []string                `json:"hadronLayers"`
 	HadronExtra             string                  `json:"hadronExtra"`
-	OverlayRootfs           string                  `json:"overlayRootfs"`
+	OverlayID               string                  `json:"overlayId" format:"uuid"` // ID returned by POST /api/v1/artifacts/upload-overlay
 	KairosInitImage         string                  `json:"kairosInitImage"`
 	Outputs                 APIArtifactOutputs      `json:"outputs"`
 	Signing                 APIArtifactSigning      `json:"signing"`
 	Provisioning            APIArtifactProvisioning `json:"provisioning"`
 	CloudConfig             string                  `json:"cloudConfig"`
+	// Extensions are catalog extension names (name or name@version) to place
+	// in the built ISO. ExtensionsCatalogs replaces the default catalog they
+	// resolve against; each one must be an http or https URL.
+	Extensions         []string `json:"extensions"`
+	ExtensionsCatalogs []string `json:"extensionsCatalogs"`
 }
 
 // APIArtifactOutputs toggles the build's output formats.
@@ -188,10 +210,6 @@ type APIArtifactOutputs struct {
 // APIArtifactSigning holds SecureBoot signing options for UKI builds.
 type APIArtifactSigning struct {
 	UKIKeySetID         string `json:"ukiKeySetId"`
-	UKISecureBootKey    string `json:"ukiSecureBootKey"`
-	UKISecureBootCert   string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll" enums:"off,manual,if-safe,force"`
 }
 

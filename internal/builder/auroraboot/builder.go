@@ -15,8 +15,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/deployer"
+	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
@@ -77,6 +79,10 @@ type Builder struct {
 	ukiBuildFn     UKIBuildFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
+	netbootManager *netbootmgr.Manager
+	// kairosInitImage is the kairos-init image kairosify uses when a build
+	// does not name one.
+	kairosInitImage string
 }
 
 type buildState struct {
@@ -143,7 +149,24 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 		deployFunc: deployFunc,
 		ukiBuildFn: DefaultUKIBuildFunc,
 		store:      artifactStore,
+
+		kairosInitImage: defaultKairosInitImage + ":" + defaultKairosInitVersion,
 	}
+}
+
+// WithKairosInitImage sets the kairos-init image used for builds that do not
+// name one. It becomes a FROM line in the kairosify Dockerfile, so it is
+// validated here, once, rather than on every build. An empty ref keeps the
+// pinned default.
+func (b *Builder) WithKairosInitImage(ref string) (*Builder, error) {
+	if ref == "" {
+		return b, nil
+	}
+	if err := builder.ValidateImageRef("kairos-init image", ref); err != nil {
+		return nil, err
+	}
+	b.kairosInitImage = ref
+	return b, nil
 }
 
 // WithUKIBuildFunc swaps the pkg/uki.Build implementation used by buildUKI.
@@ -161,11 +184,27 @@ func (b *Builder) WithLogBroadcaster(lb builder.LogBroadcaster) *Builder {
 	return b
 }
 
+// WithNetbootManager attaches the server's shared netboot Manager, threaded
+// into the deploy context so a build with the netboot output enabled starts
+// its server through the same state the dashboard's Start/Stop/Status
+// endpoints use, instead of one the UI has no way to see or stop. The CLI
+// never sets this, and StepStartNetboot falls back to its previous
+// behavior when it's absent.
+func (b *Builder) WithNetbootManager(m *netbootmgr.Manager) *Builder {
+	b.netbootManager = m
+	return b
+}
+
 // Build starts an asynchronous artifact build and returns immediately with a Pending status.
 func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
 	// Reject unsafe admin-supplied values before any work starts. Covers
 	// kairos-init flag interpolation in the Dockerfile RUN line.
 	if err := validateKairosInitOptions(opts); err != nil {
+		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
+	}
+	// An extension name the catalog cannot be asked for is a bad request, not
+	// a build that fails half an hour in with the ISO already half written.
+	if _, err := extensions.ParseRequests(opts.Extensions); err != nil {
 		return nil, fmt.Errorf("%w: %v", builder.ErrInvalidBuildOptions, err)
 	}
 
@@ -238,9 +277,17 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			KubernetesVersion: opts.Source.KubernetesVersion,
 			KubernetesEnabled: &kubernetesEnabled,
 			TargetGroupID:     opts.Provisioning.TargetGroupID,
-			OverlayRootfs:     opts.OverlayRootfs,
-			CreatedAt:         time.Now(),
-			UpdatedAt:         time.Now(),
+			OverlayID:         opts.OverlayID,
+			// The artifact page's Build summary and the Clone flow read the
+			// catalog extensions back from the row (kairos-io/kairos#5274).
+			Extensions:         opts.Extensions,
+			ExtensionsCatalogs: opts.ExtensionsCatalogs,
+			ExtensionHierarchies: store.ExtensionHierarchies{
+				Sysext:  opts.ExtensionHierarchies.Sysext,
+				Confext: opts.ExtensionHierarchies.Confext,
+			},
+			CreatedAt: time.Now(),
+			UpdatedAt: time.Now(),
 		}
 		if err := b.store.Create(ctx, rec); err != nil {
 			cancel()
@@ -349,10 +396,24 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		fmt.Fprintf(logWriter, "\n")
 		logWriter.Flush()
 	}
-	config, artifact := b.assembleConfig(opts, containerImage, outputDir)
+	config, artifact, err := b.assembleConfig(opts, containerImage, outputDir)
+	if err != nil {
+		msg := fmt.Sprintf("auroraboot failed: %v", err)
+		b.setPhase(bs, builder.BuildError, msg)
+		if b.store != nil {
+			if logWriter != nil {
+				logWriter.Flush()
+			}
+			_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
+		}
+		return
+	}
 	var sink io.Writer
 	if logWriter != nil {
 		sink = logWriter
+	}
+	if b.netbootManager != nil {
+		ctx = netbootmgr.WithManager(ctx, b.netbootManager)
 	}
 	if err := b.deployFunc(ctx, config, artifact, outputDir, sink); err != nil {
 		msg := fmt.Sprintf("auroraboot failed: %v", err)
@@ -554,10 +615,7 @@ func (b *Builder) kairosify(ctx context.Context, image string, opts builder.Buil
 	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
-		kairosInitImage = os.Getenv("KAIROS_INIT_IMAGE")
-	}
-	if kairosInitImage == "" {
-		kairosInitImage = defaultKairosInitImage + ":" + defaultKairosInitVersion
+		kairosInitImage = b.kairosInitImage
 	}
 
 	// Build kairos-init flags
@@ -617,7 +675,7 @@ RUN /kairos-init -l debug -s install %s && \
 }
 
 // assembleConfig builds the AuroraBoot schema.Config and schema.ReleaseArtifact from BuildOptions.
-func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outputDir string) (schema.Config, schema.ReleaseArtifact) {
+func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outputDir string) (schema.Config, schema.ReleaseArtifact, error) {
 	config := schema.Config{
 		State:             outputDir,
 		DisableHTTPServer: true,
@@ -647,12 +705,19 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		config.ISO.OverlayRootfs = opts.OverlayRootfs
 	}
 
+	requests, err := extensions.ParseRequests(opts.Extensions)
+	if err != nil {
+		return schema.Config{}, schema.ReleaseArtifact{}, err
+	}
+	config.ISO.Extensions = requests
+	config.ISO.ExtensionsCatalogs = opts.ExtensionsCatalogs
+
 	artifact := schema.ReleaseArtifact{}
 	if containerImage != "" {
 		artifact.ContainerImage = containerImage
 	}
 
-	return config, artifact
+	return config, artifact, nil
 }
 
 // buildUKI invokes AuroraBoot's pkg/uki library to produce a UKI ISO.
@@ -665,6 +730,11 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 	log := sdklogger.NewKairosLogger("auroraboot-uki", "info", false)
 	if logWriter != nil {
 		log.Logger = log.Logger.Output(logWriter)
+	}
+
+	extensionRequests, err := extensions.ParseRequests(opts.Extensions)
+	if err != nil {
+		return err
 	}
 
 	ukiOpts := uki.Options{
@@ -683,6 +753,9 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 		SecureBootEnroll:        signing.UKISecureBootEnroll,
 		OverlayRootfs:           opts.OverlayRootfs,
 		AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
+		Extensions:              extensionRequests,
+		ExtensionsCatalogs:      opts.ExtensionsCatalogs,
+		CloudConfig:             opts.CloudConfig,
 		Logger:                  &log,
 	}
 

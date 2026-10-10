@@ -6,9 +6,11 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 )
@@ -20,10 +22,24 @@ type wsMessage struct {
 }
 
 // heartbeatData is sent by the agent.
+//
+// It intentionally declares only the fields this handler applies. The agent puts
+// more on the wire than this (addresses, boot state); those ride the REST
+// register/heartbeat contract and are deliberately not read here, see
+// handleHeartbeat.
 type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
+	// Hostname is the node's current hostname (optional). Unlike addresses and
+	// boot state it has to be read here: the agent heartbeats over this socket and
+	// stops sending registration payloads once its credentials are on disk, so
+	// this is the only path a hostname change can arrive on
+	// (kairos-io/kairos#4196).
+	Hostname string `json:"hostname,omitempty"`
+	// Metrics is an optional resource sample (store.NodeMetrics). It is kept raw
+	// and decoded separately so a malformed sample never drops the heartbeat.
+	Metrics json.RawMessage `json:"metrics,omitempty"`
 }
 
 // commandData is sent to the agent.
@@ -48,6 +64,30 @@ var upgrader = websocket.Upgrader{
 // heartbeat, mirroring the REST handlers' budget (pkg/handlers/finalize.go).
 const finalizeTimeout = 2 * time.Minute
 
+// Keepalive timings for the agent connection.
+//
+// A node can disappear without its socket ever being closed: power cut, network
+// partition, or a NAT / load balancer silently dropping an idle flow. TCP does
+// not notice, so a server that only ever blocks in ReadMessage waits forever.
+// That matters here beyond the leaked goroutine, because HandleAgentWS's
+// deferred Unregister + UpdatePhase is the ONLY place in AuroraBoot that writes
+// PhaseOffline: there is no heartbeat-age sweeper. A read that never returns
+// therefore leaves the node reported Online indefinitely, and leaves it
+// registered in the hub, where SendCommand writes into a dead socket and
+// succeeds (the bytes only reach the kernel buffer).
+//
+// Ping every agentPingInterval and require any frame within agentReadTimeout.
+// The timeout is deliberately three times both the ping interval and the
+// agent's own default heartbeat interval (30s, see the phonehome client), so
+// two consecutive misses are tolerated before a live node is dropped.
+const (
+	agentPingInterval = 30 * time.Second
+	agentReadTimeout  = 90 * time.Second
+	// pingWriteWait bounds one ping write so a full socket buffer on a wedged
+	// peer cannot block the ping goroutine forever.
+	pingWriteWait = 10 * time.Second
+)
+
 // AgentHandler handles WebSocket connections from agents.
 type AgentHandler struct {
 	Hub      *Hub
@@ -63,6 +103,22 @@ type AgentHandler struct {
 	// BaseCtx is the server lifecycle context the finalize goroutine derives from
 	// (cancelled on shutdown). Nil means context.Background().
 	BaseCtx context.Context
+
+	// Metrics, when set, receives the resource sample a heartbeat carries. nil
+	// ignores metrics.
+	Metrics metrics.Recorder
+
+	// OnCommandStatus is invoked after the agent's command-status report has
+	// been persisted. The server uses this hook to update node_extensions
+	// tracking for the new `extension` command and for compound `upgrade`s
+	// that carry an extensions[] payload. nil-safe -- if unset, only the
+	// command-status row is updated. Wired in pkg/server/server.go.
+	OnCommandStatus func(ctx context.Context, nodeID string, cmd *store.NodeCommand)
+	// PingInterval and ReadTimeout override agentPingInterval and
+	// agentReadTimeout. Zero or negative means the default. Only tests set
+	// these; production wiring leaves them unset.
+	PingInterval time.Duration
+	ReadTimeout  time.Duration
 }
 
 // triggerFinalize fires the auto eject-on-phone-home hook off the WS read loop so
@@ -102,6 +158,11 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	}
 	defer conn.Close()
 
+	// Captured once: the connection's remote address does not change over its
+	// life, and the read loop below no longer has c in scope by the time a
+	// heartbeat frame arrives.
+	remoteIP := c.RealIP()
+
 	// Register in hub and mark node online. wc wraps conn with a per-connection
 	// write lock; all writes to this connection (here and from the hub) must go
 	// through it so they don't race.
@@ -120,6 +181,48 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		}
 	}()
 
+	// Keepalive. Without this the read below blocks forever on a peer that
+	// stopped talking without closing, and the deferred offline write above
+	// never runs. The UI handler has had this since it was written; the agent
+	// connection is the one that actually carries fleet liveness.
+	readTimeout := h.ReadTimeout
+	if readTimeout <= 0 {
+		readTimeout = agentReadTimeout
+	}
+	pingInterval := h.PingInterval
+	if pingInterval <= 0 {
+		pingInterval = agentPingInterval
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
+	// gorilla answers our ping from its default ping handler, which both the
+	// agent's phonehome client and pkg/client leave in place, so a healthy
+	// agent needs no change to keep this connection alive.
+	conn.SetPongHandler(func(string) error {
+		return conn.SetReadDeadline(time.Now().Add(readTimeout))
+	})
+
+	// Ping off a separate goroutine: the read loop below is blocking, so it
+	// cannot drive a ticker itself. Writes go through wc, not conn, because the
+	// hub writes to this same connection concurrently.
+	pingDone := make(chan struct{})
+	defer close(pingDone)
+	go func() {
+		ticker := time.NewTicker(pingInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-pingDone:
+				return
+			case <-ticker.C:
+				if err := wc.writeControl(websocket.PingMessage, nil, time.Now().Add(pingWriteWait)); err != nil {
+					// The read loop sees the same failure and tears the
+					// connection down; nothing to do here but stop pinging.
+					return
+				}
+			}
+		}
+	}()
+
 	// Send pending commands on connect.
 	h.sendPendingCommands(node.ID, wc)
 
@@ -127,11 +230,21 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	for {
 		_, message, err := conn.ReadMessage()
 		if err != nil {
-			if websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure) {
+			switch {
+			case websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure):
 				log.Printf("ws read error for node %s: %v", node.ID, err)
+			case errors.Is(err, os.ErrDeadlineExceeded):
+				// Worth its own line: this is the silent-peer case, and it is
+				// not an abnormal close, so IsUnexpectedCloseError says nothing
+				// about it. Logging it is how an operator learns that a node
+				// reported Offline because it went quiet rather than because it
+				// shut down cleanly.
+				log.Printf("ws: node %s missed keepalive for %s, dropping connection", node.ID, readTimeout)
 			}
 			return nil
 		}
+		// Any frame proves the peer is alive, not just a pong.
+		_ = conn.SetReadDeadline(time.Now().Add(readTimeout))
 
 		var msg wsMessage
 		if err := json.Unmarshal(message, &msg); err != nil {
@@ -141,7 +254,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 
 		switch msg.Type {
 		case "heartbeat":
-			h.handleHeartbeat(node.ID, msg.Data)
+			h.handleHeartbeat(node.ID, msg.Data, remoteIP)
 		case "command_status":
 			h.handleCommandStatus(node.ID, msg.Data)
 		default:
@@ -150,7 +263,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 	}
 }
 
-func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
+func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remoteIP string) {
 	var hb heartbeatData
 	if err := json.Unmarshal(data, &hb); err != nil {
 		log.Printf("ws invalid heartbeat from node %s: %v", nodeID, err)
@@ -162,16 +275,41 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage) {
 	ctx := context.Background()
 	// The WebSocket heartbeat does not carry network addresses or boot state
 	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
-	// preserves whatever the node reported there.
-	if err := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, ""); err != nil {
-		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, err)
+	// preserves whatever the node reported there. The hostname is passed through:
+	// an agent that reports one is reporting its current one, and an agent that
+	// does not send "" and leaves the stored value alone. remoteIP, unlike those,
+	// is always known here — it is the live connection's address, not something
+	// the agent reports.
+	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP)
+	if heartbeatErr != nil {
+		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, heartbeatErr)
 	}
 	if err := h.Nodes.UpdatePhase(ctx, nodeID, store.PhaseOnline); err != nil {
 		log.Printf("ws: failed to update node phase: %v", err)
 	}
+	// Record metrics only for a heartbeat the store accepted: a node deleted
+	// while its socket is still open must not get samples back after Forget.
+	if heartbeatErr == nil {
+		h.recordMetrics(nodeID, hb.Metrics)
+	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
 	// attempt the auto eject-on-phone-home (nil-safe, off this goroutine).
 	h.triggerFinalize(nodeID)
+}
+
+// recordMetrics stores the heartbeat's metrics sample for nodeID (the node this
+// connection authenticated as), if any. A sample that does not decode is logged
+// and dropped.
+func (h *AgentHandler) recordMetrics(nodeID string, raw json.RawMessage) {
+	if h.Metrics == nil || len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var m store.NodeMetrics
+	if err := json.Unmarshal(raw, &m); err != nil {
+		log.Printf("ws: ignoring invalid heartbeat metrics from node %s: %v", nodeID, err)
+		return
+	}
+	h.Metrics.Record(nodeID, m)
 }
 
 // handleCommandStatus applies a command_status report from the agent. The
@@ -195,6 +333,11 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 			log.Printf("ws: failed to update command status for %s: %v", status.ID, err)
 		}
 		return
+	}
+	if status.Phase == store.CommandCompleted && h.OnCommandStatus != nil {
+		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
+			h.OnCommandStatus(ctx, cmd.ManagedNodeID, cmd)
+		}
 	}
 
 	if h.Hub != nil && h.Hub.UI != nil {

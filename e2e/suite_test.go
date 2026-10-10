@@ -13,19 +13,18 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	. "github.com/spectrocloud/peg/matcher"
 )
 
 var getVersionCmd = ". /etc/kairos-release; [ ! -z \"$KAIROS_VERSION\" ] && echo $KAIROS_VERSION"
 
-var stateAssertVM = func(vm VM, query, expected string) {
+var stateAssertVM = func(vm testVM, query, expected string) {
 	By(fmt.Sprintf("Expecting state %s to be %s", query, expected))
 	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
 	ExpectWithOffset(1, out).To(ContainSubstring(expected))
 }
 
-var stateContains = func(vm VM, query string, expected ...string) {
+var stateContains = func(vm testVM, query string, expected ...string) {
 	var or []types.GomegaMatcher
 	for _, e := range expected {
 		or = append(or, ContainSubstring(e))
@@ -59,8 +58,13 @@ func newAurorabootImage() {
 	parentDir := path.Join(testDir, "..")
 	rootDir, err := filepath.Abs(parentDir)
 	Expect(err).ToNot(HaveOccurred())
-	// Build auroraboot image
-	output, err := exec.Command("docker", "build", "--target", "default", "-t", "auroraboot:test", "-f", filepath.Join(rootDir, "Dockerfile"), rootDir).CombinedOutput()
+	// Build auroraboot image. This build runs on the docker driver, so the
+	// network=host driver-opt the workflow gives buildx does not reach it and
+	// every RUN step gets a veth on the default bridge: on the CI runners the
+	// npm and luet steps then fail with "bridge port not forwarding after
+	// 200ms". No RUN step publishes a port, they only fetch, so the host
+	// network is enough.
+	output, err := exec.Command("docker", "build", "--network", "host", "--target", "default", "-t", "auroraboot:test", "-f", filepath.Join(rootDir, "Dockerfile"), rootDir).CombinedOutput()
 	Expect(err).ToNot(HaveOccurred(), string(output))
 }
 
@@ -71,10 +75,17 @@ func (e *Auroraboot) Run(aurorabootArgs ...string) (string, error) {
 	return e.ContainerRun("auroraboot", aurorabootArgs...)
 }
 
-// We need --privileged for `mount` to work in the container (used in the build_uki_test.go).
+// --privileged is for auroraboot itself, which reaches for loop devices and
+// device nodes while it builds artifacts. The build_uki_test.go helpers no
+// longer need it: they read the ISO with xorriso and mtools, not by mounting.
 func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, error) {
 	dockerArgs := []string{
 		"run", "--rm", "--privileged",
+		// The container publishes no ports and only needs outbound access to
+		// pull images, so the default bridge buys nothing and costs a veth: on
+		// the CI runners docker fails the run with "bridge port not forwarding
+		// after 200ms" before auroraboot starts.
+		"--network", "host",
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"--entrypoint", entrypoint,
 	}
@@ -96,9 +107,23 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 	return string(out), err
 }
 
+// withOutput folds a command's combined output into its error. Without it a
+// helper that discards the output leaves Ginkgo printing only "exit status 1",
+// which says nothing about why the command failed.
+func withOutput(what, out string, err error) error {
+	if err == nil {
+		return nil
+	}
+	if out = strings.TrimSpace(out); out != "" {
+		return fmt.Errorf("%s: %w\n%s", what, err, out)
+	}
+	return fmt.Errorf("%s: %w", what, err)
+}
+
 func PullImage(image string) (string, error) {
 	runCmd := fmt.Sprintf(`docker pull %s`, image)
-	return utils.SH(runCmd)
+	out, err := utils.SH(runCmd)
+	return out, withOutput(runCmd, out, err)
 }
 
 func WriteConfig(config, dir string) error {

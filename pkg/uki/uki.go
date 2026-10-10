@@ -9,6 +9,8 @@
 package uki
 
 import (
+	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -23,16 +25,19 @@ import (
 	"strings"
 
 	"github.com/kairos-io/AuroraBoot/pkg/constants"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/ops"
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	goukiuki "github.com/kairos-io/go-ukify/pkg/uki"
 	"github.com/kairos-io/kairos/v4/agent/pkg/elemental"
 	sdkImages "github.com/kairos-io/kairos/v4/sdk/types/images"
+	installtypes "github.com/kairos-io/kairos/v4/sdk/types/install"
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 	imageutils "github.com/kairos-io/kairos/v4/sdk/utils/image"
 	"github.com/klauspost/compress/zstd"
 	"github.com/u-root/u-root/pkg/cpio"
 	"golang.org/x/exp/maps"
+	"gopkg.in/yaml.v3"
 )
 
 // Options configures a UKI build.
@@ -62,6 +67,13 @@ type Options struct {
 	// served over plain HTTP or presenting an untrusted/self-signed TLS
 	// certificate.
 	AllowInsecureRegistries bool
+
+	// Extensions are named catalog extensions to place in the ISO root.
+	Extensions []extensions.Request
+
+	// ExtensionsCatalogs are the paths or URLs of the extension catalogs,
+	// searched in order: the first one publishing a name wins.
+	ExtensionsCatalogs []string
 
 	// OverlayRootfs is an optional directory whose contents are copied into
 	// the rootfs before the UKI is built.
@@ -124,6 +136,9 @@ type Options struct {
 	// SdBootInSource looks for systemd-boot files inside the source rootfs
 	// rather than using the bundled ones.
 	SdBootInSource bool
+
+	// CloudConfig holds the raw cloud-config YAML.
+	CloudConfig string
 
 	// Logger is the kairos-sdk logger used for progress messages. If nil, a
 	// default info-level logger is used.
@@ -294,9 +309,17 @@ func Build(opts Options) (err error) {
 		return err
 	}
 
+	// Build the base cmdline from cloud config: enabled install.selinux on a
+	// family that supports it replaces the hardcoded selinux=0, otherwise the
+	// base stays identical to constants.UkiCmdline.
+	baseCmdline, err := selinuxBaseCmdline(log, sourceDir, opts.CloudConfig)
+	if err != nil {
+		return err
+	}
+
 	entries := append(
-		GetUkiCmdline(opts.ExtendCmdline, bootBranding, opts.ExtraCmdlines, opts.CmdLinesV2),
-		GetUkiSingleCmdlines(bootBranding, opts.SingleEfiCmdlines, *log)...,
+		getUkiCmdline(baseCmdline, opts.ExtendCmdline, bootBranding, opts.ExtraCmdlines, opts.CmdLinesV2),
+		getUkiSingleCmdlines(baseCmdline, bootBranding, opts.SingleEfiCmdlines, *log)...,
 	)
 
 	stub, systemdBoot, outputSystemdBootEfi, err := resolveSdBootFiles(sourceDir, config.Arch, opts.SdBootInSource)
@@ -341,7 +364,7 @@ func Build(opts Options) (err error) {
 
 		log.Info("Creating kairos and loader conf files")
 		log.Info("Creating base config file with profile 0")
-		if err := createConfFiles(sourceDir, entry.Cmdline, entry.Title, entry.FileName, kairosVersion, "0", opts.IncludeVersionInConfig, opts.IncludeCmdlineInConfig); err != nil {
+		if err := createConfFiles(baseCmdline, sourceDir, entry.Cmdline, entry.Title, entry.FileName, kairosVersion, "0", opts.IncludeVersionInConfig, opts.IncludeCmdlineInConfig); err != nil {
 			return err
 		}
 		if opts.CmdLinesV2 {
@@ -350,7 +373,7 @@ func Build(opts Options) (err error) {
 				profile := fmt.Sprintf("%d", i+1)
 				title := fmt.Sprintf("%s (%s)", entry.Title, cmd)
 
-				if err := createConfFiles(sourceDir, fmt.Sprintf("%s %s", entry.Cmdline, cmd), title, entry.FileName, kairosVersion, profile, opts.IncludeVersionInConfig, opts.IncludeCmdlineInConfig); err != nil {
+				if err := createConfFiles(baseCmdline, sourceDir, fmt.Sprintf("%s %s", entry.Cmdline, cmd), title, entry.FileName, kairosVersion, profile, opts.IncludeVersionInConfig, opts.IncludeCmdlineInConfig); err != nil {
 					return err
 				}
 			}
@@ -363,7 +386,7 @@ func Build(opts Options) (err error) {
 
 	switch outputType {
 	case string(constants.IsoOutput):
-		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch); err != nil {
+		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalogs, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
 			return err
 		}
 	case string(constants.ContainerOutput):
@@ -408,6 +431,11 @@ func (o Options) validate() error {
 	}
 	if outputType != string(constants.DefaultOutput) && outputType != string(constants.IsoOutput) && outputType != string(constants.ContainerOutput) {
 		return fmt.Errorf("uki.Build: invalid output type: %s", outputType)
+	}
+	if len(o.Extensions) > 0 {
+		if outputType != string(constants.IsoOutput) {
+			return errors.New("extensions are only supported for iso artifacts")
+		}
 	}
 
 	if o.OverlayRootfs != "" {
@@ -754,17 +782,14 @@ func getEfiStub(arch string) (string, error) {
 	}
 }
 
-func createConfFiles(sourceDir, cmdline, title, finalEfiName, version, profile string, includeVersion, includeCmdline bool) error {
+func createConfFiles(baseCmdline, sourceDir, cmdline, title, finalEfiName, version, profile string, includeVersion, includeCmdline bool) error {
 	if _, err := os.Stat(filepath.Join(sourceDir, "entries")); os.IsNotExist(err) {
 		if err := os.Mkdir(filepath.Join(sourceDir, "entries"), os.ModePerm); err != nil {
 			return fmt.Errorf("error creating entries directory: %w", err)
 		}
 	}
 
-	extraCmdline := strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
-	if extraCmdline == constants.UkiCmdlineInstall {
-		extraCmdline = ""
-	}
+	extraCmdline := strings.TrimSpace(strings.TrimPrefix(cmdline, baseCmdline))
 
 	configData := fmt.Sprintf("title %s\nsort-key %s-%s\nuki /EFI/kairos/%s.efi\nprofile %s\n", title, finalEfiName, profile, finalEfiName, profile)
 	if includeVersion {
@@ -792,12 +817,16 @@ func createSystemdConf(dir, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch string) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch string, extensionsCatalogs []string, extensionRequests []extensions.Request, insecure bool) error {
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
 		return err
 	}
 	defer os.RemoveAll(isoDir)
+
+	if err := stageExtensions(context.Background(), extensionsCatalogs, extensionRequests, arch, isoDir, insecure); err != nil {
+		return err
+	}
 
 	filesMap, err := imageFiles(sourceDir, keysDir, entries, arch)
 	if err != nil {
@@ -870,6 +899,13 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	return nil
 }
 
+var materializeExtensions = extensions.Materialize
+
+func stageExtensions(ctx context.Context, catalogs []string, requests []extensions.Request, arch, destination string, insecure bool) error {
+	_, err := materializeExtensions(ctx, catalogs, requests, arch, destination, insecure)
+	return err
+}
+
 func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry, arch string) (map[string][]string, error) {
 	bootfile := "BOOTX64.EFI"
 	if utils.IsArm64(arch) {
@@ -933,7 +969,8 @@ func sumFileSizes(filesMap map[string][]string) (int64, error) {
 }
 
 func createImgWithSize(imgFile string, size int64) error {
-	cmd := exec.Command("dd",
+	cmd := exec.Command(
+		"dd",
 		"if=/dev/zero", fmt.Sprintf("of=%s", imgFile),
 		"bs=1M", fmt.Sprintf("count=%d", size),
 	)
@@ -1042,10 +1079,16 @@ func createContainer(sourceDir, outputDir, artifactName, outputName string, log 
 }
 
 // GetUkiCmdline returns the set of boot entries (one per cmdline variant) used
-// to generate UKI EFI files. Extend mode appends to the default cmdline and
-// produces a single entry; extra mode produces one entry per extra cmdline.
+// to generate UKI EFI files, using the standard UKI base cmdline. Extend mode
+// appends to the default cmdline and produces a single entry; extra mode
+// produces one entry per extra cmdline.
 func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
-	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+	return getUkiCmdline(constants.UkiCmdline, cmdlineExtend, bootBranding, extraCmdlines, cmdLinesV2)
+}
+
+// getUkiCmdline is GetUkiCmdline with an explicit base cmdline
+func getUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdlines []string, cmdLinesV2 bool) []utils.BootEntry {
+	defaultCmdLine := baseCmdline
 
 	if cmdlineExtend != "" {
 		return []utils.BootEntry{{
@@ -1067,7 +1110,7 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, c
 			result = append(result, utils.BootEntry{
 				Cmdline:  cmdline,
 				Title:    bootBranding,
-				FileName: NameFromCmdline(constants.ArtifactBaseName, cmdline),
+				FileName: nameFromCmdline(baseCmdline, constants.ArtifactBaseName, cmdline),
 			})
 		}
 	}
@@ -1075,10 +1118,16 @@ func GetUkiCmdline(cmdlineExtend, bootBranding string, extraCmdlines []string, c
 }
 
 // GetUkiSingleCmdlines returns boot entries for the `single-efi-cmdline` flag
-// values. Each user value may optionally include a "Title: cmdline" prefix.
-func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, _ logger.KairosLogger) []utils.BootEntry {
+// values, using the standard UKI base cmdline. Each user value may optionally
+// include a "Title: cmdline" prefix.
+func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, l logger.KairosLogger) []utils.BootEntry {
+	return getUkiSingleCmdlines(constants.UkiCmdline, bootBranding, cmdlines, l)
+}
+
+// getUkiSingleCmdlines is GetUkiSingleCmdlines with an explicit base cmdline.
+func getUkiSingleCmdlines(baseCmdline, bootBranding string, cmdlines []string, _ logger.KairosLogger) []utils.BootEntry {
 	result := []utils.BootEntry{}
-	defaultCmdLine := constants.UkiCmdline + " " + constants.UkiCmdlineInstall
+	defaultCmdLine := baseCmdline
 
 	for _, userValue := range cmdlines {
 		bootEntry := utils.BootEntry{}
@@ -1090,7 +1139,7 @@ func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, _ logger.Kairo
 		} else {
 			bootEntry.Title = bootBranding
 			bootEntry.Cmdline = defaultCmdLine + " " + before
-			bootEntry.FileName = NameFromCmdline("single_entry", before)
+			bootEntry.FileName = nameFromCmdline(baseCmdline, "single_entry", before)
 		}
 		result = append(result, bootEntry)
 	}
@@ -1098,16 +1147,128 @@ func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, _ logger.Kairo
 }
 
 // NameFromCmdline returns a filesystem-safe basename derived from cmdline,
-// used for the per-entry EFI and .conf file names.
+// used for the per-entry EFI and .conf file names, using the standard UKI
+// base cmdline.
 func NameFromCmdline(basename, cmdline string) string {
-	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, constants.UkiCmdline))
-	if cmdlineForEfi == constants.UkiCmdlineInstall {
-		cmdlineForEfi = ""
-	}
+	return nameFromCmdline(constants.UkiCmdline, basename, cmdline)
+}
+
+// nameFromCmdline is NameFromCmdline with an explicit base cmdline.
+func nameFromCmdline(baseCmdline, basename, cmdline string) string {
+	cmdlineForEfi := strings.TrimSpace(strings.TrimPrefix(cmdline, baseCmdline))
 	allowedChars := regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 	cleanCmdline := allowedChars.ReplaceAllString(cmdlineForEfi, "_")
 	name := basename + "_" + cleanCmdline
 	return strings.ToLower(strings.TrimSuffix(name, "_"))
+}
+
+// selinuxDisabledParam is the token constants.UkiCmdline carries by default,
+// and the one the SELinux fragment replaces when SELinux is enabled.
+const selinuxDisabledParam = "selinux=0"
+
+// selinuxBaseCmdline resolves the base cmdline every UKI entry is built from.
+// SELinux is turned on only when the cloud-config asks for it and the source
+// image family can do it; every other case keeps selinux=0.
+//
+// The family test is not cosmetic. The GRUB path turns SELinux on for the
+// redhat and suse families only and pins selinux=0 for every other one, see
+// setSelinux in kairos-init/pkg/bundled BootArgsCfg, so without it one
+// cloud-config would produce two different kernel command lines for the same
+// image. The UKI cmdline also lives in a signed section of the EFI, so an
+// artifact built with the wrong token cannot be corrected without building
+// and signing it again.
+func selinuxBaseCmdline(log *logger.KairosLogger, sourceDir, cloudConfig string) (string, error) {
+	enabled, mode, err := parseSelinuxOptions(log, cloudConfig)
+	if err != nil {
+		return "", err
+	}
+
+	supported := false
+	if enabled {
+		var family string
+		supported, family = isSelinuxSupported(sourceDir, log)
+		if supported {
+			log.Infof("SELinux enabled in cloud-config, mode: %s", mode)
+		} else {
+			log.Warnf("install.selinux.enabled is set but image family %q does not support SELinux; booting with %s", family, selinuxDisabledParam)
+		}
+	}
+
+	baseCmdline, err := spliceSelinuxCmdline(constants.UkiCmdline, enabled && supported, mode)
+	if err != nil {
+		log.Logger.Error().Err(err).Msg("SELinux fragment splice failed")
+		return "", err
+	}
+
+	return baseCmdline, nil
+}
+
+// spliceSelinuxCmdline replaces the selinux=0 token in baseCmdline with the
+// SELinux enablement fragment. When enable is false the base is returned
+// unchanged.
+func spliceSelinuxCmdline(baseCmdline string, enable bool, mode string) (string, error) {
+	if !enable {
+		return baseCmdline, nil
+	}
+
+	params := fmt.Sprintf("security=selinux selinux=1 enforcing=0 rd.cos.selinux=%s", mode)
+	patched := strings.Replace(baseCmdline, " "+selinuxDisabledParam, " "+params, 1)
+	if patched == baseCmdline {
+		return "", fmt.Errorf("SELinux enablement requires the base cmdline to contain ' %s'", selinuxDisabledParam)
+	}
+
+	return patched, nil
+}
+
+// parseSelinuxOptions extracts install.selinux from a cloud-config.
+func parseSelinuxOptions(log *logger.KairosLogger, cloudConfig string) (enabled bool, mode string, err error) {
+	if cloudConfig == "" {
+		return false, "", nil
+	}
+
+	var selinux *installtypes.SelinuxOptions
+
+	decoder := yaml.NewDecoder(bytes.NewReader([]byte(cloudConfig)))
+	for {
+		var cc struct {
+			Install *struct {
+				Selinux *installtypes.SelinuxOptions `yaml:"selinux"`
+			} `yaml:"install"`
+		}
+
+		if err := decoder.Decode(&cc); err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return false, "", fmt.Errorf("parsing cloud-config YAML: %w", err)
+		}
+
+		if cc.Install == nil || cc.Install.Selinux == nil {
+			continue // cc without install.selinux: keep looking
+		}
+
+		sel := cc.Install.Selinux
+		if sel.Mode != "" && !sel.Enabled {
+			log.Warn("install.selinux.mode is set but install.selinux.enabled is false; SELinux stays disabled")
+		}
+
+		selinux = sel
+	}
+
+	if selinux == nil || !selinux.Enabled {
+		return false, "", nil
+	}
+
+	mode = strings.TrimSpace(selinux.Mode)
+	switch mode {
+	case "":
+		mode = "permissive"
+	case "permissive", "enforcing":
+	default:
+		log.Warnf("unknown install.selinux.mode %q, using permissive", mode)
+		mode = "permissive"
+	}
+	return true, mode, nil
 }
 
 // FindFirstFileInDir walks dir recursively and returns the full path to the
@@ -1137,4 +1298,19 @@ func FindFirstFileInDir(dir, pattern string) (string, error) {
 		return "", fmt.Errorf("no file matching pattern %s found in directory %s", pattern, dir)
 	}
 	return foundFile, nil
+}
+
+// isSelinuxSupported reports whether the rootfs image family supports SELinux
+func isSelinuxSupported(rootfs string, log *logger.KairosLogger) (bool, string) {
+	family, err := utils.GetKairosFamily(rootfs)
+	if err != nil {
+		log.Logger.Error().Err(err).Msg("failed to get image family")
+		return false, ""
+	}
+	switch strings.ToLower(family) {
+	case "redhat", "suse":
+		return true, family
+	default:
+		return false, family
+	}
 }

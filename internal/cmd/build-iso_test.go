@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/urfave/cli/v2"
@@ -96,6 +97,13 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		Expect(err.Error()).ToNot(ContainSubstring("unknown"))
 	})
 
+	It("Accepts the default-grub-entry flag", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--default-grub-entry", constants.LiveGrubEntryBootLocal, "system/cos"})
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("default-grub-entry"))
+		Expect(err.Error()).ToNot(ContainSubstring("unknown"))
+	})
+
 	It("Accepts the allow-insecure-registries flag", Label("flags"), func() {
 		err = app.Run([]string{"", "build-iso", "--allow-insecure-registries", "system/cos"})
 		// Fails on image reference, but the flag should be accepted (no "unknown flag" error)
@@ -108,5 +116,33 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		// The deprecated alias must keep working for v0.22.0 scripts.
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+	})
+
+	It("accepts an extension with no catalog, which reads the default one", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extension", "foo", "system/cos"})
+		// Still fails, on the source image this box has no way to pull, but
+		// not on a missing catalog any more.
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog"))
+	})
+
+	It("rejects invalid extension requests", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extensions-catalog", "catalog.yaml", "--extension", "foo@", "system/cos"})
+		Expect(err).To(MatchError(ContainSubstring("invalid extension request")))
+	})
+
+	It("accepts repeatable extension catalogs", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extensions-catalog", "first.json", "--extensions-catalog", "second.json", "--extension", "foo", "system/cos"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog is required"))
+	})
+
+	It("accepts repeatable extension flags", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--extensions-catalog", "catalog.yaml", "--extension", "foo", "--extension", "bar@v1", "system/cos"})
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).ToNot(ContainSubstring("flag provided but not defined"))
+		Expect(err.Error()).ToNot(ContainSubstring("extensions-catalog is required"))
+		Expect(err.Error()).ToNot(ContainSubstring("invalid extension request"))
 	})
 })

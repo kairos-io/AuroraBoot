@@ -131,7 +131,7 @@ func GenerateKeySet(opts Options) error {
 		}
 		log.Infof("%s generated at %s", keyType, der)
 
-		if err := generateAuthKeys(*guid, opts.OutputDir, keyType, customDerDir, opts.SkipMicrosoftCerts); err != nil {
+		if err := generateAuthKeys(*log, *guid, opts.OutputDir, keyType, customDerDir, opts.SkipMicrosoftCerts); err != nil {
 			return fmt.Errorf("generating auth keys for %s: %w", keyType, err)
 		}
 
@@ -156,7 +156,7 @@ func GenerateKeySet(opts Options) error {
 // generateAuthKeys produces the .auth and .esl files for a given key type using
 // the foxboron/sbctl and foxboron/go-uefi libraries. PK signs itself and KEK;
 // KEK signs db.
-func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir string, skipMicrosoftCerts bool) error {
+func generateAuthKeys(log logger.KairosLogger, guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir string, skipMicrosoftCerts bool) error {
 	// Enrollment chain of trust: PK is self-signed; KEK is signed by PK;
 	// db is signed by KEK. The signer's key AND certificate must match
 	// each other so that PKCS7.Verify (which checks both IssuerAndSerial
@@ -197,7 +197,7 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 		if err != nil {
 			return fmt.Errorf("loading microsoft keys (type %s): %w", keyType, err)
 		}
-		sigdb.AppendDatabase(oemSigDb)
+		appendDatabaseSkippingDuplicates(sigdb, oemSigDb, log, keyType, "Microsoft")
 	}
 
 	if keyType != "PK" && customDerCertDir != "" {
@@ -205,7 +205,7 @@ func generateAuthKeys(guid efiutil.EFIGUID, keyPath, keyType, customDerCertDir s
 		if err != nil {
 			return fmt.Errorf("loading custom keys (type %s): %w", keyType, err)
 		}
-		sigdb.AppendDatabase(customSigDb)
+		appendDatabaseSkippingDuplicates(sigdb, customSigDb, log, keyType, "custom")
 	}
 
 	var efiVarType efivar.Efivar
@@ -326,4 +326,81 @@ func appendCustomDerCerts(keyType, customDerCertDir, keyPath string) error {
 		}
 		return nil
 	})
+}
+
+// containsData reports whether any of these signatures carries this payload.
+func containsData(sigs []signature.SignatureData, data []byte) bool {
+	for _, sig := range sigs {
+		if bytes.Equal(sig.Data, data) {
+			return true
+		}
+	}
+	return false
+}
+
+// signatureDataPresent reports whether sd already carries this exact payload
+// under the given signature type.
+//
+// The owner GUID is deliberately not part of the comparison. certs.GetOEMCerts
+// stamps everything it returns with Microsoft's GUID and certs.GetCustomCerts
+// stamps everything it returns with a fixed "custom" GUID, so one certificate
+// read from both sources arrives under two different owners. What firmware
+// ends up trusting is the certificate, so the certificate is what must be
+// unique.
+func signatureDataPresent(sd *signature.SignatureDatabase, certType efiutil.EFIGUID, data []byte) bool {
+	for _, list := range *sd {
+		if !efiutil.CmpEFIGUID(list.SignatureType, certType) {
+			continue
+		}
+		if containsData(list.Signatures, data) {
+			return true
+		}
+	}
+	return false
+}
+
+// appendDatabaseSkippingDuplicates merges src into dst, leaving out signatures
+// dst already carries.
+//
+// signature.SignatureDatabase.AppendDatabase appends whole signature lists
+// without looking at what the destination already holds, so certificates a
+// user exported from their firmware get merged in blind. Firmware that already
+// trusts Microsoft exports the Microsoft certificates too, so handing that
+// export to --custom-cert-dir without also passing --skip-microsoft-certs
+// enrolls each of them twice. See kairos-io/kairos#2432.
+//
+// Lists are filtered rather than rebuilt, so a merge that drops nothing
+// produces exactly the bytes AppendDatabase would have.
+func appendDatabaseSkippingDuplicates(dst, src *signature.SignatureDatabase, log logger.KairosLogger, keyType, source string) {
+	for _, list := range *src {
+		kept := make([]signature.SignatureData, 0, len(list.Signatures))
+		for _, sig := range list.Signatures {
+			// dst catches a certificate enrolled from an earlier source;
+			// kept catches a source that repeats itself.
+			if signatureDataPresent(dst, list.SignatureType, sig.Data) || containsData(kept, sig.Data) {
+				log.Infof("Skipping %s certificate already enrolled in %s: %s",
+					source, keyType, describeSignature(list.SignatureType, sig.Data))
+				continue
+			}
+			kept = append(kept, sig)
+		}
+		if len(kept) == 0 {
+			continue
+		}
+		filtered := *list
+		filtered.Signatures = kept
+		filtered.ListSize = signature.SizeofSignatureList + filtered.HeaderSize + uint32(len(kept))*filtered.Size
+		dst.AppendList(&filtered)
+	}
+}
+
+// describeSignature renders a signature payload for a log line: the
+// certificate subject when it parses as X.509, a size otherwise.
+func describeSignature(certType efiutil.EFIGUID, data []byte) string {
+	if efiutil.CmpEFIGUID(certType, signature.CERT_X509_GUID) {
+		if cert, err := x509.ParseCertificate(data); err == nil {
+			return cert.Subject.String()
+		}
+	}
+	return fmt.Sprintf("%s entry of %d bytes", signature.ValidEFISignatureSchemes[certType], len(data))
 }

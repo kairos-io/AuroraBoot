@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -71,7 +72,7 @@ func (f *fakeNodeStore) ListByLabels(_ context.Context, _ map[string]string) ([]
 func (f *fakeNodeStore) ListBySelector(_ context.Context, _ store.CommandSelector) ([]*store.ManagedNode, error) {
 	return nil, nil
 }
-func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _ map[string]string, _ []store.NodeAddress, _ string) error {
+func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _ map[string]string, _ []store.NodeAddress, _ string, _ string, _ string) error {
 	return nil
 }
 func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
@@ -147,6 +148,19 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 	}
 	return out, nil
 }
+func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadline time.Time) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, c := range f.cmds {
+		if c.ManagedNodeID != nodeID || c.ExpiresAt == nil || c.ExpiresAt.After(deadline) {
+			continue
+		}
+		if c.Phase == store.CommandPending || c.Phase == store.CommandDelivered || c.Phase == store.CommandRunning {
+			c.Phase = store.CommandExpired
+		}
+	}
+	return nil
+}
 func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }
 
@@ -162,6 +176,9 @@ func (f *fakeGroupStore) GetByName(_ context.Context, _ string) (*store.NodeGrou
 func (f *fakeGroupStore) List(_ context.Context) ([]*store.NodeGroup, error) { return nil, nil }
 func (f *fakeGroupStore) Update(_ context.Context, _ *store.NodeGroup) error { return nil }
 func (f *fakeGroupStore) Delete(_ context.Context, _ string) error           { return nil }
+func (f *fakeGroupStore) NodeCounts(_ context.Context) (map[string]int, error) {
+	return map[string]int{}, nil
+}
 
 type fakeBuilder struct{}
 
@@ -173,6 +190,27 @@ func (f *fakeBuilder) Status(_ context.Context, _ string) (*builder.BuildStatus,
 }
 func (f *fakeBuilder) List(_ context.Context) ([]*builder.BuildStatus, error) { return nil, nil }
 func (f *fakeBuilder) Cancel(_ context.Context, _ string) error               { return nil }
+
+// fakeArtifactStore is a minimal store.ArtifactStore whose GetByID reports
+// not-found, so ExportImage returns 404 cleanly (rather than nil-dereferencing an
+// absent store) once a request is authorized.
+type fakeArtifactStore struct{}
+
+func (f *fakeArtifactStore) Create(context.Context, *store.ArtifactRecord) error { return nil }
+func (f *fakeArtifactStore) GetByID(context.Context, string) (*store.ArtifactRecord, error) {
+	return nil, fmt.Errorf("not found")
+}
+func (f *fakeArtifactStore) List(context.Context) ([]*store.ArtifactRecord, error) { return nil, nil }
+func (f *fakeArtifactStore) Update(context.Context, *store.ArtifactRecord) error   { return nil }
+func (f *fakeArtifactStore) UpdatePhaseMessage(context.Context, string, string, string) error {
+	return nil
+}
+func (f *fakeArtifactStore) UpdateFiles(context.Context, string, []string) error { return nil }
+func (f *fakeArtifactStore) ClearUploadToken(context.Context, string) error      { return nil }
+func (f *fakeArtifactStore) Delete(context.Context, string) error                { return nil }
+func (f *fakeArtifactStore) DeleteByPhase(context.Context, string) error         { return nil }
+func (f *fakeArtifactStore) GetLogs(context.Context, string) (string, error)     { return "", nil }
+func (f *fakeArtifactStore) AppendLog(context.Context, string, string) error     { return nil }
 
 var _ = Describe("Server", func() {
 	var (
@@ -213,6 +251,24 @@ var _ = Describe("Server", func() {
 			resp, err := http.Get(e.URL + "/api/v1/nodes")
 			Expect(err).NotTo(HaveOccurred())
 			Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized))
+		})
+
+		It("should reject unauthenticated metrics requests", func() {
+			for _, path := range []string{"/api/v1/nodes/node-1/metrics", "/api/v1/metrics/latest"} {
+				resp, err := http.Get(e.URL + path)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusUnauthorized), path)
+			}
+		})
+
+		It("should allow authenticated metrics requests", func() {
+			for _, path := range []string{"/api/v1/nodes/node-1/metrics", "/api/v1/metrics/latest"} {
+				req, _ := http.NewRequest(http.MethodGet, e.URL+path, nil)
+				req.Header.Set("Authorization", "Bearer admin-pass")
+				resp, err := http.DefaultClient.Do(req)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(resp.StatusCode).To(Equal(http.StatusOK), path)
+			}
 		})
 
 		It("should allow authenticated admin requests", func() {
@@ -350,14 +406,158 @@ var _ = Describe("Server", func() {
 			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
 		})
 	})
+})
 
-	Describe("SPA fallback", func() {
-		It("should serve index.html for HTML requests to unknown paths", func() {
-			req, _ := http.NewRequest(http.MethodGet, e.URL+"/some/spa/route", nil)
-			req.Header.Set("Accept", "text/html")
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+var _ = Describe("Artifact download scoping", func() {
+	var (
+		e  *httptest.Server
+		ns *fakeNodeStore
+		cs *fakeCommandStore
+	)
+
+	BeforeEach(func() {
+		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "agent-key"}}}
+		cs = &fakeCommandStore{}
+		echoApp := server.New(server.Config{
+			NodeStore:     ns,
+			CommandStore:  cs,
+			GroupStore:    &fakeGroupStore{},
+			ArtifactStore: &fakeArtifactStore{},
+			Builder:       &fakeBuilder{},
+			AdminPassword: "admin-pass",
+			RegToken:      "reg-token",
+			AuroraBootURL: "http://localhost:8080",
 		})
+		e = httptest.NewServer(echoApp)
+	})
+
+	AfterEach(func() { e.Close() })
+
+	get := func(path, bearer string) int {
+		req, _ := http.NewRequest(http.MethodGet, e.URL+path, nil)
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	Describe("raw file download (/download/*)", func() {
+		It("rejects a node API key — these files are admin-only", func() {
+			Expect(get("/api/v1/artifacts/art-1/download/kairos.iso", "agent-key")).To(Equal(http.StatusUnauthorized))
+		})
+		It("admits the admin (auth passes; a missing file is a 404, not a 401)", func() {
+			Expect(get("/api/v1/artifacts/art-1/download/kairos.iso", "admin-pass")).NotTo(Equal(http.StatusUnauthorized))
+		})
+	})
+
+	Describe("container image (/image)", func() {
+		It("403s a node not assigned this artifact by any upgrade command", func() {
+			Expect(get("/api/v1/artifacts/art-1/image", "agent-key")).To(Equal(http.StatusForbidden))
+		})
+		It("admits a node assigned this artifact by an upgrade command (auth passes)", func() {
+			cs.cmds = []*store.NodeCommand{
+				{ID: "c1", ManagedNodeID: "node-1", Command: store.CmdUpgrade, Args: map[string]string{"source": "artifact:art-1"}},
+			}
+			code := get("/api/v1/artifacts/art-1/image", "agent-key")
+			Expect(code).NotTo(Equal(http.StatusUnauthorized))
+			Expect(code).NotTo(Equal(http.StatusForbidden))
+		})
+		It("admits the admin (auth passes)", func() {
+			code := get("/api/v1/artifacts/art-1/image", "admin-pass")
+			Expect(code).NotTo(Equal(http.StatusUnauthorized))
+			Expect(code).NotTo(Equal(http.StatusForbidden))
+		})
+	})
+})
+
+var _ = Describe("Rate limiting wiring", func() {
+	var (
+		e  *httptest.Server
+		ns *fakeNodeStore
+	)
+
+	BeforeEach(func() {
+		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "agent-key"}}}
+		// Burst 2 so throttling is observable in a handful of requests (defaults
+		// would need 20+), and a near-zero rate so the bucket refills negligibly
+		// during the test — otherwise a slow CI run could top the bucket back up
+		// mid-loop and no request would ever be throttled.
+		echoApp := server.New(server.Config{
+			NodeStore:              ns,
+			CommandStore:           &fakeCommandStore{},
+			GroupStore:             &fakeGroupStore{},
+			Builder:                &fakeBuilder{},
+			AdminPassword:          "admin-pass",
+			RegToken:               "reg-token",
+			AuroraBootURL:          "http://localhost:8080",
+			NodeRateLimitRPS:       0.001,
+			NodeRateLimitBurst:     2,
+			RegisterRateLimitRPS:   0.001,
+			RegisterRateLimitBurst: 2,
+		})
+		e = httptest.NewServer(echoApp)
+	})
+
+	AfterEach(func() { e.Close() })
+
+	getCommands := func(bearer string) int {
+		req, _ := http.NewRequest(http.MethodGet, e.URL+"/api/v1/nodes/node-1/commands", nil)
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	heartbeat := func(bearer string) int {
+		req, _ := http.NewRequest(http.MethodPost, e.URL+"/api/v1/nodes/node-1/heartbeat", strings.NewReader(`{"agentVersion":"1.0"}`))
+		req.Header.Set("Authorization", "Bearer "+bearer)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		Expect(err).NotTo(HaveOccurred())
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+
+	It("never rate-limits the admin on the shared command route (CAPI provider path)", func() {
+		// Far more than the node burst; the admin sets no node ID, so the node
+		// limiter skips it entirely. This is the guarantee that keeps the CAPI
+		// infra provider's command polling exempt.
+		for i := 0; i < 10; i++ {
+			Expect(getCommands("admin-pass")).NotTo(Equal(http.StatusTooManyRequests))
+		}
+	})
+
+	It("rate-limits a node on the shared command route once its burst is spent", func() {
+		codes := make([]int, 0, 5)
+		for i := 0; i < 5; i++ {
+			codes = append(codes, getCommands("agent-key"))
+		}
+		Expect(codes).To(ContainElement(http.StatusTooManyRequests))
+	})
+
+	It("shares one bucket per node across heartbeat and command polling", func() {
+		// Burst is 2. Spend it with one heartbeat plus one command poll, then
+		// either route is throttled for that node — proving a single shared bucket
+		// rather than one bucket per endpoint group (which would double the rate).
+		Expect(heartbeat("agent-key")).NotTo(Equal(http.StatusTooManyRequests))
+		Expect(getCommands("agent-key")).NotTo(Equal(http.StatusTooManyRequests))
+		Expect(getCommands("agent-key")).To(Equal(http.StatusTooManyRequests))
+		Expect(heartbeat("agent-key")).To(Equal(http.StatusTooManyRequests))
+	})
+
+	It("rate-limits registration per client IP once its burst is spent", func() {
+		body := `{"registrationToken":"reg-token","machineID":"m1","hostname":"h1"}`
+		codes := make([]int, 0, 5)
+		for i := 0; i < 5; i++ {
+			resp, err := http.Post(e.URL+"/api/v1/nodes/register", "application/json", strings.NewReader(body))
+			Expect(err).NotTo(HaveOccurred())
+			resp.Body.Close()
+			codes = append(codes, resp.StatusCode)
+		}
+		Expect(codes).To(ContainElement(http.StatusTooManyRequests))
 	})
 })

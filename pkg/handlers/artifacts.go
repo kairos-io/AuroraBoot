@@ -11,7 +11,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -20,6 +22,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
 	"gopkg.in/yaml.v3"
@@ -60,18 +63,33 @@ type ArtifactHandler struct {
 	store          store.ArtifactStore
 	groups         store.GroupStore
 	secureBootKeys store.SecureBootKeySetStore
+	extensions     store.ExtensionStore
+	bundles        store.ArtifactExtensionBundleStore
 	regToken       string
 	aurorabootURL  string
 	artifactsDir   string
 }
 
-// NewArtifactHandler creates a new ArtifactHandler.
-func NewArtifactHandler(b builder.ArtifactBuilder, artifactStore store.ArtifactStore, groups store.GroupStore, secureBootKeys store.SecureBootKeySetStore, artifactsDir string, regToken string, aurorabootURL string) *ArtifactHandler {
+// NewArtifactHandler creates a new ArtifactHandler. The builder is wrapped so
+// every request's image references are validated before any backend sees them.
+func NewArtifactHandler(
+	b builder.ArtifactBuilder,
+	artifactStore store.ArtifactStore,
+	groups store.GroupStore,
+	secureBootKeys store.SecureBootKeySetStore,
+	extensions store.ExtensionStore,
+	bundles store.ArtifactExtensionBundleStore,
+	artifactsDir string,
+	regToken string,
+	aurorabootURL string,
+) *ArtifactHandler {
 	return &ArtifactHandler{
-		builder:        b,
+		builder:        builder.NewValidatingArtifactBuilder(b),
 		store:          artifactStore,
 		groups:         groups,
 		secureBootKeys: secureBootKeys,
+		extensions:     extensions,
+		bundles:        bundles,
 		regToken:       regToken,
 		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
@@ -95,16 +113,37 @@ type createArtifactRequest struct {
 	HadronFirmware          []string `json:"hadronFirmware"`
 	HadronLayers            []string `json:"hadronLayers"`
 	HadronExtra             string   `json:"hadronExtra"`
-	BuildContextDir         string   `json:"buildContextDir"`
-	OverlayRootfs           string   `json:"overlayRootfs"`
-	KairosInitImage         string `json:"kairosInitImage"`
+	// OverlayID names an overlay uploaded through upload-overlay.
+	OverlayID       string `json:"overlayId"`
+	KairosInitImage string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
 	Signing      *signingConfig     `json:"signing,omitempty"`
 	Provisioning provisioningConfig `json:"provisioning"`
 
 	CloudConfig string `json:"cloudConfig"`
-	OutputDir   string `json:"outputDir"`
+
+	ExtensionHierarchies *extensionHierarchiesReq `json:"extensionHierarchies,omitempty"`
+	BundledExtensions    []createBundleEntry      `json:"bundledExtensions,omitempty"`
+
+	// Extensions are catalog extension names (name or name@version) to
+	// materialize in the built ISO. ExtensionsCatalogs overrides the catalog
+	// they are resolved against; empty means extensions.DefaultCatalog. Each
+	// catalog must be an http or https URL.
+	Extensions         []string `json:"extensions,omitempty"`
+	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
+}
+
+type extensionHierarchiesReq struct {
+	Sysext  []string `json:"sysext"`
+	Confext []string `json:"confext"`
+}
+
+type createBundleEntry struct {
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	PinnedVersion string `json:"pinnedVersion,omitempty"`
+	Order         int    `json:"order,omitempty"`
 }
 
 type artifactOutputs struct {
@@ -123,10 +162,6 @@ type artifactOutputs struct {
 
 type signingConfig struct {
 	UKIKeySetID         string `json:"ukiKeySetId"`
-	UKISecureBootKey    string `json:"ukiSecureBootKey"`
-	UKISecureBootCert   string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
 }
 
@@ -172,7 +207,86 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
+	var overlayRootfs string
+	if req.OverlayID != "" {
+		dir, err := h.overlayDir(req.OverlayID)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "overlayId: " + err.Error()})
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "overlayId: no uploaded overlay with this ID"})
+		}
+		overlayRootfs = dir
+	}
+
 	ctx := c.Request().Context()
+
+	// Hierarchies validation: sysext list cannot include /usr or /; confext list
+	// cannot include /etc or /. validateHierarchies (in extensions.go) covers /
+	// and /usr generically; the /etc rule is inline below for the confext branch.
+	var sysHierarchies, conHierarchies []string
+	if req.ExtensionHierarchies != nil {
+		var verr error
+		sysHierarchies, verr = validateHierarchies(req.ExtensionHierarchies.Sysext)
+		if verr != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "sysext " + verr.Error()})
+		}
+		for i, p := range req.ExtensionHierarchies.Confext {
+			p = strings.TrimRight(p, "/")
+			if p == "/etc" || p == "/" {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("confext hierarchies[%d]: %q is implicit and cannot be listed", i, p),
+				})
+			}
+		}
+		conHierarchies, verr = validateHierarchies(req.ExtensionHierarchies.Confext)
+		if verr != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "confext " + verr.Error()})
+		}
+	}
+
+	// bundledExtensions: validate each entry resolves to a Ready extension of
+	// the matching arch. ArtifactID is filled in after the artifact record is
+	// persisted (we don't know the ID until then).
+	bundleRows := make([]store.ArtifactExtensionBundle, 0, len(req.BundledExtensions))
+	if len(req.BundledExtensions) > 0 {
+		if h.extensions == nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "extensions store not configured"})
+		}
+		for i, b := range req.BundledExtensions {
+			if b.Name == "" {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("bundledExtensions[%d]: name required", i)})
+			}
+			if b.Type != "sysext" && b.Type != "confext" {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("bundledExtensions[%d]: type must be sysext or confext", i)})
+			}
+			var ext *store.ExtensionRecord
+			var rErr error
+			if b.PinnedVersion != "" {
+				ext, rErr = h.extensions.FindByNameAndVersion(ctx, b.Type, b.Name, b.PinnedVersion)
+			} else {
+				ext, rErr = h.extensions.FindLatestReadyByName(ctx, b.Type, b.Name)
+			}
+			if rErr != nil || ext == nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("bundledExtensions[%d]: no Ready %s extension matches name=%q version=%q",
+						i, b.Type, b.Name, b.PinnedVersion),
+				})
+			}
+			if ext.Arch != req.Arch {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("bundledExtensions[%d]: arch %q != artifact arch %q",
+						i, ext.Arch, req.Arch),
+				})
+			}
+			bundleRows = append(bundleRows, store.ArtifactExtensionBundle{
+				ExtensionName: b.Name,
+				ExtensionType: b.Type,
+				PinnedVersion: b.PinnedVersion,
+				Order:         b.Order,
+			})
+		}
+	}
 
 	// Provisioning defaults: nil means default true.
 	autoInstall := true
@@ -187,10 +301,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// UKI key set resolution.
 	var ukiSBKey, ukiSBCert, ukiTPMKey, ukiPubKeysDir string
 	if req.Signing != nil {
-		ukiSBKey = req.Signing.UKISecureBootKey
-		ukiSBCert = req.Signing.UKISecureBootCert
-		ukiTPMKey = req.Signing.UKITPMPCRKey
-		ukiPubKeysDir = req.Signing.UKIPublicKeysDir
 		if req.Signing.UKIKeySetID != "" && h.secureBootKeys != nil {
 			ks, err := h.secureBootKeys.GetByID(ctx, req.Signing.UKIKeySetID)
 			if err != nil {
@@ -200,6 +310,28 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			ukiSBCert = filepath.Join(ks.KeysDir, "db.pem")
 			ukiTPMKey = ks.TPMPCRKeyPath
 			ukiPubKeysDir = ks.KeysDir
+		}
+	}
+
+	// Catalog extensions: an unusable name is the operator's mistake, so it is
+	// a 400 here rather than a build that dies after the source image has
+	// already been pulled.
+	parsedExtensions, err := extensions.ParseRequests(req.Extensions)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	// A file:// request names a path on this server, which is the CLI's way of
+	// baking an image the operator already has. Over the API it would let the
+	// caller read any file this process can reach and download it back inside
+	// the artifact, so it is refused here rather than resolved.
+	for _, request := range parsedExtensions {
+		if _, isFile := request.FilePath(); isFile {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("extension %q names a local file, which is not allowed over the API", request.Name)})
+		}
+	}
+	for _, catalog := range req.ExtensionsCatalogs {
+		if err := validateCatalogURL(catalog); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "extensionsCatalogs: " + err.Error()})
 		}
 	}
 
@@ -228,15 +360,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		CloudImage:        req.Outputs.CloudImage,
 		Netboot:           req.Outputs.Netboot,
 		CloudConfig:       req.CloudConfig,
-		OutputDir:         req.OutputDir,
-		OverlayRootfs:     req.OverlayRootfs,
+		OverlayRootfs:     overlayRootfs,
+		OverlayID:         req.OverlayID,
 		Dockerfile:        req.Dockerfile,
-		BuildContextDir:   req.BuildContextDir,
 		KairosInitImage:   req.KairosInitImage,
 		HadronBase:        req.HadronBase,
 		HadronFirmware:    req.HadronFirmware,
 		HadronLayers:      req.HadronLayers,
 		HadronExtra:       req.HadronExtra,
+
+		Extensions:         req.Extensions,
+		ExtensionsCatalogs: req.ExtensionsCatalogs,
 	}
 	// Set grouped fields.
 	opts.Source = builder.ImageSource{
@@ -279,8 +413,14 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		allowedCommands = append([]string(nil), phonehomeSafeDefaults...)
 	}
 
-	kubernetesEnabled := true
-	if req.KubernetesEnabled != nil {
+	// Kubernetes belongs to the standard variant only: a core image ships no
+	// k3s/k0s at all. Derive the flag from the variant rather than defaulting
+	// it to true, so the value that reaches the build options, the
+	// cloud-config and the persisted record can never contradict the variant.
+	// The UI omits the field entirely for a non-standard variant, and Clone
+	// and Export Config replay the stored record (kairos-io/kairos#4354).
+	kubernetesEnabled := req.Variant == "standard"
+	if kubernetesEnabled && req.KubernetesEnabled != nil {
 		kubernetesEnabled = *req.KubernetesEnabled
 	}
 
@@ -290,6 +430,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		TargetGroupID:      req.Provisioning.TargetGroupId,
 		KubernetesEnabled:  kubernetesEnabled,
 		AllowedCommands:    allowedCommands,
+	}
+	opts.ExtensionHierarchies = builder.ExtensionHierarchies{
+		Sysext:  sysHierarchies,
+		Confext: conHierarchies,
 	}
 
 	// Resolve target group name for cloud-config injection.
@@ -318,6 +462,8 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		username:           req.Provisioning.Username,
 		password:           req.Provisioning.Password,
 		sshKeys:            req.Provisioning.SSHKeys,
+		sysextHierarchies:  sysHierarchies,
+		confextHierarchies: conHierarchies,
 		extraYAML:          req.CloudConfig,
 	})
 
@@ -377,12 +523,18 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			HadronFirmware:          req.HadronFirmware,
 			HadronLayers:            req.HadronLayers,
 			HadronExtra:             req.HadronExtra,
+			Extensions:              req.Extensions,
+			ExtensionsCatalogs:      req.ExtensionsCatalogs,
 			CloudConfig:             opts.CloudConfig,
 			KubernetesDistro:        req.KubernetesDistro,
 			KubernetesVersion:       req.KubernetesVersion,
 			KubernetesEnabled:       boolPtr(kubernetesEnabled),
 			TargetGroupID:           req.Provisioning.TargetGroupId,
-			OverlayRootfs:           req.OverlayRootfs,
+			OverlayID:               req.OverlayID,
+			ExtensionHierarchies: store.ExtensionHierarchies{
+				Sysext:  sysHierarchies,
+				Confext: conHierarchies,
+			},
 		}
 		// A builder that persists on its own (the local backend) will have
 		// already written the row before Build returned; a builder that does
@@ -403,6 +555,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 				}
 				return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to persist build"})
 			}
+		}
+	}
+
+	// Persist bundle rows once the artifact has an ID. Errors here are
+	// non-fatal: the operator can re-attach via PUT /bundle-extensions.
+	if h.bundles != nil && len(bundleRows) > 0 {
+		for i := range bundleRows {
+			bundleRows[i].ArtifactID = status.ID
+		}
+		if err := h.bundles.ReplaceForArtifact(ctx, status.ID, bundleRows); err != nil {
+			c.Logger().Errorf("persist bundle for %s: %v", status.ID, err)
 		}
 	}
 
@@ -740,15 +903,14 @@ func (h *ArtifactHandler) ClearFailed(c echo.Context) error {
 	// here should not block DB cleanup, since the row is what the UI keys
 	// off, and Cancel is idempotent on both backends.
 	if records, err := h.store.List(ctx); err == nil {
+		failed := func(r *store.ArtifactRecord) bool { return r.Phase == store.ArtifactError }
 		for _, r := range records {
-			if r.Phase == store.ArtifactError {
+			if failed(r) {
 				if cancelErr := h.builder.Cancel(ctx, r.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
 					fmt.Fprintf(os.Stderr, "clear-failed: builder.Cancel(%q) failed: %v\n", r.ID, cancelErr)
 				}
 				os.RemoveAll(filepath.Join(h.artifactsDir, r.ID))
-				if r.OverlayRootfs != "" && strings.HasPrefix(r.OverlayRootfs, h.artifactsDir) {
-					os.RemoveAll(r.OverlayRootfs)
-				}
+				h.removeOverlay(records, r.OverlayID, failed)
 			}
 		}
 	}
@@ -794,9 +956,10 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 	outputDir := filepath.Join(h.artifactsDir, id)
 	os.RemoveAll(outputDir)
 
-	// Remove uploaded overlay directory if present.
-	if rec.OverlayRootfs != "" && strings.HasPrefix(rec.OverlayRootfs, h.artifactsDir) {
-		os.RemoveAll(rec.OverlayRootfs)
+	if records, err := h.store.List(ctx); err == nil {
+		h.removeOverlay(records, rec.OverlayID, func(r *store.ArtifactRecord) bool { return r.ID == id })
+	} else {
+		fmt.Fprintf(os.Stderr, "delete: keeping overlay %q, cannot list artifacts: %v\n", rec.OverlayID, err)
 	}
 
 	// Remove Docker image.
@@ -851,52 +1014,117 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 	return c.JSON(http.StatusOK, rec)
 }
 
+// overlayDir returns the directory of the uploaded overlay with the given ID.
+// The ID must be a UUID in its canonical form, so the result is always a
+// direct child of <artifactsDir>/overlays and never anything a crafted value
+// could steer elsewhere.
+func (h *ArtifactHandler) overlayDir(id string) (string, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.String() != id {
+		return "", fmt.Errorf("must be an overlay ID returned by upload-overlay")
+	}
+	return filepath.Join(h.artifactsDir, "overlays", id), nil
+}
+
+// removeOverlay deletes the uploaded overlay with the given ID unless a
+// record in records that is not being deleted still references it. A cloned
+// build carries the overlayId of its source, so one overlay can back several
+// records. An empty or malformed ID removes nothing.
+func (h *ArtifactHandler) removeOverlay(records []*store.ArtifactRecord, id string, beingDeleted func(*store.ArtifactRecord) bool) {
+	if id == "" {
+		return
+	}
+	for _, r := range records {
+		if r.OverlayID == id && !beingDeleted(r) {
+			return
+		}
+	}
+	dir, err := h.overlayDir(id)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "overlay cleanup: refusing stored overlay ID %q: %v\n", id, err)
+		return
+	}
+	os.RemoveAll(dir)
+}
+
+// UploadOverlayResponse is the body returned by UploadOverlay.
+type UploadOverlayResponse struct {
+	// ID references the overlay in a build request's overlayId.
+	ID string `json:"id" format:"uuid"`
+}
+
 // UploadOverlay handles POST /api/v1/artifacts/upload-overlay.
 // Accepts multipart file upload. If the file is .tar.gz/.tgz, extracts it.
-// Otherwise saves files directly. Returns the server-side directory path.
+// Otherwise saves files directly. Returns the overlay ID to pass as overlayId.
+// The overlay is all or nothing: if any part fails, the overlay directory is
+// removed and no ID is returned.
+//
+//	@Summary		Upload a rootfs overlay
+//	@Description	Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build. If any file is rejected or cannot be stored, nothing is kept.
+//	@Tags			Artifacts
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
+//	@Success		200		{object}	UploadOverlayResponse
+//	@Failure		400		{object}	APIError
+//	@Failure		500		{object}	APIError
+//	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
+	}
+	files := form.File["files"]
+	if len(files) == 0 {
+		return c.JSON(400, map[string]string{"error": "no files in the files field"})
+	}
+
 	id := uuid.New().String()
 	overlayDir := filepath.Join(h.artifactsDir, "overlays", id)
 	if err := os.MkdirAll(overlayDir, 0755); err != nil {
 		return c.JSON(500, map[string]string{"error": "failed to create overlay directory"})
 	}
 
-	form, err := c.MultipartForm()
-	if err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
-	}
-
-	files := form.File["files"]
 	for _, fh := range files {
-		src, err := fh.Open()
-		if err != nil {
-			continue
+		if status, msg := saveOverlayPart(fh, overlayDir); status != 0 {
+			_ = os.RemoveAll(overlayDir)
+			return c.JSON(status, map[string]string{"error": msg})
 		}
-
-		name := filepath.Base(fh.Filename)
-
-		// If .tar.gz or .tgz, extract it with full path containment.
-		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
-			if err := extractOverlayTarGz(src, overlayDir); err != nil {
-				src.Close()
-				return c.JSON(400, map[string]string{"error": fmt.Sprintf("failed to extract %s: %v", name, err)})
-			}
-			src.Close()
-			continue
-		}
-
-		// Otherwise save the file directly
-		dst, err := os.Create(filepath.Join(overlayDir, name))
-		if err != nil {
-			src.Close()
-			continue
-		}
-		io.Copy(dst, src)
-		dst.Close()
-		src.Close()
 	}
 
-	return c.JSON(200, map[string]string{"path": overlayDir})
+	return c.JSON(200, UploadOverlayResponse{ID: id})
+}
+
+// saveOverlayPart stores one uploaded file in overlayDir: a .tar.gz or .tgz
+// is extracted, anything else is written under its base name. On failure it
+// returns the HTTP status and a message that names the file but no server
+// path; on success the status is 0.
+func saveOverlayPart(fh *multipart.FileHeader, overlayDir string) (int, string) {
+	name := filepath.Base(fh.Filename)
+	src, err := fh.Open()
+	if err != nil {
+		return 500, fmt.Sprintf("failed to read uploaded file %s", name)
+	}
+	defer func() { _ = src.Close() }()
+
+	if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+		if err := extractOverlayTarGz(src, overlayDir); err != nil {
+			return 400, fmt.Sprintf("failed to extract %s: %v", name, err)
+		}
+		return 0, ""
+	}
+
+	dst, err := os.Create(filepath.Join(overlayDir, name))
+	if err != nil {
+		return 500, fmt.Sprintf("failed to save %s", name)
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil || closeErr != nil {
+		return 500, fmt.Sprintf("failed to save %s", name)
+	}
+	return 0, ""
 }
 
 // maxOverlaySize caps the total uncompressed bytes extracted from a single
@@ -1071,6 +1299,14 @@ type cloudConfigParams struct {
 	username        string
 	password        string
 	sshKeys         string // newline-separated public keys
+	// sysextHierarchies and confextHierarchies are the operator-supplied
+	// mount points (already validated and normalized; /usr and /etc stripped).
+	// When either is non-empty the emitted cloud-config includes a systemd
+	// unit drop-in that sets SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES so the
+	// booted image mounts the requested scopes on top of the implicit
+	// /usr and /etc.
+	sysextHierarchies  []string
+	confextHierarchies []string
 	extraYAML       string // optional: appended verbatim after the canonical block
 }
 
@@ -1174,6 +1410,42 @@ func buildCloudConfig(p cloudConfigParams) string {
 		}
 	}
 
+	// Bake SYSTEMD_{SYSEXT,CONFEXT}_HIERARCHIES drop-ins under stages.boot
+	// when the operator declared extra hierarchies. /usr and /etc are the
+	// implicit scope for sysext and confext respectively; the request-side
+	// validator rejects them upstream, so we prepend them here to match
+	// systemd's default set and the operator's requested extras stay in
+	// their sorted-and-deduped order.
+	if len(p.sysextHierarchies) > 0 || len(p.confextHierarchies) > 0 {
+		var bootEntries []interface{}
+		if len(p.sysextHierarchies) > 0 {
+			paths := append([]string{"/usr"}, p.sysextHierarchies...)
+			bootEntries = append(bootEntries, hierarchyDropIn(
+				"sysext-hierarchies",
+				"/etc/systemd/system/systemd-sysext.service.d/hierarchies.conf",
+				"SYSTEMD_SYSEXT_HIERARCHIES="+strings.Join(paths, ":"),
+			))
+		}
+		if len(p.confextHierarchies) > 0 {
+			paths := append([]string{"/etc"}, p.confextHierarchies...)
+			bootEntries = append(bootEntries, hierarchyDropIn(
+				"confext-hierarchies",
+				"/etc/systemd/system/systemd-confext.service.d/hierarchies.conf",
+				"SYSTEMD_CONFEXT_HIERARCHIES="+strings.Join(paths, ":"),
+			))
+		}
+		stages, _ := doc["stages"].(map[string]interface{})
+		if stages == nil {
+			stages = map[string]interface{}{}
+			doc["stages"] = stages
+		}
+		if existing, ok := stages["boot"].([]interface{}); ok {
+			stages["boot"] = append(existing, bootEntries...)
+		} else {
+			stages["boot"] = bootEntries
+		}
+	}
+
 	// Merge extra YAML (the Advanced field) on top of the canonical doc.
 	// If the user provided their own stages.boot or install: section, it gets
 	// merged under the corresponding top-level key instead of producing a
@@ -1227,6 +1499,22 @@ func mergeYAML(dst, src map[string]interface{}) {
 
 func boolPtr(v bool) *bool { return &v }
 
+// hierarchyDropIn returns a yip stage entry that writes a systemd unit
+// drop-in setting an Environment= line under [Service]. Kairos parses stages
+// via yip; a `files:` entry with permissions 0o644 is written verbatim.
+func hierarchyDropIn(name, path, envLine string) map[string]interface{} {
+	return map[string]interface{}{
+		"name": name,
+		"files": []interface{}{
+			map[string]interface{}{
+				"path":        path,
+				"permissions": 0o644,
+				"content":     "[Service]\nEnvironment=" + envLine + "\n",
+			},
+		},
+	}
+}
+
 // ReconcileOrphanedArtifacts fails every ArtifactRecord still marked Pending or
 // Building. A process restart orphans the goroutine driving an in-flight build,
 // so on startup those rows can never reach a terminal state on their own; flip
@@ -1253,4 +1541,179 @@ func ReconcileOrphanedArtifacts(ctx context.Context, artifacts store.ArtifactSto
 		fmt.Fprintf(os.Stderr, "reconcile: marked orphaned artifact %s (was %s) as Error\n", rec.ID, prevPhase)
 	}
 	return nil
+}
+
+// ListBundleExtensions handles GET /api/v1/artifacts/:id/bundle-extensions.
+//
+//	@Summary	List bundled extensions for an artifact
+//	@Tags		Artifacts
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id	path	string	true	"Artifact ID"
+//	@Success	200	{array}	store.ArtifactExtensionBundle
+//	@Router		/api/v1/artifacts/{id}/bundle-extensions [get]
+func (h *ArtifactHandler) ListBundleExtensions(c echo.Context) error {
+	if h.bundles == nil {
+		return c.JSON(http.StatusOK, []store.ArtifactExtensionBundle{})
+	}
+	entries, err := h.bundles.ListForArtifact(c.Request().Context(), c.Param("id"))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "list failed"})
+	}
+	if entries == nil {
+		entries = []store.ArtifactExtensionBundle{}
+	}
+	return c.JSON(http.StatusOK, entries)
+}
+
+// setBundleEntry is the request shape for PUT /bundle-extensions.
+type setBundleEntry struct {
+	ExtensionName string `json:"extensionName"`
+	ExtensionType string `json:"extensionType"`
+	PinnedVersion string `json:"pinnedVersion,omitempty"`
+	Order         int    `json:"order,omitempty"`
+}
+
+// SetBundleExtensions handles PUT /api/v1/artifacts/:id/bundle-extensions.
+//
+//	@Summary	Replace bundled extensions for an artifact
+//	@Tags		Artifacts
+//	@Accept		json
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id		path	string			true	"Artifact ID"
+//	@Param		body	body	[]setBundleEntry	true	"Replacement set"
+//	@Success	200		{array}	store.ArtifactExtensionBundle
+//	@Failure	400		{object}	APIError
+//	@Failure	404		{object}	APIError
+//	@Router		/api/v1/artifacts/{id}/bundle-extensions [put]
+func (h *ArtifactHandler) SetBundleExtensions(c echo.Context) error {
+	if h.bundles == nil || h.extensions == nil || h.store == nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bundles not configured"})
+	}
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	artifact, err := h.store.GetByID(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+
+	var entries []setBundleEntry
+	if err := c.Bind(&entries); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid body"})
+	}
+
+	out := make([]store.ArtifactExtensionBundle, 0, len(entries))
+	for i, e := range entries {
+		if e.ExtensionName == "" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("[%d]: extensionName required", i)})
+		}
+		if e.ExtensionType != "sysext" && e.ExtensionType != "confext" {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("[%d]: extensionType must be sysext or confext", i)})
+		}
+
+		var ext *store.ExtensionRecord
+		var rErr error
+		if e.PinnedVersion != "" {
+			ext, rErr = h.extensions.FindByNameAndVersion(ctx, e.ExtensionType, e.ExtensionName, e.PinnedVersion)
+		} else {
+			ext, rErr = h.extensions.FindLatestReadyByName(ctx, e.ExtensionType, e.ExtensionName)
+		}
+		if rErr != nil || ext == nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("[%d]: no Ready %s extension matches name=%q version=%q",
+					i, e.ExtensionType, e.ExtensionName, e.PinnedVersion),
+			})
+		}
+		if ext.Arch != artifact.Arch {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("[%d]: extension arch %q does not match artifact arch %q",
+					i, ext.Arch, artifact.Arch),
+			})
+		}
+		out = append(out, store.ArtifactExtensionBundle{
+			ArtifactID:    id,
+			ExtensionName: e.ExtensionName,
+			ExtensionType: e.ExtensionType,
+			PinnedVersion: e.PinnedVersion,
+			Order:         e.Order,
+		})
+	}
+
+	if err := h.bundles.ReplaceForArtifact(ctx, id, out); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "replace failed"})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+// ResolvedBundleEntry is what the UI feeds back into the upgrade command's
+// `extensions` arg. The agent will parse this same shape on the node.
+type ResolvedBundleEntry struct {
+	Name    string `json:"name"`
+	Type    string `json:"type"`
+	Version string `json:"version"`
+	Source  string `json:"source"`
+}
+
+// ResolveBundle handles POST /api/v1/artifacts/:id/bundle-resolve.
+//
+//	@Summary		Resolve bundled extensions for upgrade dispatch
+//	@Description	Returns the bundle entries with concrete download URLs and resolved versions, ready to be passed as the `extensions` arg of an `upgrade` phonehome command.
+//	@Tags			Artifacts
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			id	path	string	true	"Artifact ID"
+//	@Success		200	{array}	ResolvedBundleEntry
+//	@Failure		400	{object}	APIError
+//	@Failure		404	{object}	APIError
+//	@Router			/api/v1/artifacts/{id}/bundle-resolve [post]
+func (h *ArtifactHandler) ResolveBundle(c echo.Context) error {
+	if h.bundles == nil || h.extensions == nil || h.store == nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bundles not configured"})
+	}
+	id := c.Param("id")
+	ctx := c.Request().Context()
+
+	if _, err := h.store.GetByID(ctx, id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+
+	entries, err := h.bundles.ListForArtifact(ctx, id)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "list failed"})
+	}
+
+	out := make([]ResolvedBundleEntry, 0, len(entries))
+	for i, e := range entries {
+		var ext *store.ExtensionRecord
+		var rErr error
+		if e.PinnedVersion != "" {
+			ext, rErr = h.extensions.FindByNameAndVersion(ctx, e.ExtensionType, e.ExtensionName, e.PinnedVersion)
+		} else {
+			ext, rErr = h.extensions.FindLatestReadyByName(ctx, e.ExtensionType, e.ExtensionName)
+		}
+		if rErr != nil || ext == nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{
+				"error": fmt.Sprintf("bundle[%d]: no Ready %s extension matches name=%q version=%q",
+					i, e.ExtensionType, e.ExtensionName, e.PinnedVersion),
+			})
+		}
+		// The node fetches this URL itself, and kairos-agent's http source
+		// sends no Authorization header, so the credential has to be in the
+		// URL. It is the extension's own download token: this source is
+		// written into an upgrade command's `extensions` arg, which reaches
+		// every node in the selector and is kept in the commands table, so it
+		// must never be the admin password.
+		source := fmt.Sprintf("%s/api/v1/extensions/%s/download/%s?token=%s",
+			strings.TrimRight(h.aurorabootURL, "/"), ext.ID, ext.RawFilename,
+			url.QueryEscape(ext.DownloadToken))
+		out = append(out, ResolvedBundleEntry{
+			Name:    ext.Name,
+			Type:    ext.Type,
+			Version: ext.Version,
+			Source:  source,
+		})
+	}
+	return c.JSON(http.StatusOK, out)
 }
