@@ -1,6 +1,6 @@
 module github.com/kairos-io/AuroraBoot
 
-go 1.26.8
+go 1.26.9
 
 // https://github.com/golang/go/blob/583d750fa119d504686c737be6a898994b674b69/src/crypto/x509/parser.go#L1014-L1018
 // For keys with negative serial number:
@@ -33,7 +33,7 @@ require (
 	github.com/u-root/u-root v0.16.0
 	golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92
 	golang.org/x/mod v0.41.0
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
