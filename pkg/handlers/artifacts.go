@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -69,7 +70,8 @@ type ArtifactHandler struct {
 	artifactsDir   string
 }
 
-// NewArtifactHandler creates a new ArtifactHandler.
+// NewArtifactHandler creates a new ArtifactHandler. The builder is wrapped so
+// every request's image references are validated before any backend sees them.
 func NewArtifactHandler(
 	b builder.ArtifactBuilder,
 	artifactStore store.ArtifactStore,
@@ -82,7 +84,7 @@ func NewArtifactHandler(
 	aurorabootURL string,
 ) *ArtifactHandler {
 	return &ArtifactHandler{
-		builder:        b,
+		builder:        builder.NewValidatingArtifactBuilder(b),
 		store:          artifactStore,
 		groups:         groups,
 		secureBootKeys: secureBootKeys,
@@ -111,23 +113,23 @@ type createArtifactRequest struct {
 	HadronFirmware          []string `json:"hadronFirmware"`
 	HadronLayers            []string `json:"hadronLayers"`
 	HadronExtra             string   `json:"hadronExtra"`
-	BuildContextDir         string   `json:"buildContextDir"`
-	OverlayRootfs           string   `json:"overlayRootfs"`
-	KairosInitImage         string `json:"kairosInitImage"`
+	// OverlayID names an overlay uploaded through upload-overlay.
+	OverlayID       string `json:"overlayId"`
+	KairosInitImage string `json:"kairosInitImage"`
 
 	Outputs      artifactOutputs    `json:"outputs"`
 	Signing      *signingConfig     `json:"signing,omitempty"`
 	Provisioning provisioningConfig `json:"provisioning"`
 
 	CloudConfig string `json:"cloudConfig"`
-	OutputDir   string `json:"outputDir"`
 
 	ExtensionHierarchies *extensionHierarchiesReq `json:"extensionHierarchies,omitempty"`
 	BundledExtensions    []createBundleEntry      `json:"bundledExtensions,omitempty"`
 
 	// Extensions are catalog extension names (name or name@version) to
 	// materialize in the built ISO. ExtensionsCatalogs overrides the catalog
-	// they are resolved against; empty means extensions.DefaultCatalog.
+	// they are resolved against; empty means extensions.DefaultCatalog. Each
+	// catalog must be an http or https URL.
 	Extensions         []string `json:"extensions,omitempty"`
 	ExtensionsCatalogs []string `json:"extensionsCatalogs,omitempty"`
 }
@@ -160,10 +162,6 @@ type artifactOutputs struct {
 
 type signingConfig struct {
 	UKIKeySetID         string `json:"ukiKeySetId"`
-	UKISecureBootKey    string `json:"ukiSecureBootKey"`
-	UKISecureBootCert   string `json:"ukiSecureBootCert"`
-	UKITPMPCRKey        string `json:"ukiTpmPcrKey"`
-	UKIPublicKeysDir    string `json:"ukiPublicKeysDir"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll"`
 }
 
@@ -207,6 +205,18 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	var req createArtifactRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+
+	var overlayRootfs string
+	if req.OverlayID != "" {
+		dir, err := h.overlayDir(req.OverlayID)
+		if err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "overlayId: " + err.Error()})
+		}
+		if info, err := os.Stat(dir); err != nil || !info.IsDir() {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "overlayId: no uploaded overlay with this ID"})
+		}
+		overlayRootfs = dir
 	}
 
 	ctx := c.Request().Context()
@@ -291,10 +301,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// UKI key set resolution.
 	var ukiSBKey, ukiSBCert, ukiTPMKey, ukiPubKeysDir string
 	if req.Signing != nil {
-		ukiSBKey = req.Signing.UKISecureBootKey
-		ukiSBCert = req.Signing.UKISecureBootCert
-		ukiTPMKey = req.Signing.UKITPMPCRKey
-		ukiPubKeysDir = req.Signing.UKIPublicKeysDir
 		if req.Signing.UKIKeySetID != "" && h.secureBootKeys != nil {
 			ks, err := h.secureBootKeys.GetByID(ctx, req.Signing.UKIKeySetID)
 			if err != nil {
@@ -310,8 +316,23 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	// Catalog extensions: an unusable name is the operator's mistake, so it is
 	// a 400 here rather than a build that dies after the source image has
 	// already been pulled.
-	if _, err := extensions.ParseRequests(req.Extensions); err != nil {
+	parsedExtensions, err := extensions.ParseRequests(req.Extensions)
+	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+	// A file:// request names a path on this server, which is the CLI's way of
+	// baking an image the operator already has. Over the API it would let the
+	// caller read any file this process can reach and download it back inside
+	// the artifact, so it is refused here rather than resolved.
+	for _, request := range parsedExtensions {
+		if _, isFile := request.FilePath(); isFile {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("extension %q names a local file, which is not allowed over the API", request.Name)})
+		}
+	}
+	for _, catalog := range req.ExtensionsCatalogs {
+		if err := validateCatalogURL(catalog); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "extensionsCatalogs: " + err.Error()})
+		}
 	}
 
 	// Mint the per-build upload token before we hand opts to the builder so
@@ -339,10 +360,9 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		CloudImage:        req.Outputs.CloudImage,
 		Netboot:           req.Outputs.Netboot,
 		CloudConfig:       req.CloudConfig,
-		OutputDir:         req.OutputDir,
-		OverlayRootfs:     req.OverlayRootfs,
+		OverlayRootfs:     overlayRootfs,
+		OverlayID:         req.OverlayID,
 		Dockerfile:        req.Dockerfile,
-		BuildContextDir:   req.BuildContextDir,
 		KairosInitImage:   req.KairosInitImage,
 		HadronBase:        req.HadronBase,
 		HadronFirmware:    req.HadronFirmware,
@@ -510,7 +530,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			KubernetesVersion:       req.KubernetesVersion,
 			KubernetesEnabled:       boolPtr(kubernetesEnabled),
 			TargetGroupID:           req.Provisioning.TargetGroupId,
-			OverlayRootfs:           req.OverlayRootfs,
+			OverlayID:               req.OverlayID,
 			ExtensionHierarchies: store.ExtensionHierarchies{
 				Sysext:  sysHierarchies,
 				Confext: conHierarchies,
@@ -883,15 +903,14 @@ func (h *ArtifactHandler) ClearFailed(c echo.Context) error {
 	// here should not block DB cleanup, since the row is what the UI keys
 	// off, and Cancel is idempotent on both backends.
 	if records, err := h.store.List(ctx); err == nil {
+		failed := func(r *store.ArtifactRecord) bool { return r.Phase == store.ArtifactError }
 		for _, r := range records {
-			if r.Phase == store.ArtifactError {
+			if failed(r) {
 				if cancelErr := h.builder.Cancel(ctx, r.ID); cancelErr != nil && !errors.Is(cancelErr, builder.ErrNotSupported) {
 					fmt.Fprintf(os.Stderr, "clear-failed: builder.Cancel(%q) failed: %v\n", r.ID, cancelErr)
 				}
 				os.RemoveAll(filepath.Join(h.artifactsDir, r.ID))
-				if r.OverlayRootfs != "" && strings.HasPrefix(r.OverlayRootfs, h.artifactsDir) {
-					os.RemoveAll(r.OverlayRootfs)
-				}
+				h.removeOverlay(records, r.OverlayID, failed)
 			}
 		}
 	}
@@ -937,9 +956,10 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 	outputDir := filepath.Join(h.artifactsDir, id)
 	os.RemoveAll(outputDir)
 
-	// Remove uploaded overlay directory if present.
-	if rec.OverlayRootfs != "" && strings.HasPrefix(rec.OverlayRootfs, h.artifactsDir) {
-		os.RemoveAll(rec.OverlayRootfs)
+	if records, err := h.store.List(ctx); err == nil {
+		h.removeOverlay(records, rec.OverlayID, func(r *store.ArtifactRecord) bool { return r.ID == id })
+	} else {
+		fmt.Fprintf(os.Stderr, "delete: keeping overlay %q, cannot list artifacts: %v\n", rec.OverlayID, err)
 	}
 
 	// Remove Docker image.
@@ -994,52 +1014,117 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 	return c.JSON(http.StatusOK, rec)
 }
 
+// overlayDir returns the directory of the uploaded overlay with the given ID.
+// The ID must be a UUID in its canonical form, so the result is always a
+// direct child of <artifactsDir>/overlays and never anything a crafted value
+// could steer elsewhere.
+func (h *ArtifactHandler) overlayDir(id string) (string, error) {
+	parsed, err := uuid.Parse(id)
+	if err != nil || parsed.String() != id {
+		return "", fmt.Errorf("must be an overlay ID returned by upload-overlay")
+	}
+	return filepath.Join(h.artifactsDir, "overlays", id), nil
+}
+
+// removeOverlay deletes the uploaded overlay with the given ID unless a
+// record in records that is not being deleted still references it. A cloned
+// build carries the overlayId of its source, so one overlay can back several
+// records. An empty or malformed ID removes nothing.
+func (h *ArtifactHandler) removeOverlay(records []*store.ArtifactRecord, id string, beingDeleted func(*store.ArtifactRecord) bool) {
+	if id == "" {
+		return
+	}
+	for _, r := range records {
+		if r.OverlayID == id && !beingDeleted(r) {
+			return
+		}
+	}
+	dir, err := h.overlayDir(id)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "overlay cleanup: refusing stored overlay ID %q: %v\n", id, err)
+		return
+	}
+	os.RemoveAll(dir)
+}
+
+// UploadOverlayResponse is the body returned by UploadOverlay.
+type UploadOverlayResponse struct {
+	// ID references the overlay in a build request's overlayId.
+	ID string `json:"id" format:"uuid"`
+}
+
 // UploadOverlay handles POST /api/v1/artifacts/upload-overlay.
 // Accepts multipart file upload. If the file is .tar.gz/.tgz, extracts it.
-// Otherwise saves files directly. Returns the server-side directory path.
+// Otherwise saves files directly. Returns the overlay ID to pass as overlayId.
+// The overlay is all or nothing: if any part fails, the overlay directory is
+// removed and no ID is returned.
+//
+//	@Summary		Upload a rootfs overlay
+//	@Description	Stores the uploaded files as an overlay to copy on top of a build's rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is. Pass the returned ID as overlayId when starting a build. If any file is rejected or cannot be stored, nothing is kept.
+//	@Tags			Artifacts
+//	@Accept			multipart/form-data
+//	@Produce		json
+//	@Security		AdminBearer
+//	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
+//	@Success		200		{object}	UploadOverlayResponse
+//	@Failure		400		{object}	APIError
+//	@Failure		500		{object}	APIError
+//	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
+	form, err := c.MultipartForm()
+	if err != nil {
+		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
+	}
+	files := form.File["files"]
+	if len(files) == 0 {
+		return c.JSON(400, map[string]string{"error": "no files in the files field"})
+	}
+
 	id := uuid.New().String()
 	overlayDir := filepath.Join(h.artifactsDir, "overlays", id)
 	if err := os.MkdirAll(overlayDir, 0755); err != nil {
 		return c.JSON(500, map[string]string{"error": "failed to create overlay directory"})
 	}
 
-	form, err := c.MultipartForm()
-	if err != nil {
-		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
-	}
-
-	files := form.File["files"]
 	for _, fh := range files {
-		src, err := fh.Open()
-		if err != nil {
-			continue
+		if status, msg := saveOverlayPart(fh, overlayDir); status != 0 {
+			_ = os.RemoveAll(overlayDir)
+			return c.JSON(status, map[string]string{"error": msg})
 		}
-
-		name := filepath.Base(fh.Filename)
-
-		// If .tar.gz or .tgz, extract it with full path containment.
-		if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
-			if err := extractOverlayTarGz(src, overlayDir); err != nil {
-				src.Close()
-				return c.JSON(400, map[string]string{"error": fmt.Sprintf("failed to extract %s: %v", name, err)})
-			}
-			src.Close()
-			continue
-		}
-
-		// Otherwise save the file directly
-		dst, err := os.Create(filepath.Join(overlayDir, name))
-		if err != nil {
-			src.Close()
-			continue
-		}
-		io.Copy(dst, src)
-		dst.Close()
-		src.Close()
 	}
 
-	return c.JSON(200, map[string]string{"path": overlayDir})
+	return c.JSON(200, UploadOverlayResponse{ID: id})
+}
+
+// saveOverlayPart stores one uploaded file in overlayDir: a .tar.gz or .tgz
+// is extracted, anything else is written under its base name. On failure it
+// returns the HTTP status and a message that names the file but no server
+// path; on success the status is 0.
+func saveOverlayPart(fh *multipart.FileHeader, overlayDir string) (int, string) {
+	name := filepath.Base(fh.Filename)
+	src, err := fh.Open()
+	if err != nil {
+		return 500, fmt.Sprintf("failed to read uploaded file %s", name)
+	}
+	defer func() { _ = src.Close() }()
+
+	if strings.HasSuffix(name, ".tar.gz") || strings.HasSuffix(name, ".tgz") {
+		if err := extractOverlayTarGz(src, overlayDir); err != nil {
+			return 400, fmt.Sprintf("failed to extract %s: %v", name, err)
+		}
+		return 0, ""
+	}
+
+	dst, err := os.Create(filepath.Join(overlayDir, name))
+	if err != nil {
+		return 500, fmt.Sprintf("failed to save %s", name)
+	}
+	_, copyErr := io.Copy(dst, src)
+	closeErr := dst.Close()
+	if copyErr != nil || closeErr != nil {
+		return 500, fmt.Sprintf("failed to save %s", name)
+	}
+	return 0, ""
 }
 
 // maxOverlaySize caps the total uncompressed bytes extracted from a single

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/urfave/cli/v2"
@@ -95,6 +96,13 @@ var _ = Describe("build-iso", Label("iso", "cmd"), func() {
 		err = app.Run([]string{"", "build-iso", "--live-console", "console=ttyUSB0,115200", "system/cos"})
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).ToNot(ContainSubstring("live-console"))
+		Expect(err.Error()).ToNot(ContainSubstring("unknown"))
+	})
+
+	It("Accepts the default-grub-entry flag", Label("flags"), func() {
+		err = app.Run([]string{"", "build-iso", "--default-grub-entry", constants.LiveGrubEntryBootLocal, "system/cos"})
+		Expect(err).ToNot(BeNil())
+		Expect(err.Error()).ToNot(ContainSubstring("default-grub-entry"))
 		Expect(err.Error()).ToNot(ContainSubstring("unknown"))
 	})
 

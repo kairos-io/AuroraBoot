@@ -3,6 +3,7 @@ package netbootmgr
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -40,6 +41,15 @@ func FromContext(ctx context.Context) *Manager {
 // arrive from, which is also why it can never double as the address to hand
 // out; see AdvertisedAddress.
 const bindAddress = "0.0.0.0"
+
+var (
+	// ErrAlreadyRunning is returned when a start is asked for while a
+	// netboot server is running.
+	ErrAlreadyRunning = errors.New("netboot server is already running")
+	// ErrNoNetbootFiles is returned by Start when the artifact lacks the
+	// kernel, initrd or squashfs. The wrapping error names the missing file.
+	ErrNoNetbootFiles = errors.New("artifact has no netboot files")
+)
 
 // Status represents the current state of the netboot server.
 type Status struct {
@@ -206,7 +216,7 @@ func (m *Manager) Start(artifactsDir, artifactID string) error {
 	// Verify required files exist.
 	for _, f := range []string{kernel, initrd, squashfs} {
 		if _, err := os.Stat(f); err != nil {
-			return fmt.Errorf("required netboot file not found: %s", f)
+			return fmt.Errorf("%w: required netboot file not found: %s", ErrNoNetbootFiles, f)
 		}
 	}
 
@@ -235,7 +245,7 @@ func (m *Manager) StartWithPaths(artifactID, cloudConfig, squashfs, initrd, kern
 	defer m.mu.Unlock()
 
 	if m.status.Running {
-		return fmt.Errorf("netboot server is already running")
+		return ErrAlreadyRunning
 	}
 
 	// AuroraBoot start-pixie args: <cloud-config> <squashfs> <address> <port> <initrd> <kernel>

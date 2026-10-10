@@ -17,6 +17,7 @@ import { NodeTable } from "@/components/NodeTable";
 import { PageHeader } from "@/components/PageHeader";
 import { CommandDialog } from "@/components/CommandDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { groupNodeCount, deleteGroupDescription } from "@/lib/groupNodes";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -54,6 +55,9 @@ export function GroupDetail() {
   const navigate = useNavigate();
   const [group, setGroup] = useState<Group | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
+  // Whether the node list above is the server's answer rather than the empty
+  // initial value. See groupNodeCount.
+  const [nodesLoaded, setNodesLoaded] = useState(false);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   // "group" sends to the whole group, "selection" to the selected rows.
   const [cmdTarget, setCmdTarget] = useState<"group" | "selection" | null>(null);
@@ -66,7 +70,12 @@ export function GroupDetail() {
   useEffect(() => {
     if (!id) return;
     getGroup(id).then(setGroup).catch(() => {});
-    listNodes({ group_id: id }).then(setNodes).catch(() => {});
+    listNodes({ group_id: id })
+      .then((n) => {
+        setNodes(n);
+        setNodesLoaded(true);
+      })
+      .catch(() => {});
   }, [id]);
 
   const selectedIDs = useMemo(() => nodes.filter((n) => selected.has(n.id)).map((n) => n.id), [nodes, selected]);
@@ -225,11 +234,7 @@ export function GroupDetail() {
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
         title="Delete group"
-        description={
-          (group.node_count ?? 0) > 0
-            ? `Delete "${group.name}"? ${group.node_count ?? 0} node(s) will be moved out of this group (they stay registered).`
-            : `Delete "${group.name}"? This group has no nodes.`
-        }
+        description={deleteGroupDescription(group.name, groupNodeCount(group, nodes, nodesLoaded))}
         confirmLabel="Delete"
         destructive
         onConfirm={handleDelete}

@@ -71,20 +71,12 @@ definitions:
     properties:
       ukiKeySetId:
         type: string
-      ukiPublicKeysDir:
-        type: string
-      ukiSecureBootCert:
-        type: string
       ukiSecureBootEnroll:
         enum:
         - "off"
         - manual
         - if-safe
         - force
-        type: string
-      ukiSecureBootKey:
-        type: string
-      ukiTpmPcrKey:
         type: string
     type: object
   handlers.APIClaimRequest:
@@ -114,7 +106,7 @@ definitions:
         description: |-
           Extensions are catalog extension names (name or name@version) to place
           in the built ISO. ExtensionsCatalogs replaces the default catalog they
-          resolve against.
+          resolve against; each one must be an http or https URL.
         items:
           type: string
         type: array
@@ -155,7 +147,9 @@ definitions:
         type: string
       outputs:
         $ref: '#/definitions/handlers.APIArtifactOutputs'
-      overlayRootfs:
+      overlayId:
+        description: ID returned by POST /api/v1/artifacts/upload-overlay
+        format: uuid
         type: string
       provisioning:
         $ref: '#/definitions/handlers.APIArtifactProvisioning'
@@ -376,6 +370,13 @@ definitions:
       version:
         type: string
     type: object
+  handlers.UploadOverlayResponse:
+    properties:
+      id:
+        description: ID references the overlay in a build request's overlayId.
+        format: uuid
+        type: string
+    type: object
   handlers.createExtensionRequest:
     properties:
       arch:
@@ -404,13 +405,24 @@ definitions:
       nodeOnline:
         type: boolean
     type: object
+  handlers.extensionCatalogsResponse:
+    properties:
+      launch:
+        description: Launch are the catalogs given with --extensions-catalog. Read-only.
+        items:
+          type: string
+        type: array
+      saved:
+        description: Saved are the catalogs an operator added at runtime.
+        items:
+          type: string
+        type: array
+    type: object
   handlers.extensionSourceReq:
     properties:
       artifactId:
         type: string
       baseImage:
-        type: string
-      buildContextDir:
         type: string
       dockerfile:
         type: string
@@ -552,7 +564,7 @@ definitions:
         type: string
       netboot:
         type: boolean
-      overlayRootfs:
+      overlayId:
         type: string
       phase:
         type: string
@@ -1108,6 +1120,40 @@ paths:
           schema:
             $ref: '#/definitions/handlers.APIError'
       summary: Upload a single artifact file for a build
+      tags:
+      - Artifacts
+  /api/v1/artifacts/upload-overlay:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Stores the uploaded files as an overlay to copy on top of a build's
+        rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is.
+        Pass the returned ID as overlayId when starting a build. If any file is rejected
+        or cannot be stored, nothing is kept.
+      parameters:
+      - description: Overlay files or a .tar.gz archive
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.UploadOverlayResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Upload a rootfs overlay
       tags:
       - Artifacts
   /api/v1/extensions:
@@ -1792,6 +1838,37 @@ paths:
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/settings/extension-catalogs:
+    get:
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.extensionCatalogsResponse'
+      security:
+      - AdminBearer: []
+      summary: Read the configured extension catalogs
+      tags:
+      - Settings
+    put:
+      consumes:
+      - application/json
+      description: Replaces the catalogs saved from the UI. The catalogs given at
+        launch with --extensions-catalog are not affected.
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.extensionCatalogsResponse'
+      security:
+      - AdminBearer: []
+      summary: Replace the saved extension catalogs
+      tags:
+      - Settings
   /api/v1/settings/image-source:
     get:
       produces:

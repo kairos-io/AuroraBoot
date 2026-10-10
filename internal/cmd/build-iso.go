@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/hashicorp/go-multierror"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal/config"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	"github.com/spectrocloud-labs/herd"
@@ -71,9 +73,13 @@ var BuildISOCmd = cli.Command{
 			Name:  "live-console",
 			Usage: "Replace the console options used when booting from the live/installer ISO",
 		},
+		&cli.StringFlag{
+			Name:  "default-grub-entry",
+			Usage: "Id (grub --id) of the live menu entry to boot when the grub timeout expires. One of " + strings.Join(constants.LiveGrubEntries, ", ") + ". Defaults to \"" + constants.LiveGrubEntryInstall + "\"",
+		},
 		&cli.StringSliceFlag{
 			Name:  "extension",
-			Usage: "Named system extension to include, optionally with @version (repeatable)",
+			Usage: "System extension to include, repeatable. Either a catalog name, optionally with @version, or file://<path> to bake in a .raw image this host already has",
 		},
 		&cli.StringSliceFlag{
 			Name:  "extensions-catalog",
@@ -114,10 +120,16 @@ var BuildISOCmd = cli.Command{
 
 		cloudConfig := ""
 		var err error
-		if ctx.String("cloud-config") != "" {
+		ccPath := ctx.String("cloud-config")
+		if ccPath == "" && len(ctx.Lineage()) > 1 {
+			// A same-named app-level flag given before the subcommand would
+			// otherwise be shadowed by this command's flag.
+			ccPath = ctx.Lineage()[1].String("cloud-config")
+		}
+		if ccPath != "" {
 			// we don't allow templating in this command (like we do at the top level one)
 			// TODO: Should we allow it?
-			cloudConfig, err = config.ReadCloudConfig(ctx.String("cloud-config"), map[string]interface{}{})
+			cloudConfig, err = config.ReadCloudConfig(ccPath, map[string]interface{}{})
 			if err != nil {
 				return fmt.Errorf("reading cloud config: %w", err)
 			}
@@ -142,6 +154,7 @@ var BuildISOCmd = cli.Command{
 			OverlayRootfs:      ctx.String("overlay-rootfs"),
 			ExtendLiveCmdline:  ctx.String("extend-live-cmdline"),
 			LiveConsole:        ctx.String("live-console"),
+			DefaultGrubEntry:   ctx.String("default-grub-entry"),
 			ExtensionsCatalogs: ctx.StringSlice("extensions-catalog"),
 			Extensions:         extensionRequests,
 		}

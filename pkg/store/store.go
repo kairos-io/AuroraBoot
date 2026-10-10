@@ -304,7 +304,7 @@ type ArtifactRecord struct {
 	KubernetesEnabled       *bool                `json:"kubernetesEnabled,omitempty"`
 	TargetGroupID           string               `json:"targetGroupId,omitempty"`
 	ContainerImage          string               `json:"containerImage,omitempty"`
-	OverlayRootfs           string               `json:"overlayRootfs,omitempty"`
+	OverlayID               string               `json:"overlayId,omitempty"`
 	ArtifactFiles           []string             `json:"artifacts" gorm:"serializer:json"`
 	ExtensionHierarchies    ExtensionHierarchies `gorm:"serializer:json" json:"extensionHierarchies"`
 	Logs                    string               `json:"-" gorm:"type:text"`

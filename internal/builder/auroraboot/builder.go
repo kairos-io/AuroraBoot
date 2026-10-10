@@ -80,6 +80,9 @@ type Builder struct {
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
 	netbootManager *netbootmgr.Manager
+	// kairosInitImage is the kairos-init image kairosify uses when a build
+	// does not name one.
+	kairosInitImage string
 }
 
 type buildState struct {
@@ -146,7 +149,24 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 		deployFunc: deployFunc,
 		ukiBuildFn: DefaultUKIBuildFunc,
 		store:      artifactStore,
+
+		kairosInitImage: defaultKairosInitImage + ":" + defaultKairosInitVersion,
 	}
+}
+
+// WithKairosInitImage sets the kairos-init image used for builds that do not
+// name one. It becomes a FROM line in the kairosify Dockerfile, so it is
+// validated here, once, rather than on every build. An empty ref keeps the
+// pinned default.
+func (b *Builder) WithKairosInitImage(ref string) (*Builder, error) {
+	if ref == "" {
+		return b, nil
+	}
+	if err := builder.ValidateImageRef("kairos-init image", ref); err != nil {
+		return nil, err
+	}
+	b.kairosInitImage = ref
+	return b, nil
 }
 
 // WithUKIBuildFunc swaps the pkg/uki.Build implementation used by buildUKI.
@@ -257,7 +277,11 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			KubernetesVersion: opts.Source.KubernetesVersion,
 			KubernetesEnabled: &kubernetesEnabled,
 			TargetGroupID:     opts.Provisioning.TargetGroupID,
-			OverlayRootfs:     opts.OverlayRootfs,
+			OverlayID:         opts.OverlayID,
+			// The artifact page's Build summary and the Clone flow read the
+			// catalog extensions back from the row (kairos-io/kairos#5274).
+			Extensions:         opts.Extensions,
+			ExtensionsCatalogs: opts.ExtensionsCatalogs,
 			ExtensionHierarchies: store.ExtensionHierarchies{
 				Sysext:  opts.ExtensionHierarchies.Sysext,
 				Confext: opts.ExtensionHierarchies.Confext,
@@ -591,10 +615,7 @@ func (b *Builder) kairosify(ctx context.Context, image string, opts builder.Buil
 	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
-		kairosInitImage = os.Getenv("KAIROS_INIT_IMAGE")
-	}
-	if kairosInitImage == "" {
-		kairosInitImage = defaultKairosInitImage + ":" + defaultKairosInitVersion
+		kairosInitImage = b.kairosInitImage
 	}
 
 	// Build kairos-init flags
@@ -734,6 +755,7 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 		AllowInsecureRegistries: opts.Source.AllowInsecureRegistries,
 		Extensions:              extensionRequests,
 		ExtensionsCatalogs:      opts.ExtensionsCatalogs,
+		CloudConfig:             opts.CloudConfig,
 		Logger:                  &log,
 	}
 
