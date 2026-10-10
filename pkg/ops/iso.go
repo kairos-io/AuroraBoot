@@ -123,8 +123,9 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	return c
 }
 
-// GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
+// GenISO generates an ISO from a rootfs, and stores results in dst.
+// The cloud config to embed is read from the path cloudConfigFunc returns.
+func GenISO(srcFunc, dstFunc, cloudConfigFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
 		src := srcFunc()
@@ -141,9 +142,9 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 			i.Name = fmt.Sprintf("kairos-%s", utils.NameFromRootfs(src))
 		}
 
-		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst".
+		// We are assuming StepCopyCloudConfig has already run, writing the config to the path cloudConfigFunc returns.
 		// Copy the cloud config into the temp dir so it ends up on the ISO root.
-		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
+		err = copyFileIfExists(cloudConfigFunc(), filepath.Join(tmp, "config.yaml"))
 		if err != nil {
 			return err
 		}
