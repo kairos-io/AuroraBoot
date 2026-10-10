@@ -238,8 +238,21 @@ jobs:
         with:
           branch: chore/chart-bump-${{ steps.ver.outputs.chart_version }}
           base: main
+          # Attribute the commit to the automation that makes it. The action
+          # defaults author to github.actor, which on a tag push is whoever cut
+          # the release, so a generated tree gets credited to a maintainer who
+          # never wrote it. committer already defaults to this same bot; it is
+          # pinned here so the two cannot drift apart.
+          author: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          committer: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
+          # The DCO app gates this repository and compares the trailer to the
+          # commit's own author, so the sign-off has to name the identity set
+          # above. Without both, every release opens a pull request that is red
+          # from the start and only lands if a second maintainer merges past it.
           commit-message: |
             chore(chart): bump to ${{ steps.ver.outputs.chart_version }}
+
+            Signed-off-by: github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>
           title: "chore(chart): bump to ${{ steps.ver.outputs.chart_version }}"
           body: |
             Syncs `deploy/helm/auroraboot/Chart.yaml` to the just-released
