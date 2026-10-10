@@ -92,6 +92,15 @@ test: ui-build ## Run Go tests
 test-operator-e2e: ## Run the kind-based operator builder e2e suite
 	go test -tags=operator_e2e ./test/operator/... -v -timeout=30m
 
+# Type-check every build-tagged tree without running it. A tag that no default
+# build, vet or lint passes is invisible to all of them, so the tree can stop
+# compiling while CI stays green -- which is what happened to test/operator
+# between 2026-07-24 and kairos-io/kairos#5402. Add one line here per new
+# tagged tree; the CI job calls this target, not the tags.
+.PHONY: vet-tagged
+vet-tagged: ## Type-check build-tagged trees no default build compiles
+	go vet -tags=operator_e2e ./test/operator/...
+
 # Install development dependencies
 install-deps: ## Install development dependencies
 	@echo "Installing Go dependencies..."
