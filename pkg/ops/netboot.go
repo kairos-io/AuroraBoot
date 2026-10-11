@@ -19,6 +19,27 @@ import (
 // but rather at the time of the call, e.g. when the ISO file is downloaded or the destination directory is created.
 type valueGetOnCall func() string
 
+// DefaultNetbootPrefix is the base name of the netboot artifacts when the
+// configuration names none.
+const DefaultNetbootPrefix = "kairos"
+
+// NetbootArtifactPaths returns the three paths ExtractNetboot writes under dst
+// for the given prefix, which is iso.name from the configuration.
+//
+// The server that serves those files has to ask for the same three names, so
+// the producer and the consumer both read them from here. Spelling them twice
+// is what made a run with iso.name set extract <name>-kernel and then serve
+// kairos-kernel.
+func NetbootArtifactPaths(dst, prefix string) (squashFS, kernel, initrd string) {
+	if prefix == "" {
+		prefix = DefaultNetbootPrefix
+	}
+
+	return filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix)),
+		filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix)),
+		filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
+}
+
 // ExtractNetboot extracts all the required netbooting artifacts
 // isoFunc is a function that returns the path to the ISO file
 // we need the function to be passed so its executed in the context of the deployer as otherwise
@@ -28,36 +49,29 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 		src := isoFunc()
 		dst := dstFunc()
 
-		if prefix == "" {
-			prefix = "kairos"
-		}
-
 		if _, err := os.Stat(dst); err != nil && os.IsNotExist(err) {
 			return fmt.Errorf("destination directory %s does not exist: %w", dst, err)
 		}
 		internal.Log.Logger.Info().Str("prefix", prefix).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
 
-		artifact := filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix))
-		err := iso.ExtractFileFromIso("/rootfs.squashfs", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
+		squashFS, kernel, initrd := NetbootArtifactPaths(dst, prefix)
+
+		for _, a := range []struct {
+			inIso, artifact string
+		}{
+			{"/rootfs.squashfs", squashFS},
+			{"/boot/kernel", kernel},
+			{"/boot/initrd", initrd},
+		} {
+			if err := iso.ExtractFileFromIso(a.inIso, src, a.artifact, &internal.Log); err != nil {
+				internal.Log.Logger.Error().Err(err).Str("artifact", a.artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
+				return err
+			}
 		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix))
-		err = iso.ExtractFileFromIso("/boot/kernel", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
-		err = iso.ExtractFileFromIso("/boot/initrd", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
+
 		internal.Log.Logger.Info().Msg("Artifacts extracted")
 
-		return err
+		return nil
 	}
 }
 
