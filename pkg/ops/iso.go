@@ -123,6 +123,25 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	return c
 }
 
+// isoBaseName is the base name the generated ISO is written under, without the
+// ".iso" suffix and without the optional date stamp GenISO adds on top.
+//
+// override_name wins, because it is what --override-name sets and a command
+// line is a deliberate, one-off override of the configuration. iso.name comes
+// next: the schema calls it the final artifact base name, and it is the name
+// the netboot artifacts already carry. With neither set the name is derived
+// from the rootfs kairos-release file, which is the long-standing default.
+func isoBaseName(i schema.ISO, rootfs string) string {
+	switch {
+	case i.OverrideName != "":
+		return i.OverrideName
+	case i.Name != "":
+		return i.Name
+	default:
+		return fmt.Sprintf("kairos-%s", utils.NameFromRootfs(rootfs))
+	}
+}
+
 // GenISO generates an ISO from a rootfs, and stores results in dst
 func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
@@ -134,12 +153,7 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 		}
 		defer os.RemoveAll(tmp)
 
-		if i.OverrideName != "" {
-			i.Name = i.OverrideName
-		} else {
-			// Generate name from the rootfs kairos-release file
-			i.Name = fmt.Sprintf("kairos-%s", utils.NameFromRootfs(src))
-		}
+		i.Name = isoBaseName(i, src)
 
 		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst".
 		// Copy the cloud config into the temp dir so it ends up on the ISO root.
