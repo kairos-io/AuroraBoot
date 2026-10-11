@@ -323,11 +323,11 @@ func (d *Deployer) squashFSfile() string {
 	return filepath.Join(d.dstNetboot(), "kairos.squashfs")
 }
 
-// netbootGrubCfgFile is where ExtractNetboot leaves the livecd grub
-// config. Like the three artifacts above it, the name is the one the
-// extraction writes when the ISO name is left at its default.
+// netbootGrubCfgFile is where ExtractNetboot leaves the livecd grub config. It
+// goes through the same function the extraction does, so a build that sets
+// iso.name reads back the file that run actually wrote.
 func (d *Deployer) netbootGrubCfgFile() string {
-	return filepath.Join(d.dstNetboot(), "kairos-grub.cfg")
+	return ops.NetbootGrubCfgPath(d.dstNetboot(), d.Config.ISO.Name)
 }
 
 func (d *Deployer) isoOption() bool {

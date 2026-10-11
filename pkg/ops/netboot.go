@@ -20,6 +20,24 @@ import (
 // but rather at the time of the call, e.g. when the ISO file is downloaded or the destination directory is created.
 type valueGetOnCall func() string
 
+// DefaultNetbootPrefix is the base name the netboot artifacts carry when the
+// configuration names none.
+const DefaultNetbootPrefix = "kairos"
+
+// NetbootGrubCfgPath is the path ExtractNetboot writes the livecd grub config
+// to, for the given prefix, which is iso.name from the configuration.
+//
+// The server reads that file back to build the netboot cmdline, so it has to
+// ask for the same name. Spelling it on only one side is what made a run with
+// iso.name set write <name>-grub.cfg and then look for kairos-grub.cfg.
+func NetbootGrubCfgPath(dst, prefix string) string {
+	if prefix == "" {
+		prefix = DefaultNetbootPrefix
+	}
+
+	return filepath.Join(dst, fmt.Sprintf("%s-grub.cfg", prefix))
+}
+
 // ExtractNetboot extracts all the required netbooting artifacts
 // isoFunc is a function that returns the path to the ISO file
 // we need the function to be passed so its executed in the context of the deployer as otherwise
@@ -30,7 +48,7 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 		dst := dstFunc()
 
 		if prefix == "" {
-			prefix = "kairos"
+			prefix = DefaultNetbootPrefix
 		}
 
 		if _, err := os.Stat(dst); err != nil && os.IsNotExist(err) {
@@ -61,7 +79,7 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 		// the netboot cmdline is meant to match. Not every ISO has one, so a
 		// miss only costs the caller those options: hence the nil logger, the
 		// error of an expected miss does not belong on the Error channel.
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-grub.cfg", prefix))
+		artifact = NetbootGrubCfgPath(dst, prefix)
 		if err := iso.ExtractFileFromIso(filepath.Join(constants.GrubPrefixDir, constants.GrubCfg), src, artifact, nil); err != nil {
 			internal.Log.Logger.Warn().Err(err).Str("artifact", artifact).Str("source", src).Msg("No livecd grub config in the ISO, netboot will boot with the default cmdline")
 			_ = os.Remove(artifact)
