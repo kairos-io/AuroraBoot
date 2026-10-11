@@ -47,20 +47,26 @@ fi
 # the server down when the deploy returns.
 #
 # SERVE_URL is the base URL the BMC will use (must include the IP/hostname that
-# the BMC management network can reach). SERVE_ADDR is the local bind address
-# (defaults to host:port of SERVE_URL if omitted).
+# the BMC management network can reach). Leave SERVE_ADDR empty to bind the
+# host:port of SERVE_URL; set it when the local bind address differs.
 #
 # Usage: ./deploy.sh <path/to/kairos.iso>
 
 ISO_PATH="${1:?Usage: $0 <path/to/kairos.iso>   OR   $0 --image-url <url>}"
 SERVE_URL="http://10.0.0.5:8090"    # adjust to your management-network address
-# SERVE_ADDR="10.0.0.5:8090"        # uncomment if bind address differs from SERVE_URL
+SERVE_ADDR=""                       # set only if the bind address differs from SERVE_URL
+
+SERVE_ADDR_FLAG=()
+if [[ -n "$SERVE_ADDR" ]]; then
+  SERVE_ADDR_FLAG=(--redfish-serve-addr "$SERVE_ADDR")
+fi
 
 auroraboot redfish deploy \
   --endpoint            "$BMC_ENDPOINT" \
   --username            "$BMC_USER" \
   --password-file       "$BMC_PASSWORD_FILE" \
   --redfish-serve-url   "$SERVE_URL" \
+  "${SERVE_ADDR_FLAG[@]}" \
   --vendor              generic \
   --verify-ssl          \
   --min-memory          4 \
