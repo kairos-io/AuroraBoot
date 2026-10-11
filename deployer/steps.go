@@ -144,7 +144,7 @@ func (d *Deployer) StepExtractNetboot() error {
 		herd.EnableIf(func() bool { return !d.Config.DisableNetboot && !d.rawDiskIsSet() }),
 		herd.ConditionalOption(func() bool { return d.isoOption() }, herd.WithDeps(constants.OpDownloadISO)),
 		herd.ConditionalOption(func() bool { return d.fromImage() }, herd.WithDeps(constants.OpGenISO)),
-		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.getIsoFile, d.dstNetboot, d.Config.ISO.Name)))
+		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.getIsoFile, d.dstNetboot, d.netbootPrefix())))
 }
 
 // StepGenRawDisk Generate the raw disk image.
@@ -311,16 +311,29 @@ func (d *Deployer) netbootReleaseOption() bool {
 	return !d.Config.DisableNetboot && !d.fromImage()
 }
 
+// The three helpers below name the files StepExtractNetboot wrote, so they go
+// through the same function the extraction does. They used to hardcode the
+// kairos prefix, which is correct only while iso.name is unset.
 func (d *Deployer) initrdFile() string {
-	return filepath.Join(d.dstNetboot(), "kairos-initrd")
+	_, _, initrd := ops.NetbootArtifactPaths(d.dstNetboot(), d.netbootPrefix())
+	return initrd
 }
 
 func (d *Deployer) kernelFile() string {
-	return filepath.Join(d.dstNetboot(), "kairos-kernel")
+	_, kernel, _ := ops.NetbootArtifactPaths(d.dstNetboot(), d.netbootPrefix())
+	return kernel
 }
 
 func (d *Deployer) squashFSfile() string {
-	return filepath.Join(d.dstNetboot(), "kairos.squashfs")
+	squashFS, _, _ := ops.NetbootArtifactPaths(d.dstNetboot(), d.netbootPrefix())
+	return squashFS
+}
+
+// netbootPrefix is the base name the netboot artifacts carry. It is the only
+// input ExtractNetboot and the server that serves its output share, so both
+// sides of the pipeline read it from here.
+func (d *Deployer) netbootPrefix() string {
+	return d.Config.ISO.Name
 }
 
 func (d *Deployer) isoOption() bool {
