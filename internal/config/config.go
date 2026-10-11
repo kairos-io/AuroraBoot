@@ -9,6 +9,7 @@ import (
 	"os"
 	"strings"
 	"text/template"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal"
@@ -20,7 +21,21 @@ import (
 const (
 	delimLeft  = "[[["
 	delimRight = "]]]"
+
+	// maxDownloadSize caps what a config or cloud-config fetched over HTTP is
+	// allowed to expand to in memory. The body is read into a string and then
+	// handed to text/template, so an unbounded read is an unbounded allocation
+	// driven by whoever answers the URL. Real configs are kilobytes; 10 MiB
+	// leaves room for a very generous one and still refuses a feed that never
+	// ends.
+	maxDownloadSize = 10 * 1024 * 1024
 )
+
+// downloadTimeout bounds one fetch end to end: connect, headers and body.
+// net/http's default client has no timeout at all, so a server that accepts the
+// connection and then trickles, or never answers, hangs the whole build with no
+// way out but a kill. A variable rather than a constant so a test can lower it.
+var downloadTimeout = 30 * time.Second
 
 func isUrl(s string) bool {
 	u, err := url.Parse(s)
@@ -30,21 +45,33 @@ func isUrl(s string) bool {
 func downloadFile(url string) (content string, err error) {
 	b := bytes.NewBuffer([]byte{})
 	// Get the data
-	resp, err := http.Get(url)
+	client := &http.Client{Timeout: downloadTimeout}
+	resp, err := client.Get(url)
 	if err != nil {
-		return b.String(), err
+		return "", err
 	}
 	defer resp.Body.Close()
 
 	// Check server response
 	if resp.StatusCode != http.StatusOK {
-		return b.String(), fmt.Errorf("bad status: %s", resp.Status)
+		return "", fmt.Errorf("bad status: %s", resp.Status)
 	}
 
-	// Writer the body to file
-	_, err = io.Copy(b, resp.Body)
+	// A declared length over the cap is refused before a byte of the body is
+	// read. ContentLength is -1 when the length is unknown, which the bounded
+	// read below covers instead.
+	if resp.ContentLength > maxDownloadSize {
+		return "", fmt.Errorf("%s is %d bytes, over the %d byte limit for a config", url, resp.ContentLength, maxDownloadSize)
+	}
+
+	// Read one byte past the cap, so a body that stops exactly at the cap is
+	// still accepted and anything longer is refused.
+	n, err := io.Copy(b, io.LimitReader(resp.Body, maxDownloadSize+1))
 	if err != nil {
-		return b.String(), err
+		return "", err
+	}
+	if n > maxDownloadSize {
+		return "", fmt.Errorf("%s is over the %d byte limit for a config", url, maxDownloadSize)
 	}
 
 	return b.String(), nil
