@@ -50,7 +50,7 @@ var _ = Describe("AuroraBoot Builder cloud-config in the build log", func() {
 		GinkgoT().Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
 	})
 
-	It("logs the size and hash of the cloud-config, never its contents", func() {
+	It("logs the size of the cloud-config, never its contents or a digest of them", func() {
 		s := newRecStore()
 		chunks := &chunkCollector{}
 		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).WithLogBroadcaster(chunks)
@@ -71,16 +71,21 @@ var _ = Describe("AuroraBoot Builder cloud-config in the build log", func() {
 			return r.Phase
 		}, 10*time.Second).Should(Equal(store.ArtifactReady))
 
+		want := fmt.Sprintf("Cloud config: %d bytes\n", len(cloudConfig))
+		// A digest of a mostly templated document would let a log reader
+		// test guesses for the secrets in it.
 		sum := sha256.Sum256([]byte(cloudConfig))
-		want := fmt.Sprintf("Cloud config: %d bytes, sha256 %s\n", len(cloudConfig), hex.EncodeToString(sum[:]))
+		digest := hex.EncodeToString(sum[:])
 
 		stored, err := s.GetLogs(context.Background(), "with-cloud-config")
 		Expect(err).NotTo(HaveOccurred())
 		Expect(stored).To(ContainSubstring(want))
 		Expect(stored).NotTo(ContainSubstring(marker))
+		Expect(stored).NotTo(ContainSubstring(digest))
 
 		streamed := chunks.all()
 		Expect(streamed).To(ContainSubstring(want))
 		Expect(streamed).NotTo(ContainSubstring(marker))
+		Expect(streamed).NotTo(ContainSubstring(digest))
 	})
 })

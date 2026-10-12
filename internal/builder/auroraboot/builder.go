@@ -3,8 +3,6 @@ package auroraboot
 import (
 	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"os"
@@ -411,11 +409,11 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		fmt.Fprintf(logWriter, "Output dir: %s\n", outputDir)
 		// The cloud-config carries the registration token, node passwords
 		// and whatever the operator added, and this log is stored and
-		// streamed to every UI client. Its size and hash show which
-		// document went in without showing what it says.
+		// streamed to every UI client. Only its size is logged: most of
+		// the document is a predictable template, so even a digest of it
+		// would let a log reader test guesses for the secrets inside.
 		if opts.CloudConfig != "" {
-			sum := sha256.Sum256([]byte(opts.CloudConfig))
-			fmt.Fprintf(logWriter, "Cloud config: %d bytes, sha256 %s\n", len(opts.CloudConfig), hex.EncodeToString(sum[:]))
+			fmt.Fprintf(logWriter, "Cloud config: %d bytes\n", len(opts.CloudConfig))
 		}
 		fmt.Fprintf(logWriter, "\n")
 		logWriter.Flush()
