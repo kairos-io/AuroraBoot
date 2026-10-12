@@ -31,7 +31,7 @@ require (
 	github.com/spf13/viper v1.21.0 // agent can't use 1.20.0 due to some marshalling changes
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
-	golang.org/x/exp v0.0.0-20261005173118-76772065c9b0
+	golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92
 	golang.org/x/mod v0.41.0
 	golang.org/x/net v0.59.0 // indirect
 	golang.org/x/sys v0.48.0
@@ -42,7 +42,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.2.2
-	github.com/kairos-io/kairos/v4 v4.3.1-0.20261006130410-70e24cf14996
+	github.com/kairos-io/kairos/v4 v4.3.1-0.20261008084833-b7418f05683f
 	github.com/mudler/yip v1.26.4
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.27.0
