@@ -36,6 +36,13 @@ type DeployerFunc func(ctx context.Context, config schema.Config, artifact schem
 // capture the options we pass without running a real build.
 type UKIBuildFunc func(opts uki.Options) error
 
+// KairosifyFunc abstracts the kairos-init derivation step so tests can run the
+// build goroutine end to end without a container runtime. ensureKairosified
+// short-circuits when the Builder has no store, but a test that asserts on the
+// persisted artifact record must pass one, so that short circuit is not
+// available to it and the step would shell out to `docker build` for real.
+type KairosifyFunc func(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logSink io.Writer) (string, error)
+
 // DefaultDeployerFunc runs AuroraBoot for real. When logSink is non-nil the
 // per-Deployer logger is wired to tee stdout + logSink so the UI's live-log
 // pane receives the same progress lines the operator sees in their terminal.
@@ -78,6 +85,7 @@ type Builder struct {
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
 	platformsFn    PlatformsFunc
+	kairosifyFn    KairosifyFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
 	netbootManager *netbootmgr.Manager
@@ -186,6 +194,15 @@ func (b *Builder) WithPlatformsFunc(fn PlatformsFunc) *Builder {
 	return b
 }
 
+// WithKairosifyFunc swaps the kairos-init derivation step. Tests that need a
+// store use this to keep the build goroutine off `docker build`, which would
+// otherwise pull the base and kairos-init images and run for minutes on a
+// machine that has a container runtime.
+func (b *Builder) WithKairosifyFunc(fn KairosifyFunc) *Builder {
+	b.kairosifyFn = fn
+	return b
+}
+
 // WithLogBroadcaster attaches a broadcaster that receives every log chunk
 // flushed by a build. Usually a *ws.UIHub — but kept as an interface so
 // the builder package doesn't have to import ws.
@@ -287,7 +304,7 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			KubernetesVersion: opts.Source.KubernetesVersion,
 			KubernetesEnabled: &kubernetesEnabled,
 			TargetGroupID:     opts.Provisioning.TargetGroupID,
-			OverlayRootfs:     opts.OverlayRootfs,
+			OverlayID:         opts.OverlayID,
 			// The artifact page's Build summary and the Clone flow read the
 			// catalog extensions back from the row (kairos-io/kairos#5274).
 			Extensions:         opts.Extensions,
@@ -612,7 +629,9 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 		// Test mode — skip kairosification (no Docker available)
 		return image, nil
 	}
-	if b.isKairosified(ctx, image) {
+	// The probe below is itself a `docker run`, so an injected derivation step
+	// has to take precedence over it, not only over the build it guards.
+	if b.kairosifyFn == nil && b.isKairosified(ctx, image) {
 		return image, nil
 	}
 	return b.kairosify(ctx, image, opts, outputDir, logWriter)
@@ -628,6 +647,15 @@ func (b *Builder) kairosify(ctx context.Context, image string, opts builder.Buil
 	}
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
+	}
+	// Checked after validation so an injected step can never be handed options
+	// the real one would have refused.
+	if b.kairosifyFn != nil {
+		var sink io.Writer
+		if logWriter != nil {
+			sink = logWriter
+		}
+		return b.kairosifyFn(ctx, image, opts, outputDir, sink)
 	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {
