@@ -19,6 +19,15 @@ func noopDeploy(_ context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ 
 	return nil
 }
 
+// noopKairosify stands in for the kairos-init derivation step. These specs
+// have to pass a store to see the record the builder writes, which means they
+// cannot use the store==nil test-mode short circuit in ensureKairosified, so
+// without this the build goroutine runs a real `docker build` and the phase
+// never leaves Building on any machine that has a container runtime.
+func noopKairosify(_ context.Context, image string, _ builder.BuildOptions, _ string, _ io.Writer) (string, error) {
+	return image, nil
+}
+
 // recStore is a minimal ArtifactStore that captures the record the builder
 // persists at Build time so a test can assert every field the frontend later
 // clones from is on the row. Guarded because b.run() spawns a goroutine that
@@ -111,7 +120,7 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 	// local builds and the cloned form comes up empty.
 	It("persists the Kubernetes fields the clone flow reads from the row", func() {
 		s := newRecStore()
-		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).WithKairosifyFunc(noopKairosify)
 		// The build keeps writing into the TempDir after Build returns, so
 		// join it before Ginkgo removes that tree.
 		DeferCleanup(func() { Expect(b.Shutdown(context.Background())).To(Succeed()) })
@@ -134,7 +143,8 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 				KubernetesEnabled: true,
 				TargetGroupID:     "grp-1",
 			},
-			OverlayRootfs: "/tmp/overlay",
+			OverlayRootfs: "/srv/artifacts/overlays/6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a",
+			OverlayID:     "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a",
 		})
 		Expect(err).NotTo(HaveOccurred())
 
@@ -146,7 +156,7 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 		Expect(rec.KubernetesEnabled).NotTo(BeNil())
 		Expect(*rec.KubernetesEnabled).To(BeTrue())
 		Expect(rec.TargetGroupID).To(Equal("grp-1"))
-		Expect(rec.OverlayRootfs).To(Equal("/tmp/overlay"))
+		Expect(rec.OverlayID).To(Equal("6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a"))
 	})
 })
 
@@ -157,7 +167,7 @@ var _ = Describe("AuroraBoot Builder record persistence of catalog extensions", 
 	// builder must persist them itself.
 	It("persists Extensions and ExtensionsCatalogs", func() {
 		s := newRecStore()
-		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).WithKairosifyFunc(noopKairosify)
 		// Same join as the spec above: the build keeps writing into the
 		// TempDir after Build returns. Waiting for a terminal phase instead
 		// is not a join, and it is not a wait this spec can size: the build

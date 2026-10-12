@@ -321,6 +321,8 @@ github.com/kairos-io/kairos-operator v0.2.2 h1:G05p+FSj5nRqZQRNGU7ovF6liP64smMFf
 github.com/kairos-io/kairos-operator v0.2.2/go.mod h1:4cw0Qwdy5hSUOii08Qd7FFnQcTLPxNfdYqDy9FskrLg=
 github.com/kairos-io/kairos/v4 v4.3.1-0.20261006130410-70e24cf14996 h1:jzCUD6vwsv0UzKB1tRzQzRFWA+x/ZnD849IPYwLFKEo=
 github.com/kairos-io/kairos/v4 v4.3.1-0.20261006130410-70e24cf14996/go.mod h1:+kk8FQe6qLmZF8Jg42lCUdnemThLfOYU6HM3AL2wJ7I=
+github.com/kairos-io/kairos/v4 v4.3.1-0.20261008084833-b7418f05683f h1:NkD3l4E6FwDQ2lXEZXmyoPqWfexmWjhU1KXLNyull18=
+github.com/kairos-io/kairos/v4 v4.3.1-0.20261008084833-b7418f05683f/go.mod h1:+kk8FQe6qLmZF8Jg42lCUdnemThLfOYU6HM3AL2wJ7I=
 github.com/kairos-io/netboot v0.0.0-20260923193508-f2590943fb41 h1:ZDeGNnDAJxc4WcwPTV6r5cjnX7N+V0ChesmT5/cp96U=
 github.com/kairos-io/netboot v0.0.0-20260923193508-f2590943fb41/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
@@ -637,6 +639,8 @@ golang.org/x/crypto v0.57.0 h1:3ZVCjf8Ggz7zneR/EHRVx68Ctf+2pmIMP2UFhh9cC6M=
 golang.org/x/crypto v0.57.0/go.mod h1:Fdz0i5U6CoizGwLda9DttjSk6qlZo25zYNtR+ycvuZA=
 golang.org/x/exp v0.0.0-20261005173118-76772065c9b0 h1:qUp3i6M39kccSm3OMMIE3tvs7YQWO9rFeCKdk1sSaFk=
 golang.org/x/exp v0.0.0-20261005173118-76772065c9b0/go.mod h1:SRjTzy5WcYqRRqquLUvHeeovSwLO0CZ3xcltZNO4Fck=
+golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92 h1:kc+Gi2MFkd0KWtdDlVxVwjw4KB98/77usJDFj+6YFQ8=
+golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92/go.mod h1:SRjTzy5WcYqRRqquLUvHeeovSwLO0CZ3xcltZNO4Fck=
 golang.org/x/lint v0.0.0-20190930215403-16217165b5de/go.mod h1:6SW0HCj/g11FgYtHlgUYUwCkIfeOF89ocIRzGO/8vkc=
 golang.org/x/mod v0.0.0-20190513183733-4bf6d317e70e/go.mod h1:mXi4GBBbnImb6dmsKGUJ2LatrhH/nqhxcFungHvyanc=
 golang.org/x/mod v0.2.0/go.mod h1:s0Qsj1ACt9ePp/hMypM3fl4fZqREWJwdYDEqhRiZZUA=

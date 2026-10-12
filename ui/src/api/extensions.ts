@@ -8,7 +8,6 @@ export interface ExtensionSource {
   baseImage?: string;
   dockerfile?: string;
   extraSteps?: string;
-  buildContextDir?: string;
 }
 
 export interface Extension {

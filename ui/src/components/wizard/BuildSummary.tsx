@@ -28,6 +28,9 @@ export type BuildSummaryData = {
   trustedBoot: boolean;
   outputs: string[];
   overlayFiles: number;
+  // Set when an overlay is attached but its file names are not known, as for
+  // a stored artifact or a clone, which reference the overlay by ID only.
+  overlayAttached?: boolean;
   autoInstall: boolean;
   insecureRegistries: boolean;
 };
@@ -133,7 +136,13 @@ function sections(d: BuildSummaryData): Section[] {
       step: "output",
       rows: [
         { label: "Formats", value: list(d.outputs) },
-        { label: "Overlay files", value: plural(d.overlayFiles, "file", "files") },
+        {
+          label: "Overlay files",
+          value:
+            d.overlayFiles === 0 && d.overlayAttached
+              ? "Attached"
+              : plural(d.overlayFiles, "file", "files"),
+        },
       ],
     },
     {
@@ -207,7 +216,7 @@ export function BuildSummary({ data, onEdit, variant }: BuildSummaryProps) {
 
 // summaryFromArtifact builds the summary from a stored artifact. The store
 // does not keep the user setup, SSH keys, allowed commands, bundled
-// extensions or overlay files, so those stay empty.
+// extensions or overlay file names, so those stay empty.
 // eslint-disable-next-line react-refresh/only-export-components -- used by the artifact page
 export function summaryFromArtifact(a: Artifact): BuildSummaryData {
   const kubernetes =
@@ -233,6 +242,7 @@ export function summaryFromArtifact(a: Artifact): BuildSummaryData {
     trustedBoot: !!a.trustedBoot,
     outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([, label]) => label),
     overlayFiles: 0,
+    overlayAttached: !!a.overlayId,
     autoInstall: !!a.autoInstall,
     insecureRegistries: !!a["allow-insecure-registries"],
   };

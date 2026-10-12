@@ -148,6 +148,7 @@ type registerRequest struct {
 //	@Success		201		{object}	APIRegisterResponse
 //	@Failure		400		{object}	APIError
 //	@Failure		401		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/register [post]
 func (h *NodeHandler) Register(c echo.Context) error {
 	var req registerRequest
@@ -317,6 +318,7 @@ type decommissionResponse struct {
 //	@Param			nodeID	path		string	true	"Node ID"
 //	@Success		200		{object}	decommissionResponse
 //	@Failure		404		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/decommission [post]
 func (h *NodeHandler) Decommission(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -388,6 +390,7 @@ type setLabelsRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetLabelsRequest	true	"Labels payload"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/labels [put]
 func (h *NodeHandler) SetLabels(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -415,6 +418,7 @@ type setGroupRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetGroupRequest	true	"Target group"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/group [put]
 func (h *NodeHandler) SetGroup(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -449,6 +453,7 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 //	@Failure		400		{object}	APIError
 //	@Failure		404		{object}	APIError
 //	@Failure		409		{object}	APIError	"No unclaimed node available (code=NoCapacity)"
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/groups/{id}/claim [post]
 func (h *NodeHandler) Claim(c echo.Context) error {
 	groupID := c.Param("id")
@@ -500,6 +505,7 @@ func (h *NodeHandler) Claim(c echo.Context) error {
 //	@Failure		400		{object}	APIError
 //	@Failure		404		{object}	APIError
 //	@Failure		409		{object}	APIError	"Claimed by a different key (code=ClaimMismatch)"
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/release [post]
 func (h *NodeHandler) Release(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -565,6 +571,7 @@ type heartbeatRequest struct {
 //	@Param			nodeID	path		string					true	"Node ID"
 //	@Param			body	body		APIHeartbeatRequest	true	"Heartbeat payload"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/heartbeat [post]
 func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	nodeID := c.Param("nodeID")
