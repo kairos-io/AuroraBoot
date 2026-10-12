@@ -2,11 +2,13 @@ package auroraboot
 
 import (
 	"bytes"
+	"io"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
 	sdklogger "github.com/kairos-io/kairos/v4/sdk/types/logger"
+	"github.com/rs/zerolog"
 )
 
 var _ = Describe("teeKairosLogger", func() {
@@ -29,5 +31,17 @@ var _ = Describe("teeKairosLogger", func() {
 		_ = teeKairosLogger(base, &sink)
 		base.Logger.Info().Msg("via base only")
 		Expect(sink.Len()).To(Equal(0))
+	})
+
+	It("keeps debug events out of sink when the base logger runs at debug", func() {
+		// Debug events can carry whole documents, such as the deployer's
+		// cloud-config, and sink is the build log every UI client reads.
+		var sink bytes.Buffer
+		base := sdklogger.KairosLogger{Logger: zerolog.New(io.Discard).Level(zerolog.DebugLevel)}
+		tee := teeKairosLogger(base, &sink)
+		tee.Logger.Debug().Str("cloudConfig", "marker-secret").Msg("Cloud config contents")
+		tee.Logger.Info().Msg("Copying cloud config")
+		Expect(sink.String()).To(ContainSubstring("Copying cloud config"))
+		Expect(sink.String()).NotTo(ContainSubstring("marker-secret"))
 	})
 })
