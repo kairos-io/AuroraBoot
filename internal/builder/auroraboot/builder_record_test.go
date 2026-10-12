@@ -20,6 +20,15 @@ func noopDeploy(_ context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ 
 	return nil
 }
 
+// noopKairosify stands in for the kairos-init derivation step. These specs
+// have to pass a store to see the record the builder writes, which means they
+// cannot use the store==nil test-mode short circuit in ensureKairosified, so
+// without this the build goroutine runs a real `docker build` and the phase
+// never leaves Building on any machine that has a container runtime.
+func noopKairosify(_ context.Context, image string, _ builder.BuildOptions, _ string, _ io.Writer) (string, error) {
+	return image, nil
+}
+
 // recStore is a minimal ArtifactStore that captures the record the builder
 // persists at Build time so a test can assert every field the frontend later
 // clones from is on the row. Guarded because b.run() spawns a goroutine that
@@ -112,7 +121,7 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 	// local builds and the cloned form comes up empty.
 	It("persists the Kubernetes fields the clone flow reads from the row", func() {
 		s := newRecStore()
-		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).WithKairosifyFunc(noopKairosify)
 
 		_, err := b.Build(context.Background(), builder.BuildOptions{
 			ID:            "clone-k8s",
@@ -156,7 +165,7 @@ var _ = Describe("AuroraBoot Builder record persistence of catalog extensions", 
 	// builder must persist them itself.
 	It("persists Extensions and ExtensionsCatalogs", func() {
 		s := newRecStore()
-		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s)
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).WithKairosifyFunc(noopKairosify)
 
 		_, err := b.Build(context.Background(), builder.BuildOptions{
 			ID:                 "with-extensions",
