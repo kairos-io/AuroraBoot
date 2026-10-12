@@ -70,7 +70,7 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 			stateAssertVM(vm, "oem.found", "true")
 			stateAssertVM(vm, "persistent.mounted", "true")
 			stateAssertVM(vm, "state.mounted", "true")
-			stateAssertVM(vm, "oem.type", "ext2")
+			stateAssertVM(vm, "oem.type", "ext4")
 			stateAssertVM(vm, "persistent.type", "ext2")
 			stateAssertVM(vm, "state.type", "ext2")
 			stateAssertVM(vm, "oem.mount_point", "/oem")
