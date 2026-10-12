@@ -13,7 +13,10 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/server"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
+	"github.com/labstack/echo/v4"
 )
 
 const mib = 1024 * 1024
@@ -180,5 +183,131 @@ var _ = Describe("Request body limits", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(entries).To(BeEmpty())
 		})
+	})
+})
+
+// unusedExtensionBuilder and unusedDeploymentStore only make server.New mount
+// the extension and deploy routes. The specs that use them never get past
+// authentication or the body limit, so their methods are never called.
+type unusedExtensionBuilder struct{ builder.ExtensionBuilder }
+
+type unusedDeploymentStore struct{ store.DeploymentStore }
+
+// Every route the server mounts, walked from the router itself, so a route
+// added later is covered without touching these specs.
+var _ = Describe("Request body limits on every route", func() {
+	const (
+		nodeID  = "node-1"
+		nodeKey = "node-key"
+	)
+
+	// Routes with a limit of their own, covered by their own specs above.
+	ownLimit := map[string]bool{
+		http.MethodPost + " /api/v1/nodes/register":           true,
+		http.MethodPost + " /api/v1/artifacts/upload-overlay": true,
+		http.MethodPost + " /api/v1/secureboot-keys/import":   true,
+		http.MethodPut + " /api/v1/artifacts/:id/upload/*":    true,
+	}
+
+	var e *echo.Echo
+
+	BeforeEach(func() {
+		e = server.New(server.Config{
+			NodeStore:        &fakeNodeStore{nodes: []*store.ManagedNode{{ID: nodeID, APIKey: nodeKey}}},
+			CommandStore:     &fakeCommandStore{},
+			GroupStore:       &fakeGroupStore{},
+			ArtifactStore:    &fakeArtifactStore{},
+			Builder:          &fakeBuilder{},
+			ExtensionBuilder: unusedExtensionBuilder{},
+			DeploymentStore:  unusedDeploymentStore{},
+			AdminPassword:    "admin-pass",
+			RegToken:         "reg-token",
+			AuroraBootURL:    "http://localhost:8080",
+			ArtifactsDir:     GinkgoT().TempDir(),
+			KeysDir:          GinkgoT().TempDir(),
+		})
+	})
+
+	// bodyRoutes lists the mounted routes that take a request body.
+	bodyRoutes := func() []*echo.Route {
+		var routes []*echo.Route
+		for _, r := range e.Routes() {
+			switch r.Method {
+			case http.MethodPost, http.MethodPut, http.MethodPatch:
+				routes = append(routes, r)
+			}
+		}
+		Expect(routes).NotTo(BeEmpty())
+		return routes
+	}
+
+	// concretePath fills a route template's parameters with values that pass
+	// the node identity check.
+	concretePath := func(template string) string {
+		parts := strings.Split(template, "/")
+		for i, p := range parts {
+			switch {
+			case p == ":nodeID":
+				parts[i] = nodeID
+			case strings.HasPrefix(p, ":"):
+				parts[i] = "x"
+			case p == "*":
+				parts[i] = "file"
+			}
+		}
+		return strings.Join(parts, "/")
+	}
+
+	// send posts 5 MiB of unknown length to the route with the given bearer
+	// token, and returns the response and how much of the body was read.
+	send := func(r *echo.Route, bearer string) (*httptest.ResponseRecorder, int64) {
+		body := &countingReader{size: 5 * mib}
+		req := httptest.NewRequest(r.Method, concretePath(r.Path), body)
+		req.ContentLength = -1
+		req.Header.Set("Content-Type", "application/json")
+		if bearer != "" {
+			req.Header.Set("Authorization", "Bearer "+bearer)
+		}
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		return rec, body.read
+	}
+
+	It("reads no body before authenticating, apart from registration's capped token read", func() {
+		for _, r := range bodyRoutes() {
+			route := r.Method + " " + r.Path
+			rec, read := send(r, "")
+			Expect(rec.Code).To(BeNumerically(">=", 400), route)
+			if route == http.MethodPost+" /api/v1/nodes/register" {
+				Expect(read).To(BeNumerically("<=", 64*1024+1), route)
+				continue
+			}
+			Expect(read).To(BeZero(), route)
+		}
+	})
+
+	It("reads no body of a request to a path with no route", func() {
+		body := &countingReader{size: 5 * mib}
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/no-such-route", body)
+		req.ContentLength = -1
+		rec := httptest.NewRecorder()
+		e.ServeHTTP(rec, req)
+		Expect(body.read).To(BeZero())
+	})
+
+	It("refuses an oversized body of unknown length with 413 once authenticated", func() {
+		for _, r := range bodyRoutes() {
+			route := r.Method + " " + r.Path
+			if ownLimit[route] {
+				continue
+			}
+			// Admin routes take the admin password and agent routes the node
+			// key; a route that refuses one is retried with the other.
+			rec, _ := send(r, "admin-pass")
+			if rec.Code == http.StatusUnauthorized || rec.Code == http.StatusForbidden {
+				rec, _ = send(r, nodeKey)
+			}
+			Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge), route+": "+rec.Body.String())
+		}
 	})
 })

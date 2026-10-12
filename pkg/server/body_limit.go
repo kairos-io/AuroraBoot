@@ -9,27 +9,30 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// maxRequestBodyBytes caps the body of every route without a limit of its own:
-// the JSON API takes a few KiB per request, so 4 MiB is generous headroom.
+// maxRequestBodyBytes caps the body of every authenticated route without a
+// limit of its own: the JSON API takes a few KiB per request, so 4 MiB is
+// generous headroom.
 const maxRequestBodyBytes = 4 * 1024 * 1024
 
-// ownBodyLimitRoutes are the routes, as "METHOD path-template", that enforce
-// a limit of their own: the file uploads, which need a larger one, and node
-// registration, whose middleware reads at most 64 KiB of an unauthenticated
-// body and must be the first to read it.
+// ownBodyLimitRoutes are the admin routes, as "METHOD path-template", that
+// carry file uploads and enforce a larger limit of their own.
 var ownBodyLimitRoutes = map[string]bool{
-	http.MethodPost + " /api/v1/nodes/register":           true,
 	http.MethodPost + " /api/v1/artifacts/upload-overlay": true,
 	http.MethodPost + " /api/v1/secureboot-keys/import":   true,
-	http.MethodPut + " /api/v1/artifacts/:id/upload/*":    true,
 }
+
+// noSkip applies the limit to every route of a group.
+func noSkip(echo.Context) bool { return false }
 
 // skipOwnBodyLimit reports whether the matched route enforces its own limit.
 func skipOwnBodyLimit(c echo.Context) bool {
 	return ownBodyLimitRoutes[c.Request().Method+" "+c.Path()]
 }
 
-// bodyLimit refuses with 413 a request whose body exceeds limit. A declared
+// bodyLimit refuses with 413 a request whose body exceeds limit. It reads the
+// body, so it is mounted on each route group after that group's
+// authentication: a client without credentials must not make the server read
+// or hold anything. A declared
 // Content-Length over the limit is refused without reading anything. A body of
 // unknown length is read up to one byte past the limit and refused if it gets
 // there; otherwise the handler gets the bytes read. Reading it ahead is what
