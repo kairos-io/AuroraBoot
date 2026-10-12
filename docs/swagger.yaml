@@ -879,6 +879,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Start a build
@@ -945,6 +949,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/store.ArtifactRecord'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update artifact metadata (name / saved flag)
@@ -1006,6 +1014,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace bundled extensions for an artifact
@@ -1039,6 +1051,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Resolve bundled extensions for upgrade dispatch
@@ -1055,6 +1071,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Cancel a running build
@@ -1147,6 +1167,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
         "500":
           description: Internal Server Error
           schema:
@@ -1178,6 +1202,10 @@ paths:
             $ref: '#/definitions/builder.ExtensionBuildStatus'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1242,6 +1270,10 @@ paths:
             $ref: '#/definitions/store.NodeGroup'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1316,6 +1348,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update a group
@@ -1354,6 +1390,10 @@ paths:
             $ref: '#/definitions/handlers.APIError'
         "409":
           description: No unclaimed node available (code=NoCapacity)
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1496,6 +1536,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/store.NodeCommand'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Queue a command for a single node
@@ -1522,6 +1566,10 @@ paths:
             $ref: '#/definitions/handlers.decommissionResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1570,6 +1618,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Assign a node to a group
@@ -1596,6 +1648,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - NodeAPIKey: []
       summary: Agent heartbeat
@@ -1622,6 +1678,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace a node's labels
@@ -1689,6 +1749,10 @@ paths:
           description: Claimed by a different key (code=ClaimMismatch)
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Release a node's claim
@@ -1725,6 +1789,10 @@ paths:
             $ref: '#/definitions/handlers.APIError'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       summary: Register a node
@@ -1803,6 +1871,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/store.SecureBootKeySet'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Generate a SecureBoot key set
@@ -1831,6 +1903,10 @@ paths:
             $ref: '#/definitions/store.SecureBootKeySet'
         "409":
           description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1864,6 +1940,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.extensionCatalogsResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace the saved extension catalogs
@@ -1895,6 +1975,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.imageSourceResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update the runtime image-source settings
@@ -1925,6 +2009,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.APIRegistrationTokenResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Rotate the registration token
