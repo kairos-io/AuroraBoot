@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,6 +13,15 @@ import (
 // is allowed. With one, its host and port must equal the request's Host, or
 // the host of publicURL for a reverse proxy that rewrites Host.
 func OriginAllowed(r *http.Request, publicURL string) bool {
+	if originAllowed(r, publicURL) {
+		return true
+	}
+	log.Printf("refused a request from Origin %q: it matches neither the request Host %q nor the public URL host %q (behind a reverse proxy that rewrites Host, set --url / AURORABOOT_URL to the address the browser uses)",
+		r.Header.Get("Origin"), r.Host, publicURLHost(publicURL))
+	return false
+}
+
+func originAllowed(r *http.Request, publicURL string) bool {
 	origin := r.Header.Get("Origin")
 	if origin == "" {
 		return true
@@ -31,4 +41,14 @@ func OriginAllowed(r *http.Request, publicURL string) bool {
 		return false
 	}
 	return strings.EqualFold(u.Host, pub.Host)
+}
+
+// publicURLHost returns the host of publicURL, or "" when it is unset or
+// unparsable.
+func publicURLHost(publicURL string) string {
+	u, err := url.Parse(publicURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
 }

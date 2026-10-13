@@ -1,12 +1,22 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
-import { login } from "@/api/client";
+import { login, type LoginResult } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KairosLogo } from "@/components/KairosLogo";
 import { applyTheme, getStoredTheme } from "@/lib/theme";
+
+function loginErrorMessage(result: LoginResult | null): string {
+  if (result && !result.ok) {
+    if (result.status === 401) return "Invalid password";
+    if (result.status === 403) {
+      return "Sign-in refused: this page's address does not match the server's public URL (--url / AURORABOOT_URL).";
+    }
+  }
+  return "Sign-in failed";
+}
 
 export function Login() {
   const [password, setPassword] = useState("");
@@ -26,16 +36,16 @@ export function Login() {
     setError("");
     setLoading(true);
 
-    let ok = false;
+    let result: LoginResult | null = null;
     try {
-      ok = await login(password);
+      result = await login(password);
     } catch {
-      ok = false;
+      result = null;
     }
-    if (ok) {
+    if (result?.ok) {
       navigate("/");
     } else {
-      setError("Invalid password");
+      setError(loginErrorMessage(result));
       setLoading(false);
     }
   }

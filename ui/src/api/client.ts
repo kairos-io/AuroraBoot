@@ -50,13 +50,15 @@ export function clearLegacyToken() {
 
 // The browser holds the session in an HttpOnly cookie the server sets at
 // login; same-origin requests carry it, and no script can read it.
-export async function login(password: string): Promise<boolean> {
+export type LoginResult = { ok: true } | { ok: false; status: number };
+
+export async function login(password: string): Promise<LoginResult> {
   const res = await fetch("/api/v1/session", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ password }),
   });
-  return res.ok;
+  return res.ok ? { ok: true } : { ok: false, status: res.status };
 }
 
 export async function logout(): Promise<void> {
