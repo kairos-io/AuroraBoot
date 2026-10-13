@@ -80,37 +80,41 @@ func (s *SessionStore) Delete(id string) {
 	delete(s.sessions, id)
 }
 
+// requestIsHTTPS reports whether the request arrived over HTTPS. Echo's
+// Scheme() method only trusts X-Forwarded-Proto from private peers; we check
+// it directly because a spoofed header only causes the spoofer's own cookie
+// to be marked Secure, which a browser will simply refuse to send back over
+// plain HTTP, making the spoof harmless.
+func requestIsHTTPS(c echo.Context) bool {
+	if c.Scheme() == "https" {
+		return true
+	}
+	return c.Request().Header.Get("X-Forwarded-Proto") == "https"
+}
+
 // SetSessionCookie writes the session cookie. It is Secure when the request
 // came over HTTPS, directly or through a proxy that sets X-Forwarded-Proto.
 func SetSessionCookie(c echo.Context, id string, expires time.Time) {
-	secure := c.Scheme() == "https"
-	if c.Request().Header.Get("X-Forwarded-Proto") == "https" {
-		secure = true
-	}
 	c.SetCookie(&http.Cookie{
 		Name:     SessionCookieName,
 		Value:    id,
 		Path:     "/",
 		MaxAge:   int(time.Until(expires).Seconds()),
 		HttpOnly: true,
-		Secure:   secure,
+		Secure:   requestIsHTTPS(c),
 		SameSite: http.SameSiteStrictMode,
 	})
 }
 
 // ClearSessionCookie tells the browser to drop the session cookie.
 func ClearSessionCookie(c echo.Context) {
-	secure := c.Scheme() == "https"
-	if c.Request().Header.Get("X-Forwarded-Proto") == "https" {
-		secure = true
-	}
 	c.SetCookie(&http.Cookie{
 		Name:     SessionCookieName,
 		Value:    "",
 		Path:     "/",
 		MaxAge:   -1,
 		HttpOnly: true,
-		Secure:   secure,
+		Secure:   requestIsHTTPS(c),
 		SameSite: http.SameSiteStrictMode,
 	})
 }

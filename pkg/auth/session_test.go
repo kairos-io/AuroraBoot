@@ -97,4 +97,19 @@ var _ = Describe("Session cookie", func() {
 		Expect(ck.Value).To(BeEmpty())
 		Expect(ck.MaxAge).To(Equal(-1)) // net/http parses Max-Age=0 as -1
 	})
+
+	It("clears with Secure, HttpOnly and SameSite=Strict when X-Forwarded-Proto indicates HTTPS", func() {
+		e := echo.New()
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/session", nil)
+		req.Header.Set("X-Forwarded-Proto", "https")
+		rec := httptest.NewRecorder()
+		auth.ClearSessionCookie(e.NewContext(req, rec))
+		ck := cookieFrom(rec)
+		Expect(ck.Name).To(Equal("auroraboot_session"))
+		Expect(ck.Value).To(BeEmpty())
+		Expect(ck.MaxAge).To(Equal(-1))
+		Expect(ck.HttpOnly).To(BeTrue())
+		Expect(ck.SameSite).To(Equal(http.SameSiteStrictMode))
+		Expect(ck.Secure).To(BeTrue())
+	})
 })
