@@ -49,6 +49,11 @@ jobs:
   build-linux-riscv64:
     runs-on: 'ubuntu-24.04-riscv'
     needs: build-ui
+    # No successful run of this job has ever passed 75 minutes, but it declares
+    # no timeout, so a stall runs into the 6 hour limit GitHub applies instead.
+    # A third of the recent runs ended that way, each holding one of the few
+    # riscv64 runners for five more hours than a healthy run needs.
+    timeout-minutes: 90
     steps:
       - name: Checkout
         uses: actions/checkout@v7
