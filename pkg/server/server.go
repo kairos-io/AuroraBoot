@@ -154,6 +154,8 @@ func New(cfg Config) *echo.Echo {
 	e.Use(middleware.Recover())
 
 	regToken := cfg.RegToken
+	sessions := auth.NewSessionStore()
+	adminAuth := auth.NewAdminAuth(cfg.AdminPassword, sessions, cfg.AuroraBootURL)
 
 	// Create WebSocket hub.
 	hub := cfg.Hub
@@ -291,7 +293,7 @@ func New(cfg Config) *echo.Echo {
 	// (auth.AuthNodeID): agents are node-scoped (own commands only), admins act
 	// across nodes.
 	sharedCmd := e.Group("/api/v1/nodes/:nodeID")
-	sharedCmd.Use(auth.AgentOrAdminMiddleware(cfg.AdminPassword, cfg.NodeStore))
+	sharedCmd.Use(auth.AgentOrAdminMiddleware(adminAuth, cfg.NodeStore))
 	// After auth, so it limits node polls but skips admin (which sets no node ID)
 	// — keeping the CAPI infra provider's command polling exempt. Same instance as
 	// the heartbeat group, so both share one bucket per node.
@@ -302,7 +304,7 @@ func New(cfg Config) *echo.Echo {
 
 	// Admin/UI endpoints (admin password auth)
 	adminGroup := e.Group("/api/v1")
-	adminGroup.Use(auth.AdminMiddleware(cfg.AdminPassword))
+	adminGroup.Use(auth.AdminMiddleware(adminAuth))
 	adminGroup.Use(bodyLimit(maxRequestBodyBytes, skipOwnBodyLimit))
 
 	// Node management
@@ -367,24 +369,24 @@ func New(cfg Config) *echo.Echo {
 	//
 	// Raw build files (ISO/UKI/raw disk/netboot) are admin-only: no node flow
 	// consumes them over HTTP (netboot/Redfish read them from disk server-side), so
-	// a node key must not reach them. AdminMiddleware still honours ?token= for the
-	// UI's browser download links.
-	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.AdminMiddleware(cfg.AdminPassword))
+	// a node key must not reach them. The UI's browser download links carry the
+	// session cookie.
+	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.AdminMiddleware(adminAuth))
 	// The container image is the one artifact a node downloads (to satisfy an
 	// "upgrade from built artifact" command), so it is admin OR a node that such a
 	// command actually assigned this artifact to — never an arbitrary artifact.
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage,
-		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
+		auth.ArtifactImageMiddleware(adminAuth, cfg.NodeStore, cfg.CommandStore))
 	// Extension downloads: admin, the extension's own download token, OR any
 	// authenticated node. Nodes need to fetch extensions bundled into an
 	// assigned upgrade command; per-command scoping analogous to
-	// ArtifactImageMiddleware is a follow-up. Admin may use ?token= here (the
-	// UI's download anchor cannot set a header), and so may the per-extension
-	// token, which is what an install command's source URL carries so that URL
-	// never holds the admin password. A node key stays header-only.
+	// ArtifactImageMiddleware is a follow-up. The per-extension token in ?token= is
+	// what an install command's source URL carries, so that URL never holds the
+	// admin password. An admin uses the session cookie or a Bearer header, and a
+	// node key stays header-only.
 	if extensionHandler != nil {
 		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download,
-			auth.ExtensionDownloadMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.ExtensionStore))
+			auth.ExtensionDownloadMiddleware(adminAuth, cfg.NodeStore, cfg.ExtensionStore))
 	}
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,
