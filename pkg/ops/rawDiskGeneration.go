@@ -438,6 +438,17 @@ func recoveryPartitionSize(recoveryImageSize uint) uint {
 // the journal-less one those image files use (LinuxImgFs, ext2). /oem is
 // written on every install and by the cloud config stages, so an unclean
 // shutdown has to be replayable.
+//
+// History: #233 moved every raw partition from ext4 to ext2 in March 2025,
+// because old GRUB builds died on ext4 feature flags rather than ignoring
+// them. That reason is real, and OEM and recovery are the two partitions it
+// applies to: the grub.cfg on the ESP finds its real config by COS_RECOVERY
+// label and chainloads it, and that config loads grubenv from COS_OEM, so GRUB
+// parses both filesystems before a kernel exists. mkfs runs as
+// "mkfs.ext4 -L <label> <dev>" with no -O, so the feature set is whatever the
+// surrounding e2fsprogs defaults to, and the raw builder's is not the
+// installer's. The raw-bootable e2e test boots the built image on BIOS and
+// EFI, which is what keeps this honest.
 func (r *RawImage) oemPartitionImage(stagingDir, mountPoint string, stagedExtensions int64) sdkImage.Image {
 	return sdkImage.Image{
 		File:       filepath.Join(r.TempDir(), "oem.img"),
