@@ -18,8 +18,8 @@ type SessionHandler struct {
 	auth *auth.AdminAuth
 }
 
-// NewSessionHandler returns a SessionHandler using a for the password check
-// and the session store.
+// NewSessionHandler returns a SessionHandler that checks the password and
+// keeps sessions through the given AdminAuth.
 func NewSessionHandler(a *auth.AdminAuth) *SessionHandler {
 	return &SessionHandler{auth: a}
 }
