@@ -79,6 +79,7 @@ type generateKeysRequest struct {
 //	@Security	AdminBearer
 //	@Param		body	body		APIGenerateKeySetRequest	true	"Key set name + enroll mode"
 //	@Success	201		{object}	store.SecureBootKeySet
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/secureboot-keys/generate [post]
 func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 	var req generateKeysRequest
@@ -264,12 +265,19 @@ func (h *SecureBootHandler) ExportKeys(c echo.Context) error {
 //	@Param		file	formData	file	true	"tar.gz produced by the export endpoint"
 //	@Success	201		{object}	store.SecureBootKeySet
 //	@Failure	409		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/secureboot-keys/import [post]
 func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	if ok, err := limitBody(c, maxImportRequestBytes); !ok {
+		return err
+	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
+		if isBodyTooLarge(err) {
+			return bodyTooLarge(c)
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "missing file field"})
 	}
 	src, err := fileHeader.Open()

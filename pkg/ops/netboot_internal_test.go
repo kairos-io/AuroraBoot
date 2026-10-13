@@ -162,7 +162,10 @@ func TestNetbootCmdlineKeepsAPercentSign(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	got := netbootCmdline("/tmp/kairos.squashfs", "/tmp/config.yaml", func() string { return grubCfgFile }, schema.NetBoot{})
+	got, err := netbootCmdline("/tmp/kairos.squashfs", "/tmp/config.yaml", func() string { return grubCfgFile }, schema.NetBoot{})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if strings.Contains(got, "%!") {
 		t.Errorf("cmdline = %q, want no format-verb errors in it", got)
@@ -179,7 +182,10 @@ func TestNetbootCmdlineKeepsAPercentSign(t *testing.T) {
 func TestNetbootCmdlineOverrideKeepsAPercentSign(t *testing.T) {
 	internal.Log = logger.NewKairosLogger("test", "fatal", false)
 
-	got := netbootCmdline("/tmp/kairos.squashfs", "/tmp/config.yaml", nil, schema.NetBoot{Cmdline: "foo=50% bar=%s"})
+	got, err := netbootCmdline("/tmp/kairos.squashfs", "/tmp/config.yaml", nil, schema.NetBoot{Cmdline: "foo=50% bar=%s"})
+	if err != nil {
+		t.Fatal(err)
+	}
 
 	if strings.Contains(got, "%!") {
 		t.Errorf("cmdline = %q, want no format-verb errors in it", got)
