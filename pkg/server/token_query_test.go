@@ -1,6 +1,8 @@
 package server_test
 
 import (
+	"context"
+	"net/http"
 	"net/http/httptest"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -12,14 +14,17 @@ import (
 )
 
 // The admin password in a query string is no credential on any route, walked
-// from the router so a route added later is covered too.
+// from the router so a route added later is covered too. Each request carries
+// no other credential, so every guarded route must answer 401 before its
+// handler runs: a handler's own 400 or 404 would hide a query password that
+// authenticated.
 var _ = Describe("Admin password in the query string", func() {
 	It("is refused on every route", func() {
 		e := server.New(server.Config{
 			NodeStore:        &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "node-key"}}},
 			CommandStore:     &fakeCommandStore{},
 			GroupStore:       &fakeGroupStore{},
-			ArtifactStore:    &fakeArtifactStore{},
+			ArtifactStore:    &anyArtifactStore{},
 			Builder:          &fakeBuilder{},
 			ExtensionBuilder: unusedExtensionBuilder{},
 			DeploymentStore:  unusedDeploymentStore{},
@@ -36,6 +41,8 @@ var _ = Describe("Admin password in the query string", func() {
 			"GET /api/docs": true, "GET /api/v1/install-agent": true,
 			// The public credential exchange: login takes the password in its body, logout clears any cookie.
 			"POST /api/v1/session": true, "DELETE /api/v1/session": true,
+			// The static UI and node registration, which takes the registration token in its body.
+			"GET /assets/*": true, "POST /api/v1/nodes/register": true,
 		}
 		for _, r := range e.Routes() {
 			route := r.Method + " " + r.Path
@@ -45,10 +52,18 @@ var _ = Describe("Admin password in the query string", func() {
 			req := httptest.NewRequest(r.Method, concreteRoutePath(r.Path)+"?token=admin-pass", nil)
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
-			Expect(rec.Code).To(BeNumerically(">=", 400), route)
+			Expect(rec.Code).To(Equal(http.StatusUnauthorized), route)
 		}
 	})
 })
+
+// anyArtifactStore finds an artifact for every ID, so the upload route, which
+// checks its per-build token after looking the artifact up, reaches that check.
+type anyArtifactStore struct{ fakeArtifactStore }
+
+func (*anyArtifactStore) GetByID(_ context.Context, id string) (*store.ArtifactRecord, error) {
+	return &store.ArtifactRecord{ID: id, UploadToken: "digest-of-another-token"}, nil
+}
 
 // concreteRoutePath fills a route template's parameters.
 func concreteRoutePath(template string) string {
