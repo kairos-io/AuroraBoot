@@ -359,6 +359,11 @@ definitions:
       name:
         type: string
     type: object
+  handlers.LoginRequest:
+    properties:
+      password:
+        type: string
+    type: object
   handlers.ResolvedBundleEntry:
     properties:
       name:
@@ -1914,6 +1919,64 @@ paths:
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/session:
+    delete:
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Sign out
+      tags:
+      - session
+    get:
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Check the session
+      tags:
+      - session
+    post:
+      consumes:
+      - application/json
+      description: Exchanges the admin password for an HttpOnly session cookie that
+        lasts 12 hours. A request carrying an Origin header must come from this server's
+        origin.
+      parameters:
+      - description: Admin password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Sign in
+      tags:
+      - session
   /api/v1/settings/extension-catalogs:
     get:
       produces:

@@ -34,6 +34,8 @@ var _ = Describe("Admin password in the query string", func() {
 			"GET /healthz": true, "GET /readyz": true,
 			"GET /api/v1/openapi.json": true, "GET /api/v1/openapi.yaml": true,
 			"GET /api/docs": true, "GET /api/v1/install-agent": true,
+			// The public credential exchange: login takes the password in its body, logout clears any cookie.
+			"POST /api/v1/session": true, "DELETE /api/v1/session": true,
 		}
 		for _, r := range e.Routes() {
 			route := r.Method + " " + r.Path

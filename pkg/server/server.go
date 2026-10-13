@@ -307,6 +307,13 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.Use(auth.AdminMiddleware(adminAuth))
 	adminGroup.Use(bodyLimit(maxRequestBodyBytes, skipOwnBodyLimit))
 
+	// Session: login reads a capped body before authentication; logout clears
+	// whatever cookie it is given; the check sits behind the admin middleware.
+	sessionHandler := handlers.NewSessionHandler(adminAuth)
+	e.POST("/api/v1/session", sessionHandler.Login)
+	e.DELETE("/api/v1/session", sessionHandler.Logout)
+	adminGroup.GET("/session", sessionHandler.Check)
+
 	// Node management
 	adminGroup.GET("/nodes", nodeHandler.List)
 	adminGroup.GET("/nodes/:nodeID", nodeHandler.Get)
