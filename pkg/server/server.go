@@ -236,9 +236,10 @@ func New(cfg Config) *echo.Echo {
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
-		Hub:      hub,
-		Nodes:    cfg.NodeStore,
-		Commands: cfg.CommandStore,
+		Hub:       hub,
+		Nodes:     cfg.NodeStore,
+		Commands:  cfg.CommandStore,
+		PublicURL: cfg.AuroraBootURL,
 		// Agents report command results over the WS, so the node_extensions
 		// tracking write must hook in here too (not just on the REST
 		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
@@ -252,12 +253,12 @@ func New(cfg Config) *echo.Echo {
 		agentWSHandler.Finalize = deployHandler.MaybeFinalizeForNode
 		agentWSHandler.BaseCtx = cfg.BaseContext
 	}
-	uiWSHandler := &ws.UIHandler{Hub: hub}
+	uiWSHandler := &ws.UIHandler{Hub: hub, PublicURL: cfg.AuroraBootURL}
 
 	// Public endpoints
 	e.GET("/api/v1/install-agent", nodeHandler.InstallScript)
 
-	// WebSocket endpoints (agent auth via query param token)
+	// WebSocket endpoints (the node key comes from the Authorization header or ?token=)
 	e.GET("/api/v1/ws", agentWSHandler.HandleAgentWS)
 
 	// Rate limits for the node-driven endpoints (fleet-server hardening,
