@@ -51,6 +51,18 @@ func TestRedactToken(t *testing.T) {
 			want:      "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&sig=REDACTED",
 		},
 		{
+			name:      "percent-encoded token name",
+			in:        "/api/v1/ws?%74oken=supersecret",
+			wantNoSec: "supersecret",
+			want:      "/api/v1/ws?token=REDACTED",
+		},
+		{
+			name:      "percent-encoded signature name",
+			in:        "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&%73ig=c2lnbmF0dXJl",
+			wantNoSec: "c2lnbmF0dXJl",
+			want:      "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&sig=REDACTED",
+		},
+		{
 			name:      "signature and token together hide the token",
 			in:        "/x?sig=aaaa&token=bbbb",
 			wantNoSec: "bbbb",

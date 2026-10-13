@@ -103,20 +103,16 @@ var redactedParams = []string{"token", "sig"}
 // redactToken returns requestURI with the value of every credential query
 // parameter (token, sig) replaced by "REDACTED", so node keys, extension
 // download tokens and link signatures never reach the access log. Other query
-// parameters and the path are preserved to keep the log useful. If the URI
-// cannot be parsed but still references a credential, it is fully redacted to
-// err on the side of never emitting the secret.
+// parameters and the path are preserved to keep the log useful. The query is
+// always parsed, because a percent-encoded name such as %74oken is decoded to
+// token by the handlers too. If it cannot be parsed, the whole query is
+// redacted to err on the side of never emitting the secret.
 func redactToken(requestURI string) string {
-	if !strings.Contains(requestURI, "token=") && !strings.Contains(requestURI, "sig=") {
+	i := strings.IndexByte(requestURI, '?')
+	if i < 0 {
 		return requestURI
 	}
-
-	path := requestURI
-	rawQuery := ""
-	if i := strings.IndexByte(requestURI, '?'); i >= 0 {
-		path = requestURI[:i]
-		rawQuery = requestURI[i+1:]
-	}
+	path, rawQuery := requestURI[:i], requestURI[i+1:]
 
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
