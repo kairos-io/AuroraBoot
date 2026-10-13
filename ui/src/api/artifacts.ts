@@ -224,8 +224,25 @@ export function cancelArtifact(id: string): Promise<void> {
 }
 
 export function artifactDownloadUrl(id: string, filename: string): string {
-  const token = localStorage.getItem("auroraboot_token") || "";
-  return `/api/v1/artifacts/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+  return `/api/v1/artifacts/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}`;
+}
+
+export function artifactImageUrl(id: string): string {
+  return `/api/v1/artifacts/${encodeURIComponent(id)}/image`;
+}
+
+export interface DownloadLink {
+  path: string;
+  expiresAt: string;
+}
+
+// createDownloadLink asks for a link to one file that works without signing in
+// for one hour, for pasting into a shell or a ticket.
+export function createDownloadLink(id: string, filename: string): Promise<DownloadLink> {
+  return apiFetch<DownloadLink>(`/api/v1/artifacts/${encodeURIComponent(id)}/download-link`, {
+    method: "POST",
+    body: JSON.stringify({ filename }),
+  });
 }
 
 export function updateArtifact(
