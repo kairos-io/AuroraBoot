@@ -6,6 +6,7 @@ import {
   listBundleExtensions,
   listSecureBootKeySets,
   uploadOverlayFiles,
+  type Artifact,
   type CreateArtifactInput,
   type SecureBootKeySet,
 } from "@/api/artifacts";
@@ -631,6 +632,7 @@ export function ArtifactBuilder() {
   // from the current state on every render, so an error goes away as soon as
   // its field is valid again.
   const [shownErrorSteps, setShownErrorSteps] = useState<Set<BuilderStep> | "all">(() => new Set());
+  const [submitError, setSubmitError] = useState("");
   const [overlayFiles, setOverlayFiles] = useState<string[]>([]);
   const [overlayUploading, setOverlayUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -1423,6 +1425,7 @@ export function ArtifactBuilder() {
     // Only allow submission from the Review step (prevents accidental Enter-key submits
     // from inputs or Radix component keyboard handlers on earlier steps).
     if (step !== "review") return;
+    setSubmitError("");
     const fieldErrors = computeErrors();
     if (fieldErrors.length > 0) {
       setShownErrorSteps("all");
@@ -1488,7 +1491,13 @@ export function ArtifactBuilder() {
       cloudConfig: advancedConfig.trim() || undefined,
     };
 
-    const result = await createArtifact(input);
+    let result: Artifact;
+    try {
+      result = await createArtifact(input);
+    } catch (err) {
+      setSubmitError((err as Error).message);
+      return;
+    }
     navigate(`/artifacts/${result.id}`);
   }
 
@@ -1543,6 +1552,7 @@ export function ArtifactBuilder() {
   const errors = liveErrors
     .filter((e) => shownErrorSteps === "all" || shownErrorSteps.has(e.step))
     .map((e) => e.message);
+  if (submitError) errors.push(submitError);
   const stepIndex = BUILDER_STEPS.indexOf(step);
   const currentStepErrors = liveErrors.filter((e) => e.step === step);
   const stepHasErrors = (key: BuilderStep) => liveErrors.some((e) => e.step === key);
