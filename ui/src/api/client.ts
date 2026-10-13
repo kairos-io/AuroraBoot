@@ -1,5 +1,3 @@
-const TOKEN_KEY = "auroraboot_token";
-
 /**
  * ApiError carries the HTTP status plus the parsed response body so callers
  * can render structured errors (e.g. a 409 with the list of artifacts that
@@ -38,42 +36,42 @@ export async function apiErrorFrom(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body, text);
 }
 
-export function getToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
-}
+// The browser holds the session in an HttpOnly cookie the server sets at
+// login; same-origin requests carry it, and no script can read it.
+const LEGACY_TOKEN_KEY = "auroraboot_token";
 
-export function setToken(token: string) {
-  localStorage.setItem(TOKEN_KEY, token);
-}
-
-export function clearToken() {
-  localStorage.removeItem(TOKEN_KEY);
-}
-
-export function login(password: string) {
-  setToken(password);
-}
-
-export function logout() {
-  clearToken();
-}
-
-/**
- * Validate the current token by making a test API call.
- * Returns true if the token is valid, false if 401.
- * Does NOT redirect on 401 (unlike apiFetch).
- */
-export async function validateToken(): Promise<boolean> {
-  const token = getToken();
-  if (!token) return false;
-
+// clearLegacyToken removes an admin password that an earlier version of the
+// UI kept in localStorage.
+export function clearLegacyToken() {
   try {
-    const res = await fetch("/api/v1/nodes", {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    localStorage.removeItem(LEGACY_TOKEN_KEY);
+  } catch {
+    /* storage unavailable */
+  }
+}
+
+export async function login(password: string): Promise<boolean> {
+  const res = await fetch("/api/v1/session", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ password }),
+  });
+  return res.ok;
+}
+
+export async function logout(): Promise<void> {
+  try {
+    await fetch("/api/v1/session", { method: "DELETE" });
+  } catch {
+    /* signed out locally either way */
+  }
+}
+
+// hasSession reports whether the browser holds a live session. It does not
+// redirect on 401, unlike apiFetch.
+export async function hasSession(): Promise<boolean> {
+  try {
+    const res = await fetch("/api/v1/session");
     return res.ok;
   } catch {
     return false;
@@ -84,14 +82,10 @@ export async function apiFetch<T>(
   path: string,
   options: RequestInit = {}
 ): Promise<T> {
-  const token = getToken();
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
   const res = await fetch(path, {
     ...options,
@@ -99,7 +93,6 @@ export async function apiFetch<T>(
   });
 
   if (res.status === 401) {
-    clearToken();
     window.location.href = "/login";
     throw new Error("Unauthorized");
   }
@@ -119,18 +112,13 @@ export async function apiFetchText(
   path: string,
   options: RequestInit = {}
 ): Promise<string> {
-  const token = getToken();
   const headers: Record<string, string> = {
     ...(options.headers as Record<string, string>),
   };
-  if (token) {
-    headers["Authorization"] = `Bearer ${token}`;
-  }
 
   const res = await fetch(path, { ...options, headers });
 
   if (res.status === 401) {
-    clearToken();
     window.location.href = "/login";
     throw new Error("Unauthorized");
   }

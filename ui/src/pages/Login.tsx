@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
-import { login, validateToken } from "@/api/client";
+import { login } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -26,10 +26,13 @@ export function Login() {
     setError("");
     setLoading(true);
 
-    login(password);
-    const valid = await validateToken();
-
-    if (valid) {
+    let ok = false;
+    try {
+      ok = await login(password);
+    } catch {
+      ok = false;
+    }
+    if (ok) {
       navigate("/");
     } else {
       setError("Invalid password");

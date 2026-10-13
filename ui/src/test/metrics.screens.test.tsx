@@ -5,7 +5,6 @@ import { MemoryRouter } from "react-router";
 import { Nodes } from "@/pages/Nodes";
 import { Dashboard } from "@/pages/Dashboard";
 import { Groups } from "@/pages/Groups";
-import { setToken } from "@/api/client";
 import { needsAttention } from "@/lib/activity";
 import type { Node } from "@/api/nodes";
 
@@ -70,7 +69,6 @@ function renderAt(ui: React.ReactNode, url = "/") {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {

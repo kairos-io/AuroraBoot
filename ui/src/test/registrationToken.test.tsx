@@ -4,7 +4,6 @@ import { MemoryRouter } from "react-router";
 
 import { Settings } from "@/pages/Settings";
 import { Import } from "@/pages/Import";
-import { setToken } from "@/api/client";
 
 const TOKEN = "abcdefgh12345678wxyz";
 const ROTATED = "zyxwvuts87654321abcd";
@@ -33,7 +32,6 @@ function mockFetch() {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {
