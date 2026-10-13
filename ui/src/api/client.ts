@@ -36,12 +36,10 @@ export async function apiErrorFrom(res: Response): Promise<ApiError> {
   return new ApiError(res.status, body, text);
 }
 
-// The browser holds the session in an HttpOnly cookie the server sets at
-// login; same-origin requests carry it, and no script can read it.
 const LEGACY_TOKEN_KEY = "auroraboot_token";
 
-// clearLegacyToken removes an admin password that an earlier version of the
-// UI kept in localStorage.
+// clearLegacyToken removes any admin password stored under the legacy
+// localStorage key.
 export function clearLegacyToken() {
   try {
     localStorage.removeItem(LEGACY_TOKEN_KEY);
@@ -50,6 +48,8 @@ export function clearLegacyToken() {
   }
 }
 
+// The browser holds the session in an HttpOnly cookie the server sets at
+// login; same-origin requests carry it, and no script can read it.
 export async function login(password: string): Promise<boolean> {
   const res = await fetch("/api/v1/session", {
     method: "POST",

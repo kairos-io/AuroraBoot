@@ -369,8 +369,9 @@ func (h *ExtensionHandler) Delete(c echo.Context) error {
 }
 
 // Download handles GET /api/v1/extensions/:id/download/:filename. Auth is
-// applied by AgentOrAdminMiddleware in the router (admin password OR node
-// API key via Authorization header or ?token=). This handler only enforces
+// applied by the router's download middleware (admin credential, node API
+// key from the Authorization header, or the extension's own download token
+// in ?token=). This handler only enforces
 // path-traversal safety and streams the file.
 func (h *ExtensionHandler) Download(c echo.Context) error {
 	id := c.Param("id")

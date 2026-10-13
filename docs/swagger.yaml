@@ -843,13 +843,13 @@ info:
     HTTP API for the AuroraBoot Kairos node manager.
 
     Three security schemes are used across the API:
-    * AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.
+    * AdminBearer — Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.
     * NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
     * RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.
 
     Two WebSocket endpoints also exist but are not described in this spec:
-    * GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).
-    * GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).
+    * GET /api/v1/ws — agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).
+    * GET /api/v1/ws/ui — UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
