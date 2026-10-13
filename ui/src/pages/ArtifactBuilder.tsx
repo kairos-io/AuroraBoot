@@ -1495,7 +1495,9 @@ export function ArtifactBuilder() {
     try {
       result = await createArtifact(input);
     } catch (err) {
-      setSubmitError((err as Error).message);
+      const message = (err as Error).message;
+      setSubmitError(message);
+      toast(`Could not start the build: ${message}`, "error");
       return;
     }
     navigate(`/artifacts/${result.id}`);

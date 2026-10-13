@@ -21,6 +21,7 @@ vi.mock("@/api/groups", () => ({
 }));
 
 import { ArtifactBuilder } from "@/pages/ArtifactBuilder";
+import { Toaster } from "@/components/ui/toaster";
 import { ApiError } from "@/api/client";
 import { createArtifact, getArtifact } from "@/api/artifacts";
 
@@ -68,6 +69,7 @@ beforeEach(() => {
 async function openReview() {
   render(
     <MemoryRouter initialEntries={["/artifacts/new?clone=src-artifact-id"]}>
+      <Toaster />
       <Routes>
         <Route path="/artifacts/new" element={<ArtifactBuilder />} />
         <Route path="/artifacts/:id" element={<p>artifact detail page</p>} />
@@ -89,6 +91,9 @@ describe("ArtifactBuilder: Start build", () => {
     fireEvent.click(startBuild);
 
     expect(await screen.findByText(REJECTION)).toBeTruthy();
+    expect(
+      await screen.findByText(`Could not start the build: ${REJECTION}`),
+    ).toBeTruthy();
     expect(createArtifact).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("artifact detail page")).toBeNull();
     const retry = screen.getByRole("button", { name: /Start Build/i }) as HTMLButtonElement;
