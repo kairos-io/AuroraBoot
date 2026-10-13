@@ -30,14 +30,17 @@ func noopKairosify(_ context.Context, image string, _ builder.BuildOptions, _ st
 
 // recStore is a minimal ArtifactStore that captures the record the builder
 // persists at Build time so a test can assert every field the frontend later
-// clones from is on the row. Guarded because b.run() spawns a goroutine that
+// clones from is on the row, and the log it appends. Guarded because b.run() spawns a goroutine that
 // also touches the record via UpdatePhaseMessage.
 type recStore struct {
 	mu   sync.Mutex
 	recs map[string]*store.ArtifactRecord
+	logs map[string]string
 }
 
-func newRecStore() *recStore { return &recStore{recs: map[string]*store.ArtifactRecord{}} }
+func newRecStore() *recStore {
+	return &recStore{recs: map[string]*store.ArtifactRecord{}, logs: map[string]string{}}
+}
 
 func (s *recStore) Create(_ context.Context, rec *store.ArtifactRecord) error {
 	s.mu.Lock()
@@ -106,9 +109,16 @@ func (s *recStore) Delete(_ context.Context, id string) error {
 	delete(s.recs, id)
 	return nil
 }
-func (s *recStore) DeleteByPhase(_ context.Context, _ string) error   { return nil }
-func (s *recStore) GetLogs(_ context.Context, _ string) (string, error) { return "", nil }
-func (s *recStore) AppendLog(_ context.Context, _ string, _ string) error {
+func (s *recStore) DeleteByPhase(_ context.Context, _ string) error { return nil }
+func (s *recStore) GetLogs(_ context.Context, id string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.logs[id], nil
+}
+func (s *recStore) AppendLog(_ context.Context, id string, chunk string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.logs[id] += chunk
 	return nil
 }
 
