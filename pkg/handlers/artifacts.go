@@ -829,13 +829,15 @@ type DownloadLinkResponse struct {
 //
 //	@Summary		Create a download link
 //	@Description	Returns a path that downloads one file of the artifact without other credentials for one hour.
-//	@Tags			artifacts
+//	@Tags			Artifacts
+//	@Security		AdminBearer
 //	@Accept			json
 //	@Produce		json
 //	@Param			id		path	string				true	"Artifact ID"
 //	@Param			body	body	DownloadLinkRequest	true	"File name"
 //	@Success		200	{object}	DownloadLinkResponse
 //	@Failure		400	{object}	APIError
+//	@Failure		401	{object}	APIError
 //	@Failure		404	{object}	APIError
 //	@Failure		413	{object}	APIError
 //	@Router			/api/v1/artifacts/{id}/download-link [post]

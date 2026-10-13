@@ -459,6 +459,11 @@ const docTemplate = `{
         },
         "/api/v1/artifacts/{id}/download-link": {
             "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
                 "description": "Returns a path that downloads one file of the artifact without other credentials for one hour.",
                 "consumes": [
                     "application/json"
@@ -467,7 +472,7 @@ const docTemplate = `{
                     "application/json"
                 ],
                 "tags": [
-                    "artifacts"
+                    "Artifacts"
                 ],
                 "summary": "Create a download link",
                 "parameters": [
@@ -497,6 +502,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -3213,7 +3224,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "AuroraBoot API",
-	Description:      "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer — Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.\n* NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws — agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).\n* GET /api/v1/ws/ui — UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).",
+	Description:      "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.\n* NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).\n* GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

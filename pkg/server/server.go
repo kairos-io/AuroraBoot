@@ -146,9 +146,9 @@ func New(cfg Config) *echo.Echo {
 	// param, the extension download route takes the per-extension download
 	// token there, and signed artifact download links carry a ?sig= signature,
 	// so the raw request URI would otherwise leak those credentials into the
-	// access log (and any downstream proxy logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
-	// redacted URI explicitly instead of the verbatim ${uri} the default
-	// middleware.Logger() prints.
+	// access log (and any downstream proxy logs). RequestLoggerWithConfig (the
+	// non-deprecated logger) lets us emit a redacted URI explicitly instead of
+	// the verbatim ${uri} the default middleware.Logger() prints.
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogRemoteIP: true,
 		LogMethod:   true,
