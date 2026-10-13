@@ -84,10 +84,18 @@ jobs:
           go build -tags ui -v -o auroraboot .
 
       - name: Run tests
+        # On 2026-10-13 four jobs stalled in this step and each held one of the
+        # few riscv64 runners until the job ceiling killed it, with no output
+        # saying what was stuck. A healthy run of this step takes 9 to 11
+        # minutes, so 30 is generous and still bounds the step well inside the
+        # job cap above. The -timeout bounds a hung test and prints the
+        # goroutine dump that names it; the step timeout also covers a stall in
+        # the compile, which -timeout does not reach.
+        timeout-minutes: 30
         run: |
           # Skip e2e and integration tests - they require Docker images or have timing
           # issues on slower riscv64 runners
-          go test -tags ui -v $(go list ./... | grep -v -E '/(e2e|integration)')
+          go test -tags ui -v -timeout 20m $(go list ./... | grep -v -E '/(e2e|integration)')
 
       - name: Show binary info
         run: |
