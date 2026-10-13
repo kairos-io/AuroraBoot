@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchText } from "./client";
+import { apiErrorFrom, apiFetch, apiFetchText } from "./client";
 
 /** Discriminates the build pipeline. Empty and "kairos" are the classic path. */
 export type ArtifactKind = "" | "kairos";
@@ -45,6 +45,9 @@ export interface Artifact {
   kubernetesVersion?: string;
   kubernetesEnabled?: boolean;
   targetGroupId?: string;
+  // Uploaded overlay the artifact was built with, as returned by
+  // uploadOverlayFiles.
+  overlayId?: string;
   containerImage?: string;
   artifacts: string[];
   // Hierarchies the operator declared at build time. Used by the extension
@@ -71,10 +74,6 @@ export interface CreateArtifactOutputs {
 
 export interface CreateArtifactSigning {
   ukiKeySetId: string;
-  ukiSecureBootKey: string;
-  ukiSecureBootCert: string;
-  ukiTpmPcrKey: string;
-  ukiPublicKeysDir: string;
   ukiSecureBootEnroll: string;
 }
 
@@ -119,7 +118,9 @@ export interface CreateArtifactInput {
   // out means the server resolves them against its default catalog.
   extensions?: string[];
   extensionsCatalogs?: string[];
-  overlayRootfs?: string;
+  // ID returned by uploadOverlayFiles; the server copies that overlay on top
+  // of the built rootfs.
+  overlayId?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;
   signing: CreateArtifactSigning;
@@ -250,6 +251,8 @@ export function clearFailedArtifacts(): Promise<void> {
   return apiFetch("/api/v1/artifacts/failed", { method: "DELETE" });
 }
 
+// Stores the files as a rootfs overlay on the server and returns its ID, to
+// be sent as CreateArtifactInput.overlayId.
 export async function uploadOverlayFiles(files: FileList | File[]): Promise<string> {
   const formData = new FormData();
   for (const file of Array.from(files)) {
@@ -261,9 +264,10 @@ export async function uploadOverlayFiles(files: FileList | File[]): Promise<stri
     headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) throw await apiErrorFrom(res);
   const data = await res.json();
-  return data.path;
+  if (typeof data?.id !== "string" || !data.id) throw new Error("Upload returned no overlay ID");
+  return data.id;
 }
 
 export interface ResolvedBundleEntry {
@@ -279,5 +283,28 @@ export function resolveBundle(artifactId: string): Promise<ResolvedBundleEntry[]
   return apiFetch<ResolvedBundleEntry[]>(
     `/api/v1/artifacts/${artifactId}/bundle-resolve`,
     { method: "POST" },
+  );
+}
+
+// BundleExtensionEntry is a stored bundle row, as the server keeps it. The
+// bundle lives in its own table and is not part of the artifact response, so
+// reading it back is a second request.
+export interface BundleExtensionEntry {
+  artifactId: string;
+  extensionName: string;
+  extensionType: string;
+  pinnedVersion?: string;
+  order: number;
+}
+
+// listBundleExtensions returns the raw bundle rows for an artifact. Unlike
+// resolveBundle, which resolves each entry to a concrete version for the
+// agent, this is the stored selection, which is what the builder needs to put
+// an existing bundle back in front of the operator.
+export function listBundleExtensions(
+  artifactId: string,
+): Promise<BundleExtensionEntry[]> {
+  return apiFetch<BundleExtensionEntry[]>(
+    `/api/v1/artifacts/${artifactId}/bundle-extensions`,
   );
 }

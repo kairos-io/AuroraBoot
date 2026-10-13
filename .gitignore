@@ -11,8 +11,8 @@ node_modules
 # Experimental web app build artifacts
 internal/web/
 
-# UI dev output mirror (we commit internal/ui/dist as the canonical
-# embed source so `go install` produces a working binary)
+# UI build output. Vite writes the bundle to internal/ui/dist (ignored by
+# the dist/ pattern above), which internal/ui embeds in builds with the ui tag.
 ui/dist/
 
 # Local fleet-server data dir

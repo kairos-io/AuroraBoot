@@ -37,6 +37,44 @@ var BootHybrid []byte
 //go:embed grub_live_bios.cfg
 var GrubLiveBiosCfg []byte
 
+// Ids of the live menu entries in grub_live_bios.cfg, as given by their
+// `--id`. Grub resolves `set default` against ids before titles, and it
+// truncates the value at the first space while doing so
+// (grub-core/normal/menu.c, get_entry_number_helper), so a title is not
+// usable here: "Kairos (install)" would match an entry whose id is
+// "Kairos" and boot that one instead. Ids carry no spaces for that reason.
+//
+// These strings are part of the template's contract. Renaming an id in the
+// .cfg without renaming the constant leaves `default` naming nothing, and
+// grub silently falls back to the first entry.
+const (
+	// LiveGrubEntryInstall runs the installer. It is one entry, not one per
+	// install style: `kairos-agent interactive-install` is a dispatcher, so
+	// it runs AutoInstall first and installs unattended when the config says
+	// `install.auto: true`, and otherwise shows the welcome page, from which
+	// the user reaches the TUI, the WebUI or a shell. The UKI path has
+	// shipped a single entry (`norole`) for the same reason; this is the
+	// GRUB equivalent, and it is what a live ISO boots when the build does
+	// not name another entry.
+	LiveGrubEntryInstall = "kairos-install"
+	// LiveGrubEntryBootLocal chainloads the system already installed on
+	// the disk (cmdline `kairos.boot_live_mode`).
+	LiveGrubEntryBootLocal = "kairos-boot-local"
+	// LiveGrubEntryDebug boots the live system with the initrd debug
+	// shell and immucore debug logging.
+	LiveGrubEntryDebug = "kairos-debug"
+)
+
+// LiveGrubEntries lists every id a build may name as the default live entry.
+// Grub falls back to the first entry when `set default` matches nothing, so
+// an id outside this list does not fail the boot, it silently boots the first
+// entry. The build refuses such a value instead.
+var LiveGrubEntries = []string{
+	LiveGrubEntryInstall,
+	LiveGrubEntryBootLocal,
+	LiveGrubEntryDebug,
+}
+
 type UkiOutput string
 
 const (
@@ -95,7 +133,25 @@ const (
 	// whole life. A live boot is identified by immucore's
 	// /run/cos/uki_install_mode sentinel instead, which is derived from
 	// removable-media boot. See kairos-io/kairos#5000.
-	UkiCmdline                    = "console=ttyS0 console=tty1 net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
+	//
+	// splash is here for the same reason: it has to be, because there is no
+	// other way to get it onto a Trusted Boot node. kairos-init installs and
+	// enables kairos-splash.service on every systemd image, and that unit is
+	// gated on ConditionKernelCommandLine=splash. On a GRUB system the token
+	// comes from BootArgsCfg; Trusted Boot does not read that file, so without
+	// this the unit is skipped on every boot of every UKI image. The token
+	// turns on the booted-system half only, which covers switch-root to the
+	// login prompt. The initramfs half cannot run on Trusted Boot at all: a
+	// UKI initrd is not built with dracut, so the 50kairos-splash dracut
+	// module is never installed in one. See kairos-io/kairos#5285.
+	//
+	// quiet is deliberately NOT here. kairos-io/kairos#5284 puts it on the
+	// GRUB entries that animate, where an operator can drop it at the boot
+	// menu. Here it could never be dropped, so a node would lose kernel
+	// messages on tty1 and ttyS0 for its whole life. The animation is still
+	// escapable without it: ESC streams /dev/kmsg, and
+	// `systemctl mask kairos-splash.service` turns it off for good.
+	UkiCmdline                    = "console=ttyS0 console=tty1 splash net.ifnames=1 rd.immucore.oemlabel=COS_OEM rd.immucore.oemtimeout=2 rd.immucore.uki selinux=0 panic=5 rd.shell=0 systemd.crash_reboot=yes"
 	UkiSystemdBootx86Name         = "systemd-bootx64.efi"
 	UkiSystemdBootx86Path         = "/amd/systemd-boot/" + UkiSystemdBootx86Name
 	UkiSystemdBootStubx86Name     = "linuxx64.efi.stub"

@@ -406,16 +406,6 @@ var _ = Describe("Server", func() {
 			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
 		})
 	})
-
-	Describe("SPA fallback", func() {
-		It("should serve index.html for HTML requests to unknown paths", func() {
-			req, _ := http.NewRequest(http.MethodGet, e.URL+"/some/spa/route", nil)
-			req.Header.Set("Accept", "text/html")
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
-		})
-	})
 })
 
 var _ = Describe("Artifact download scoping", func() {

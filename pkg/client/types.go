@@ -182,6 +182,7 @@ type Artifact struct {
 	HadronLayers            []string      `json:"hadronLayers,omitempty"`
 	HadronExtra             string        `json:"hadronExtra,omitempty"`
 	CloudConfig             string        `json:"cloudConfig,omitempty"`
+	OverlayID               string        `json:"overlayId,omitempty"`
 	TargetGroupID           string        `json:"targetGroupId,omitempty"`
 	ContainerImage          string        `json:"containerImage,omitempty"`
 	Artifacts               []string      `json:"artifacts,omitempty"`
@@ -192,6 +193,9 @@ type Artifact struct {
 // CreateArtifactRequest is the body of POST /api/v1/artifacts.
 // This is a large struct; most fields are optional and reasonable
 // defaults are applied server-side. Mirrors internal handler DTO.
+//
+// OverlayID references files uploaded with ArtifactsService.UploadOverlay;
+// they are copied on top of the image rootfs.
 type CreateArtifactRequest struct {
 	Name                    string                 `json:"name,omitempty"`
 	BaseImage               string                 `json:"baseImage,omitempty"`
@@ -208,7 +212,7 @@ type CreateArtifactRequest struct {
 	HadronFirmware          []string               `json:"hadronFirmware,omitempty"`
 	HadronLayers            []string               `json:"hadronLayers,omitempty"`
 	HadronExtra             string                 `json:"hadronExtra,omitempty"`
-	OverlayRootfs           string                 `json:"overlayRootfs,omitempty"`
+	OverlayID               string                 `json:"overlayId,omitempty"`
 	KairosInitImage         string                 `json:"kairosInitImage,omitempty"`
 	Outputs                 ArtifactOutputs        `json:"outputs"`
 	Signing                 ArtifactSigning        `json:"signing"`
@@ -232,13 +236,11 @@ type ArtifactOutputs struct {
 	TrustedBoot bool `json:"trustedBoot,omitempty"`
 }
 
-// ArtifactSigning describes UKI SecureBoot signing options.
+// ArtifactSigning describes UKI SecureBoot signing options. Builds are
+// signed with a key set stored on the server, selected by UKIKeySetID
+// (see SecureBootService).
 type ArtifactSigning struct {
 	UKIKeySetID         string `json:"ukiKeySetId,omitempty"`
-	UKISecureBootKey    string `json:"ukiSecureBootKey,omitempty"`
-	UKISecureBootCert   string `json:"ukiSecureBootCert,omitempty"`
-	UKITPMPCRKey        string `json:"ukiTpmPcrKey,omitempty"`
-	UKIPublicKeysDir    string `json:"ukiPublicKeysDir,omitempty"`
 	UKISecureBootEnroll string `json:"ukiSecureBootEnroll,omitempty"`
 }
 
