@@ -49,6 +49,7 @@ type createCommandRequest struct {
 //	@Param		nodeID	path		string					true	"Node ID"
 //	@Param		body	body		APICreateCommandRequest	true	"Command payload"
 //	@Success	201		{object}	store.NodeCommand
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/nodes/{nodeID}/commands [post]
 func (h *CommandHandler) Create(c echo.Context) error {
 	nodeID := c.Param("nodeID")

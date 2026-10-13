@@ -88,6 +88,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -128,6 +134,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -244,6 +256,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/store.ArtifactRecord"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -341,6 +359,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -390,6 +414,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -417,6 +447,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -553,6 +589,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -658,6 +700,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -743,6 +791,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -832,6 +886,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "No unclaimed node available (code=NoCapacity)",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -994,6 +1054,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1109,6 +1175,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/store.NodeCommand"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1143,6 +1215,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -1221,6 +1299,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1261,6 +1345,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1303,6 +1393,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1406,6 +1502,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1471,6 +1573,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/store.SecureBootKeySet"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1516,6 +1624,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -1631,6 +1745,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.extensionCatalogsResponse"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1681,6 +1801,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.imageSourceResponse"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1729,6 +1855,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIRegistrationTokenResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }

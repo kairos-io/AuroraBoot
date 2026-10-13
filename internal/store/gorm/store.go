@@ -706,7 +706,7 @@ func (s *Store) ArtifactDeleteByPhase(ctx context.Context, phase string) error {
 
 func (s *Store) ArtifactAppendLog(ctx context.Context, id string, text string) error {
 	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
-		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", text)).Error
+		Update("logs", cappedLogAppend(text)).Error
 }
 
 // --- SecureBootKeySetStore ---
@@ -966,7 +966,7 @@ func (s *Store) ExtensionAppendLog(ctx context.Context, id, chunk string) error 
 	return s.db.WithContext(ctx).
 		Model(&store.ExtensionRecord{}).
 		Where("id = ?", id).
-		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", chunk)).Error
+		Update("logs", cappedLogAppend(chunk)).Error
 }
 
 // --- ArtifactExtensionBundleStore ---

@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -307,5 +308,55 @@ var _ = Describe("RegistrationTokenAuth", func() {
 		err := handler(c)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+
+	// paddedBody is a registration body carrying the valid token, padded to
+	// size bytes so only its size can make it fail.
+	paddedBody := func(size int) string {
+		prefix := `{"registrationToken":"reg-token-123","hostname":"`
+		suffix := `"}`
+		return prefix + strings.Repeat("h", size-len(prefix)-len(suffix)) + suffix
+	}
+
+	DescribeTable("refuses a body over 64 KiB with 413 without calling the next handler",
+		func(contentLength func(body string) int64) {
+			body := paddedBody(64*1024 + 1)
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.ContentLength = contentLength(body)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			called := false
+			handler := middleware(func(c echo.Context) error {
+				called = true
+				return c.String(http.StatusOK, "ok")
+			})
+			Expect(handler(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge))
+			Expect(rec.Body.String()).To(ContainSubstring(`"error"`))
+			Expect(called).To(BeFalse())
+		},
+		Entry("with a declared Content-Length", func(body string) int64 { return int64(len(body)) }),
+		Entry("with a body of unknown length", func(string) int64 { return -1 }),
+	)
+
+	It("authenticates a body of exactly 64 KiB and hands it on intact", func() {
+		body := paddedBody(64 * 1024)
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		var seen []byte
+		handler := middleware(func(c echo.Context) error {
+			var err error
+			seen, err = io.ReadAll(c.Request().Body)
+			Expect(err).NotTo(HaveOccurred())
+			return c.String(http.StatusOK, "ok")
+		})
+		Expect(handler(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(string(seen)).To(Equal(body))
 	})
 })

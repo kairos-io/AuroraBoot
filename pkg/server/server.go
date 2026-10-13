@@ -280,6 +280,7 @@ func New(cfg Config) *echo.Echo {
 	agentGroup.Use(auth.RequireNodeMatch)
 	// After node auth, so the limiter keys on the authenticated node ID.
 	agentGroup.Use(nodeLimiter)
+	agentGroup.Use(bodyLimit(maxRequestBodyBytes, noSkip))
 	agentGroup.POST("/heartbeat", nodeHandler.Heartbeat)
 
 	// Shared command routes used by BOTH the agent (poll/report) and the
@@ -295,12 +296,14 @@ func New(cfg Config) *echo.Echo {
 	// — keeping the CAPI infra provider's command polling exempt. Same instance as
 	// the heartbeat group, so both share one bucket per node.
 	sharedCmd.Use(nodeLimiter)
+	sharedCmd.Use(bodyLimit(maxRequestBodyBytes, noSkip))
 	sharedCmd.GET("/commands", nodeHandler.GetCommands)
 	sharedCmd.PUT("/commands/:commandID/status", cmdHandler.UpdateStatus)
 
 	// Admin/UI endpoints (admin password auth)
 	adminGroup := e.Group("/api/v1")
 	adminGroup.Use(auth.AdminMiddleware(cfg.AdminPassword))
+	adminGroup.Use(bodyLimit(maxRequestBodyBytes, skipOwnBodyLimit))
 
 	// Node management
 	adminGroup.GET("/nodes", nodeHandler.List)

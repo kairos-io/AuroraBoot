@@ -68,6 +68,7 @@ func (h *SettingsHandler) GetExtensionCatalogs(c echo.Context) error {
 //	@Produce		json
 //	@Security		AdminBearer
 //	@Success		200	{object}	extensionCatalogsResponse
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/settings/extension-catalogs [put]
 func (h *SettingsHandler) UpdateExtensionCatalogs(c echo.Context) error {
 	var req updateExtensionCatalogsRequest
