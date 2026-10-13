@@ -96,14 +96,18 @@ func firstPositive(v, fallback float64) float64 {
 	return fallback
 }
 
-// redactToken returns requestURI with the value of any "token" query parameter
-// replaced by "REDACTED", so credentials passed as ?token= (WebSocket auth and
-// artifact download links) never reach the access log. Other query parameters
-// and the path are preserved to keep the log useful. If the URI cannot be
-// parsed but still references a token, it is fully redacted to err on the side
-// of never emitting the secret.
+// redactedParams are query parameters that carry credentials: a node key, a
+// per-extension download token, or a download link signature.
+var redactedParams = []string{"token", "sig"}
+
+// redactToken returns requestURI with the value of every credential query
+// parameter (token, sig) replaced by "REDACTED", so node keys, extension
+// download tokens and link signatures never reach the access log. Other query
+// parameters and the path are preserved to keep the log useful. If the URI
+// cannot be parsed but still references a credential, it is fully redacted to
+// err on the side of never emitting the secret.
 func redactToken(requestURI string) string {
-	if !strings.Contains(requestURI, "token=") {
+	if !strings.Contains(requestURI, "token=") && !strings.Contains(requestURI, "sig=") {
 		return requestURI
 	}
 
@@ -116,13 +120,19 @@ func redactToken(requestURI string) string {
 
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		// Could not parse the query string; refuse to risk leaking the token.
+		// Could not parse the query string; refuse to risk leaking a credential.
 		return path + "?REDACTED"
 	}
-	if !values.Has("token") {
+	changed := false
+	for _, p := range redactedParams {
+		if values.Has(p) {
+			values.Set(p, "REDACTED")
+			changed = true
+		}
+	}
+	if !changed {
 		return requestURI
 	}
-	values.Set("token", "REDACTED")
 	return path + "?" + values.Encode()
 }
 
@@ -133,10 +143,10 @@ func New(cfg Config) *echo.Echo {
 
 	// Use a request logger whose URI is run through redactToken before it is
 	// written. The agent WebSocket takes the node API key as a ?token= query
-	// param and the extension download route takes the per-extension download
-	// token there, and a client may still send the admin password in it, so the
-	// raw request URI would otherwise leak those credentials into the access log
-	// (and any downstream proxy logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
+	// param, the extension download route takes the per-extension download
+	// token there, and signed artifact download links carry a ?sig= signature,
+	// so the raw request URI would otherwise leak those credentials into the
+	// access log (and any downstream proxy logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
 	// redacted URI explicitly instead of the verbatim ${uri} the default
 	// middleware.Logger() prints.
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -156,6 +166,7 @@ func New(cfg Config) *echo.Echo {
 	regToken := cfg.RegToken
 	sessions := auth.NewSessionStore()
 	adminAuth := auth.NewAdminAuth(cfg.AdminPassword, sessions, cfg.AuroraBootURL)
+	linkSigner := auth.NewLinkSigner()
 
 	// Create WebSocket hub.
 	hub := cfg.Hub
@@ -210,7 +221,7 @@ func New(cfg Config) *echo.Echo {
 	}
 	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
-	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL).WithLinkSigner(linkSigner)
 	var extensionHandler *handlers.ExtensionHandler
 	if cfg.ExtensionBuilder != nil {
 		extensionHandler = handlers.NewExtensionHandler(
@@ -350,6 +361,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.GET("/artifacts/:id", artifactHandler.Get)
 	adminGroup.GET("/artifacts/:id/logs", artifactHandler.GetLogs)
 	adminGroup.POST("/artifacts/:id/cancel", artifactHandler.Cancel)
+	adminGroup.POST("/artifacts/:id/download-link", artifactHandler.CreateDownloadLink)
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
 	adminGroup.GET("/artifacts/:id/bundle-extensions", artifactHandler.ListBundleExtensions)
@@ -376,9 +388,10 @@ func New(cfg Config) *echo.Echo {
 	//
 	// Raw build files (ISO/UKI/raw disk/netboot) are admin-only: no node flow
 	// consumes them over HTTP (netboot/Redfish read them from disk server-side), so
-	// a node key must not reach them. The UI's browser download links carry the
-	// session cookie.
-	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.AdminMiddleware(adminAuth))
+	// a node key must not reach them. They are served to an admin (session cookie
+	// or bearer) or to a signed link from POST /artifacts/:id/download-link that
+	// names exactly this file and has not expired.
+	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.DownloadMiddleware(adminAuth, linkSigner))
 	// The container image is the one artifact a node downloads (to satisfy an
 	// "upgrade from built artifact" command), so it is admin OR a node that such a
 	// command actually assigned this artifact to — never an arbitrary artifact.

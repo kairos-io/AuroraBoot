@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -68,6 +69,7 @@ type ArtifactHandler struct {
 	regToken       string
 	aurorabootURL  string
 	artifactsDir   string
+	linkSigner     *auth.LinkSigner
 }
 
 // NewArtifactHandler creates a new ArtifactHandler. The builder is wrapped so
@@ -806,7 +808,71 @@ func safePathSegment(s string) error {
 	return nil
 }
 
-// Cancel handles POST /api/v1/artifacts/:id/cancel.
+// WithLinkSigner sets the signer used for download links.
+func (h *ArtifactHandler) WithLinkSigner(s *auth.LinkSigner) *ArtifactHandler {
+	h.linkSigner = s
+	return h
+}
+
+// DownloadLinkRequest is the body of POST /api/v1/artifacts/{id}/download-link.
+type DownloadLinkRequest struct {
+	Filename string `json:"filename"`
+}
+
+// DownloadLinkResponse is a signed download path and when it stops working.
+type DownloadLinkResponse struct {
+	Path      string    `json:"path"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// CreateDownloadLink handles POST /api/v1/artifacts/:id/download-link.
+//
+//	@Summary		Create a download link
+//	@Description	Returns a path that downloads one file of the artifact without other credentials for one hour.
+//	@Tags			artifacts
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string				true	"Artifact ID"
+//	@Param			body	body	DownloadLinkRequest	true	"File name"
+//	@Success		200	{object}	DownloadLinkResponse
+//	@Failure		400	{object}	APIError
+//	@Failure		404	{object}	APIError
+//	@Failure		413	{object}	APIError
+//	@Router			/api/v1/artifacts/{id}/download-link [post]
+func (h *ArtifactHandler) CreateDownloadLink(c echo.Context) error {
+	id := c.Param("id")
+	var req DownloadLinkRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid request body"})
+	}
+	if safePathSegment(id) != nil || safePathSegment(req.Filename) != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid artifact id or filename"})
+	}
+	if h.store == nil || h.linkSigner == nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "artifact not found"})
+	}
+	rec, err := h.store.GetByID(c.Request().Context(), id)
+	if err != nil || rec == nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "artifact not found"})
+	}
+	if !hasArtifactFile(rec.ArtifactFiles, req.Filename) {
+		return c.JSON(http.StatusNotFound, APIError{Error: "file not found"})
+	}
+	q, expires := h.linkSigner.Sign(id, req.Filename)
+	path := "/api/v1/artifacts/" + url.PathEscape(id) + "/download/" + url.PathEscape(req.Filename) + "?" + q.Encode()
+	return c.JSON(http.StatusOK, DownloadLinkResponse{Path: path, ExpiresAt: expires})
+}
+
+// hasArtifactFile reports whether one of files has the base name filename.
+func hasArtifactFile(files []string, filename string) bool {
+	for _, f := range files {
+		if filepath.Base(f) == filename {
+			return true
+		}
+	}
+	return false
+}
+
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 //
 //	@Summary	Cancel a running build

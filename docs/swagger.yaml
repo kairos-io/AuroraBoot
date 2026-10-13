@@ -359,6 +359,18 @@ definitions:
       name:
         type: string
     type: object
+  handlers.DownloadLinkRequest:
+    properties:
+      filename:
+        type: string
+    type: object
+  handlers.DownloadLinkResponse:
+    properties:
+      expiresAt:
+        type: string
+      path:
+        type: string
+    type: object
   handlers.LoginRequest:
     properties:
       password:
@@ -1085,6 +1097,46 @@ paths:
       summary: Cancel a running build
       tags:
       - Artifacts
+  /api/v1/artifacts/{id}/download-link:
+    post:
+      consumes:
+      - application/json
+      description: Returns a path that downloads one file of the artifact without
+        other credentials for one hour.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DownloadLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DownloadLinkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Create a download link
+      tags:
+      - artifacts
   /api/v1/artifacts/{id}/logs:
     get:
       description: Returns the full concatenated log as text/plain. For real-time
