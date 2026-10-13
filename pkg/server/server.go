@@ -132,11 +132,11 @@ func New(cfg Config) *echo.Echo {
 	e.HideBanner = true
 
 	// Use a request logger whose URI is run through redactToken before it is
-	// written. All three auth schemes accept the credential as a ?token= query
-	// param (agent and UI WebSockets, artifact download links), so the raw
-	// request URI would otherwise leak admin passwords, node API keys, and the
-	// registration token straight into the access log (and any downstream proxy
-	// logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
+	// written. The agent WebSocket takes the node API key as a ?token= query
+	// param and the extension download route takes the per-extension download
+	// token there, and a client may still send the admin password in it, so the
+	// raw request URI would otherwise leak those credentials into the access log
+	// (and any downstream proxy logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
 	// redacted URI explicitly instead of the verbatim ${uri} the default
 	// middleware.Logger() prints.
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
@@ -288,8 +288,8 @@ func New(cfg Config) *echo.Echo {
 	// Shared command routes used by BOTH the agent (poll/report) and the
 	// admin/UI (inspect/override). Registered ONCE under AgentOrAdminMiddleware:
 	// registering them on two separate auth groups makes Echo silently shadow
-	// the first, which previously routed every agent poll into the admin-only
-	// handler (401). The handlers branch on the authenticated identity
+	// the first, which would route every agent poll into the admin-only handler
+	// (401). The handlers branch on the authenticated identity
 	// (auth.AuthNodeID): agents are node-scoped (own commands only), admins act
 	// across nodes.
 	sharedCmd := e.Group("/api/v1/nodes/:nodeID")
