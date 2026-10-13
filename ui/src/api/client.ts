@@ -61,11 +61,14 @@ export async function login(password: string): Promise<LoginResult> {
   return res.ok ? { ok: true } : { ok: false, status: res.status };
 }
 
-export async function logout(): Promise<void> {
+// logout reports whether the server ended the session. Only the server can
+// clear the HttpOnly cookie, so a failed request leaves the browser signed in.
+export async function logout(): Promise<boolean> {
   try {
-    await fetch("/api/v1/session", { method: "DELETE" });
+    const res = await fetch("/api/v1/session", { method: "DELETE" });
+    return res.ok;
   } catch {
-    /* signed out locally either way */
+    return false;
   }
 }
 

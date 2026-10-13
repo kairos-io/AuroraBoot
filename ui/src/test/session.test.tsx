@@ -5,6 +5,23 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { login, logout, hasSession, apiFetch } from "@/api/client";
 import { Login } from "@/pages/Login";
 import App from "@/App";
+import { Layout } from "@/components/Layout";
+
+function stubMatchMedia() {
+  vi.stubGlobal(
+    "matchMedia",
+    vi.fn().mockImplementation((query: string) => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  );
+}
 
 describe("session", () => {
   const fetchMock = vi.fn();
@@ -41,8 +58,43 @@ describe("session", () => {
 
   it("logs out with DELETE /api/v1/session", async () => {
     fetchMock.mockResolvedValue(new Response(null, { status: 204 }));
-    await logout();
+    expect(await logout()).toBe(true);
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/session", expect.objectContaining({ method: "DELETE" }));
+  });
+
+  it("reports a sign-out the server did not confirm", async () => {
+    fetchMock.mockResolvedValue(new Response(null, { status: 500 }));
+    expect(await logout()).toBe(false);
+    fetchMock.mockRejectedValue(new TypeError("network"));
+    expect(await logout()).toBe(false);
+  });
+
+  it("leaves the page only once the server has signed the browser out", async () => {
+    stubMatchMedia();
+    let deleteStatus = 500;
+    fetchMock.mockImplementation(async (_url: string, init?: RequestInit) =>
+      init?.method === "DELETE"
+        ? new Response(null, { status: deleteStatus })
+        : new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } }),
+    );
+    render(
+      <MemoryRouter initialEntries={["/"]}>
+        <Routes>
+          <Route element={<Layout />}>
+            <Route path="/" element={<div>home page</div>} />
+          </Route>
+          <Route path="/login" element={<div>login page</div>} />
+        </Routes>
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    expect(await screen.findByText(/Sign-out failed/)).toBeInTheDocument();
+    expect(screen.getByText("home page")).toBeInTheDocument();
+
+    deleteStatus = 204;
+    fireEvent.click(screen.getByRole("button", { name: "Logout" }));
+    expect(await screen.findByText("login page")).toBeInTheDocument();
   });
 
   it("checks the session with GET /api/v1/session", async () => {
