@@ -87,6 +87,20 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.lastOpts.ExtensionsCatalogs).To(Equal([]string{"https://example.test/releases.json"}))
 		})
 
+		It("has the builder redact every secret it hands it from the build log", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},` +
+				`"provisioning":{"userMode":"custom","username":"ops","password":"node-password-123"}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.lastOpts.UploadToken).NotTo(BeEmpty())
+			Expect(fb.lastOpts.LogRedactValues).To(ContainElements("reg-token", "node-password-123", fb.lastOpts.UploadToken))
+		})
+
 		It("leaves the catalog list empty when the client sends none, so the default one is read", func() {
 			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["nvidia"]}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
