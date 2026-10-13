@@ -130,6 +130,49 @@ describe("ArtifactBuilder: extension fields reach the create payload", () => {
     });
   });
 
+  // An extension is built for one architecture, and the handler refuses a
+  // build whose bundle does not match the artifact arch
+  // (pkg/handlers/artifacts.go). Before the payload carried the bundle this
+  // flow started a build; once it does, keeping the picks across an arch
+  // change turns Start Build into a 400 that handleSubmit does not catch, so
+  // nothing starts and nothing says why. The picks go instead.
+  it("drops the bundle when the operator changes arch after picking it", async () => {
+    renderBuilder();
+    await gotoExtensionsStep();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Add tailscale to bundle" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "ARM64" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Extensions" }));
+
+    const input = await payloadAfterSubmit();
+    expect(input.arch).toBe("arm64");
+    expect(input.bundledExtensions).toBeUndefined();
+  });
+
+  // Returning to the step and reselecting the same arch is not a change, so
+  // it must not throw away picks the operator still wants.
+  it("keeps the bundle when the arch is reselected unchanged", async () => {
+    renderBuilder();
+    await gotoExtensionsStep();
+
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Add tailscale to bundle" }),
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Back" }));
+    fireEvent.click(await screen.findByRole("radio", { name: "AMD64" }));
+    fireEvent.click(screen.getByRole("button", { name: "Next: Extensions" }));
+
+    const input = await payloadAfterSubmit();
+    expect(input.bundledExtensions).toEqual([
+      { name: "tailscale", type: "sysext", order: 0 },
+    ]);
+  });
+
   // Omitted rather than sent empty: the handler treats a present
   // extensionHierarchies as a request to bake the drop-in, so an untouched
   // form must not ask for one.

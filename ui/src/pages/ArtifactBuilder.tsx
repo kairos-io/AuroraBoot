@@ -1212,7 +1212,18 @@ export function ArtifactBuilder() {
   // When arch changes, reset model to first available compatible with the new arch.
   function handleArchChange(arch: string) {
     const models = modelsForArch(arch);
-    update("arch", arch);
+    // A bundled extension is built for one architecture, and the handler
+    // refuses a build whose bundle does not match the artifact arch. The
+    // picks are made on the Extensions step, so going back and switching
+    // arch would otherwise carry them forward and the build would be
+    // rejected at submit with nothing in the form to explain why. The
+    // hierarchies are plain paths and stay.
+    const archChanged = arch !== form.arch;
+    setForm((prev) =>
+      archChanged && (prev.bundledExtensions?.length ?? 0) > 0
+        ? { ...prev, arch, bundledExtensions: [] }
+        : { ...prev, arch },
+    );
     if (!customModel) {
       // Keep current model if still compatible, otherwise fall back to 'generic' / first.
       const stillCompatible = models.some((m) => m.value === form.model);
