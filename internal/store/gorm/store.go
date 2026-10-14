@@ -501,11 +501,27 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 	return res.RowsAffected == 1, nil
 }
 
+// StampResetProgress refreshes reset_progress_at to now for a reset that is
+// still in flight. The state predicate is part of the conditional update, so a
+// delivery that lands after the lifecycle already resolved cannot re-anchor a
+// done or failed reset. Returns true only when a row was stamped.
+func (s *Store) StampResetProgress(ctx context.Context, nodeID string) (bool, error) {
+	now := time.Now()
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND reset_state IN ?",
+			nodeID, []string{store.ResetStatePending, store.ResetStateInProgress}).
+		Update("reset_progress_at", &now)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // FailResetBefore compare-and-sets an overdue in-flight reset to failed. Both
 // timestamps participate in the conditional update so nothing that refreshed the
 // budget concurrently can be failed from a stale read: a new reset request
-// refreshes reset_requested_at, and a re-register mid-reset refreshes
-// reset_progress_at.
+// refreshes reset_requested_at, and either taking delivery of the reset command
+// or re-registering mid-reset refreshes reset_progress_at.
 func (s *Store) FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error) {
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND reset_state IN ? AND reset_requested_at <= ? AND (reset_progress_at IS NULL OR reset_progress_at <= ?)",

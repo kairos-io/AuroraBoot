@@ -2654,7 +2654,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "resetProgressAt": {
-                    "description": "ResetProgressAt is when the node last proved it survived the reset reboot,\ni.e. when it re-registered reporting bootState=autoreset and the lifecycle\nmoved from pending to in-progress. The reset timeout is measured from this\ntimestamp when it is set, so the wipe phase gets its own budget instead of\nsharing the one that started at ResetRequestedAt. Nil until such a\nre-register happens, and cleared when a new reset is requested.",
+                    "description": "ResetProgressAt is when the reset last made observable progress. Two\nevents stamp it: the node claiming the reset command for delivery, and\nthe node re-registering reporting bootState=autoreset (the lifecycle\nmoving from pending to in-progress). The reset timeout is measured from\nthis timestamp when it is set, so a node that picks the command up late\nstill gets a full window to reboot, wipe and come back instead of sharing\nthe one that started at ResetRequestedAt. Nil until the reset reaches the\nnode, and cleared when a new reset is requested.",
                     "type": "string"
                 },
                 "resetRequestedAt": {

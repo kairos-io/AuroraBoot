@@ -228,6 +228,7 @@ func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand
 		// claimed it and will deliver it; don't push a duplicate.
 		return
 	}
+	store.MarkResetDelivered(ctx, h.nodes, cmd)
 	payload := struct {
 		ID      string            `json:"id"`
 		Command string            `json:"command"`

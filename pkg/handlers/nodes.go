@@ -714,6 +714,7 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 			if !ok {
 				continue
 			}
+			store.MarkResetDelivered(ctx, h.nodes, cmd)
 			cmd.Phase = store.CommandDelivered
 			cmd.DeliveredAt = &now
 			claimed = append(claimed, cmd)

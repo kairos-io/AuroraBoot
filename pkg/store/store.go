@@ -94,12 +94,14 @@ type ManagedNode struct {
 	// ResetRequestedAt is when the reset command was issued (ResetState set to
 	// pending); nil when no reset has been requested.
 	ResetRequestedAt *time.Time `json:"resetRequestedAt,omitempty"`
-	// ResetProgressAt is when the node last proved it survived the reset reboot,
-	// i.e. when it re-registered reporting bootState=autoreset and the lifecycle
-	// moved from pending to in-progress. The reset timeout is measured from this
-	// timestamp when it is set, so the wipe phase gets its own budget instead of
-	// sharing the one that started at ResetRequestedAt. Nil until such a
-	// re-register happens, and cleared when a new reset is requested.
+	// ResetProgressAt is when the reset last made observable progress. Two
+	// events stamp it: the node claiming the reset command for delivery, and
+	// the node re-registering reporting bootState=autoreset (the lifecycle
+	// moving from pending to in-progress). The reset timeout is measured from
+	// this timestamp when it is set, so a node that picks the command up late
+	// still gets a full window to reboot, wipe and come back instead of sharing
+	// the one that started at ResetRequestedAt. Nil until the reset reaches the
+	// node, and cleared when a new reset is requested.
 	ResetProgressAt *time.Time `json:"resetProgressAt,omitempty"`
 	// LastReset is when the most recent automatic reset completed successfully.
 	LastReset *time.Time `json:"lastReset,omitempty"`
@@ -240,12 +242,19 @@ type NodeStore interface {
 	// the same update. The transition to in-progress additionally stamps
 	// ResetProgressAt, because reaching it means the node re-registered.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
+	// StampResetProgress refreshes ResetProgressAt to now, but only while the
+	// reset is still in flight (pending or in-progress), so a late delivery can
+	// never re-anchor a reset that already resolved. It returns true only if
+	// this call stamped. Called when the node claims the reset command: taking
+	// delivery is the first proof the reset reached the node, and the node
+	// needs a full window from that moment to reboot, wipe and come back.
+	StampResetProgress(ctx context.Context, nodeID string) (bool, error)
 	// FailResetBefore atomically marks an in-flight reset failed only when both
 	// its request timestamp and its progress timestamp are at or before the
 	// supplied deadline. Including them in the compare-and-set prevents an older
 	// read from failing a reset that has since been refreshed concurrently,
-	// either by a new request (ResetRequestedAt) or by the node re-registering
-	// mid-reset (ResetProgressAt).
+	// either by a new request (ResetRequestedAt) or by the reset making progress
+	// (ResetProgressAt).
 	FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error)
 	Delete(ctx context.Context, id string) error
 }

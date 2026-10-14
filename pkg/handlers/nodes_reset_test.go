@@ -431,4 +431,107 @@ var _ = Describe("Reset lifecycle", func() {
 			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
 		})
 	})
+
+	// The reset command and the node lifecycle are both given the same window at
+	// request time, so a node that was offline for nearly all of it can still
+	// claim the command at 29:59 and then be reported failed at 30:00 while it
+	// reboots into the wipe. Nothing recovers from that: resolveReset only
+	// advances an in-flight reset, so the later re-register is ignored, `failed`
+	// sticks and LastReset is never stamped. Taking delivery therefore re-anchors
+	// the budget, exactly as a mid-reset re-register does.
+	Describe("taking delivery of the reset command re-anchors the expiry budget", func() {
+		// claimAt builds a node whose reset was requested `age` ago and the
+		// matching still-deliverable reset command, then runs one agent poll.
+		pollAfter := func(age time.Duration) (*fakeNodeStore, *handlers.NodeHandler) {
+			requestedAt := time.Now().Add(-age)
+			future := time.Now().Add(time.Hour)
+			ns.nodes = []*store.ManagedNode{{
+				ID:               "node-1",
+				ResetState:       store.ResetStatePending,
+				ResetRequestedAt: &requestedAt,
+			}}
+			cs := &fakeCommandStore{cmds: []*store.NodeCommand{{
+				ID:            "cmd-1",
+				ManagedNodeID: "node-1",
+				Command:       "reset",
+				Phase:         store.CommandPending,
+				ExpiresAt:     &future,
+			}}}
+			nodeHandler := handlers.NewNodeHandler(ns, cs, &fakeGroupStore{}, ws.NewHub(), "reg-token", "http://localhost:8080").
+				WithResetTimeout(30 * time.Minute)
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/node-1/commands", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("node-1")
+			c.Set(auth.ContextKeyNodeID, "node-1")
+			Expect(nodeHandler.GetCommands(c)).To(Succeed())
+			Expect(rec.Body.String()).To(ContainSubstring("cmd-1"))
+			return ns, nodeHandler
+		}
+
+		It("does not fail a reset claimed just before the deadline", func() {
+			ns, nodeHandler := pollAfter(29*time.Minute + 59*time.Second)
+			Expect(ns.nodes[0].ResetProgressAt).NotTo(BeNil())
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes", nil)
+			rec := httptest.NewRecorder()
+			Expect(nodeHandler.List(e.NewContext(req, rec))).To(Succeed())
+
+			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStatePending),
+				"a node that just took the reset command is rebooting into the wipe, not lost")
+			Expect(ns.failResetBeforeCalls).To(BeZero())
+		})
+
+		It("leaves the lifecycle pending: delivery is not progress of its own", func() {
+			ns, _ := pollAfter(time.Minute)
+			Expect(ns.nodes[0].ResetState).To(Equal(store.ResetStatePending))
+		})
+
+		It("does not stamp for a non-reset command", func() {
+			future := time.Now().Add(time.Hour)
+			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+			cs := &fakeCommandStore{cmds: []*store.NodeCommand{{
+				ID:            "cmd-1",
+				ManagedNodeID: "node-1",
+				Command:       "upgrade",
+				Phase:         store.CommandPending,
+				ExpiresAt:     &future,
+			}}}
+			nodeHandler := handlers.NewNodeHandler(ns, cs, &fakeGroupStore{}, ws.NewHub(), "reg-token", "http://localhost:8080")
+
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/nodes/node-1/commands", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("node-1")
+			c.Set(auth.ContextKeyNodeID, "node-1")
+			Expect(nodeHandler.GetCommands(c)).To(Succeed())
+
+			Expect(ns.stampResetProgressCalls).To(BeZero())
+			Expect(ns.nodes[0].ResetProgressAt).To(BeNil())
+		})
+
+		It("re-anchors on the WebSocket push path too", func() {
+			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+			cs := &fakeCommandStore{}
+			hub := ws.NewHub()
+			cmdHandler := handlers.NewCommandHandler(cs, ns, hub, nil, nil)
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/node-1/commands",
+				strings.NewReader(`{"command":"reset"}`))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("node-1")
+			Expect(cmdHandler.Create(c)).To(Succeed())
+
+			// An offline node is never claimed, so the push path must not stamp
+			// either: the budget restarts when the agent actually polls.
+			Expect(ns.stampResetProgressCalls).To(BeZero())
+			Expect(cs.cmds[0].Phase).To(Equal(store.CommandPending))
+		})
+	})
 })

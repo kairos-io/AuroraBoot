@@ -19,6 +19,10 @@ type fakeNodeStore struct {
 	// handler never even attempted the transition, independently of whether the
 	// fake's own CAS would have refused it.
 	failResetBeforeCalls int
+	// stampResetProgressCalls counts StampResetProgress calls, for the same
+	// reason: a delivery path that forgets to re-anchor must be visible even
+	// when the node's state would make the stamp a no-op.
+	stampResetProgressCalls int
 }
 
 func (f *fakeNodeStore) Register(_ context.Context, n *store.ManagedNode) error {
@@ -261,6 +265,25 @@ func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromState
 			}
 		}
 		return false, nil
+	}
+	return false, nil
+}
+func (f *fakeNodeStore) StampResetProgress(_ context.Context, nodeID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stampResetProgressCalls++
+	for _, n := range f.nodes {
+		if n.ID != nodeID {
+			continue
+		}
+		// Mirrors the real store's CAS: only an in-flight reset is re-anchored,
+		// so a delivery arriving after the lifecycle resolved changes nothing.
+		if n.ResetState != store.ResetStatePending && n.ResetState != store.ResetStateInProgress {
+			return false, nil
+		}
+		now := time.Now()
+		n.ResetProgressAt = &now
+		return true, nil
 	}
 	return false, nil
 }
