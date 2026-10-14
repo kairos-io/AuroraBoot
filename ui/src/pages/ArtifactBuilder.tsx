@@ -88,6 +88,7 @@ import {
   payloadFromBuilder,
   sanitizeImportedBuildConfig,
 } from "@/lib/buildConfig";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 type OutputField = "iso" | "netboot" | "uki" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "maas" | "tar";
 type OutputTone = "install" | "disk" | "archive";
@@ -605,7 +606,7 @@ function AllowedCommandsPicker({
           No commands selected — the node will still register and send
           heartbeats, but no remote management will be possible. If you
           don&apos;t need any management, untick{" "}
-          <strong>Register with AuroraBoot</strong> instead.
+          <strong>Register with {PRODUCT_NAME}</strong> instead.
         </div>
       )}
     </div>
@@ -965,12 +966,12 @@ export function ArtifactBuilder() {
       return;
     }
     if (typeof raw !== "object" || raw === null) {
-      toast("Import failed: not an AuroraBoot build config", "error");
+      toast(`Import failed: not a ${PRODUCT_NAME} build config`, "error");
       return;
     }
     const r = raw as Record<string, unknown>;
     if (r.kind !== BUILD_CONFIG_KIND) {
-      toast("Import failed: not an AuroraBoot build config", "error");
+      toast(`Import failed: not a ${PRODUCT_NAME} build config`, "error");
       return;
     }
     if (r.version !== BUILD_CONFIG_VERSION) {
@@ -1734,7 +1735,7 @@ export function ArtifactBuilder() {
               <Label className="mb-2 block text-sm font-medium">
                 Name
                 <InfoTooltip>
-                  Friendly identifier shown throughout AuroraBoot. Not used in the generated artifact filenames.
+                  Friendly identifier shown throughout {PRODUCT_NAME}. Not used in the generated artifact filenames.
                 </InfoTooltip>
               </Label>
               <Input
@@ -2101,7 +2102,7 @@ export function ArtifactBuilder() {
                     Artifact version
                     <InfoTooltip>
                       The version <em>you</em> are releasing with this build. It gets
-                      baked into the image and is how AuroraBoot decides whether a node is
+                      baked into the image and is how {PRODUCT_NAME} decides whether a node is
                       up-to-date or needs an upgrade.
                       <br />
                       <br />
@@ -2543,7 +2544,7 @@ export function ArtifactBuilder() {
                       ISO, so the installed system carries them without pulling
                       anything at first boot. Only extensions published for the{" "}
                       {form.arch} architecture are listed. To use an extension
-                      this AuroraBoot instance built itself, and carry it with
+                      this {PRODUCT_NAME} instance built itself, and carry it with
                       every upgrade to the artifact instead, see "Extensions
                       built on this instance" above.
                     </InfoTooltip>
@@ -2559,7 +2560,7 @@ export function ArtifactBuilder() {
                         <Link to="/settings" className="underline text-foreground">
                           Settings
                         </Link>{" "}
-                        so every build offers them. You can also start AuroraBoot
+                        so every build offers them. You can also start the server
                         with <code className="font-mono text-xs">--extensions-catalog</code>.
                       </p>
                       <div className="grid gap-2">
@@ -2986,10 +2987,10 @@ export function ArtifactBuilder() {
                         onChange={(e) => updateProvisioning("registerAuroraBoot", e.target.checked)}
                         className="rounded border-input"
                       />
-                      Register with AuroraBoot
+                      Register with {PRODUCT_NAME}
                     </label>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Node will phone home to this AuroraBoot on boot.
+                      Node will phone home to this {PRODUCT_NAME} server on boot.
                     </p>
                   </div>
 
@@ -3150,7 +3151,7 @@ export function ArtifactBuilder() {
                       <Label className="text-xs">
                         Key Set
                         <InfoTooltip>
-                          Secure boot key set stored on this AuroraBoot server. Create or import one under Certificates.
+                          Secure boot key set stored on this {PRODUCT_NAME} server. Create or import one under Certificates.
                         </InfoTooltip>
                       </Label>
                       <Select
@@ -3304,7 +3305,7 @@ export function ArtifactBuilder() {
                         className="font-mono text-xs"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Appended to the generated config. AuroraBoot registration is auto-injected by the server.
+                        Appended to the generated config. {PRODUCT_NAME} registration is auto-injected by the server.
                       </p>
                     </div>
                     <div className="grid gap-2">
@@ -3454,7 +3455,7 @@ function BundledExtensionsCard({
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-3">
-          Extensions this AuroraBoot instance built on the Extensions page.
+          Extensions this {PRODUCT_NAME} instance built on the Extensions page.
           What you select here rides along with every upgrade to this artifact.
           Only <code>Ready</code> extensions matching arch <code>{arch}</code>{" "}
           are listed.
