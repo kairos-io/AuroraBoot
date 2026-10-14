@@ -101,20 +101,27 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 // through the start-pixie subprocess, behave the same as an in-process CLI
 // build.
 //
-// The default carries install-mode because a netboot is an install. The
-// keyword is what makes 52_installer.yaml write kairos-installer.service, and
-// that unit is the only thing that runs the install: kairos-agent start stands
-// aside on a netboot when the config asks for an unattended install, and the
-// pairing code a node with no config has to show comes from the same unit. The
-// rest of that guard already holds on a netboot, because a cmdline carrying
-// netboot is a LiveCD boot to kairos-sdk and immucore writes
-// /run/cos/live_mode for it. See kairos-io/kairos#5373.
+// The default carries install-mode-interactive because a netboot is an
+// install. immucore turns that keyword into /run/cos/install_mode_interactive
+// (sdk/state.InstallIntentSentinels), and the bundled 52_installer.yaml gates
+// kairos-interactive.service on that file. Nothing else on a netbooted node
+// runs the install: kairos-agent start stands aside when the config asks for
+// an unattended install. The rest of the guard already holds on a netboot,
+// because a cmdline carrying netboot is a LiveCD boot to kairos-sdk and
+// immucore writes /run/cos/live_mode for it. See kairos-io/kairos#5373.
+//
+// The interactive installer rather than the plain one, because it is the
+// dispatcher: it runs AutoInstall first, so a config carrying install.auto
+// still installs unattended, and it offers the go-nodepair pairing flow from
+// its welcome screen. That is what the legacy nodepair.enable keyword used to
+// ask for, and that keyword starts no installer at all since
+// kairos-io/kairos#5464.
 //
 // An explicit netboot.cmdline replaces the whole default, keeping only the two
 // keys netboot has to control, so an operator who wants a live node that does
 // not install still has a way to ask for one.
 func netbootCmdline(squashFSfile, cloudConfigFile string, nb schema.NetBoot) (string, error) {
-	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
+	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode-interactive config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
 
 	if nb.Cmdline != "" {
 		cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
