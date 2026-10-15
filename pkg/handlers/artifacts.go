@@ -210,6 +210,15 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
 
+	// A Trusted Boot image carries no separate initrd, so the plain ISO
+	// generator (which netboot also goes through) cannot build from it. The
+	// bootable ISO of a Trusted Boot build is the UKI output.
+	if req.Outputs.TrustedBoot && (req.Outputs.ISO || req.Outputs.Netboot) {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "outputs: iso and netboot cannot be combined with trustedBoot; use the uki output for a bootable Trusted Boot ISO",
+		})
+	}
+
 	var overlayRootfs string
 	if req.OverlayID != "" {
 		dir, err := h.overlayDir(req.OverlayID)

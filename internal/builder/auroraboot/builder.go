@@ -454,6 +454,17 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		logWriter.Flush()
 	}
 
+	// Step 2.1: Clean up ISO files when the caller didn't request ISO output.
+	// Netboot extraction needs a generated ISO as its source, so GenISO may
+	// still have run as scaffolding — but the user never asked for the ISO
+	// itself and we shouldn't keep multi-GB files around or list them as
+	// build outputs. The raw-disk paths don't produce ISOs at all, so the
+	// only files present here would be that scaffolding ISO. This runs
+	// before the UKI step, whose output is itself an ISO and must be kept.
+	if !opts.Outputs.ISO {
+		removeUnrequestedISOs(outputDir, logWriter)
+	}
+
 	// Step 2.5: Save container image as TAR if requested.
 	if opts.Outputs.Tar && containerImage != "" {
 		if logWriter != nil {
@@ -490,16 +501,6 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 			}
 			return
 		}
-	}
-
-	// Step 2.7: Clean up ISO files when the caller didn't request ISO output.
-	// Netboot extraction needs a generated ISO as its source, so GenISO may
-	// still have run as scaffolding — but the user never asked for the ISO
-	// itself and we shouldn't keep multi-GB files around or list them as
-	// build outputs. The raw-disk paths don't produce ISOs at all, so the
-	// only files present here would be that scaffolding ISO.
-	if !opts.Outputs.ISO {
-		removeUnrequestedISOs(outputDir, logWriter)
 	}
 
 	// Step 3: Collect artifact paths.
