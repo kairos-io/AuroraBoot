@@ -572,7 +572,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusCreated, status)
+	if h.store == nil {
+		return c.JSON(http.StatusCreated, statusResponse(status))
+	}
+	rec, err := h.store.GetByID(ctx, status.ID)
+	if err != nil {
+		// The build has started and its row is persisted; answering an error
+		// would invite a duplicate build.
+		c.Logger().Errorf("read back stored build %s: %v", status.ID, err)
+		return c.JSON(http.StatusCreated, statusResponse(status))
+	}
+	return c.JSON(http.StatusCreated, artifactResponse(rec))
 }
 
 // List handles GET /api/v1/artifacts.
@@ -593,7 +603,11 @@ func (h *ArtifactHandler) List(c echo.Context) error {
 		if records == nil {
 			records = []*store.ArtifactRecord{}
 		}
-		return c.JSON(http.StatusOK, records)
+		out := make([]*store.ArtifactRecord, 0, len(records))
+		for _, r := range records {
+			out = append(out, artifactResponse(r))
+		}
+		return c.JSON(http.StatusOK, out)
 	}
 
 	// Fall back to builder if no store.
@@ -604,10 +618,11 @@ func (h *ArtifactHandler) List(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list artifacts"})
 	}
-	if statuses == nil {
-		statuses = []*builder.BuildStatus{}
+	out := make([]*builder.BuildStatus, 0, len(statuses))
+	for _, s := range statuses {
+		out = append(out, statusResponse(s))
 	}
-	return c.JSON(http.StatusOK, statuses)
+	return c.JSON(http.StatusOK, out)
 }
 
 // Get handles GET /api/v1/artifacts/:id.
@@ -629,7 +644,7 @@ func (h *ArtifactHandler) Get(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 		}
-		return c.JSON(http.StatusOK, rec)
+		return c.JSON(http.StatusOK, artifactResponse(rec))
 	}
 
 	// Fall back to builder if no store.
@@ -640,7 +655,7 @@ func (h *ArtifactHandler) Get(c echo.Context) error {
 		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
-	return c.JSON(http.StatusOK, status)
+	return c.JSON(http.StatusOK, statusResponse(status))
 }
 
 // GetLogs handles GET /api/v1/artifacts/:id/logs.
@@ -875,6 +890,34 @@ func hasArtifactFile(files []string, filename string) bool {
 	return false
 }
 
+// artifactResponse returns a copy of rec whose file list holds base names.
+// The store keeps each file's server path for deploy; the API names a file
+// by its base name, which is also how downloads address it.
+func artifactResponse(rec *store.ArtifactRecord) *store.ArtifactRecord {
+	out := *rec
+	out.ArtifactFiles = fileNames(rec.ArtifactFiles)
+	return &out
+}
+
+// statusResponse is artifactResponse for a builder status.
+func statusResponse(s *builder.BuildStatus) *builder.BuildStatus {
+	out := *s
+	out.Artifacts = fileNames(s.Artifacts)
+	return &out
+}
+
+// fileNames returns the base name of each path, keeping nil as nil.
+func fileNames(paths []string) []string {
+	if paths == nil {
+		return nil
+	}
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = filepath.Base(p)
+	}
+	return out
+}
+
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 //
 //	@Summary	Cancel a running build
@@ -923,7 +966,24 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	if cancelErr != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cancel failed"})
 	}
-	return c.JSON(http.StatusOK, rec)
+	return c.JSON(http.StatusOK, artifactResponse(rec))
+}
+
+// buildFiles returns the output files of build id from the store, or from
+// the builder when there is no store, and false when neither knows the build.
+func (h *ArtifactHandler) buildFiles(ctx context.Context, id string) ([]string, bool) {
+	if h.store != nil {
+		rec, err := h.store.GetByID(ctx, id)
+		if err != nil {
+			return nil, false
+		}
+		return rec.ArtifactFiles, true
+	}
+	status, err := h.builder.Status(ctx, id)
+	if err != nil {
+		return nil, false
+	}
+	return status.Artifacts, true
 }
 
 // Download handles GET /api/v1/artifacts/:id/download/*.
@@ -939,12 +999,14 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
-	// Validate the artifact exists if store is available.
-	if h.store != nil {
-		_, err := h.store.GetByID(c.Request().Context(), id)
-		if err != nil {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
-		}
+	// The build folder also holds the deployer's working files, such as the
+	// cloud-config it wrote, so only the files the build lists are served.
+	files, ok := h.buildFiles(c.Request().Context(), id)
+	if !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+	if !hasArtifactFile(files, filename) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "file not found"})
 	}
 
 	filePath := filepath.Join(h.artifactsDir, id, filename)
@@ -1085,7 +1147,7 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 	if err := h.store.Update(ctx, rec); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update"})
 	}
-	return c.JSON(http.StatusOK, rec)
+	return c.JSON(http.StatusOK, artifactResponse(rec))
 }
 
 // overlayDir returns the directory of the uploaded overlay with the given ID.

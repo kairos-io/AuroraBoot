@@ -1602,7 +1602,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/store.SecureBootKeySet"
+                                "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                             }
                         }
                     }
@@ -1641,7 +1641,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/store.SecureBootKeySet"
+                            "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                         }
                     },
                     "413": {
@@ -1689,7 +1689,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/store.SecureBootKeySet"
+                            "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                         }
                     },
                     "409": {
@@ -2585,6 +2585,29 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.SecureBootKeySetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "hasTpmPcrKey": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secureBootEnroll": {
+                    "type": "string"
+                },
+                "updatedAt": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.UploadOverlayResponse": {
             "type": "object",
             "properties": {
@@ -3183,32 +3206,6 @@ const docTemplate = `{
                 },
                 "uptimeSeconds": {
                     "type": "integer"
-                }
-            }
-        },
-        "store.SecureBootKeySet": {
-            "type": "object",
-            "properties": {
-                "createdAt": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "keysDir": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "secureBootEnroll": {
-                    "type": "string"
-                },
-                "tpmPcrKeyPath": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
                 }
             }
         }

@@ -265,11 +265,11 @@ type UpdateArtifactRequest struct {
 type SecureBootKeySet struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
-	KeysDir          string    `json:"keysDir"`
-	TPMPCRKeyPath    string    `json:"tpmPcrKeyPath"`
 	SecureBootEnroll string    `json:"secureBootEnroll"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	// HasTPMPCRKey reports whether the set holds a TPM PCR signing key.
+	HasTPMPCRKey bool `json:"hasTpmPcrKey"`
 }
 
 // GenerateKeySetRequest is the body of POST /api/v1/secureboot-keys/generate.
