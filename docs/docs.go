@@ -2101,7 +2101,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "uki": {
-                    "description": "The signed UKI installer ISO. Needs signing.ukiKeySetId.",
+                    "description": "The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "vhd": {

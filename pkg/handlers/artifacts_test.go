@@ -201,6 +201,23 @@ var _ = Describe("ArtifactHandler", func() {
 			Entry("maas", "maas"),
 		)
 
+		// The UKI ISO only boots an image kairos-init prepared for Trusted Boot.
+		It("returns 400 for the UKI ISO without Trusted Boot", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("outputs.uki requires outputs.trustedBoot"))
+			Expect(fb.builds).To(BeEmpty())
+		})
+
 		// The installer ISO of a Trusted Boot image is the signed UKI ISO, so
 		// asking for the ISO on such a build asks for that one.
 		It("builds the UKI ISO when a Trusted Boot build asks for the ISO", func() {

@@ -206,7 +206,7 @@ type APIArtifactOutputs struct {
 	GCE     bool `json:"gce"`
 	VHD     bool `json:"vhd"`
 	MAAS    bool `json:"maas"`
-	// The signed UKI installer ISO. Needs signing.ukiKeySetId.
+	// The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.
 	UKI         bool `json:"uki"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`
