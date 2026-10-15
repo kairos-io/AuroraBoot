@@ -982,11 +982,15 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
-	// Validate the artifact exists if store is available.
+	// The build folder also holds the deployer's working files, such as the
+	// cloud-config it wrote, so only the files the record lists are served.
 	if h.store != nil {
-		_, err := h.store.GetByID(c.Request().Context(), id)
+		rec, err := h.store.GetByID(c.Request().Context(), id)
 		if err != nil {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+		}
+		if !hasArtifactFile(rec.ArtifactFiles, filename) {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "file not found"})
 		}
 	}
 
