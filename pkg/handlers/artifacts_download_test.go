@@ -10,6 +10,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -66,5 +67,34 @@ var _ = Describe("ArtifactHandler: Download", func() {
 
 	It("refuses a name that is not in the folder", func() {
 		Expect(download("missing.iso").Code).To(Equal(http.StatusNotFound))
+	})
+
+	Context("without a store", func() {
+		BeforeEach(func() {
+			fb := &fakeBuilder{builds: []*builder.BuildStatus{{
+				ID:        "a1",
+				Phase:     builder.BuildReady,
+				Artifacts: []string{filepath.Join(artifactsDir, "a1", "kairos.iso")},
+			}}}
+			handler = handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
+		})
+
+		It("serves a file the builder lists", func() {
+			Expect(download("kairos.iso").Code).To(Equal(http.StatusOK))
+		})
+
+		It("refuses a file in the build folder that the builder does not list", func() {
+			Expect(download("config.yaml").Code).To(Equal(http.StatusNotFound))
+		})
+
+		It("refuses a build the builder does not know", func() {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/artifacts/other/download/kairos.iso", nil)
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id", "*")
+			c.SetParamValues("other", "kairos.iso")
+			Expect(handler.Download(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
 	})
 })

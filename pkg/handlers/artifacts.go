@@ -969,6 +969,23 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	return c.JSON(http.StatusOK, artifactResponse(rec))
 }
 
+// buildFiles returns the output files of build id from the store, or from
+// the builder when there is no store, and false when neither knows the build.
+func (h *ArtifactHandler) buildFiles(ctx context.Context, id string) ([]string, bool) {
+	if h.store != nil {
+		rec, err := h.store.GetByID(ctx, id)
+		if err != nil {
+			return nil, false
+		}
+		return rec.ArtifactFiles, true
+	}
+	status, err := h.builder.Status(ctx, id)
+	if err != nil {
+		return nil, false
+	}
+	return status.Artifacts, true
+}
+
 // Download handles GET /api/v1/artifacts/:id/download/*.
 func (h *ArtifactHandler) Download(c echo.Context) error {
 	id := c.Param("id")
@@ -983,15 +1000,13 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 	}
 
 	// The build folder also holds the deployer's working files, such as the
-	// cloud-config it wrote, so only the files the record lists are served.
-	if h.store != nil {
-		rec, err := h.store.GetByID(c.Request().Context(), id)
-		if err != nil {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
-		}
-		if !hasArtifactFile(rec.ArtifactFiles, filename) {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "file not found"})
-		}
+	// cloud-config it wrote, so only the files the build lists are served.
+	files, ok := h.buildFiles(c.Request().Context(), id)
+	if !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+	if !hasArtifactFile(files, filename) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "file not found"})
 	}
 
 	filePath := filepath.Join(h.artifactsDir, id, filename)
