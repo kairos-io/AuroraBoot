@@ -577,7 +577,10 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	}
 	rec, err := h.store.GetByID(ctx, status.ID)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read the stored build"})
+		// The build has started and its row is persisted; answering an error
+		// would invite a duplicate build.
+		c.Logger().Errorf("read back stored build %s: %v", status.ID, err)
+		return c.JSON(http.StatusCreated, statusResponse(status))
 	}
 	return c.JSON(http.StatusCreated, artifactResponse(rec))
 }

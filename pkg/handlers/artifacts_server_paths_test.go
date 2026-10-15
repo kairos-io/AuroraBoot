@@ -3,6 +3,7 @@ package handlers_test
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -353,6 +354,48 @@ func refusedOverlayIDEntries() []TableEntry {
 		Entry("artifacts dir itself", "{dir}"),
 	}
 }
+
+// readBackFailingStore fails GetByID once Create has stored a record, so the
+// read-back after a build has started fails while the existence check before
+// it does not.
+type readBackFailingStore struct {
+	*fakeArtifactStore
+	created bool
+}
+
+func (s *readBackFailingStore) Create(ctx context.Context, rec *store.ArtifactRecord) error {
+	if err := s.fakeArtifactStore.Create(ctx, rec); err != nil {
+		return err
+	}
+	s.created = true
+	return nil
+}
+
+func (s *readBackFailingStore) GetByID(ctx context.Context, id string) (*store.ArtifactRecord, error) {
+	if s.created {
+		return nil, errors.New("read-back failed")
+	}
+	return s.fakeArtifactStore.GetByID(ctx, id)
+}
+
+var _ = Describe("ArtifactHandler.Create when the stored build cannot be read back", func() {
+	It("answers 201 with the build status, because the build has started", func() {
+		fb := &fakeBuilder{}
+		failing := &readBackFailingStore{fakeArtifactStore: &fakeArtifactStore{}}
+		handler := handlers.NewArtifactHandler(fb, failing, nil, nil, nil, nil, GinkgoT().TempDir(), "reg-token", "http://localhost:8080")
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(`{"baseImage":"ubuntu:24.04","outputs":{"iso":true}}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		Expect(handler.Create(echo.New().NewContext(req, rec))).To(Succeed())
+
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp).To(HaveKeyWithValue("id", fb.builds[0].ID))
+		Expect(resp).To(HaveKeyWithValue("phase", "Pending"))
+	})
+})
 
 // persistingBuilder writes the artifact row inside Build, as the local
 // builder does, so Create finds an existing row instead of writing its own.
