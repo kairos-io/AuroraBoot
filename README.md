@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/dashboard-zero-state.png" alt="AuroraBoot dashboard" width="820" />
+  <img src="docs/screenshots/dashboard-zero-state.png" alt="Kairos dashboard" width="820" />
 </p>
 
 <h1 align="center">AuroraBoot</h1>

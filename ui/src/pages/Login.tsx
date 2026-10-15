@@ -7,6 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KairosLogo } from "@/components/KairosLogo";
 import { applyTheme, getStoredTheme } from "@/lib/theme";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 function loginErrorMessage(result: LoginResult | null): string {
   if (result && !result.ok) {
@@ -55,7 +56,7 @@ export function Login() {
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2">
           <KairosLogo className="h-12 w-12" />
-          <h1 className="text-2xl font-bold text-white">AuroraBoot</h1>
+          <h1 className="text-2xl font-bold text-white">{PRODUCT_NAME}</h1>
         </div>
         <Card className="w-full">
           <CardHeader className="text-center">
