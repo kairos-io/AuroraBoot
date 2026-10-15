@@ -472,7 +472,25 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		}
 	}
 
-	// Step 2.6: Build UKI (Unified Kernel Image) if requested.
+	// Step 2.6: Clean up ISO files when the caller didn't request ISO output.
+	// Netboot extraction needs a generated ISO as its source, so GenISO may
+	// still have run as scaffolding — but the user never asked for the ISO
+	// itself and we shouldn't keep multi-GB files around or list them as
+	// build outputs. The raw-disk paths don't produce ISOs at all, so the
+	// only files present here would be that scaffolding ISO. This runs
+	// before the UKI step, whose output is an ISO the user did ask for.
+	if !opts.Outputs.ISO {
+		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
+			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
+			for _, p := range matches {
+				if err := os.Remove(p); err != nil && logWriter != nil {
+					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
+				}
+			}
+		}
+	}
+
+	// Step 2.7: Build UKI (Unified Kernel Image) if requested.
 	if opts.Outputs.UKI {
 		if logWriter != nil {
 			fmt.Fprintf(logWriter, "\n=== Building UKI (Unified Kernel Image) ===\n")
@@ -489,23 +507,6 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 				_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
 			}
 			return
-		}
-	}
-
-	// Step 2.7: Clean up ISO files when the caller didn't request ISO output.
-	// Netboot extraction needs a generated ISO as its source, so GenISO may
-	// still have run as scaffolding — but the user never asked for the ISO
-	// itself and we shouldn't keep multi-GB files around or list them as
-	// build outputs. The raw-disk paths don't produce ISOs at all, so the
-	// only files present here would be that scaffolding ISO.
-	if !opts.Outputs.ISO {
-		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
-			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
-			for _, p := range matches {
-				if err := os.Remove(p); err != nil && logWriter != nil {
-					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
-				}
-			}
 		}
 	}
 

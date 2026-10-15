@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -517,6 +519,91 @@ var _ = Describe("AuroraBoot Builder", func() {
 			ukiMu.Lock()
 			defer ukiMu.Unlock()
 			Expect(capturedUKI.CloudConfig).To(Equal(cc))
+		})
+
+		// A Trusted Boot build asks for UKI without the plain ISO, because the
+		// UKI step writes the bootable ISO itself. That ISO is the build's
+		// output and must survive the removal of unrequested plain ISOs.
+		It("keeps the UKI ISO when the plain ISO was not requested", func() {
+			b.WithUKIBuildFunc(func(o uki.Options) error {
+				for _, name := range []string{"kairos.iso", "kairos.iso.sha256"} {
+					if err := os.WriteFile(filepath.Join(o.OutputDir, name), []byte("uki"), 0o644); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:          "uki-no-plain-iso",
+				BaseImage:   "quay.io/kairos/ubuntu:latest",
+				TrustedBoot: true,
+				Outputs: builder.OutputOptions{
+					UKI:         true,
+					TrustedBoot: true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:  "/keys/db.key",
+					UKISecureBootCert: "/keys/db.pem",
+					UKITPMPCRKey:      "/keys/tpm.pem",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() string {
+				s, _ := b.Status(context.Background(), "uki-no-plain-iso")
+				if s == nil {
+					return ""
+				}
+				return s.Phase
+			}, 5*time.Second, 10*time.Millisecond).Should(Equal(builder.BuildReady))
+
+			isoPath := filepath.Join(baseDir, "uki-no-plain-iso", "kairos.iso")
+			Expect(isoPath).To(BeAnExistingFile())
+			status, err := b.Status(context.Background(), "uki-no-plain-iso")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(status.Artifacts).To(ContainElement(isoPath))
+		})
+
+		// GenISO writes a plain ISO as the source for netboot extraction. The
+		// user asked only for netboot and UKI, so that scaffolding ISO goes
+		// while the UKI ISO stays.
+		It("removes the scaffolding ISO but keeps the UKI ISO", func() {
+			scaffoldingDeploy := func(_ context.Context, config schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
+				return os.WriteFile(filepath.Join(config.State, "plain.iso"), []byte("plain"), 0o644)
+			}
+			nb := auroraboot.New(baseDir, scaffoldingDeploy, nil)
+			nb.WithUKIBuildFunc(func(o uki.Options) error {
+				return os.WriteFile(filepath.Join(o.OutputDir, "kairos.iso"), []byte("uki"), 0o644)
+			})
+
+			_, err := nb.Build(context.Background(), builder.BuildOptions{
+				ID:        "uki-netboot",
+				BaseImage: "quay.io/kairos/ubuntu:latest",
+				Netboot:   true,
+				Outputs: builder.OutputOptions{
+					Netboot: true,
+					UKI:     true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:  "/keys/db.key",
+					UKISecureBootCert: "/keys/db.pem",
+					UKITPMPCRKey:      "/keys/tpm.pem",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() string {
+				s, _ := nb.Status(context.Background(), "uki-netboot")
+				if s == nil {
+					return ""
+				}
+				return s.Phase
+			}, 5*time.Second, 10*time.Millisecond).Should(Equal(builder.BuildReady))
+
+			outputDir := filepath.Join(baseDir, "uki-netboot")
+			Expect(filepath.Join(outputDir, "plain.iso")).NotTo(BeAnExistingFile())
+			Expect(filepath.Join(outputDir, "kairos.iso")).To(BeAnExistingFile())
 		})
 	})
 })
