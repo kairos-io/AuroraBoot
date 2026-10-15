@@ -61,6 +61,8 @@ var _ = Describe("Artifact overlays by ID", Ordered, func() {
 		})
 		Expect(err).NotTo(HaveOccurred())
 		firstID = art.ID
+		Expect(art.OverlayID).To(Equal(overlayID))
+		Expect(art.Phase).To(BeEquivalentTo("Pending"))
 
 		opts, ok := artifactBuilder.optsFor(firstID)
 		Expect(ok).To(BeTrue())

@@ -572,7 +572,14 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusCreated, status)
+	if h.store == nil {
+		return c.JSON(http.StatusCreated, statusResponse(status))
+	}
+	rec, err := h.store.GetByID(ctx, status.ID)
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read the stored build"})
+	}
+	return c.JSON(http.StatusCreated, artifactResponse(rec))
 }
 
 // List handles GET /api/v1/artifacts.
