@@ -499,14 +499,7 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	// build outputs. The raw-disk paths don't produce ISOs at all, so the
 	// only files present here would be that scaffolding ISO.
 	if !opts.Outputs.ISO {
-		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
-			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
-			for _, p := range matches {
-				if err := os.Remove(p); err != nil && logWriter != nil {
-					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
-				}
-			}
-		}
+		removeUnrequestedISOs(outputDir, logWriter)
 	}
 
 	// Step 3: Collect artifact paths.
@@ -975,4 +968,16 @@ func collectArtifacts(dir string) []string {
 		return nil
 	})
 	return artifacts
+}
+
+// removeUnrequestedISOs deletes every ISO and ISO checksum in outputDir.
+func removeUnrequestedISOs(outputDir string, logWriter *dbLogWriter) {
+	for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
+		matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
+		for _, p := range matches {
+			if err := os.Remove(p); err != nil && logWriter != nil {
+				fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
+			}
+		}
+	}
 }

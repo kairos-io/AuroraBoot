@@ -533,3 +533,27 @@ var _ = Describe("ArtifactHandler", func() {
 		})
 	})
 })
+
+var _ = Describe("ArtifactHandler Create with Trusted Boot (kairos-io/kairos#5495)", func() {
+	// Captures current behaviour: ISO or netboot together with Trusted Boot is
+	// accepted (201). The fix should answer 400 with a clear message.
+	DescribeTable("currently accepts the combination instead of rejecting it",
+		func(outputs string) {
+			e := echo.New()
+			fb := &fakeBuilder{}
+			handler := handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
+
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":` + outputs + `}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			// BUG: should be http.StatusBadRequest.
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+		},
+		Entry("iso + trustedBoot", `{"iso":true,"trustedBoot":true}`),
+		Entry("netboot + trustedBoot", `{"netboot":true,"trustedBoot":true}`),
+	)
+})
