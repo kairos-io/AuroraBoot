@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -115,6 +116,27 @@ var _ = Describe("SecureBootHandler export/import", func() {
 
 	AfterEach(func() {
 		os.RemoveAll(keysDir)
+	})
+
+	Describe("GenerateKeys", func() {
+		It("returns the generated key set without server paths", func() {
+			if _, err := exec.LookPath("openssl"); err != nil {
+				Skip("openssl not on PATH")
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/secureboot-keys/generate", strings.NewReader(`{"name":"generated"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			Expect(handler.GenerateKeys(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+
+			Expect(rec.Body.String()).NotTo(ContainSubstring("keysDir"))
+			var resp map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp).NotTo(HaveKey("keysDir"))
+			Expect(resp).NotTo(HaveKey("tpmPcrKeyPath"))
+			Expect(resp).To(HaveKeyWithValue("hasTpmPcrKey", true))
+			Expect(resp).To(HaveKeyWithValue("name", "generated"))
+		})
 	})
 
 	Describe("ListKeys", func() {
@@ -302,7 +324,6 @@ var _ = Describe("SecureBootHandler export/import", func() {
 			info, err := os.Stat(dbKeyPath)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
-
 		})
 
 		It("names the key set, not the directory, when its directory already exists", func() {

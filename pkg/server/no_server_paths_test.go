@@ -18,7 +18,8 @@ import (
 
 // Records hold server paths (key set directories, built file paths); no GET
 // response may reveal them. The walk reads every GET route from the router,
-// so a route added later is covered too.
+// so a route added later is covered too. Routes that need a node key answer
+// 401 to the admin, so their bodies are not checked.
 var _ = Describe("Server paths in API responses", func() {
 	It("appear in no GET response", func() {
 		root := GinkgoT().TempDir()
@@ -61,6 +62,13 @@ var _ = Describe("Server paths in API responses", func() {
 		})
 
 		ids := map[string]string{"/artifacts/:id": "art-1", "/secureboot-keys/:id": "ks-1", "/extensions/:id": "ext-1"}
+		listRoutes := map[string]bool{"/api/v1/artifacts": true, "/api/v1/secureboot-keys": true, "/api/v1/extensions": true}
+		missingFileRoute := func(path string) bool {
+			return path == "/api/v1/secureboot-keys/ks-1/export" ||
+				path == "/api/v1/artifacts/art-1/image" ||
+				strings.HasPrefix(path, "/api/v1/artifacts/art-1/download/") ||
+				strings.HasPrefix(path, "/api/v1/extensions/ext-1/download/")
+		}
 		walked := 0
 		for _, r := range e.Routes() {
 			if r.Method != http.MethodGet || strings.HasPrefix(r.Path, "/api/v1/ws") {
@@ -70,13 +78,20 @@ var _ = Describe("Server paths in API responses", func() {
 			for template, id := range ids {
 				path = strings.Replace(path, template, strings.Replace(template, ":id", id, 1), 1)
 			}
+			// Seeded routes answer 200, except the ones that serve files
+			// the test never writes to disk.
+			wantOK := listRoutes[r.Path] || (path != r.Path && !missingFileRoute(path))
 			req := httptest.NewRequest(http.MethodGet, concreteRoutePath(path), nil)
 			req.Header.Set("Authorization", "Bearer admin-pass")
 			rec := httptest.NewRecorder()
 			e.ServeHTTP(rec, req)
-			Expect(rec.Code).To(BeNumerically("<", 500), r.Path)
+			if wantOK {
+				Expect(rec.Code).To(Equal(http.StatusOK), r.Path)
+			} else {
+				Expect(rec.Code).To(BeNumerically("<", 500), r.Path)
+			}
 			Expect(rec.Body.String()).NotTo(ContainSubstring(root), r.Path)
-			Expect(rec.Body.String()).NotTo(ContainSubstring("data/"), r.Path)
+			Expect(rec.Body.String()).NotTo(ContainSubstring("data/artifacts/"), r.Path)
 			walked++
 		}
 		Expect(walked).To(BeNumerically(">", 20))

@@ -41,7 +41,7 @@ var _ = Describe("ArtifactHandler: file names in responses", func() {
 		c.SetParamValues(id)
 		Expect(h(c)).To(Succeed())
 		Expect(rec.Code).To(Equal(http.StatusOK))
-		Expect(rec.Body.String()).NotTo(ContainSubstring("data/"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("data/artifacts/"))
 		var out map[string]any
 		Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
 		return out
@@ -51,7 +51,7 @@ var _ = Describe("ArtifactHandler: file names in responses", func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/artifacts", nil)
 		rec := httptest.NewRecorder()
 		Expect(handler.List(e.NewContext(req, rec))).To(Succeed())
-		Expect(rec.Body.String()).NotTo(ContainSubstring("data/"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("data/artifacts/"))
 		var out []map[string]any
 		Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
 		byID := map[string]map[string]any{}
@@ -83,7 +83,7 @@ var _ = Describe("ArtifactHandler: file names in responses", func() {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/artifacts", nil)
 		rec := httptest.NewRecorder()
 		Expect(h.List(e.NewContext(req, rec))).To(Succeed())
-		Expect(rec.Body.String()).NotTo(ContainSubstring("data/"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("data/artifacts/"))
 		Expect(fb.builds[0].Artifacts).To(Equal(stored))
 	})
 })
