@@ -50,7 +50,7 @@ ui-test: ui-install ## Run the React UI test suite
 # Build Go binary
 build-go: ## Build the Go binary
 	@echo "Building Go binary..."
-	go build -ldflags "-X main.version=v0.0.0" -o auroraboot
+	go build -tags ui -ldflags "-X main.version=v0.0.0" -o auroraboot
 	@echo "Go binary built successfully!"
 
 # Build everything

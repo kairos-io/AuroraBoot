@@ -267,6 +267,23 @@ var _ = Describe("ExtensionBuilder.Build — source resolution", func() {
 		Expect(rec.ContainerImage).To(Equal("auroraboot-extbuild:e-4"))
 	})
 
+	It("does not write an artifact's image into a Dockerfile unless it is a plain image reference", func() {
+		artStore.rows["a-bad"] = &store.ArtifactRecord{ID: "a-bad", ContainerImage: "quay.io/myorg/edge-os:v4.1.0\nRUN id"}
+		_, err := eb.Build(context.Background(), builder.ExtensionBuildOptions{
+			ID: "e-bad-artifact", Name: "ts", Type: "sysext", Arch: "amd64",
+			Source: builder.ExtensionSource{Mode: "artifact", SourceArtifactID: "a-bad", ExtraSteps: "RUN echo hi"},
+		})
+		Expect(err).ToNot(HaveOccurred())
+		Eventually(func() string {
+			rec, _ := extStore.GetByID(context.Background(), "e-bad-artifact")
+			if rec == nil {
+				return ""
+			}
+			return rec.Phase
+		}, "2s", "20ms").Should(Equal(builder.BuildError))
+		Expect(dbCalls.Load()).To(Equal(int32(0)))
+	})
+
 	It("transitions to Error when source resolution fails", func() {
 		_, err := eb.Build(context.Background(), builder.ExtensionBuildOptions{
 			ID: "e-5", Name: "ts", Type: "sysext", Arch: "amd64",

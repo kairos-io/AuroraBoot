@@ -85,6 +85,7 @@ export function DeployDialog({
   // PXE state
   const [netbootStatus, setNetbootStatus] = useState<NetbootStatus | null>(null);
   const [pxeLoading, setPxeLoading] = useState(false);
+  const [pxeError, setPxeError] = useState("");
   const [netbootLogs, setNetbootLogs] = useState("");
   const logPaneRef = useRef<HTMLDivElement | null>(null);
   // Bumped whenever a new netboot session starts, so a getNetbootLogs()
@@ -245,6 +246,8 @@ export function DeployDialog({
 
   async function handlePxeToggle() {
     setPxeLoading(true);
+    setPxeError("");
+    const action = netbootStatus?.running ? "stop" : "start";
     try {
       if (netbootStatus?.running) {
         await stopNetboot();
@@ -259,8 +262,13 @@ export function DeployDialog({
       }
       const status = await getNetbootStatus();
       setNetbootStatus(status);
-    } catch {
-      // ignore
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : "request failed";
+      setPxeError(`Could not ${action} netboot: ${reason}`);
+      // The server may be in another state than the dialog shows, as when
+      // another session already started it, so the badge and button follow
+      // the server.
+      getNetbootStatus().then(setNetbootStatus).catch(() => {});
     } finally {
       setPxeLoading(false);
     }
@@ -343,6 +351,11 @@ export function DeployDialog({
                   {pxeLoading && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
                   {netbootStatus?.running ? "Stop Netboot" : "Start Netboot"}
                 </Button>
+                {pxeError && (
+                  <div className="bg-red-500/10 border border-red-500/25 text-red-700 rounded-md p-3 text-sm">
+                    {pxeError}
+                  </div>
+                )}
               </div>
 
               {/* Live PXE server log, so a stalled/failed boot is debuggable

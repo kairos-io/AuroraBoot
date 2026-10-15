@@ -33,8 +33,8 @@ import (
 // Create images for all three partitions
 // EFI, OEM, Recovery
 // EFI is a fat32 partition with the grub artifacts
-// OEM is an ext2 partition with the cloud config
-// Recovery is an ext2 partition with the rootfs in an image file called recovery.img under cOS/
+// OEM is an ext4 partition with the cloud config
+// Recovery is an ext4 partition with the rootfs in an image file called recovery.img under cOS/
 // Mount them with loop devices and copy the artifacts to them
 // Once the images are created, they are concatenated together with a GPT partition table
 // The final image is then truncated to the nearest sector size
@@ -117,14 +117,7 @@ func (r *RawImage) createOemPartitionImage(recoveryImagePath string) (string, er
 		return "", err
 	}
 
-	OemPartitionImage := sdkImage.Image{
-		File:       filepath.Join(r.TempDir(), "oem.img"),
-		FS:         sdkConstants.LinuxImgFs,
-		Label:      sdkConstants.OEMLabel,
-		Size:       oemPartitionSize(stagedExtensions),
-		Source:     sdkImage.NewDirSrc(tmpDirOem),
-		MountPoint: tmpDirOemMount,
-	}
+	OemPartitionImage := r.oemPartitionImage(tmpDirOem, tmpDirOemMount, stagedExtensions)
 
 	// Deploy the source to the image
 	_, err = r.elemental.DeployImageNodirs(&OemPartitionImage, false)
@@ -409,16 +402,7 @@ func (r *RawImage) createRecoveryPartitionImage() (string, error) {
 
 	// Now we create an image for the recovery partition
 	// We use the dir we created with the image above, which contains the recovery.img and the grub.cfg stuff
-	recoverPartitionImage := &sdkImage.Image{
-		File:       filepath.Join(r.TempDir(), "recovery.img"),
-		FS:         agentConstants.LinuxImgFs,
-		Label:      agentConstants.RecoveryLabel,
-		Size:       uint(size),
-		Source:     sdkImage.NewDirSrc(tmpDirRecovery),
-		MountPoint: tmpDirRecoveryImage,
-	}
-
-	recoverPartitionImage.Size = recoveryPartitionSize(recoveryImage.Size)
+	recoverPartitionImage := r.recoveryPartitionImage(tmpDirRecovery, tmpDirRecoveryImage, recoveryImage.Size)
 
 	_, err = r.elemental.DeployImageNodirs(recoverPartitionImage, false)
 	// Create recovery.squash from the rootfs into the recovery partition under cOS/
@@ -445,6 +429,50 @@ func recoveryPartitionSize(recoveryImageSize uint) uint {
 	// The partition must hold both the recovery image and a transition image
 	// during recovery upgrades, plus space for copied boot artifacts.
 	return recoveryImageSize*2 + 150
+}
+
+// oemPartitionImage describes the OEM partition image of a raw disk.
+//
+// OEM is a partition, not one of the active/passive/recovery image files, so
+// it takes the filesystem a regular install gives it (LinuxFs, ext4) and not
+// the journal-less one those image files use (LinuxImgFs, ext2). /oem is
+// written on every install and by the cloud config stages, so an unclean
+// shutdown has to be replayable.
+//
+// History: #233 moved every raw partition from ext4 to ext2 in March 2025,
+// because old GRUB builds died on ext4 feature flags rather than ignoring
+// them. That reason is real, and OEM and recovery are the two partitions it
+// applies to: the grub.cfg on the ESP finds its real config by COS_RECOVERY
+// label and chainloads it, and that config loads grubenv from COS_OEM, so GRUB
+// parses both filesystems before a kernel exists. mkfs runs as
+// "mkfs.ext4 -L <label> <dev>" with no -O, so the feature set is whatever the
+// surrounding e2fsprogs defaults to, and the raw builder's is not the
+// installer's. The raw-bootable e2e test boots the built image on BIOS and
+// EFI, which is what keeps this honest.
+func (r *RawImage) oemPartitionImage(stagingDir, mountPoint string, stagedExtensions int64) sdkImage.Image {
+	return sdkImage.Image{
+		File:       filepath.Join(r.TempDir(), "oem.img"),
+		FS:         sdkConstants.LinuxFs,
+		Label:      sdkConstants.OEMLabel,
+		Size:       oemPartitionSize(stagedExtensions),
+		Source:     sdkImage.NewDirSrc(stagingDir),
+		MountPoint: mountPoint,
+	}
+}
+
+// recoveryPartitionImage describes the recovery partition image of a raw disk.
+//
+// Like OEM this is a partition, so it takes LinuxFs. The recovery.img it
+// carries keeps LinuxImgFs, which is what that constant is for.
+func (r *RawImage) recoveryPartitionImage(stagingDir, mountPoint string, recoveryImgSize uint) *sdkImage.Image {
+	return &sdkImage.Image{
+		File:       filepath.Join(r.TempDir(), "recovery.img"),
+		FS:         sdkConstants.LinuxFs,
+		Label:      agentConstants.RecoveryLabel,
+		Size:       recoveryPartitionSize(recoveryImgSize),
+		Source:     sdkImage.NewDirSrc(stagingDir),
+		MountPoint: mountPoint,
+	}
 }
 
 // createEFIPartitionImage creates an EFI partition image with the given source
@@ -1043,7 +1071,10 @@ func (r *RawImage) installGrubToDisk(image string) error {
 	// Get only the loop device without the /dev/ prefix
 	cleanLoopDevice := string(loopDevice)[5:]
 	recoveryLoop := fmt.Sprintf("/dev/mapper/%s%s", cleanLoopDevice, "p3")
-	err = unix.Mount(recoveryLoop, tmpDirRecovery, agentConstants.LinuxImgFs, 0, "")
+	// The type passed here has to be the one the partition was created with:
+	// an ext4 filesystem has incompatible features the ext2 driver refuses, so
+	// mounting it as ext2 fails outright rather than falling back.
+	err = unix.Mount(recoveryLoop, tmpDirRecovery, sdkConstants.LinuxFs, 0, "")
 	if err != nil {
 		internal.Log.Logger.Error().Err(err).Str("device", recoveryLoop).Str("mountpoint", tmpDirRecovery).Msg("failed to mount recovery partition")
 		return err

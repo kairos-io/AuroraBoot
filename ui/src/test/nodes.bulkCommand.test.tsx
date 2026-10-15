@@ -3,7 +3,6 @@ import { render, screen, waitFor, fireEvent, act, within } from "@testing-librar
 import { MemoryRouter } from "react-router";
 
 import { Nodes } from "@/pages/Nodes";
-import { setToken } from "@/api/client";
 import { Toaster } from "@/components/ui/toaster";
 
 function makeNode(id: string, hostname: string) {
@@ -52,7 +51,6 @@ function mockFetch(opts: { failCommand?: boolean } = {}) {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {

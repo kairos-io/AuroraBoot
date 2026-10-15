@@ -296,6 +296,11 @@ func (b *ExtensionBuilder) resolveSource(ctx context.Context, opts builder.Exten
 		if opts.Source.ExtraSteps == "" {
 			return art.ContainerImage, nil
 		}
+		// The reference comes from a stored artifact record, not from the
+		// request, so the validating wrapper never saw it.
+		if err := builder.ValidateImageRef("artifact image", art.ContainerImage); err != nil {
+			return "", err
+		}
 		dockerfile := fmt.Sprintf("FROM %s\n%s\n", art.ContainerImage, opts.Source.ExtraSteps)
 		return b.dockerBuildAndTag(ctx, opts.ID, dockerfile, opts.Source.BuildContextDir, outputDir, logger)
 

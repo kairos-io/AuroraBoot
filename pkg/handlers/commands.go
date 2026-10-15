@@ -72,6 +72,7 @@ type createCommandRequest struct {
 //	@Param		nodeID	path		string					true	"Node ID"
 //	@Param		body	body		APICreateCommandRequest	true	"Command payload"
 //	@Success	201		{object}	store.NodeCommand
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/nodes/{nodeID}/commands [post]
 func (h *CommandHandler) Create(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -104,6 +105,11 @@ func (h *CommandHandler) Create(c echo.Context) error {
 	// queued command.
 	if cmd.Command == store.CmdReset {
 		_ = h.nodes.SetResetPending(c.Request().Context(), nodeID)
+	}
+	// An upgrade also reboots the node, into the new image, so the agent's ack
+	// only means the upgrade is scheduled. Track it the same way. Best-effort.
+	if cmd.Command == store.CmdUpgrade {
+		_ = h.nodes.SetUpgradePending(c.Request().Context(), nodeID)
 	}
 
 	// Push command via WebSocket if node is online.
@@ -159,6 +165,9 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		if req.Command == store.CmdReset {
 			_ = h.nodes.SetResetPending(ctx, node.ID)
 		}
+		if req.Command == store.CmdUpgrade {
+			_ = h.nodes.SetUpgradePending(ctx, node.ID)
+		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)
 	}
@@ -202,6 +211,9 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		// Create (kairos-io/kairos#4255). Best-effort.
 		if req.Command == store.CmdReset {
 			_ = h.nodes.SetResetPending(ctx, node.ID)
+		}
+		if req.Command == store.CmdUpgrade {
+			_ = h.nodes.SetUpgradePending(ctx, node.ID)
 		}
 		h.pushCommand(ctx, cmd)
 		created = append(created, cmd)

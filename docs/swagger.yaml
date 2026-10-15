@@ -71,20 +71,12 @@ definitions:
     properties:
       ukiKeySetId:
         type: string
-      ukiPublicKeysDir:
-        type: string
-      ukiSecureBootCert:
-        type: string
       ukiSecureBootEnroll:
         enum:
         - "off"
         - manual
         - if-safe
         - force
-        type: string
-      ukiSecureBootKey:
-        type: string
-      ukiTpmPcrKey:
         type: string
     type: object
   handlers.APIClaimRequest:
@@ -114,7 +106,7 @@ definitions:
         description: |-
           Extensions are catalog extension names (name or name@version) to place
           in the built ISO. ExtensionsCatalogs replaces the default catalog they
-          resolve against.
+          resolve against; each one must be an http or https URL.
         items:
           type: string
         type: array
@@ -155,7 +147,9 @@ definitions:
         type: string
       outputs:
         $ref: '#/definitions/handlers.APIArtifactOutputs'
-      overlayRootfs:
+      overlayId:
+        description: ID returned by POST /api/v1/artifacts/upload-overlay
+        format: uuid
         type: string
       provisioning:
         $ref: '#/definitions/handlers.APIArtifactProvisioning'
@@ -365,6 +359,23 @@ definitions:
       name:
         type: string
     type: object
+  handlers.DownloadLinkRequest:
+    properties:
+      filename:
+        type: string
+    type: object
+  handlers.DownloadLinkResponse:
+    properties:
+      expiresAt:
+        type: string
+      path:
+        type: string
+    type: object
+  handlers.LoginRequest:
+    properties:
+      password:
+        type: string
+    type: object
   handlers.ResolvedBundleEntry:
     properties:
       name:
@@ -374,6 +385,13 @@ definitions:
       type:
         type: string
       version:
+        type: string
+    type: object
+  handlers.UploadOverlayResponse:
+    properties:
+      id:
+        description: ID references the overlay in a build request's overlayId.
+        format: uuid
         type: string
     type: object
   handlers.createExtensionRequest:
@@ -422,8 +440,6 @@ definitions:
       artifactId:
         type: string
       baseImage:
-        type: string
-      buildContextDir:
         type: string
       dockerfile:
         type: string
@@ -565,7 +581,7 @@ definitions:
         type: string
       netboot:
         type: boolean
-      overlayRootfs:
+      overlayId:
         type: string
       phase:
         type: string
@@ -669,6 +685,9 @@ definitions:
       lastReset:
         description: LastReset is when the most recent automatic reset completed successfully.
         type: string
+      lastUpgrade:
+        description: LastUpgrade is when the most recent upgrade completed successfully.
+        type: string
       machineID:
         type: string
       osRelease:
@@ -711,6 +730,20 @@ definitions:
           "" (none) | pending | in-progress | done | failed.
         type: string
       updatedAt:
+        type: string
+      upgradeRequestedAt:
+        description: |-
+          UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set
+          to pending); nil when no upgrade has been requested.
+        type: string
+      upgradeState:
+        description: |-
+          UpgradeState tracks the upgrade lifecycle across the reboot an upgrade
+          command triggers. The agent acks the command once the new image is staged,
+          before it reboots into it, so a Completed upgrade command only means the
+          upgrade was scheduled; the real outcome is resolved here when the node
+          re-registers and reports its post-reboot boot state. One of:
+          "" (none) | pending | done | failed.
         type: string
     type: object
   store.MemoryMetrics:
@@ -838,13 +871,13 @@ info:
     HTTP API for the AuroraBoot Kairos node manager.
 
     Three security schemes are used across the API:
-    * AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.
-    * NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
-    * RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.
+    * AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.
+    * NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
+    * RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.
 
     Two WebSocket endpoints also exist but are not described in this spec:
-    * GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).
-    * GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).
+    * GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).
+    * GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -889,6 +922,10 @@ paths:
             $ref: '#/definitions/store.ArtifactRecord'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -957,6 +994,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/store.ArtifactRecord'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update artifact metadata (name / saved flag)
@@ -1018,6 +1059,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace bundled extensions for an artifact
@@ -1051,6 +1096,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Resolve bundled extensions for upgrade dispatch
@@ -1067,9 +1116,59 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Cancel a running build
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/download-link:
+    post:
+      consumes:
+      - application/json
+      description: Returns a path that downloads one file of the artifact without
+        other credentials for one hour.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DownloadLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DownloadLinkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Create a download link
       tags:
       - Artifacts
   /api/v1/artifacts/{id}/logs:
@@ -1134,6 +1233,44 @@ paths:
       summary: Upload a single artifact file for a build
       tags:
       - Artifacts
+  /api/v1/artifacts/upload-overlay:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Stores the uploaded files as an overlay to copy on top of a build's
+        rootfs. A .tar.gz or .tgz file is extracted; any other file is saved as is.
+        Pass the returned ID as overlayId when starting a build. If any file is rejected
+        or cannot be stored, nothing is kept.
+      parameters:
+      - description: Overlay files or a .tar.gz archive
+        in: formData
+        name: files
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.UploadOverlayResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Upload a rootfs overlay
+      tags:
+      - Artifacts
   /api/v1/extensions:
     post:
       consumes:
@@ -1156,6 +1293,10 @@ paths:
             $ref: '#/definitions/builder.ExtensionBuildStatus'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1220,6 +1361,10 @@ paths:
             $ref: '#/definitions/store.NodeGroup'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1294,6 +1439,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update a group
@@ -1332,6 +1481,10 @@ paths:
             $ref: '#/definitions/handlers.APIError'
         "409":
           description: No unclaimed node available (code=NoCapacity)
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1474,6 +1627,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/store.NodeCommand'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Queue a command for a single node
@@ -1500,6 +1657,10 @@ paths:
             $ref: '#/definitions/handlers.decommissionResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1548,6 +1709,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Assign a node to a group
@@ -1574,6 +1739,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - NodeAPIKey: []
       summary: Agent heartbeat
@@ -1600,6 +1769,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace a node's labels
@@ -1667,6 +1840,10 @@ paths:
           description: Claimed by a different key (code=ClaimMismatch)
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Release a node's claim
@@ -1703,6 +1880,10 @@ paths:
             $ref: '#/definitions/handlers.APIError'
         "401":
           description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       summary: Register a node
@@ -1781,6 +1962,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/store.SecureBootKeySet'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Generate a SecureBoot key set
@@ -1811,11 +1996,73 @@ paths:
           description: Conflict
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/session:
+    delete:
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Sign out
+      tags:
+      - session
+    get:
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Check the session
+      tags:
+      - session
+    post:
+      consumes:
+      - application/json
+      description: Exchanges the admin password for an HttpOnly session cookie that
+        lasts 12 hours. A request carrying an Origin header must come from this server's
+        origin.
+      parameters:
+      - description: Admin password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Sign in
+      tags:
+      - session
   /api/v1/settings/extension-catalogs:
     get:
       produces:
@@ -1842,6 +2089,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.extensionCatalogsResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace the saved extension catalogs
@@ -1873,6 +2124,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.imageSourceResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update the runtime image-source settings
@@ -1903,6 +2158,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.APIRegistrationTokenResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Rotate the registration token

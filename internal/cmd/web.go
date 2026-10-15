@@ -6,13 +6,13 @@
 //	@description	HTTP API for the AuroraBoot Kairos node manager.
 //	@description
 //	@description	Three security schemes are used across the API:
-//	@description	  * AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.
-//	@description	  * NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
-//	@description	  * RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.
+//	@description	  * AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.
+//	@description	  * NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
+//	@description	  * RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.
 //	@description
 //	@description	Two WebSocket endpoints also exist but are not described in this spec:
-//	@description	  * GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).
-//	@description	  * GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).
+//	@description	  * GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).
+//	@description	  * GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).
 //
 //	@contact.name	Kairos authors
 //	@contact.url	https://github.com/kairos-io/AuroraBoot
@@ -233,7 +233,12 @@ func runWeb(c *cli.Context) error {
 	var systemInfo handlers.APISystemBuilder
 	switch builderKind {
 	case "local":
-		artifactBuilder = auroraboot.New(artifactsDir, nil, artifactStore).
+		local, err := auroraboot.New(artifactsDir, nil, artifactStore).
+			WithKairosInitImage(os.Getenv("KAIROS_INIT_IMAGE"))
+		if err != nil {
+			return fmt.Errorf("KAIROS_INIT_IMAGE: %w", err)
+		}
+		artifactBuilder = local.
 			WithLogBroadcaster(wsHub.UI).
 			WithNetbootManager(netbootManager)
 		systemInfo = handlers.APISystemBuilder{
