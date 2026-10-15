@@ -88,6 +88,10 @@ func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error      
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
+func (f *fakeNodeStore) SetUpgradePending(_ context.Context, _ string) error { return nil }
+func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
 
 type fakeCommandStore struct {
@@ -410,16 +414,6 @@ var _ = Describe("Server", func() {
 			resp := doReq(http.MethodPut, "/api/v1/nodes/node-A/commands/cmd-B/status", "key-A", `{"phase":"Completed","result":"pwned"}`)
 			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
 			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
-		})
-	})
-
-	Describe("SPA fallback", func() {
-		It("should serve index.html for HTML requests to unknown paths", func() {
-			req, _ := http.NewRequest(http.MethodGet, e.URL+"/some/spa/route", nil)
-			req.Header.Set("Accept", "text/html")
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 	})
 })

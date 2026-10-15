@@ -301,6 +301,105 @@ var _ = Describe("parseSelinuxOptions", func() {
 	})
 })
 
+var _ = Describe("spliceSelinuxCmdline", func() {
+	It("leaves the base alone when SELinux is not enabled", func() {
+		got, err := spliceSelinuxCmdline(constants.UkiCmdline, false, "enforcing")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(constants.UkiCmdline))
+	})
+
+	It("splices the fragment in when SELinux is enabled", func() {
+		got, err := spliceSelinuxCmdline(constants.UkiCmdline, true, "enforcing")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(ContainSubstring("security=selinux selinux=1 enforcing=0 rd.cos.selinux=enforcing"))
+		Expect(got).NotTo(ContainSubstring(" selinux=0"))
+	})
+
+	It("errors when the base carries no selinux=0 to replace", func() {
+		_, err := spliceSelinuxCmdline("console=tty1 panic=5", true, "permissive")
+		Expect(err).To(MatchError(ContainSubstring("requires the base cmdline to contain")))
+	})
+
+	It("errors rather than splicing twice into an already patched base", func() {
+		patched, err := spliceSelinuxCmdline(constants.UkiCmdline, true, "permissive")
+		Expect(err).NotTo(HaveOccurred())
+
+		_, err = spliceSelinuxCmdline(patched, true, "permissive")
+		Expect(err).To(HaveOccurred())
+	})
+})
+
+var _ = Describe("selinuxBaseCmdline", func() {
+	var rootfs string
+	var log *logger.KairosLogger
+
+	const enabledCC = "install:\n  selinux:\n    enabled: true\n    mode: enforcing\n"
+
+	writeFamily := func(family string) {
+		Expect(os.WriteFile(filepath.Join(rootfs, "etc/kairos-release"),
+			[]byte("KAIROS_FAMILY=\""+family+"\"\n"), 0o644)).To(Succeed())
+	}
+
+	BeforeEach(func() {
+		rootfs = GinkgoT().TempDir()
+		Expect(os.MkdirAll(filepath.Join(rootfs, "etc"), 0o755)).To(Succeed())
+		l := logger.NewKairosLogger("uki-test", "warn", false)
+		log = &l
+	})
+
+	It("enables SELinux on a family that supports it", func() {
+		writeFamily("redhat")
+
+		got, err := selinuxBaseCmdline(log, rootfs, enabledCC)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(ContainSubstring("security=selinux selinux=1 enforcing=0 rd.cos.selinux=enforcing"))
+		Expect(got).NotTo(ContainSubstring(" selinux=0"))
+	})
+
+	It("keeps selinux=0 on a family that does not support it, as the GRUB path does", func() {
+		// The build used to warn about the family and then splice the
+		// fragment in anyway, so a debian-family artifact booted with
+		// security=selinux and no policy to go with it.
+		writeFamily("debian")
+
+		got, err := selinuxBaseCmdline(log, rootfs, enabledCC)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(constants.UkiCmdline))
+		Expect(got).To(ContainSubstring(" selinux=0"))
+		Expect(got).NotTo(ContainSubstring("security=selinux"))
+		Expect(got).NotTo(ContainSubstring("rd.cos.selinux"))
+	})
+
+	It("keeps selinux=0 when the family cannot be read at all", func() {
+		got, err := selinuxBaseCmdline(log, rootfs, enabledCC)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(constants.UkiCmdline))
+	})
+
+	It("keeps selinux=0 for a supported family the cloud-config does not ask about", func() {
+		writeFamily("redhat")
+
+		got, err := selinuxBaseCmdline(log, rootfs, "#cloud-config\nusers:\n  - name: kairos\n")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(constants.UkiCmdline))
+	})
+
+	It("keeps selinux=0 with no cloud-config at all", func() {
+		writeFamily("redhat")
+
+		got, err := selinuxBaseCmdline(log, rootfs, "")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got).To(Equal(constants.UkiCmdline))
+	})
+
+	It("fails the build on a malformed cloud-config", func() {
+		writeFamily("redhat")
+
+		_, err := selinuxBaseCmdline(log, rootfs, "install: [unclosed\n  bad: yaml:\n")
+		Expect(err).To(HaveOccurred())
+	})
+})
+
 var _ = Describe("UKI cmdlines with SELinux base", func() {
 	var selinuxBase string
 

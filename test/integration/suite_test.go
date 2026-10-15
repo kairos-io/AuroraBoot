@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
 	"testing"
 
 	"github.com/gorilla/websocket"
@@ -44,6 +45,14 @@ var (
 	// rather than open-coding http.NewRequest — which keeps pkg/client
 	// exercised end-to-end on every CI run.
 	adminClient *client.Client
+
+	// testArtifactsDir is the server's artifacts directory, where uploaded
+	// overlays live under overlays/<id>.
+	testArtifactsDir string
+
+	// artifactBuilder is the builder the server hands build requests to, so
+	// specs can check the options a request turned into.
+	artifactBuilder *mockArtifactBuilder
 )
 
 func TestIntegration(t *testing.T) {
@@ -54,11 +63,15 @@ func TestIntegration(t *testing.T) {
 // mockArtifactBuilder implements builder.ArtifactBuilder for testing.
 type mockArtifactBuilder struct {
 	builds map[string]*builder.BuildStatus
+
+	mu   sync.Mutex
+	opts map[string]builder.BuildOptions
 }
 
 func newMockArtifactBuilder() *mockArtifactBuilder {
 	return &mockArtifactBuilder{
 		builds: make(map[string]*builder.BuildStatus),
+		opts:   make(map[string]builder.BuildOptions),
 	}
 }
 
@@ -68,7 +81,18 @@ func (m *mockArtifactBuilder) Build(_ context.Context, opts builder.BuildOptions
 		Phase: builder.BuildPending,
 	}
 	m.builds[opts.ID] = status
+	m.mu.Lock()
+	m.opts[opts.ID] = opts
+	m.mu.Unlock()
 	return status, nil
+}
+
+// optsFor returns the options the build with the given ID was started with.
+func (m *mockArtifactBuilder) optsFor(id string) (builder.BuildOptions, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	opts, ok := m.opts[id]
+	return opts, ok
 }
 
 func (m *mockArtifactBuilder) Status(_ context.Context, id string) (*builder.BuildStatus, error) {
@@ -108,13 +132,16 @@ var _ = BeforeSuite(func() {
 	artifactStore := &gormstore.ArtifactStoreAdapter{S: store}
 
 	hub := ws.NewHub()
+	testArtifactsDir = GinkgoT().TempDir()
+	artifactBuilder = newMockArtifactBuilder()
 
 	cfg := server.Config{
 		NodeStore:     nodeStore,
 		CommandStore:  commandStore,
 		GroupStore:    groupStore,
 		ArtifactStore: artifactStore,
-		Builder:       newMockArtifactBuilder(),
+		Builder:       artifactBuilder,
+		ArtifactsDir:  testArtifactsDir,
 		AdminPassword: testAdminPassword,
 		RegToken:      testRegToken,
 		AuroraBootURL: "http://localhost",

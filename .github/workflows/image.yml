@@ -93,7 +93,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v7
       - name: Download UI artifact
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@v8
         with:
           name: ui-dist
           path: internal/ui/dist
@@ -188,7 +188,7 @@ jobs:
             echo "app_version=${GITHUB_REF_NAME}"
           } >> "$GITHUB_OUTPUT"
       - name: Set up Helm
-        uses: azure/setup-helm@v4
+        uses: azure/setup-helm@v5
         with:
           version: v3.22.0
       - name: Log in to ghcr.io
@@ -208,6 +208,11 @@ jobs:
     permissions:
       contents: write
       pull-requests: write
+    env:
+      # The DCO app gates this repository and compares the sign-off to the
+      # commit's own author, so author, committer and the Signed-off-by
+      # trailer must all name this one identity.
+      BOT_IDENTITY: "github-actions[bot] <41898282+github-actions[bot]@users.noreply.github.com>"
     steps:
       - name: Checkout main
         uses: actions/checkout@v7
@@ -238,8 +243,15 @@ jobs:
         with:
           branch: chore/chart-bump-${{ steps.ver.outputs.chart_version }}
           base: main
+          # The action defaults author to github.actor, which on a tag push is
+          # whoever cut the release, so a generated tree gets credited to a
+          # maintainer who never wrote it.
+          author: ${{ env.BOT_IDENTITY }}
+          committer: ${{ env.BOT_IDENTITY }}
           commit-message: |
             chore(chart): bump to ${{ steps.ver.outputs.chart_version }}
+
+            Signed-off-by: ${{ env.BOT_IDENTITY }}
           title: "chore(chart): bump to ${{ steps.ver.outputs.chart_version }}"
           body: |
             Syncs `deploy/helm/auroraboot/Chart.yaml` to the just-released

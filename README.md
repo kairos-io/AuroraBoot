@@ -53,6 +53,8 @@ Open **http://localhost:9099**, sign in, and the welcome wizard walks you throug
 
 If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL` to that reachable address before starting the stack. Left unset, AuroraBoot falls back to the container's hostname, which nodes can't resolve, so they can't phone home. See `--url` below. Its host is also the address the Deploy dialog reports for the netboot server; with no `AURORABOOT_URL` that dialog reports a local interface address instead.
 
+Behind a reverse proxy that rewrites the `Host` header, set `AURORABOOT_URL` (`--url`) to the address the browser uses. The server refuses sign-in and the live-update socket from a page whose origin matches neither the request `Host` nor that URL, and logs a `refused a request from Origin` line naming all three values.
+
 ### What you get
 
 - **A guided Artifact Builder** with ready-made templates for Ubuntu, Fedora, Debian, openSUSE, Alpine, Rocky and Hadron. Pick architecture, model, variant — the UI filters the choices so you only see what Kairos actually supports.

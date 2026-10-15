@@ -65,13 +65,13 @@ jobs:
 
       - name: Build binary
         run: |
-          go build -v -o auroraboot .
+          go build -tags ui -v -o auroraboot .
 
       - name: Run tests
         run: |
           # Skip e2e and integration tests - they require Docker images or have timing
           # issues on slower riscv64 runners
-          go test -v $(go list ./... | grep -v -E '/(e2e|integration)')
+          go test -tags ui -v $(go list ./... | grep -v -E '/(e2e|integration)')
 
       - name: Show binary info
         run: |

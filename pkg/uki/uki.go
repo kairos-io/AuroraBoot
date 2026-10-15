@@ -309,30 +309,12 @@ func Build(opts Options) (err error) {
 		return err
 	}
 
-	// Build the base cmdline from cloud config: enabled install.selinux
-	// replaces the hardcoded selinux=0, otherwise the base stays
-	// identical to constants.UkiCmdline.
-	baseCmdline := constants.UkiCmdline
-
-	enabled, selinuxMode, err := parseSelinuxOptions(log, opts.CloudConfig)
+	// Build the base cmdline from cloud config: enabled install.selinux on a
+	// family that supports it replaces the hardcoded selinux=0, otherwise the
+	// base stays identical to constants.UkiCmdline.
+	baseCmdline, err := selinuxBaseCmdline(log, sourceDir, opts.CloudConfig)
 	if err != nil {
 		return err
-	}
-
-	if enabled {
-		supported, family := isSelinuxSupported(sourceDir, log)
-		if !supported {
-			log.Warnf("install.selinux.enabled is set but image family %q does not support SELinux; booting with selinux=0", family)
-		}
-
-		selinuxParams := fmt.Sprintf("security=selinux selinux=1 enforcing=0 rd.cos.selinux=%s", selinuxMode)
-		patched := strings.Replace(baseCmdline, " selinux=0", " "+selinuxParams, 1)
-		if patched == baseCmdline {
-			log.Logger.Error().Msg("SELinux fragment splice failed: base cmdline does not contain ' selinux=0'")
-			return fmt.Errorf("SELinux enablement requires the base cmdline to contain ' selinux=0'")
-		}
-		baseCmdline = patched
-		log.Infof("SELinux enabled in cloud-config, mode: %s", selinuxMode)
 	}
 
 	entries := append(
@@ -1178,6 +1160,64 @@ func nameFromCmdline(baseCmdline, basename, cmdline string) string {
 	cleanCmdline := allowedChars.ReplaceAllString(cmdlineForEfi, "_")
 	name := basename + "_" + cleanCmdline
 	return strings.ToLower(strings.TrimSuffix(name, "_"))
+}
+
+// selinuxDisabledParam is the token constants.UkiCmdline carries by default,
+// and the one the SELinux fragment replaces when SELinux is enabled.
+const selinuxDisabledParam = "selinux=0"
+
+// selinuxBaseCmdline resolves the base cmdline every UKI entry is built from.
+// SELinux is turned on only when the cloud-config asks for it and the source
+// image family can do it; every other case keeps selinux=0.
+//
+// The family test is not cosmetic. The GRUB path turns SELinux on for the
+// redhat and suse families only and pins selinux=0 for every other one, see
+// setSelinux in kairos-init/pkg/bundled BootArgsCfg, so without it one
+// cloud-config would produce two different kernel command lines for the same
+// image. The UKI cmdline also lives in a signed section of the EFI, so an
+// artifact built with the wrong token cannot be corrected without building
+// and signing it again.
+func selinuxBaseCmdline(log *logger.KairosLogger, sourceDir, cloudConfig string) (string, error) {
+	enabled, mode, err := parseSelinuxOptions(log, cloudConfig)
+	if err != nil {
+		return "", err
+	}
+
+	supported := false
+	if enabled {
+		var family string
+		supported, family = isSelinuxSupported(sourceDir, log)
+		if supported {
+			log.Infof("SELinux enabled in cloud-config, mode: %s", mode)
+		} else {
+			log.Warnf("install.selinux.enabled is set but image family %q does not support SELinux; booting with %s", family, selinuxDisabledParam)
+		}
+	}
+
+	baseCmdline, err := spliceSelinuxCmdline(constants.UkiCmdline, enabled && supported, mode)
+	if err != nil {
+		log.Logger.Error().Err(err).Msg("SELinux fragment splice failed")
+		return "", err
+	}
+
+	return baseCmdline, nil
+}
+
+// spliceSelinuxCmdline replaces the selinux=0 token in baseCmdline with the
+// SELinux enablement fragment. When enable is false the base is returned
+// unchanged.
+func spliceSelinuxCmdline(baseCmdline string, enable bool, mode string) (string, error) {
+	if !enable {
+		return baseCmdline, nil
+	}
+
+	params := fmt.Sprintf("security=selinux selinux=1 enforcing=0 rd.cos.selinux=%s", mode)
+	patched := strings.Replace(baseCmdline, " "+selinuxDisabledParam, " "+params, 1)
+	if patched == baseCmdline {
+		return "", fmt.Errorf("SELinux enablement requires the base cmdline to contain ' %s'", selinuxDisabledParam)
+	}
+
+	return patched, nil
 }
 
 // parseSelinuxOptions extracts install.selinux from a cloud-config.

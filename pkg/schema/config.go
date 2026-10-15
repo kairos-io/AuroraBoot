@@ -100,6 +100,10 @@ type ISO struct {
 	// ExtendLiveCmdline is appended to the kernel cmdline when booting from the live/installer ISO. Does not affect the installed system.
 	ExtendLiveCmdline string `yaml:"extend-live-cmdline"`
 	LiveConsole       string `yaml:"live_console"`
+	// DefaultGrubEntry is the id (`--id`) of the live menu entry grub boots when the
+	// timeout expires. It must be one of constants.LiveGrubEntries; the build
+	// refuses any other value. Left empty, the ISO boots the interactive installer.
+	DefaultGrubEntry string `yaml:"default_grub_entry"`
 	// ExtensionsCatalogs are searched in order when resolving an extension
 	// name: the first catalog publishing the name wins. Left empty, the
 	// build reads extensions.DefaultCatalog.
