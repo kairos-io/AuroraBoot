@@ -209,6 +209,34 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	// A Trusted Boot image has no GRUB and no separate initrd: it boots from a
+	// signed UKI that the build packs the rootfs into. Netboot and the disk
+	// images are built around GRUB and the initrd, so they fail on it minutes
+	// into the build. Its installer ISO is the UKI ISO, so an ISO request on
+	// such a build is a UKI request.
+	if req.Outputs.TrustedBoot {
+		for _, o := range []struct {
+			name      string
+			requested bool
+		}{
+			{"netboot", req.Outputs.Netboot},
+			{"rawDisk", req.Outputs.RawDisk},
+			{"cloudImage", req.Outputs.CloudImage},
+			{"gce", req.Outputs.GCE},
+			{"vhd", req.Outputs.VHD},
+			{"maas", req.Outputs.MAAS},
+		} {
+			if o.requested {
+				return c.JSON(http.StatusBadRequest, map[string]string{
+					"error": fmt.Sprintf("outputs: %s cannot be built from a Trusted Boot image; it ships as the iso and tar outputs", o.name),
+				})
+			}
+		}
+		if req.Outputs.ISO {
+			req.Outputs.ISO = false
+			req.Outputs.UKI = true
+		}
+	}
 
 	var overlayRootfs string
 	if req.OverlayID != "" {

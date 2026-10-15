@@ -174,6 +174,64 @@ var _ = Describe("ArtifactHandler", func() {
 			Entry("hadronBase", "hadronBase", "hadron base"),
 		)
 
+		// A Trusted Boot image carries no GRUB and no separate initrd. Netboot
+		// and every disk image are built around those, so they fail on it.
+		DescribeTable("returns 400 for an output that cannot be built from a Trusted Boot image",
+			func(output string) {
+				body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"` + output + `":true,"trustedBoot":true}}`
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				c := e.NewContext(req, rec)
+
+				Expect(handler.Create(c)).To(Succeed())
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				var resp map[string]string
+				Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+				Expect(resp["error"]).To(ContainSubstring(output))
+				Expect(resp["error"]).To(ContainSubstring("Trusted Boot"))
+				Expect(fb.builds).To(BeEmpty())
+			},
+			Entry("netboot", "netboot"),
+			Entry("rawDisk", "rawDisk"),
+			Entry("cloudImage", "cloudImage"),
+			Entry("gce", "gce"),
+			Entry("vhd", "vhd"),
+			Entry("maas", "maas"),
+		)
+
+		// The installer ISO of a Trusted Boot image is the signed UKI ISO, so
+		// asking for the ISO on such a build asks for that one.
+		It("builds the UKI ISO when a Trusted Boot build asks for the ISO", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true,"tar":true,"trustedBoot":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.builds).To(HaveLen(1))
+			Expect(fb.lastOpts.ISO).To(BeFalse())
+			Expect(fb.lastOpts.Outputs.ISO).To(BeFalse())
+			Expect(fb.lastOpts.Outputs.UKI).To(BeTrue())
+			Expect(fb.lastOpts.Outputs.Tar).To(BeTrue())
+			Expect(fb.lastOpts.Outputs.TrustedBoot).To(BeTrue())
+		})
+
+		It("accepts a Trusted Boot build that asks for the UKI ISO alone", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true,"trustedBoot":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.builds).To(HaveLen(1))
+		})
+
 		It("accepts every image field when each holds a valid reference", func() {
 			body := `{"baseImage":"ubuntu:24.04","kairosInitImage":"quay.io/kairos/kairos-init:v0.5.0","hadronBase":"localhost:5000/kairos/hadron@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","outputs":{"iso":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
