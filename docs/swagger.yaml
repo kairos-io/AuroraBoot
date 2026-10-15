@@ -24,7 +24,7 @@ definitions:
       iso:
         description: |-
           The installer ISO. With trustedBoot it is the signed UKI ISO, the same
-          as uki.
+          as uki, and needs signing.ukiKeySetId.
         type: boolean
       maas:
         type: boolean

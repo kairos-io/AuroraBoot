@@ -117,11 +117,37 @@ var _ = Describe("ValidatingArtifactBuilder", func() {
 		Entry("UKI without Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{UKI: true}}, "outputs.uki"),
 	)
 
+	// The UKI step signs with all three keys and refuses to start without
+	// them, minutes into the build on the local backend and as a failed start
+	// on the operator backend.
+	DescribeTable("refuses a UKI build without the keys to sign it",
+		func(signing builder.SigningOptions) {
+			_, err := b.Build(ctx, builder.BuildOptions{
+				TrustedBoot: true,
+				Outputs:     builder.OutputOptions{TrustedBoot: true, UKI: true},
+				Signing:     signing,
+			})
+			Expect(err).To(MatchError(builder.ErrInvalidBuildOptions))
+			Expect(err.Error()).To(ContainSubstring("signing.ukiKeySetId"))
+			Expect(inner.builds).To(BeEmpty())
+		},
+		Entry("no key set", builder.SigningOptions{}),
+		Entry("a key set without a TPM PCR key", builder.SigningOptions{
+			UKISecureBootKey:  "/keys/db.key",
+			UKISecureBootCert: "/keys/db.pem",
+		}),
+	)
+
 	It("hands a Trusted Boot UKI build to the wrapped builder", func() {
 		opts := builder.BuildOptions{
 			ID:          "tb-1",
 			TrustedBoot: true,
 			Outputs:     builder.OutputOptions{TrustedBoot: true, UKI: true, Tar: true},
+			Signing: builder.SigningOptions{
+				UKISecureBootKey:  "/keys/db.key",
+				UKISecureBootCert: "/keys/db.pem",
+				UKITPMPCRKey:      "/keys/tpm.pem",
+			},
 		}
 		_, err := b.Build(ctx, opts)
 		Expect(err).NotTo(HaveOccurred())

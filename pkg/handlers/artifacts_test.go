@@ -220,33 +220,60 @@ var _ = Describe("ArtifactHandler", func() {
 
 		// The installer ISO of a Trusted Boot image is the signed UKI ISO, so
 		// asking for the ISO on such a build asks for that one.
-		It("builds the UKI ISO when a Trusted Boot build asks for the ISO", func() {
-			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true,"tar":true,"trustedBoot":true}}`
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
+		Describe("with a SecureBoot key set", func() {
+			BeforeEach(func() {
+				keys := &fakeSecureBootKeySetStore{keySets: []*store.SecureBootKeySet{
+					{ID: "ks-1", Name: "prod-keys", KeysDir: "/keys/prod", TPMPCRKeyPath: "/keys/prod/tpm2-pcr-private.pem"},
+					{ID: "ks-no-tpm", Name: "no-tpm", KeysDir: "/keys/no-tpm"},
+				}}
+				handler = handlers.NewArtifactHandler(fb, nil, nil, keys, nil, nil, "", "reg-token", "http://localhost:8080")
+			})
 
-			Expect(handler.Create(c)).To(Succeed())
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-			Expect(fb.builds).To(HaveLen(1))
-			Expect(fb.lastOpts.ISO).To(BeFalse())
-			Expect(fb.lastOpts.Outputs.ISO).To(BeFalse())
-			Expect(fb.lastOpts.Outputs.UKI).To(BeTrue())
-			Expect(fb.lastOpts.Outputs.Tar).To(BeTrue())
-			Expect(fb.lastOpts.Outputs.TrustedBoot).To(BeTrue())
-		})
+			create := func(body string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				Expect(handler.Create(e.NewContext(req, rec))).To(Succeed())
+				return rec
+			}
 
-		It("accepts a Trusted Boot build that asks for the UKI ISO alone", func() {
-			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true,"trustedBoot":true}}`
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
+			// The installer ISO of a Trusted Boot image is the signed UKI ISO,
+			// so asking for the ISO on such a build asks for that one.
+			It("builds the UKI ISO when a Trusted Boot build asks for the ISO", func() {
+				rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true,"tar":true,"trustedBoot":true},"signing":{"ukiKeySetId":"ks-1"}}`)
 
-			Expect(handler.Create(c)).To(Succeed())
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-			Expect(fb.builds).To(HaveLen(1))
+				Expect(rec.Code).To(Equal(http.StatusCreated))
+				Expect(fb.builds).To(HaveLen(1))
+				Expect(fb.lastOpts.ISO).To(BeFalse())
+				Expect(fb.lastOpts.Outputs.ISO).To(BeFalse())
+				Expect(fb.lastOpts.Outputs.UKI).To(BeTrue())
+				Expect(fb.lastOpts.Outputs.Tar).To(BeTrue())
+				Expect(fb.lastOpts.Outputs.TrustedBoot).To(BeTrue())
+				Expect(fb.lastOpts.Signing.UKITPMPCRKey).To(Equal("/keys/prod/tpm2-pcr-private.pem"))
+			})
+
+			It("accepts a Trusted Boot build that asks for the UKI ISO alone", func() {
+				rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true,"trustedBoot":true},"signing":{"ukiKeySetId":"ks-1"}}`)
+
+				Expect(rec.Code).To(Equal(http.StatusCreated))
+				Expect(fb.builds).To(HaveLen(1))
+			})
+
+			// The UKI step needs all three keys and would otherwise fail
+			// minutes into the build, or fail to start on the operator backend.
+			DescribeTable("returns 400 for a Trusted Boot ISO it cannot sign",
+				func(signing string) {
+					rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true,"trustedBoot":true}` + signing + `}`)
+
+					Expect(rec.Code).To(Equal(http.StatusBadRequest))
+					var resp map[string]string
+					Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+					Expect(resp["error"]).To(ContainSubstring("signing.ukiKeySetId"))
+					Expect(fb.builds).To(BeEmpty())
+				},
+				Entry("without a key set", ""),
+				Entry("with a key set that has no TPM PCR key", `,"signing":{"ukiKeySetId":"ks-no-tpm"}`),
+			)
 		})
 
 		It("accepts every image field when each holds a valid reference", func() {

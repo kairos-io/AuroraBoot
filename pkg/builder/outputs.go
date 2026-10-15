@@ -33,5 +33,11 @@ func (o BuildOptions) ValidateOutputs() error {
 			return fmt.Errorf("%w: %s cannot be built from a Trusted Boot image, which ships as the UKI ISO and the tar", ErrInvalidBuildOptions, f.field)
 		}
 	}
+	// The UKI step signs with all three keys and refuses to start without
+	// them, which would otherwise surface only minutes into the build.
+	s := o.Signing
+	if o.Outputs.UKI && (s.UKISecureBootKey == "" || s.UKISecureBootCert == "" || s.UKITPMPCRKey == "") {
+		return fmt.Errorf("%w: outputs.uki needs a SecureBoot key, certificate and TPM PCR key: set signing.ukiKeySetId to a key set that has all three", ErrInvalidBuildOptions)
+	}
 	return nil
 }

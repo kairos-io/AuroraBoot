@@ -2074,7 +2074,7 @@
                     "type": "boolean"
                 },
                 "iso": {
-                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, the same\nas uki.",
+                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, the same\nas uki, and needs signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "maas": {
