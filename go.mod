@@ -8,7 +8,7 @@ godebug x509negativeserial=1
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/containerd/containerd/v2 v2.4.1
+	github.com/containerd/containerd/v2 v2.4.2
 	github.com/diskfs/go-diskfs v1.9.4
 	github.com/foxboron/go-uefi v0.0.0-20261004203234-c7f1f57bdc6e
 	github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb
