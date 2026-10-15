@@ -1,7 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, renderHook, act } from "@testing-library/react";
 
-import { setToken } from "@/api/client";
 import type { NodeMetrics } from "@/api/metrics";
 import {
   cpuPercent,
@@ -92,7 +91,6 @@ describe("useNodeMetrics", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    setToken("t");
     fetchMock = vi.fn(async () =>
       new Response(JSON.stringify({ latest: sample, samples: [sample] }), {
         status: 200,

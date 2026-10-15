@@ -631,6 +631,11 @@ export function ArtifactBuilder() {
   // from the current state on every render, so an error goes away as soon as
   // its field is valid again.
   const [shownErrorSteps, setShownErrorSteps] = useState<Set<BuilderStep> | "all">(() => new Set());
+  // What the create handler answered when it refused the build. The form's own
+  // errors are recomputed from state, but this one comes from the server and
+  // nothing on screen would otherwise say the build was rejected. Cleared on
+  // the next submit, so a corrected build does not carry the old message.
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [overlayFiles, setOverlayFiles] = useState<string[]>([]);
   const [overlayUploading, setOverlayUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -1423,6 +1428,7 @@ export function ArtifactBuilder() {
     // Only allow submission from the Review step (prevents accidental Enter-key submits
     // from inputs or Radix component keyboard handlers on earlier steps).
     if (step !== "review") return;
+    setSubmitError(null);
     const fieldErrors = computeErrors();
     if (fieldErrors.length > 0) {
       setShownErrorSteps("all");
@@ -1488,8 +1494,20 @@ export function ArtifactBuilder() {
       cloudConfig: advancedConfig.trim() || undefined,
     };
 
-    const result = await createArtifact(input);
-    navigate(`/artifacts/${result.id}`);
+    // createArtifact throws on any non-2xx. Without this catch the rejection
+    // escaped the form's onSubmit handler: the page stayed on the Review step
+    // with nothing rendered, so a refused build looked exactly like a click
+    // that did not register. Every message the create handler writes for the
+    // user reaches them through here, so show it and leave the operator on
+    // Review with the button still enabled to correct and try again.
+    try {
+      const result = await createArtifact(input);
+      navigate(`/artifacts/${result.id}`);
+    } catch (err) {
+      setSubmitError(
+        `Build was not started: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   // selectTemplate prefills the form from a template. It does not change the
@@ -1543,6 +1561,9 @@ export function ArtifactBuilder() {
   const errors = liveErrors
     .filter((e) => shownErrorSteps === "all" || shownErrorSteps.has(e.step))
     .map((e) => e.message);
+  // The rejected build goes in the same banner as the field errors, last,
+  // because it is the newest thing the operator did.
+  if (submitError) errors.push(submitError);
   const stepIndex = BUILDER_STEPS.indexOf(step);
   const currentStepErrors = liveErrors.filter((e) => e.step === step);
   const stepHasErrors = (key: BuilderStep) => liveErrors.some((e) => e.step === key);

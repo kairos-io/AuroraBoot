@@ -96,9 +96,21 @@ type ManagedNode struct {
 	ResetRequestedAt *time.Time `json:"resetRequestedAt,omitempty"`
 	// LastReset is when the most recent automatic reset completed successfully.
 	LastReset *time.Time `json:"lastReset,omitempty"`
-	APIKey    string     `json:"-" gorm:"index"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	// UpgradeState tracks the upgrade lifecycle across the reboot an upgrade
+	// command triggers. The agent acks the command once the new image is staged,
+	// before it reboots into it, so a Completed upgrade command only means the
+	// upgrade was scheduled; the real outcome is resolved here when the node
+	// re-registers and reports its post-reboot boot state. One of:
+	// "" (none) | pending | done | failed.
+	UpgradeState string `json:"upgradeState,omitempty"`
+	// UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set
+	// to pending); nil when no upgrade has been requested.
+	UpgradeRequestedAt *time.Time `json:"upgradeRequestedAt,omitempty"`
+	// LastUpgrade is when the most recent upgrade completed successfully.
+	LastUpgrade *time.Time `json:"lastUpgrade,omitempty"`
+	APIKey      string     `json:"-" gorm:"index"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 // Reported boot states (ManagedNode.BootState) — the short fleet vocabulary the
@@ -120,6 +132,16 @@ const (
 	ResetStateInProgress = "in-progress"
 	ResetStateDone       = "done"
 	ResetStateFailed     = "failed"
+)
+
+// Upgrade states (ManagedNode.UpgradeState) for the upgrade lifecycle.
+// SetUpgradePending sets `pending` when an upgrade command is issued; the
+// re-register resolver advances it from the reported boot state: active → done,
+// passive/recovery → failed (the node fell back off the upgraded image).
+const (
+	UpgradeStatePending = "pending"
+	UpgradeStateDone    = "done"
+	UpgradeStateFailed  = "failed"
 )
 
 // Node phases.
@@ -231,6 +253,17 @@ type NodeStore interface {
 	// stampLastReset is set (the transition to done), LastReset is set to now in
 	// the same update.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
+	// SetUpgradePending marks nodeID as awaiting an upgrade: UpgradeState is set
+	// to pending and UpgradeRequestedAt to now. Called when an upgrade command is
+	// issued; the outcome is resolved later by AdvanceUpgrade when the node
+	// re-registers with its post-reboot boot state.
+	SetUpgradePending(ctx context.Context, nodeID string) error
+	// AdvanceUpgrade atomically transitions nodeID's UpgradeState from any of
+	// fromStates to `to`, returning true only if this call performed the
+	// transition — so concurrent re-registers resolve exactly once. When
+	// stampLastUpgrade is set (the transition to done), LastUpgrade is set to now
+	// in the same update.
+	AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error)
 	Delete(ctx context.Context, id string) error
 }
 

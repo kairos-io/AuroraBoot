@@ -1,6 +1,6 @@
 module github.com/kairos-io/AuroraBoot
 
-go 1.26.8
+go 1.26.9
 
 // https://github.com/golang/go/blob/583d750fa119d504686c737be6a898994b674b69/src/crypto/x509/parser.go#L1014-L1018
 // For keys with negative serial number:
@@ -8,7 +8,7 @@ godebug x509negativeserial=1
 
 require (
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/containerd/containerd/v2 v2.4.1
+	github.com/containerd/containerd/v2 v2.4.2
 	github.com/diskfs/go-diskfs v1.9.4
 	github.com/foxboron/go-uefi v0.0.0-20261004203234-c7f1f57bdc6e
 	github.com/foxboron/sbctl v0.0.0-20260906194517-3ae0c7e6c7cb
@@ -17,7 +17,7 @@ require (
 	github.com/hashicorp/go-multierror v1.1.1
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.5.2
-	github.com/kairos-io/netboot v0.0.0-20260923193508-f2590943fb41
+	github.com/kairos-io/netboot v0.0.0-20261012151809-39e4036684f6
 	github.com/klauspost/compress v1.20.1
 	github.com/labstack/echo/v4 v4.16.0
 	github.com/mudler/go-processmanager v0.1.2
@@ -33,7 +33,7 @@ require (
 	github.com/u-root/u-root v0.16.0
 	golang.org/x/exp v0.0.0-20261007192929-f45ad48fbe92
 	golang.org/x/mod v0.41.0
-	golang.org/x/net v0.59.0 // indirect
+	golang.org/x/net v0.60.0 // indirect
 	golang.org/x/sys v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
@@ -42,7 +42,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/kairos-io/kairos-operator v0.2.2
-	github.com/kairos-io/kairos/v4 v4.3.1-0.20261008084833-b7418f05683f
+	github.com/kairos-io/kairos/v4 v4.3.1-0.20261013133005-0145342c9554
 	github.com/mudler/yip v1.26.4
 	github.com/rs/zerolog v1.35.1
 	github.com/stmcginnis/gofish v0.27.0

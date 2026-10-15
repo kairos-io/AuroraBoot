@@ -88,6 +88,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -128,6 +134,12 @@ const docTemplate = `{
                     },
                     "400": {
                         "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -244,6 +256,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/store.ArtifactRecord"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -341,6 +359,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -390,6 +414,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -417,6 +447,82 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/artifacts/{id}/download-link": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns a path that downloads one file of the artifact without other credentials for one hour.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Create a download link",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "File name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DownloadLinkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DownloadLinkResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -553,6 +659,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -658,6 +770,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -743,6 +861,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -832,6 +956,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "No unclaimed node available (code=NoCapacity)",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -994,6 +1124,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1109,6 +1245,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/store.NodeCommand"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1143,6 +1285,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -1221,6 +1369,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1261,6 +1415,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1303,6 +1463,12 @@ const docTemplate = `{
                 "responses": {
                     "200": {
                         "description": "OK"
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1406,6 +1572,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1471,6 +1643,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/store.SecureBootKeySet"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1516,6 +1694,12 @@ const docTemplate = `{
                     },
                     "409": {
                         "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -1585,6 +1769,92 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/session": {
+            "get": {
+                "tags": [
+                    "session"
+                ],
+                "summary": "Check the session",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Exchanges the admin password for an HttpOnly session cookie that lasts 12 hours. A request carrying an Origin header must come from this server's origin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "session"
+                ],
+                "summary": "Sign in",
+                "parameters": [
+                    {
+                        "description": "Admin password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "session"
+                ],
+                "summary": "Sign out",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/settings/extension-catalogs": {
             "get": {
                 "security": [
@@ -1630,6 +1900,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handlers.extensionCatalogsResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }
@@ -1681,6 +1957,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.imageSourceResponse"
                         }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
@@ -1729,6 +2011,12 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIRegistrationTokenResponse"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }
@@ -2253,6 +2541,33 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.DownloadLinkRequest": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.DownloadLinkResponse": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.LoginRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.ResolvedBundleEntry": {
             "type": "object",
             "properties": {
@@ -2683,6 +2998,10 @@ const docTemplate = `{
                     "description": "LastReset is when the most recent automatic reset completed successfully.",
                     "type": "string"
                 },
+                "lastUpgrade": {
+                    "description": "LastUpgrade is when the most recent upgrade completed successfully.",
+                    "type": "string"
+                },
                 "machineID": {
                     "type": "string"
                 },
@@ -2708,6 +3027,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                },
+                "upgradeRequestedAt": {
+                    "description": "UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set\nto pending); nil when no upgrade has been requested.",
+                    "type": "string"
+                },
+                "upgradeState": {
+                    "description": "UpgradeState tracks the upgrade lifecycle across the reboot an upgrade\ncommand triggers. The agent acks the command once the new image is staged,\nbefore it reboots into it, so a Completed upgrade command only means the\nupgrade was scheduled; the real outcome is resolved here when the node\nre-registers and reports its post-reboot boot state. One of:\n\"\" (none) | pending | done | failed.",
                     "type": "string"
                 }
             }
@@ -2909,7 +3236,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "AuroraBoot API",
-	Description:      "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.\n* NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).\n* GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).",
+	Description:      "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.\n* NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).\n* GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

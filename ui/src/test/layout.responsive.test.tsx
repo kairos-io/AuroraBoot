@@ -2,12 +2,10 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
-import { setToken } from "@/api/client";
 import { Layout, SIDEBAR_KEY } from "@/components/Layout";
 
 beforeEach(() => {
   window.localStorage.clear();
-  setToken("t");
   Object.defineProperty(window, "matchMedia", {
     writable: true,
     configurable: true,

@@ -488,6 +488,37 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 	return res.RowsAffected == 1, nil
 }
 
+// SetUpgradePending marks a node as awaiting an upgrade.
+func (s *Store) SetUpgradePending(ctx context.Context, nodeID string) error {
+	now := time.Now()
+	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ?", nodeID).
+		Updates(map[string]any{
+			"upgrade_state":        store.UpgradeStatePending,
+			"upgrade_requested_at": &now,
+		}).Error
+}
+
+// AdvanceUpgrade compare-and-sets a node's UpgradeState with the same
+// conditional UPDATE as AdvanceReset (... WHERE id = ? AND upgrade_state IN
+// fromStates), so exactly one of several concurrent re-register resolvers
+// performs any given transition. When stampLastUpgrade is set, last_upgrade is
+// written in the same statement as the transition to done.
+func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
+	updates := map[string]any{"upgrade_state": to}
+	if stampLastUpgrade {
+		now := time.Now()
+		updates["last_upgrade"] = &now
+	}
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND upgrade_state IN ?", nodeID, fromStates).
+		Updates(updates)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
 // --- CommandStore ---
 
 func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error {
@@ -706,7 +737,7 @@ func (s *Store) ArtifactDeleteByPhase(ctx context.Context, phase string) error {
 
 func (s *Store) ArtifactAppendLog(ctx context.Context, id string, text string) error {
 	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
-		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", text)).Error
+		Update("logs", cappedLogAppend(text)).Error
 }
 
 // --- SecureBootKeySetStore ---
@@ -966,7 +997,7 @@ func (s *Store) ExtensionAppendLog(ctx context.Context, id, chunk string) error 
 	return s.db.WithContext(ctx).
 		Model(&store.ExtensionRecord{}).
 		Where("id = ?", id).
-		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", chunk)).Error
+		Update("logs", cappedLogAppend(chunk)).Error
 }
 
 // --- ArtifactExtensionBundleStore ---

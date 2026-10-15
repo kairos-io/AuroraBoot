@@ -24,6 +24,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -71,6 +72,7 @@ type ArtifactHandler struct {
 	regToken       string
 	aurorabootURL  string
 	artifactsDir   string
+	linkSigner     *auth.LinkSigner
 
 	// exportImage is the artifact image export pipeline. Real servers run
 	// dockerFlattenExport; tests swap in a fake so the endpoint's queueing and
@@ -212,6 +214,7 @@ var phonehomeSafeDefaults = []string{"upgrade", "upgrade-recovery", "reboot", "u
 //	@Param			body	body		APICreateArtifactRequest	true	"Build specification"
 //	@Success		201		{object}	store.ArtifactRecord
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/artifacts [post]
 func (h *ArtifactHandler) Create(c echo.Context) error {
 	var req createArtifactRequest
@@ -360,7 +363,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		ID:                uuid.New().String(),
 		Name:              req.Name,
 		UploadToken:       uploadToken,
-		LogRedactValues:   []string{h.regToken, req.Provisioning.Password},
+		LogRedactValues:   []string{h.regToken, req.Provisioning.Password, uploadToken},
 		BaseImage:         req.BaseImage,
 		KairosVersion:     req.KairosVersion,
 		Model:             req.Model,
@@ -698,6 +701,9 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 //	@Failure	413	{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/upload/{filename} [put]
 func (h *ArtifactHandler) Upload(c echo.Context) error {
+	if c.Request().ContentLength > maxUploadBytes {
+		return bodyTooLarge(c)
+	}
 	id := c.Param("id")
 	filename := c.Param("*")
 	ctx := c.Request().Context()
@@ -814,7 +820,73 @@ func safePathSegment(s string) error {
 	return nil
 }
 
-// Cancel handles POST /api/v1/artifacts/:id/cancel.
+// WithLinkSigner sets the signer used for download links.
+func (h *ArtifactHandler) WithLinkSigner(s *auth.LinkSigner) *ArtifactHandler {
+	h.linkSigner = s
+	return h
+}
+
+// DownloadLinkRequest is the body of POST /api/v1/artifacts/{id}/download-link.
+type DownloadLinkRequest struct {
+	Filename string `json:"filename"`
+}
+
+// DownloadLinkResponse is a signed download path and when it stops working.
+type DownloadLinkResponse struct {
+	Path      string    `json:"path"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// CreateDownloadLink handles POST /api/v1/artifacts/:id/download-link.
+//
+//	@Summary		Create a download link
+//	@Description	Returns a path that downloads one file of the artifact without other credentials for one hour.
+//	@Tags			Artifacts
+//	@Security		AdminBearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string				true	"Artifact ID"
+//	@Param			body	body	DownloadLinkRequest	true	"File name"
+//	@Success		200	{object}	DownloadLinkResponse
+//	@Failure		400	{object}	APIError
+//	@Failure		401	{object}	APIError
+//	@Failure		404	{object}	APIError
+//	@Failure		413	{object}	APIError
+//	@Router			/api/v1/artifacts/{id}/download-link [post]
+func (h *ArtifactHandler) CreateDownloadLink(c echo.Context) error {
+	id := c.Param("id")
+	var req DownloadLinkRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid request body"})
+	}
+	if safePathSegment(id) != nil || safePathSegment(req.Filename) != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid artifact id or filename"})
+	}
+	if h.store == nil || h.linkSigner == nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "artifact not found"})
+	}
+	rec, err := h.store.GetByID(c.Request().Context(), id)
+	if err != nil || rec == nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "artifact not found"})
+	}
+	if !hasArtifactFile(rec.ArtifactFiles, req.Filename) {
+		return c.JSON(http.StatusNotFound, APIError{Error: "file not found"})
+	}
+	q, expires := h.linkSigner.Sign(id, req.Filename)
+	path := "/api/v1/artifacts/" + url.PathEscape(id) + "/download/" + url.PathEscape(req.Filename) + "?" + q.Encode()
+	return c.JSON(http.StatusOK, DownloadLinkResponse{Path: path, ExpiresAt: expires})
+}
+
+// hasArtifactFile reports whether one of files has the base name filename.
+func hasArtifactFile(files []string, filename string) bool {
+	for _, f := range files {
+		if filepath.Base(f) == filename {
+			return true
+		}
+	}
+	return false
+}
+
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 //
 //	@Summary	Cancel a running build
@@ -822,6 +894,7 @@ func safePathSegment(s string) error {
 //	@Security	AdminBearer
 //	@Param		id	path	string	true	"Artifact ID"
 //	@Success	200
+//	@Failure	413	{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/cancel [post]
 func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
@@ -997,6 +1070,7 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 //	@Param		id		path		string						true	"Artifact ID"
 //	@Param		body	body		APIUpdateArtifactRequest	true	"Fields to update"
 //	@Success	200		{object}	store.ArtifactRecord
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/artifacts/{id} [patch]
 func (h *ArtifactHandler) Update(c echo.Context) error {
 	id := c.Param("id")
@@ -1080,11 +1154,18 @@ type UploadOverlayResponse struct {
 //	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
 //	@Success		200		{object}	UploadOverlayResponse
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Failure		500		{object}	APIError
 //	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
+	if ok, err := limitBody(c, maxOverlayRequestBytes); !ok {
+		return err
+	}
 	form, err := c.MultipartForm()
 	if err != nil {
+		if isBodyTooLarge(err) {
+			return bodyTooLarge(c)
+		}
 		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
 	}
 	files := form.File["files"]
@@ -1839,6 +1920,7 @@ type setBundleEntry struct {
 //	@Success	200		{array}	store.ArtifactExtensionBundle
 //	@Failure	400		{object}	APIError
 //	@Failure	404		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/bundle-extensions [put]
 func (h *ArtifactHandler) SetBundleExtensions(c echo.Context) error {
 	if h.bundles == nil || h.extensions == nil || h.store == nil {
@@ -1920,6 +2002,7 @@ type ResolvedBundleEntry struct {
 //	@Success		200	{array}	ResolvedBundleEntry
 //	@Failure		400	{object}	APIError
 //	@Failure		404	{object}	APIError
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/artifacts/{id}/bundle-resolve [post]
 func (h *ArtifactHandler) ResolveBundle(c echo.Context) error {
 	if h.bundles == nil || h.extensions == nil || h.store == nil {

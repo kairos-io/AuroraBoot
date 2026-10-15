@@ -27,6 +27,7 @@ import { getSystemBuilder, type SystemBuilder } from "@/api/system";
 import { cn } from "@/lib/utils";
 import { KairosLogo } from "@/components/KairosLogo";
 import { Toaster } from "@/components/ui/toaster";
+import { toast } from "@/hooks/useToast";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 // NavItem is either a client-side route (the common case) or an
@@ -298,9 +299,12 @@ export function Layout() {
     };
   }, []);
 
-  function handleLogout() {
-    logout();
-    navigate("/login");
+  async function handleLogout() {
+    if (await logout()) {
+      navigate("/login");
+    } else {
+      toast("Sign-out failed, you are still signed in", "error");
+    }
   }
 
   function choose(v: SidebarPref) {

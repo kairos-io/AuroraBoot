@@ -18,16 +18,14 @@ afterEach(() => {
 });
 
 describe("extensionDownloadUrl", () => {
-  it("appends the admin token as a query param", () => {
+  it("is a plain path even when a legacy admin token is in localStorage", () => {
     localStorage.setItem("auroraboot_token", ADMIN);
-    expect(extensionDownloadUrl("e-1", "x.raw")).toBe(
-      `/api/v1/extensions/e-1/download/x.raw?token=${encodeURIComponent(ADMIN)}`,
-    );
+    expect(extensionDownloadUrl("e-1", "x.raw")).toBe("/api/v1/extensions/e-1/download/x.raw");
   });
 
   it("encodes the id and filename so neither can inject a path or query separator", () => {
     expect(extensionDownloadUrl("../e-1", "a b?x=1.raw")).toBe(
-      "/api/v1/extensions/..%2Fe-1/download/a%20b%3Fx%3D1.raw?token=",
+      "/api/v1/extensions/..%2Fe-1/download/a%20b%3Fx%3D1.raw",
     );
   });
 });

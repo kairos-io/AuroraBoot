@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { cn } from "@/lib/utils";
 import { useToastListener, type Toast } from "@/hooks/useToast";
 import { X } from "lucide-react";
@@ -14,12 +14,25 @@ const typeStyles: Record<Toast["type"], string> = {
 
 export function Toaster() {
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Pending hide timers, cleared on unmount so none fires after the toaster
+  // is gone.
+  const timers = useRef(new Set<ReturnType<typeof setTimeout>>());
 
   const handleToast = useCallback((toast: Toast) => {
     setToasts((prev) => [...prev, toast]);
-    setTimeout(() => {
+    const timer = setTimeout(() => {
+      timers.current.delete(timer);
       setToasts((prev) => prev.filter((t) => t.id !== toast.id));
     }, 3000);
+    timers.current.add(timer);
+  }, []);
+
+  useEffect(() => {
+    const pending = timers.current;
+    return () => {
+      pending.forEach(clearTimeout);
+      pending.clear();
+    };
   }, []);
 
   useToastListener(handleToast);

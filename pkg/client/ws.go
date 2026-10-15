@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"net/url"
 	"strings"
 
 	"github.com/gorilla/websocket"
@@ -20,7 +19,7 @@ type WSMessage struct {
 }
 
 // DialAgentWS opens the agent command WebSocket using the client's
-// node API key. Returns a live *websocket.Conn the caller owns.
+// node API key, sent in the Authorization header. Returns a live *websocket.Conn the caller owns.
 //
 // The agent receives {type:"command", data:{...}} envelopes and
 // replies with {type:"status", data:{...}}.
@@ -32,12 +31,9 @@ func (c *Client) DialAgentWS(ctx context.Context) (*websocket.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{}
-	q.Set("token", c.nodeAPIKey)
-	wsURL += "?" + q.Encode()
 
-	dialer := websocket.DefaultDialer
-	conn, resp, err := dialer.DialContext(ctx, wsURL, http.Header{})
+	header := http.Header{"Authorization": {"Bearer " + c.nodeAPIKey}}
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}
@@ -48,7 +44,7 @@ func (c *Client) DialAgentWS(ctx context.Context) (*websocket.Conn, error) {
 }
 
 // DialUIWS opens the UI live-update WebSocket using the client's
-// admin password. Returns a live *websocket.Conn the caller owns.
+// admin password, sent in the Authorization header. Returns a live *websocket.Conn the caller owns.
 //
 // The UI channel broadcasts heterogeneous envelopes such as
 // {type:"build-log", data:{id,chunk}} and
@@ -61,11 +57,9 @@ func (c *Client) DialUIWS(ctx context.Context) (*websocket.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	q := url.Values{}
-	q.Set("token", c.adminPassword)
-	wsURL += "?" + q.Encode()
 
-	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL, http.Header{})
+	header := http.Header{"Authorization": {"Bearer " + c.adminPassword}}
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, wsURL, header)
 	if resp != nil {
 		_ = resp.Body.Close()
 	}

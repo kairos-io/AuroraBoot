@@ -5,7 +5,6 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { Extensions } from "@/pages/Extensions";
 import { ExtensionDetail } from "@/pages/ExtensionDetail";
 import { InstallExtensionDialog } from "@/components/InstallExtensionDialog";
-import { setToken } from "@/api/client";
 import type { Extension } from "@/api/extensions";
 
 const ARTIFACT_ID = "a1b2c3d4-0000-4000-8000-000000000001";
@@ -118,7 +117,6 @@ function cellUnder(row: HTMLElement, header: string): HTMLElement {
 
 describe("Extensions list", () => {
   beforeEach(() => {
-    setToken("t");
     vi.stubGlobal("fetch", mockFetch());
   });
   afterEach(() => {
@@ -178,7 +176,6 @@ describe("Extensions list", () => {
 
 describe("Extension detail", () => {
   beforeEach(() => {
-    setToken("t");
     vi.stubGlobal("fetch", mockFetch());
   });
   afterEach(() => {
@@ -206,7 +203,6 @@ describe("Extension detail", () => {
 
 describe("Install extension dialog", () => {
   beforeEach(() => {
-    setToken("t");
     vi.stubGlobal("fetch", mockFetch());
   });
   afterEach(() => {

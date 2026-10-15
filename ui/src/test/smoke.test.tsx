@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
@@ -21,10 +21,14 @@ beforeEach(() => {
   });
 });
 
+afterEach(() => {
+  vi.unstubAllGlobals();
+});
+
 describe("UI smoke", () => {
-  it("renders the AuroraBoot login screen for unauthenticated users", () => {
-    // No token in storage → the auth guard sends `/` to `/login`.
-    window.localStorage.clear();
+  it("renders the AuroraBoot login screen for unauthenticated users", async () => {
+    // No live session: the auth guard sends `/` to `/login`.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
 
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -32,7 +36,7 @@ describe("UI smoke", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: /AuroraBoot/i })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: /AuroraBoot/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/admin password/i)).toBeInTheDocument();
   });
