@@ -88,6 +88,12 @@ func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error      
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
+func (f *fakeNodeStore) StampResetProgress(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) FailResetBefore(_ context.Context, _ string, _ time.Time) (bool, error) {
+	return false, nil
+}
 func (f *fakeNodeStore) SetUpgradePending(_ context.Context, _ string) error { return nil }
 func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil

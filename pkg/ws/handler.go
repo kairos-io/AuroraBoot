@@ -391,6 +391,7 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 		if !claimed {
 			continue
 		}
+		store.MarkResetDelivered(ctx, h.Nodes, cmd)
 
 		cmdMsg := commandData{
 			ID:      cmd.ID,
