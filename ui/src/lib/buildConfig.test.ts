@@ -94,8 +94,7 @@ const keySets: SecureBootKeySet[] = [
   {
     id: "ks-1",
     name: "prod-keys",
-    keysDir: "/data/keys/prod-keys",
-    tpmPcrKeyPath: "/data/keys/prod-keys/tpm.pem",
+    hasTpmPcrKey: true,
     secureBootEnroll: "if-safe",
     createdAt: "2026-01-01T00:00:00Z",
   },
