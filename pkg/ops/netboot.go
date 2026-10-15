@@ -9,6 +9,7 @@ import (
 
 	"github.com/diskfs/go-diskfs"
 	"github.com/kairos-io/AuroraBoot/internal"
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/netboot"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
 	agentconstants "github.com/kairos-io/kairos/v4/agent/pkg/constants"
@@ -24,6 +25,24 @@ import (
 // but rather at the time of the call, e.g. when the ISO file is downloaded or the destination directory is created.
 type valueGetOnCall func() string
 
+// DefaultNetbootPrefix is the base name the netboot artifacts carry when the
+// configuration names none.
+const DefaultNetbootPrefix = "kairos"
+
+// NetbootGrubCfgPath is the path ExtractNetboot writes the livecd grub config
+// to, for the given prefix, which is iso.name from the configuration.
+//
+// The server reads that file back to build the netboot cmdline, so it has to
+// ask for the same name. Spelling it on only one side is what made a run with
+// iso.name set write <name>-grub.cfg and then look for kairos-grub.cfg.
+func NetbootGrubCfgPath(dst, prefix string) string {
+	if prefix == "" {
+		prefix = DefaultNetbootPrefix
+	}
+
+	return filepath.Join(dst, fmt.Sprintf("%s-grub.cfg", prefix))
+}
+
 // ExtractNetboot extracts all the required netbooting artifacts
 // isoFunc is a function that returns the path to the ISO file
 // we need the function to be passed so its executed in the context of the deployer as otherwise
@@ -34,7 +53,7 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 		dst := dstFunc()
 
 		if prefix == "" {
-			prefix = "kairos"
+			prefix = DefaultNetbootPrefix
 		}
 
 		if _, err := os.Stat(dst); err != nil && os.IsNotExist(err) {
@@ -60,6 +79,17 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
 			return err
 		}
+
+		// The livecd grub config holds the cmdline the ISO boots with, which
+		// the netboot cmdline is meant to match. Not every ISO has one, so a
+		// miss only costs the caller those options: hence the nil logger, the
+		// error of an expected miss does not belong on the Error channel.
+		artifact = NetbootGrubCfgPath(dst, prefix)
+		if err := iso.ExtractFileFromIso(filepath.Join(constants.GrubPrefixDir, constants.GrubCfg), src, artifact, nil); err != nil {
+			internal.Log.Logger.Warn().Err(err).Str("artifact", artifact).Str("source", src).Msg("No livecd grub config in the ISO, netboot will boot with the default cmdline")
+			_ = os.Remove(artifact)
+		}
+
 		carried, err := extractNetbootExtensions(src, dst)
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Str("source", src).Str("destination", dst).Msg("Failed extracting the bundled extensions")
@@ -74,7 +104,7 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 	}
 }
 
-func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGet, initrdFileGet, kernelFileGet valueGetOnCall, nb schema.NetBoot) func(ctx context.Context) error {
+func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGet, initrdFileGet, kernelFileGet, grubCfgFileGet valueGetOnCall, nb schema.NetBoot) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		internal.Log.Logger.Info().Msgf("Start pixiecore")
 		// do them in the context of the deployer so we can use the functions at the time of the call
@@ -82,16 +112,22 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 		initrdFile := initrdFileGet()
 		kernelFile := kernelFileGet()
 
-		line, err := netbootCmdline(squashFSfile, cloudConfigFile, nb)
+		line, err := netbootCmdline(squashFSfile, cloudConfigFile, grubCfgFileGet, nb)
 		if err != nil {
 			return err
 		}
+		internal.Log.Logger.Info().Str("cmdline", line).Msg("Netbooting")
 
 		return netboot.Server(kernelFile, line, address, netbootPort, initrdFile, true)
 	}
 }
 
 // netbootCmdline renders the kernel command line pixiecore hands the node.
+//
+// The pixiecore placeholders are expanded before anything else is merged in.
+// Everything appended afterwards is operator-supplied or ISO-supplied text,
+// and a % in it would otherwise be read as a format verb: fmt replaces it
+// with %!(NOVERB) and a stray verb can swallow the option that follows it.
 //
 // The bundled extensions are read out of the directory holding the squashfs,
 // which is the netboot directory in every caller: the deployer builds all
@@ -100,17 +136,28 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 // as an argument is what makes the web dashboard's netboot server, which goes
 // through the start-pixie subprocess, behave the same as an in-process CLI
 // build.
-func netbootCmdline(squashFSfile, cloudConfigFile string, nb schema.NetBoot) (string, error) {
-	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
-
+//
+// The livecd options are merged in before the extensions are appended. The
+// merge rewrites the option list, while the kairos.extensions value is a list
+// of pixiecore {{ ID }} templates this build minted and nothing else may
+// reorder or deduplicate.
+func netbootCmdline(squashFSfile, cloudConfigFile string, grubCfgFileGet valueGetOnCall, nb schema.NetBoot) (string, error) {
+	// The two served paths are expanded on their own, before anything else is
+	// joined on. Everything appended afterwards is operator-supplied or
+	// ISO-supplied text, and a % in it would otherwise be read as a format
+	// verb: fmt replaces it with %!(NOVERB) and a stray verb can swallow the
+	// option that follows it.
+	var line string
 	if nb.Cmdline != "" {
-		cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
-	}
+		line = fmt.Sprintf(`root=live:{{ ID "%s" }} config_url={{ ID "%s" }}`, squashFSfile, cloudConfigFile) + " " + nb.Cmdline
+	} else {
+		line = fmt.Sprintf(`rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, cloudConfigFile)
 
-	// Expand the two served paths first, then append the extensions: an
-	// extension image path ends in a file name AuroraBoot did not choose, so
-	// it can legitimately contain a % that Sprintf would read as a verb.
-	line := fmt.Sprintf(cmdLine, squashFSfile, cloudConfigFile)
+		// Without an explicit override, take the options the ISO itself boots
+		// with instead of leaving this list to drift away from it.
+		// See kairos-io/kairos#2573.
+		line = withLiveCmdline(line, grubCfgFileGet)
+	}
 
 	declaration, err := extensionsCmdline(filepath.Dir(squashFSfile), nb.Cmdline)
 	if err != nil {
@@ -121,6 +168,32 @@ func netbootCmdline(squashFSfile, cloudConfigFile string, nb schema.NetBoot) (st
 		line += " " + declaration
 	}
 	return line, nil
+}
+
+// withLiveCmdline merges the livecd grub config extracted by ExtractNetboot
+// into the netboot cmdline. A grub config that is absent or unreadable is not
+// an error: the caller may be netbooting an ISO that has none, and the cmdline
+// is then used as it is.
+func withLiveCmdline(cmdLine string, grubCfgFileGet valueGetOnCall) string {
+	if grubCfgFileGet == nil {
+		return cmdLine
+	}
+
+	grubCfgFile := grubCfgFileGet()
+	if grubCfgFile == "" {
+		return cmdLine
+	}
+
+	grubCfg, err := os.ReadFile(grubCfgFile)
+	if err != nil {
+		internal.Log.Logger.Warn().Err(err).Str("grubCfg", grubCfgFile).Msg("Could not read the livecd grub config, netbooting with the default cmdline")
+		return cmdLine
+	}
+
+	merged := netboot.LiveCmdline(cmdLine, string(grubCfg))
+	internal.Log.Logger.Debug().Str("grubCfg", grubCfgFile).Msg("Netboot cmdline taken from the livecd grub config")
+
+	return merged
 }
 
 // extensionsCmdline renders the kairos.extensions keyword for the extensions
