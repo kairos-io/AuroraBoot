@@ -276,7 +276,6 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			GCE:                     opts.Outputs.GCE,
 			VHD:                     opts.Outputs.VHD,
 			MAAS:                    opts.Outputs.MAAS,
-			UKI:                     opts.Outputs.UKI,
 			KairosInitImage:         opts.KairosInitImage,
 			AutoInstall:             opts.Provisioning.AutoInstall,
 			RegisterAuroraBoot:      opts.Provisioning.RegisterAuroraBoot,
@@ -479,8 +478,10 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	// itself and we shouldn't keep multi-GB files around or list them as
 	// build outputs. The raw-disk paths don't produce ISOs at all, so the
 	// only files present here would be that scaffolding ISO. This runs
-	// before the UKI step, whose output is an ISO the user did ask for.
-	if !opts.Outputs.ISO {
+	// before the UKI step, whose output is an ISO the user did ask for. A
+	// Trusted Boot build asks for the ISO and gets the UKI one, so the
+	// scaffolding ISO goes here too rather than sitting next to it.
+	if !opts.Outputs.ISO || opts.Outputs.UKIISO() {
 		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
 			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
 			for _, p := range matches {
@@ -492,7 +493,7 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 	}
 
 	// Step 2.7: Build UKI (Unified Kernel Image) if requested.
-	if opts.Outputs.UKI {
+	if opts.Outputs.UKIISO() {
 		if logWriter != nil {
 			fmt.Fprintf(logWriter, "\n=== Building UKI (Unified Kernel Image) ===\n")
 			logWriter.Flush()
@@ -731,7 +732,7 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		State:             outputDir,
 		DisableHTTPServer: true,
 		DisableNetboot:    !opts.Netboot,
-		DisableISOboot:    !opts.ISO,
+		DisableISOboot:    !opts.ISO || opts.Outputs.UKIISO(),
 	}
 
 	if opts.Source.Arch != "" {

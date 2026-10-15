@@ -171,7 +171,6 @@ type Artifact struct {
 	GCE                     bool          `json:"gce"`
 	VHD                     bool          `json:"vhd"`
 	MAAS                    bool          `json:"maas"`
-	UKI                     bool          `json:"uki"`
 	FIPS                    bool          `json:"fips"`
 	TrustedBoot             bool          `json:"trustedBoot"`
 	AutoInstall             bool          `json:"autoInstall"`
@@ -222,6 +221,11 @@ type CreateArtifactRequest struct {
 }
 
 // ArtifactOutputs toggles build output formats.
+//
+// There is one ISO option and TrustedBoot decides which ISO it is: the GRUB
+// installer in Standard mode, the signed UKI installer in Trusted Boot mode.
+// A Trusted Boot image has no GRUB, so netboot and the disk images are
+// refused on such a build.
 type ArtifactOutputs struct {
 	ISO         bool `json:"iso,omitempty"`
 	CloudImage  bool `json:"cloudImage,omitempty"`
@@ -231,7 +235,6 @@ type ArtifactOutputs struct {
 	GCE         bool `json:"gce,omitempty"`
 	VHD         bool `json:"vhd,omitempty"`
 	MAAS        bool `json:"maas,omitempty"`
-	UKI         bool `json:"uki,omitempty"`
 	FIPS        bool `json:"fips,omitempty"`
 	TrustedBoot bool `json:"trustedBoot,omitempty"`
 }
