@@ -1273,7 +1273,14 @@ export function ArtifactBuilder() {
   }
 
   function updateOutput(field: keyof typeof EMPTY_OUTPUTS, value: boolean) {
-    setForm((prev) => ({ ...prev, outputs: { ...prev.outputs, [field]: value } }));
+    setForm((prev) => {
+      const outputs = { ...prev.outputs, [field]: value };
+      if (field === "trustedBoot" && value) {
+        outputs.iso = false;
+        outputs.netboot = false;
+      }
+      return { ...prev, outputs };
+    });
   }
 
   function updateSigning(field: keyof typeof EMPTY_SIGNING, value: string) {
@@ -1380,12 +1387,19 @@ export function ArtifactBuilder() {
 
     // Output
     if (scope === undefined || scope === "output") {
-      const hasOutput = Object.values(form.outputs).some(Boolean);
+      const hasOutput = OUTPUT_GROUPS.some((g) => g.items.some((item) => form.outputs[item.field]));
       if (!hasOutput) {
         errs.push({
           field: "outputs",
           step: "output",
           message: "At least one output format must be selected.",
+        });
+      }
+      if (form.outputs.trustedBoot && (form.outputs.iso || form.outputs.netboot)) {
+        errs.push({
+          field: "outputs",
+          step: "output",
+          message: "ISO and Netboot are not available with Trusted Boot. Select UKI for a bootable ISO.",
         });
       }
       if (form.outputs.uki) {
@@ -3067,7 +3081,8 @@ export function ArtifactBuilder() {
                       Trusted Boot
                     </label>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Enable measured boot with TPM verification.
+                      Enable measured boot with TPM verification. Turns off the ISO
+                      and Netboot outputs; use UKI for a bootable ISO.
                     </p>
                   </div>
                 </CardContent>
@@ -3096,15 +3111,23 @@ export function ArtifactBuilder() {
                         {group.items.map((item) => {
                           const Icon = item.icon;
                           const checked = !!form.outputs[item.field];
+                          const blocked =
+                            !checked &&
+                            !!form.outputs.trustedBoot &&
+                            (item.field === "iso" || item.field === "netboot");
                           return (
                             <button
                               key={item.field}
                               type="button"
+                              disabled={blocked}
+                              title={blocked ? "Not available with Trusted Boot" : undefined}
                               onClick={() => updateOutput(item.field, !checked)}
                               className={`relative text-left rounded-lg border p-3 transition-colors ${
                                 checked
                                   ? "border-primary bg-primary-soft ring-1 ring-primary/20"
-                                  : "border-border hover:border-primary/40"
+                                  : blocked
+                                    ? "border-border opacity-50 cursor-not-allowed"
+                                    : "border-border hover:border-primary/40"
                               }`}
                             >
                               {checked && (
@@ -3125,6 +3148,15 @@ export function ArtifactBuilder() {
                       </div>
                     </div>
                   ))}
+
+                  {form.outputs.trustedBoot && (
+                    <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                      <p className="text-sm text-amber-700">
+                        Trusted Boot images have no separate initrd, so ISO and Netboot are not available. Select UKI: its output is the bootable ISO.
+                      </p>
+                    </div>
+                  )}
 
                   {form.outputs.uki && (
                     <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
