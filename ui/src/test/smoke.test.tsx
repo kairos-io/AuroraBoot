@@ -27,9 +27,9 @@ afterEach(() => {
 });
 
 describe("UI smoke", () => {
-  it("renders the product login screen for unauthenticated users", () => {
-    // No token in storage → the auth guard sends `/` to `/login`.
-    window.localStorage.clear();
+  it("renders the product login screen for unauthenticated users", async () => {
+    // No live session: the auth guard sends `/` to `/login`.
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
 
     render(
       <MemoryRouter initialEntries={["/"]}>
@@ -37,7 +37,7 @@ describe("UI smoke", () => {
       </MemoryRouter>,
     );
 
-    expect(screen.getByRole("heading", { name: PRODUCT_NAME })).toBeInTheDocument();
+    expect(await screen.findByRole("heading", { name: PRODUCT_NAME })).toBeInTheDocument();
     expect(screen.queryByText(/AuroraBoot/)).not.toBeInTheDocument();
     expect(screen.getByLabelText(/password/i)).toBeInTheDocument();
     expect(screen.getByPlaceholderText(/admin password/i)).toBeInTheDocument();
