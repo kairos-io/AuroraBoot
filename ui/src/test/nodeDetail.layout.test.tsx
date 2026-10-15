@@ -4,7 +4,6 @@ import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
 import { Toaster } from "@/components/ui/toaster";
-import { setToken } from "@/api/client";
 
 const NODE_ID = "0f9c2f1e-5b4a-4c0e-9d3f-7a1b2c3d4e5f";
 
@@ -57,7 +56,6 @@ function mockFetch(opts: { node?: unknown; commands?: unknown[] } = {}) {
 }
 
 beforeEach(() => {
-  setToken("t");
   vi.stubGlobal(
     "WebSocket",
     class {

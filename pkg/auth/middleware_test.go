@@ -91,7 +91,7 @@ var _ = Describe("AdminMiddleware", func() {
 
 	BeforeEach(func() {
 		e = echo.New()
-		middleware = auth.AdminMiddleware("secret-password")
+		middleware = auth.AdminMiddleware(auth.NewAdminAuth("secret-password", auth.NewSessionStore(), ""))
 	})
 
 	It("should allow requests with valid Bearer token", func() {

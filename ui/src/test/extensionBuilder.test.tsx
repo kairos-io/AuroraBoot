@@ -3,7 +3,6 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router";
 
 import { ExtensionBuilder } from "@/pages/ExtensionBuilder";
-import { setToken } from "@/api/client";
 
 const keySets = [
   { id: "ks-1", name: "prod-keys", keysDir: "/k/1", tpmPcrKeyPath: "", secureBootEnroll: "", createdAt: "" },
@@ -44,7 +43,6 @@ function primary() {
 
 describe("ExtensionBuilder wizard", () => {
   beforeEach(() => {
-    setToken("t");
     posted = [];
     vi.stubGlobal("fetch", mockFetch());
   });
