@@ -2081,12 +2081,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "iso": {
+                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, the same\nas uki, and needs signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "maas": {
                     "type": "boolean"
                 },
                 "netboot": {
+                    "description": "Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and\nmaas: a Trusted Boot image has no GRUB and no separate initrd.",
                     "type": "boolean"
                 },
                 "rawDisk": {
@@ -2099,6 +2101,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "uki": {
+                    "description": "The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "vhd": {

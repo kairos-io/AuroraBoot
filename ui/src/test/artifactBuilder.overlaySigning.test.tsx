@@ -242,7 +242,7 @@ describe("ArtifactBuilder: overlay of an imported config", () => {
 
 describe("ArtifactBuilder: UKI signing", () => {
   it("signs with a saved key set and offers no server path inputs", async () => {
-    await cloneAndOpenOutput({ uki: true });
+    await cloneAndOpenOutput({ trustedBoot: true, uki: true });
 
     expect(screen.getByText("UKI Signing Keys")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Manual Paths/i })).toBeNull();
@@ -251,14 +251,14 @@ describe("ArtifactBuilder: UKI signing", () => {
   });
 
   it("refuses to start a UKI build without a saved key set", async () => {
-    vi.mocked(getArtifact).mockResolvedValue(source({ uki: true }) as never);
+    vi.mocked(getArtifact).mockResolvedValue(source({ trustedBoot: true, uki: true }) as never);
     renderBuilder("/artifacts/new?clone=src-artifact-id");
 
     // A clone lands on Review, where Start Build checks every step.
     fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
 
     expect(
-      (await screen.findAllByText(/A secure boot key set must be selected when UKI is enabled/)).length,
+      (await screen.findAllByText(/A secure boot key set must be selected for a Trusted Boot ISO/)).length,
     ).toBeGreaterThan(0);
     expect(createArtifact).not.toHaveBeenCalled();
   });

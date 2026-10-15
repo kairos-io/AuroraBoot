@@ -22,10 +22,16 @@ definitions:
       gce:
         type: boolean
       iso:
+        description: |-
+          The installer ISO. With trustedBoot it is the signed UKI ISO, the same
+          as uki, and needs signing.ukiKeySetId.
         type: boolean
       maas:
         type: boolean
       netboot:
+        description: |-
+          Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and
+          maas: a Trusted Boot image has no GRUB and no separate initrd.
         type: boolean
       rawDisk:
         type: boolean
@@ -34,6 +40,7 @@ definitions:
       trustedBoot:
         type: boolean
       uki:
+        description: The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.
         type: boolean
       vhd:
         type: boolean
