@@ -1406,7 +1406,9 @@ export function ArtifactBuilder() {
 
     // Output
     if (scope === undefined || scope === "output") {
-      const hasOutput = Object.values(form.outputs).some(Boolean);
+      // FIPS and Trusted Boot live in outputs too, but they shape the image
+      // rather than add a format, so only the output cards count.
+      const hasOutput = OUTPUT_GROUPS.some((g) => g.items.some((i) => form.outputs[i.field]));
       if (!hasOutput) {
         errs.push({
           field: "outputs",

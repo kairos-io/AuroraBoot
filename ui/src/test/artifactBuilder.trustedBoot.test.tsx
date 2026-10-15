@@ -175,6 +175,20 @@ describe("ArtifactBuilder: boot mode", () => {
     expect(createArtifact).not.toHaveBeenCalled();
   });
 
+  // FIPS and Trusted Boot sit in the outputs object, but neither is a format
+  // the build produces.
+  it("refuses to start a Trusted Boot build with no output selected", async () => {
+    await clone({ trustedBoot: true, fips: true, iso: false, netboot: false, rawDisk: false, tar: false });
+
+    openStep("Review");
+    fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
+
+    expect(
+      (await screen.findAllByText(/At least one output format must be selected/)).length,
+    ).toBeGreaterThan(0);
+    expect(createArtifact).not.toHaveBeenCalled();
+  });
+
   it("opens a cloned UKI artifact in Trusted Boot mode with the ISO selected", async () => {
     await clone({ trustedBoot: true, iso: false, uki: true, netboot: false, rawDisk: false, tar: false });
     openStep("Output");
