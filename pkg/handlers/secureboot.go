@@ -74,11 +74,12 @@ type SecureBootKeySetResponse struct {
 }
 
 // keySetResponse builds the API view of ks. An imported set may lack the
-// TPM PCR key, so its presence is read from disk.
+// TPM PCR key, or carry a directory at its path, so the key counts only when
+// a regular file is there.
 func keySetResponse(ks *store.SecureBootKeySet) SecureBootKeySetResponse {
 	has := false
 	if ks.TPMPCRKeyPath != "" {
-		if _, err := os.Stat(ks.TPMPCRKeyPath); err == nil {
+		if info, err := os.Stat(ks.TPMPCRKeyPath); err == nil && info.Mode().IsRegular() {
 			has = true
 		}
 	}

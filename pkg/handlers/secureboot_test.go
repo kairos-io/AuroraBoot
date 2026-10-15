@@ -326,6 +326,17 @@ var _ = Describe("SecureBootHandler export/import", func() {
 			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
 		})
 
+		It("reports no TPM PCR key when the archive puts a directory at its path", func() {
+			rec, _ := importExported("imported", "source", map[string]fileSpec{
+				"db.key":                     {data: []byte("PRIVATE"), mode: 0o600},
+				"tpm2-pcr-private.pem/child": {data: []byte("NOT A KEY"), mode: 0o600},
+			})
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			var out map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+			Expect(out).To(HaveKeyWithValue("hasTpmPcrKey", false))
+		})
+
 		It("names the key set, not the directory, when its directory already exists", func() {
 			Expect(os.MkdirAll(filepath.Join(keysDir, "imported"), 0o700)).To(Succeed())
 			rec, _ := importExported("imported", "source", map[string]fileSpec{
