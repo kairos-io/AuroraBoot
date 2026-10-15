@@ -85,9 +85,13 @@ jobs:
           push: true
           tags: quay.io/kairos/auroraboot:${{ github.ref_name }}-arm64
   build-linux-riscv64:
-    # Reverts #545's disable; same runner, unchanged. See commit message
-    # for why (the runner wasn't actually the problem).
-    runs-on: 'ubuntu-24.04-riscv'
+    # Runs emulated on a stock amd64 runner instead of the native
+    # ubuntu-24.04-riscv one. #779 timed both for this exact build
+    # (Dockerfile.riscv64, including the CGO crypto11/pkcs11 compile) and
+    # emulated finished ~10min faster (54m55s vs 1h05m02s) -- the amd64
+    # runner's extra hardware outweighs QEMU's overhead for a build this
+    # size. Drops the native-runner dependency for the release build.
+    runs-on: 'ubuntu-24.04'
     needs: build-ui
     steps:
       - name: Checkout
@@ -97,6 +101,10 @@ jobs:
         with:
           name: ui-dist
           path: internal/ui/dist
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: riscv64
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
         with:
