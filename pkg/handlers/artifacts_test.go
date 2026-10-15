@@ -534,26 +534,40 @@ var _ = Describe("ArtifactHandler", func() {
 	})
 })
 
-var _ = Describe("ArtifactHandler Create with Trusted Boot (kairos-io/kairos#5495)", func() {
-	// Captures current behaviour: ISO or netboot together with Trusted Boot is
-	// accepted (201). The fix should answer 400 with a clear message.
-	DescribeTable("currently accepts the combination instead of rejecting it",
+var _ = Describe("ArtifactHandler Create with Trusted Boot", func() {
+	create := func(outputs string) *httptest.ResponseRecorder {
+		e := echo.New()
+		fb := &fakeBuilder{}
+		handler := handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
+
+		body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":` + outputs + `}`
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		Expect(handler.Create(c)).To(Succeed())
+		return rec
+	}
+
+	DescribeTable("rejects outputs that need a separate initrd",
 		func(outputs string) {
-			e := echo.New()
-			fb := &fakeBuilder{}
-			handler := handlers.NewArtifactHandler(fb, nil, nil, nil, nil, nil, "", "reg-token", "http://localhost:8080")
-
-			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":` + outputs + `}`
-			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
-			req.Header.Set("Content-Type", "application/json")
-			rec := httptest.NewRecorder()
-			c := e.NewContext(req, rec)
-
-			Expect(handler.Create(c)).To(Succeed())
-			// BUG: should be http.StatusBadRequest.
-			Expect(rec.Code).To(Equal(http.StatusCreated))
+			rec := create(outputs)
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			Expect(rec.Body.String()).To(ContainSubstring("cannot be combined with trustedBoot"))
+			Expect(rec.Body.String()).To(ContainSubstring("uki"))
 		},
 		Entry("iso + trustedBoot", `{"iso":true,"trustedBoot":true}`),
 		Entry("netboot + trustedBoot", `{"netboot":true,"trustedBoot":true}`),
+		Entry("iso + uki + trustedBoot", `{"iso":true,"uki":true,"trustedBoot":true}`),
+	)
+
+	DescribeTable("accepts combinations that can be built",
+		func(outputs string) {
+			Expect(create(outputs).Code).To(Equal(http.StatusCreated))
+		},
+		Entry("uki + trustedBoot", `{"uki":true,"trustedBoot":true}`),
+		Entry("iso + uki without trustedBoot", `{"iso":true,"uki":true}`),
+		Entry("netboot without trustedBoot", `{"netboot":true}`),
 	)
 })
