@@ -521,6 +521,37 @@ var _ = Describe("ExtensionBuilder — Status, List, Cancel", func() {
 		}, "2s", "20ms").Should(Equal(builder.BuildError))
 	})
 
+	It("Cancel keeps a build out of Ready even when the CLI still succeeds", func() {
+		// Cancel only closes the build context. A CLI already on its way out
+		// can return success after that, and on a loaded runner it is the
+		// only case the seam's select sees -- which is how the spec above
+		// reddened CI. This seam ignores the context, so nothing but the
+		// cancellation itself can move the build to Error.
+		started := make(chan struct{})
+		release := make(chan struct{})
+		eb = eb.WithAurorabootCLIFunc(func(_ context.Context, _ auroraboot.AurorabootCLIArgs) error {
+			close(started)
+			<-release
+			return nil
+		})
+		_, _ = eb.Build(context.Background(), builder.ExtensionBuildOptions{
+			ID: "e-d", Name: "ts", Type: "sysext", Arch: "amd64",
+			Source: builder.ExtensionSource{Mode: "image", BaseImage: "ubuntu:24.04"},
+		})
+		Eventually(started, "2s").Should(BeClosed())
+
+		Expect(eb.Cancel(context.Background(), "e-d")).To(Succeed())
+		close(release)
+
+		Eventually(func() string {
+			st, _ := eb.Status(context.Background(), "e-d")
+			if st == nil {
+				return ""
+			}
+			return st.Phase
+		}, "2s", "20ms").Should(Equal(builder.BuildError))
+	})
+
 	It("Status returns 'not found' for an unknown ID", func() {
 		_, err := eb.Status(context.Background(), "does-not-exist")
 		Expect(err).To(HaveOccurred())
