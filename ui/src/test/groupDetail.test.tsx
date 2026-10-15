@@ -4,7 +4,6 @@ import { MemoryRouter, Route, Routes } from "react-router";
 
 import { GroupDetail } from "@/pages/GroupDetail";
 import { Toaster } from "@/components/ui/toaster";
-import { setToken } from "@/api/client";
 
 function makeNode(id: string, hostname: string, extra: Record<string, unknown> = {}) {
   return {
@@ -67,7 +66,6 @@ function renderPage() {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {

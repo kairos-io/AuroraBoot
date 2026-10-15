@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -56,8 +57,13 @@ type commandStatusData struct {
 	Result string `json:"result,omitempty"`
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+// newUpgrader returns an upgrader that refuses a browser upgrade from another
+// origin. Without it a page on any site could open the UI socket with the
+// admin's session cookie and read every event.
+func newUpgrader(publicURL string) *websocket.Upgrader {
+	return &websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return auth.OriginAllowed(r, publicURL) },
+	}
 }
 
 // maxMessageBytes caps one incoming WebSocket message on the agent and UI
@@ -99,6 +105,10 @@ type AgentHandler struct {
 	Hub      *Hub
 	Nodes    store.NodeStore
 	Commands store.CommandStore
+
+	// PublicURL is the server's public URL (--url); an upgrade whose Origin
+	// names it is accepted even when a proxy rewrote Host.
+	PublicURL string
 
 	// Finalize, when set, is the auto eject-on-phone-home hook (the same
 	// MaybeFinalizeForNode wired into the REST Register/Heartbeat handlers). A WS
@@ -145,9 +155,13 @@ func (h *AgentHandler) triggerFinalize(nodeID string) {
 	}()
 }
 
-// HandleAgentWS handles GET /api/v1/ws?token=<apiKey>.
+// HandleAgentWS handles GET /api/v1/ws. The node key is read from the
+// Authorization header, or from ?token= for agents that send it there.
 func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
-	token := c.QueryParam("token")
+	token := auth.BearerToken(c)
+	if token == "" {
+		token = c.QueryParam("token")
+	}
 	if token == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing token"})
 	}
@@ -158,7 +172,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
 
-	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := newUpgrader(h.PublicURL).Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}
@@ -405,11 +419,15 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 // UIHandler handles WebSocket connections from the UI.
 type UIHandler struct {
 	Hub *Hub
+
+	// PublicURL is the server's public URL (--url); an upgrade whose Origin
+	// names it is accepted even when a proxy rewrote Host.
+	PublicURL string
 }
 
 // HandleUIWS handles GET /api/v1/ws/ui.
 func (h *UIHandler) HandleUIWS(c echo.Context) error {
-	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := newUpgrader(h.PublicURL).Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}

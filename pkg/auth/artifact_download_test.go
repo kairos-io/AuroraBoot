@@ -89,7 +89,7 @@ var _ = Describe("ArtifactImageMiddleware", func() {
 		e = echo.New()
 		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", APIKey: "node-1-key"}}}
 		cs = &fakeCommandStore{byNode: map[string][]*store.NodeCommand{}}
-		mw = auth.ArtifactImageMiddleware(adminPass, ns, cs)
+		mw = auth.ArtifactImageMiddleware(auth.NewAdminAuth(adminPass, auth.NewSessionStore(), ""), ns, cs)
 	})
 
 	// do runs GET /api/v1/artifacts/:id/image through the middleware and returns
@@ -122,8 +122,8 @@ var _ = Describe("ArtifactImageMiddleware", func() {
 		Expect(do(adminPass, "")).To(Equal(http.StatusOK))
 	})
 
-	It("allows the admin via ?token= (UI download links)", func() {
-		Expect(do("", adminPass)).To(Equal(http.StatusOK))
+	It("refuses the admin password in ?token=", func() {
+		Expect(do("", adminPass)).To(Equal(http.StatusUnauthorized))
 	})
 
 	It("401s with no credentials", func() {
@@ -187,7 +187,7 @@ var _ = Describe("ExtensionDownloadMiddleware", func() {
 			extID:   {ID: extID, DownloadToken: extToken},
 			"ext-2": {ID: "ext-2", DownloadToken: "ext-2-download-token"},
 		}}
-		mw = auth.ExtensionDownloadMiddleware(adminPass, ns, es)
+		mw = auth.ExtensionDownloadMiddleware(auth.NewAdminAuth(adminPass, auth.NewSessionStore(), ""), ns, es)
 	})
 
 	// do runs GET /api/v1/extensions/:id/download/:filename through the
@@ -232,11 +232,8 @@ var _ = Describe("ExtensionDownloadMiddleware", func() {
 		Expect(do(adminPass, "")).To(Equal(http.StatusOK))
 	})
 
-	// The regression this middleware exists for: the UI offers the .raw as a
-	// plain <a href download> anchor, which cannot set a header, so the old
-	// header-only guard made that button always return 401.
-	It("allows the admin via ?token= (the UI's download anchor)", func() {
-		Expect(do("", adminPass)).To(Equal(http.StatusOK))
+	It("refuses the admin password in ?token=", func() {
+		Expect(do("", adminPass)).To(Equal(http.StatusUnauthorized))
 	})
 
 	It("allows a registered node via the Authorization header", func() {
@@ -301,8 +298,8 @@ var _ = Describe("ExtensionDownloadMiddleware", func() {
 	})
 
 	It("still admits an admin and a node when no extension store is wired", func() {
-		mw = auth.ExtensionDownloadMiddleware(adminPass, ns, nil)
-		Expect(do("", adminPass)).To(Equal(http.StatusOK))
+		mw = auth.ExtensionDownloadMiddleware(auth.NewAdminAuth(adminPass, auth.NewSessionStore(), ""), ns, nil)
+		Expect(do(adminPass, "")).To(Equal(http.StatusOK))
 		Expect(do("node-1-key", "")).To(Equal(http.StatusOK))
 		Expect(do("", extToken)).To(Equal(http.StatusUnauthorized))
 	})

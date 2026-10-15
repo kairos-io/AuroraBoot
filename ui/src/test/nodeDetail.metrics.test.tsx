@@ -3,7 +3,6 @@ import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
-import { setToken } from "@/api/client";
 import type { NodeMetrics } from "@/api/metrics";
 import { sustainedHighCpu } from "@/lib/metrics";
 
@@ -53,7 +52,6 @@ function mockFetch(metrics: unknown | null) {
 }
 
 beforeEach(() => {
-  setToken("t");
   vi.stubGlobal(
     "WebSocket",
     class {
