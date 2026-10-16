@@ -20,11 +20,6 @@ func (h *DeployHandler) WithTestFinalizerFactory(f func(cfg redfish.Config) Redf
 // a deployment's eject lifecycle without driving the full async deploy goroutine.
 func (h *DeployHandler) MarkEjectPendingForTest(id string) { h.markEjectPending(id) }
 
-// ImageURLUsesHTTPS exposes the unexported imageURLUsesHTTPS helper to external
-// (handlers_test) tests so the InsertMedia transfer-protocol derivation can be
-// exercised directly.
-var ImageURLUsesHTTPS = imageURLUsesHTTPS
-
 // ResolveOperatorImageURL exposes the unexported image-URL precedence helper so
 // the per-deploy > per-BMC > global-default selection can be unit-tested
 // directly, without driving the async deploy goroutine.

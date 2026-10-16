@@ -34,3 +34,22 @@ var _ = Describe("ValidateMediaURL", func() {
 		Entry("public-ish IP", "http://93.184.216.34/kairos.iso"),
 	)
 })
+
+var _ = Describe("URLUsesHTTPS", func() {
+	DescribeTable("derives the transfer protocol from the URL scheme",
+		func(raw string, wantHTTPS bool) {
+			got, err := isoserve.URLUsesHTTPS(raw)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(Equal(wantHTTPS))
+		},
+		Entry("https scheme advertises HTTPS", "https://10.0.0.5/x.iso", true),
+		Entry("http scheme advertises HTTP", "http://10.0.0.5/x.iso", false),
+		Entry("scheme match is case-insensitive", "HTTPS://10.0.0.5/x.iso", true),
+		Entry("surrounding whitespace is ignored", "  https://10.0.0.5/x.iso  ", true),
+	)
+
+	It("reports the parse error for a malformed URL", func() {
+		_, err := isoserve.URLUsesHTTPS("http://[::1")
+		Expect(err).To(HaveOccurred())
+	})
+})
