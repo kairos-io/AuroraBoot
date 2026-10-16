@@ -18,7 +18,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kairos-io/go-ukify v0.5.2
 	github.com/kairos-io/netboot v0.0.0-20261012151809-39e4036684f6
-	github.com/klauspost/compress v1.20.1
+	github.com/klauspost/compress v1.20.3
 	github.com/labstack/echo/v4 v4.16.0
 	github.com/mudler/go-processmanager v0.1.2
 	github.com/onsi/ginkgo/v2 v2.33.0
