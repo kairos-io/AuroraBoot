@@ -194,20 +194,18 @@ type APICreateArtifactRequest struct {
 
 // APIArtifactOutputs toggles the build's output formats.
 type APIArtifactOutputs struct {
-	// The installer ISO. With trustedBoot it is the signed UKI ISO, the same
-	// as uki, and needs signing.ukiKeySetId.
+	// The installer ISO. With trustedBoot it is the signed UKI ISO, which
+	// needs signing.ukiKeySetId.
 	ISO        bool `json:"iso"`
 	CloudImage bool `json:"cloudImage"`
 	// Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and
 	// maas: a Trusted Boot image has no GRUB and no separate initrd.
-	Netboot bool `json:"netboot"`
-	RawDisk bool `json:"rawDisk"`
-	Tar     bool `json:"tar"`
-	GCE     bool `json:"gce"`
-	VHD     bool `json:"vhd"`
-	MAAS    bool `json:"maas"`
-	// The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.
-	UKI         bool `json:"uki"`
+	Netboot     bool `json:"netboot"`
+	RawDisk     bool `json:"rawDisk"`
+	Tar         bool `json:"tar"`
+	GCE         bool `json:"gce"`
+	VHD         bool `json:"vhd"`
+	MAAS        bool `json:"maas"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`
 }
