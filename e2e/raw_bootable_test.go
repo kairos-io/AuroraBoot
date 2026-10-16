@@ -2,11 +2,12 @@ package e2e_test
 
 import (
 	"fmt"
-	. "github.com/onsi/ginkgo/v2"
-	. "github.com/onsi/gomega"
 	"os"
 	"strings"
 	"time"
+
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 )
 
 // NOTE: Once you run a test in 1 raw image, because the image is the installed system, any changes are now permanent
@@ -72,8 +73,8 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 			stateAssertVM(vm, "persistent.mounted", "true")
 			stateAssertVM(vm, "state.mounted", "true")
 			stateAssertVM(vm, "oem.type", "ext4")
-			stateAssertVM(vm, "persistent.type", "ext2")
-			stateAssertVM(vm, "state.type", "ext2")
+			stateAssertVM(vm, "persistent.type", "ext4")
+			stateAssertVM(vm, "state.type", "ext4")
 			stateAssertVM(vm, "oem.mount_point", "/oem")
 			stateAssertVM(vm, "persistent.mount_point", "/usr/local")
 			stateAssertVM(vm, "persistent.name", "/dev/vda")
