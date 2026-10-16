@@ -1,12 +1,23 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useNavigate } from "react-router";
-import { login, validateToken } from "@/api/client";
+import { login, type LoginResult } from "@/api/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { KairosLogo } from "@/components/KairosLogo";
 import { applyTheme, getStoredTheme } from "@/lib/theme";
+import { PRODUCT_NAME } from "@/lib/branding";
+
+function loginErrorMessage(result: LoginResult | null): string {
+  if (result && !result.ok) {
+    if (result.status === 401) return "Invalid password";
+    if (result.status === 403) {
+      return "Sign-in refused: this page's address does not match the server's public URL (--url / AURORABOOT_URL).";
+    }
+  }
+  return "Sign-in failed";
+}
 
 export function Login() {
   const [password, setPassword] = useState("");
@@ -26,13 +37,16 @@ export function Login() {
     setError("");
     setLoading(true);
 
-    login(password);
-    const valid = await validateToken();
-
-    if (valid) {
+    let result: LoginResult | null = null;
+    try {
+      result = await login(password);
+    } catch {
+      result = null;
+    }
+    if (result?.ok) {
       navigate("/");
     } else {
-      setError("Invalid password");
+      setError(loginErrorMessage(result));
       setLoading(false);
     }
   }
@@ -42,7 +56,7 @@ export function Login() {
       <div className="w-full max-w-sm space-y-6">
         <div className="flex flex-col items-center gap-2">
           <KairosLogo className="h-12 w-12" />
-          <h1 className="text-2xl font-bold text-white">AuroraBoot</h1>
+          <h1 className="text-2xl font-bold text-white">{PRODUCT_NAME}</h1>
         </div>
         <Card className="w-full">
           <CardHeader className="text-center">

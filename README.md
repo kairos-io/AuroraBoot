@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/dashboard-zero-state.png" alt="AuroraBoot dashboard" width="820" />
+  <img src="docs/screenshots/dashboard-zero-state.png" alt="Kairos dashboard" width="820" />
 </p>
 
 <h1 align="center">AuroraBoot</h1>
@@ -52,6 +52,8 @@ docker compose exec auroraboot cat /data/secrets/registration-token
 Open **http://localhost:9099**, sign in, and the welcome wizard walks you through the three steps: build an artifact, deploy it, manage the nodes that come online.
 
 If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL` to that reachable address before starting the stack. Left unset, AuroraBoot falls back to the container's hostname, which nodes can't resolve, so they can't phone home. See `--url` below. Its host is also the address the Deploy dialog reports for the netboot server; with no `AURORABOOT_URL` that dialog reports a local interface address instead.
+
+Behind a reverse proxy that rewrites the `Host` header, set `AURORABOOT_URL` (`--url`) to the address the browser uses. The server refuses sign-in and the live-update socket from a page whose origin matches neither the request `Host` nor that URL, and logs a `refused a request from Origin` line naming all three values.
 
 ### What you get
 

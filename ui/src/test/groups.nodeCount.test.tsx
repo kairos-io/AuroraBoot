@@ -4,7 +4,6 @@ import { MemoryRouter, Route, Routes } from "react-router";
 
 import { Groups } from "@/pages/Groups";
 import { GroupDetail } from "@/pages/GroupDetail";
-import { setToken } from "@/api/client";
 
 // node_count is what the server counted when the page loaded. The fixtures
 // below keep it deliberately out of step with the node list so each test says
@@ -108,7 +107,6 @@ function showTable() {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {

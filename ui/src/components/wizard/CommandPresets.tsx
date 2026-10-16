@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 
 import { InfoTooltip } from "@/components/InfoTooltip";
 import { SegmentedControl } from "@/components/wizard/SegmentedControl";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 // The identifiers are the ones the builder bakes into
 // phonehome.allowed_commands (see PHONEHOME_SAFE_DEFAULTS and
@@ -55,7 +56,7 @@ export function CommandPresets({ value, onChange, renderCustom }: CommandPresets
           <InfoTooltip>
             Baked into <code className="font-mono">phonehome.allowed_commands</code> in the
             node's cloud-config. Commands not listed here are refused by the
-            node, even if AuroraBoot requests them.
+            node, even if {PRODUCT_NAME} requests them.
           </InfoTooltip>
         </p>
         <p className="text-xs text-muted-foreground mt-1">

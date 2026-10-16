@@ -223,7 +223,7 @@ export function Certificates() {
                         <span className="inline-flex items-center gap-1 rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">
                           db
                         </span>
-                        {ks.tpmPcrKeyPath && (
+                        {ks.hasTpmPcrKey && (
                           <span className="inline-flex items-center gap-1 rounded border border-border bg-muted/40 px-1.5 py-0.5 font-mono text-[10px]">
                             TPM
                           </span>

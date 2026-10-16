@@ -457,6 +457,76 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/artifacts/{id}/download-link": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Returns a path that downloads one file of the artifact without other credentials for one hour.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "Create a download link",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Artifact ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "File name",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DownloadLinkRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.DownloadLinkResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/artifacts/{id}/logs": {
             "get": {
                 "security": [
@@ -1532,7 +1602,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/store.SecureBootKeySet"
+                                "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                             }
                         }
                     }
@@ -1571,7 +1641,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/store.SecureBootKeySet"
+                            "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                         }
                     },
                     "413": {
@@ -1619,7 +1689,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/store.SecureBootKeySet"
+                            "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                         }
                     },
                     "409": {
@@ -1694,6 +1764,92 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "type": "file"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/session": {
+            "get": {
+                "tags": [
+                    "session"
+                ],
+                "summary": "Check the session",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "description": "Exchanges the admin password for an HttpOnly session cookie that lasts 12 hours. A request carrying an Origin header must come from this server's origin.",
+                "consumes": [
+                    "application/json"
+                ],
+                "tags": [
+                    "session"
+                ],
+                "summary": "Sign in",
+                "parameters": [
+                    {
+                        "description": "Admin password",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.LoginRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "401": {
+                        "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "tags": [
+                    "session"
+                ],
+                "summary": "Sign out",
+                "responses": {
+                    "204": {
+                        "description": "No Content"
+                    },
+                    "403": {
+                        "description": "Forbidden",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }
@@ -1925,12 +2081,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "iso": {
+                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, the same\nas uki, and needs signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "maas": {
                     "type": "boolean"
                 },
                 "netboot": {
+                    "description": "Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and\nmaas: a Trusted Boot image has no GRUB and no separate initrd.",
                     "type": "boolean"
                 },
                 "rawDisk": {
@@ -1943,6 +2101,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "uki": {
+                    "description": "The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "vhd": {
@@ -2385,6 +2544,33 @@ const docTemplate = `{
                 }
             }
         },
+        "handlers.DownloadLinkRequest": {
+            "type": "object",
+            "properties": {
+                "filename": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.DownloadLinkResponse": {
+            "type": "object",
+            "properties": {
+                "expiresAt": {
+                    "type": "string"
+                },
+                "path": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.LoginRequest": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                }
+            }
+        },
         "handlers.ResolvedBundleEntry": {
             "type": "object",
             "properties": {
@@ -2398,6 +2584,29 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.SecureBootKeySetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "hasTpmPcrKey": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secureBootEnroll": {
+                    "type": "string"
+                },
+                "updatedAt": {
                     "type": "string"
                 }
             }
@@ -2815,6 +3024,10 @@ const docTemplate = `{
                     "description": "LastReset is when the most recent automatic reset completed successfully.",
                     "type": "string"
                 },
+                "lastUpgrade": {
+                    "description": "LastUpgrade is when the most recent upgrade completed successfully.",
+                    "type": "string"
+                },
                 "machineID": {
                     "type": "string"
                 },
@@ -2840,6 +3053,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "updatedAt": {
+                    "type": "string"
+                },
+                "upgradeRequestedAt": {
+                    "description": "UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set\nto pending); nil when no upgrade has been requested.",
+                    "type": "string"
+                },
+                "upgradeState": {
+                    "description": "UpgradeState tracks the upgrade lifecycle across the reboot an upgrade\ncommand triggers. The agent acks the command once the new image is staged,\nbefore it reboots into it, so a Completed upgrade command only means the\nupgrade was scheduled; the real outcome is resolved here when the node\nre-registers and reports its post-reboot boot state. One of:\n\"\" (none) | pending | done | failed.",
                     "type": "string"
                 }
             }
@@ -2990,32 +3211,6 @@ const docTemplate = `{
                     "type": "integer"
                 }
             }
-        },
-        "store.SecureBootKeySet": {
-            "type": "object",
-            "properties": {
-                "createdAt": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "keysDir": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "secureBootEnroll": {
-                    "type": "string"
-                },
-                "tpmPcrKeyPath": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
-                }
-            }
         }
     },
     "securityDefinitions": {
@@ -3041,7 +3236,7 @@ var SwaggerInfo = &swag.Spec{
 	BasePath:         "/",
 	Schemes:          []string{},
 	Title:            "AuroraBoot API",
-	Description:      "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.\n* NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).\n* GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).",
+	Description:      "HTTP API for the AuroraBoot Kairos node manager.\n\nThree security schemes are used across the API:\n* AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.\n* NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.\n* RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.\n\nTwo WebSocket endpoints also exist but are not described in this spec:\n* GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).\n* GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

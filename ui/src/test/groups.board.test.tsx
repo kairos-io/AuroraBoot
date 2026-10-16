@@ -4,7 +4,6 @@ import { MemoryRouter } from "react-router";
 
 import { Groups } from "@/pages/Groups";
 import { Toaster } from "@/components/ui/toaster";
-import { setToken } from "@/api/client";
 
 function makeNode(id: string, hostname: string, extra: Record<string, unknown> = {}) {
   return {
@@ -80,7 +79,6 @@ function dataTransfer() {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {

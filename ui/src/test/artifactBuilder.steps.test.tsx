@@ -18,6 +18,7 @@ vi.mock("@/api/groups", () => ({
 }));
 
 import { ArtifactBuilder, BUILDER_STEPS } from "@/pages/ArtifactBuilder";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -122,7 +123,7 @@ describe("ArtifactBuilder: six steps", () => {
 
     expect(currentStep()?.textContent).toMatch(/Access/);
     expect(screen.getByLabelText("Auto-install")).toBeInTheDocument();
-    expect(screen.getByLabelText("Register with AuroraBoot")).toBeInTheDocument();
+    expect(screen.getByLabelText(`Register with ${PRODUCT_NAME}`)).toBeInTheDocument();
     expect(screen.getByLabelText("FIPS")).toBeInTheDocument();
     expect(screen.getByText(/Allowed remote commands/)).toBeInTheDocument();
   });

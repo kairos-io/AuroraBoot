@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { Routes, Route, Navigate } from "react-router";
 import { Layout } from "./components/Layout";
 import { Login } from "./pages/Login";
@@ -17,16 +18,29 @@ import { BMCRegistration } from "./pages/BMCRegistration";
 import { Certificates } from "./pages/Certificates";
 import { Import } from "./pages/Import";
 import { Settings } from "./pages/Settings";
-import { getToken } from "./api/client";
+import { clearLegacyToken, hasSession } from "./api/client";
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
-  if (!getToken()) {
-    return <Navigate to="/login" replace />;
-  }
+  const [state, setState] = useState<"checking" | "in" | "out">("checking");
+  useEffect(() => {
+    let live = true;
+    hasSession().then((ok) => {
+      if (live) setState(ok ? "in" : "out");
+    });
+    return () => {
+      live = false;
+    };
+  }, []);
+  if (state === "checking") return null;
+  if (state === "out") return <Navigate to="/login" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
+  useEffect(() => {
+    clearLegacyToken();
+  }, []);
+
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
