@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/hashicorp/go-multierror"
@@ -38,7 +39,8 @@ var BuildISOCmd = cli.Command{
 		&cli.StringFlag{
 			Name:    "output",
 			Aliases: []string{"o"},
-			Usage:   "Output directory (defaults to current directory)",
+			Value:   ".",
+			Usage:   "Output directory for the ISO and its checksum (defaults to current directory)",
 		},
 		&cli.BoolFlag{
 			Name:  "date",
@@ -171,10 +173,25 @@ var BuildISOCmd = cli.Command{
 		}
 
 		if c.State == "" {
-			c.State = "/tmp/auroraboot"
+			c.State = "."
+		}
+		if abs, err := filepath.Abs(c.State); err == nil {
+			c.State = abs
 		}
 
+		// The cloud config copy, the unpacked rootfs and the netboot dir stay in a
+		// private directory of this run, so --output only receives the ISO and
+		// its checksum. It lives under os.TempDir() and not under --output, see
+		// the note on tmpRootFs in the deployer.
+		workDir, err := os.MkdirTemp("", "auroraboot-build-iso-")
+		if err != nil {
+			return fmt.Errorf("creating work directory: %w", err)
+		}
+		defer os.RemoveAll(workDir)
+		defer removeOnSignal(workDir)()
+
 		d := deployer.NewDeployer(c, r, herd.EnableInit)
+		d.WorkDir = workDir
 		for _, step := range []func() error{
 			d.PrepDirs,
 			d.StepCopyCloudConfig,
