@@ -49,6 +49,24 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           files: ./coverage.out
+  vet-tagged:
+    name: vet-tagged
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # Running the suite needs kind, docker and kubectl and takes up to 30
+      # minutes, so this type-checks it instead. No other job passes
+      # operator_e2e, and go vet applies no build tags of its own, so without
+      # this step nothing here compiles test/operator at all. Needs no UI
+      # bundle (internal/ui builds from embed_noui.go without the ui tag) and
+      # no system packages.
+      - name: Type-check build-tagged trees
+        run: make vet-tagged
   helm-chart:
     runs-on: ubuntu-latest
     permissions:
