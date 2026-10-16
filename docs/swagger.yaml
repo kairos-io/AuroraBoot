@@ -22,10 +22,16 @@ definitions:
       gce:
         type: boolean
       iso:
+        description: |-
+          The installer ISO. With trustedBoot it is the signed UKI ISO, the same
+          as uki, and needs signing.ukiKeySetId.
         type: boolean
       maas:
         type: boolean
       netboot:
+        description: |-
+          Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and
+          maas: a Trusted Boot image has no GRUB and no separate initrd.
         type: boolean
       rawDisk:
         type: boolean
@@ -34,6 +40,7 @@ definitions:
       trustedBoot:
         type: boolean
       uki:
+        description: The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.
         type: boolean
       vhd:
         type: boolean
@@ -385,6 +392,21 @@ definitions:
       type:
         type: string
       version:
+        type: string
+    type: object
+  handlers.SecureBootKeySetResponse:
+    properties:
+      createdAt:
+        type: string
+      hasTpmPcrKey:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      secureBootEnroll:
+        type: string
+      updatedAt:
         type: string
     type: object
   handlers.UploadOverlayResponse:
@@ -834,23 +856,6 @@ definitions:
         type: number
       uptimeSeconds:
         type: integer
-    type: object
-  store.SecureBootKeySet:
-    properties:
-      createdAt:
-        type: string
-      id:
-        type: string
-      keysDir:
-        type: string
-      name:
-        type: string
-      secureBootEnroll:
-        type: string
-      tpmPcrKeyPath:
-        type: string
-      updatedAt:
-        type: string
     type: object
 info:
   contact:
@@ -1887,7 +1892,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/store.SecureBootKeySet'
+              $ref: '#/definitions/handlers.SecureBootKeySetResponse'
             type: array
       security:
       - AdminBearer: []
@@ -1950,7 +1955,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/store.SecureBootKeySet'
+            $ref: '#/definitions/handlers.SecureBootKeySetResponse'
         "413":
           description: Request Entity Too Large
           schema:
@@ -1980,7 +1985,7 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/store.SecureBootKeySet'
+            $ref: '#/definitions/handlers.SecureBootKeySetResponse'
         "409":
           description: Conflict
           schema:

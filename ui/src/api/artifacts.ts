@@ -143,8 +143,7 @@ export interface CreateArtifactInput {
 export interface SecureBootKeySet {
   id: string;
   name: string;
-  keysDir: string;
-  tpmPcrKeyPath: string;
+  hasTpmPcrKey: boolean;
   secureBootEnroll: string;
   createdAt: string;
 }

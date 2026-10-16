@@ -511,11 +511,13 @@ type NodeExtensionStore interface {
 }
 
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.
+// KeysDir and TPMPCRKeyPath are server paths: the builders read them, and the
+// API never returns them.
 type SecureBootKeySet struct {
 	ID               string    `json:"id" gorm:"primaryKey"`
 	Name             string    `json:"name" gorm:"uniqueIndex"`
-	KeysDir          string    `json:"keysDir"`
-	TPMPCRKeyPath    string    `json:"tpmPcrKeyPath"`
+	KeysDir          string    `json:"-"`
+	TPMPCRKeyPath    string    `json:"-"`
 	SecureBootEnroll string    `json:"secureBootEnroll"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`

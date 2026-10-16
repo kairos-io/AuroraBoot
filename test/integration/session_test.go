@@ -46,6 +46,7 @@ var _ = Describe("Admin session", func() {
 		id := createArtifactRecord("session-download")
 		Expect(os.MkdirAll(filepath.Join(testArtifactsDir, id), 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(testArtifactsDir, id, "kairos.iso"), []byte("iso"), 0o644)).To(Succeed())
+		Expect(nodeGormStore.ArtifactUpdateFiles(context.Background(), id, []string{filepath.Join(testArtifactsDir, id, "kairos.iso")})).To(Succeed())
 
 		resp, err = browser.Get(testServerURL + "/api/v1/artifacts/" + id + "/download/kairos.iso")
 		Expect(err).NotTo(HaveOccurred())

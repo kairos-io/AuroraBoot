@@ -81,7 +81,7 @@ function mockFetch() {
     if (p === `/api/v1/extensions/${READY_ID}/logs`) return new Response("build ok", { status: 200 });
     if (p === "/api/v1/artifacts") return json([{ id: ARTIFACT_ID, name: "ubuntu-24.04-edge-retail", phase: "Ready", message: "" }]);
     if (p === `/api/v1/artifacts/${ARTIFACT_ID}`) return json({ id: ARTIFACT_ID, name: "ubuntu-24.04-edge-retail", phase: "Ready", message: "" });
-    if (p === "/api/v1/secureboot-keys") return json([{ id: KEYSET_ID, name: "fleet-2026", keysDir: "", tpmPcrKeyPath: "", secureBootEnroll: "", createdAt: "" }]);
+    if (p === "/api/v1/secureboot-keys") return json([{ id: KEYSET_ID, name: "fleet-2026", hasTpmPcrKey: false, secureBootEnroll: "", createdAt: "" }]);
     if (p === "/api/v1/groups") return json([{ id: "g1", name: "edge-retail" }]);
     if (p === "/api/v1/nodes")
       return json([

@@ -167,7 +167,7 @@ type BuildStatus struct {
 	ID        string   `json:"id"`
 	Phase     string   `json:"phase"` // Pending, Building, Ready, Error
 	Message   string   `json:"message"`
-	Artifacts []string `json:"artifacts"` // paths to built files
+	Artifacts []string `json:"artifacts"` // paths of the built files on the server; API responses carry base names
 }
 
 // Build phases.

@@ -1602,7 +1602,7 @@ const docTemplate = `{
                         "schema": {
                             "type": "array",
                             "items": {
-                                "$ref": "#/definitions/store.SecureBootKeySet"
+                                "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                             }
                         }
                     }
@@ -1641,7 +1641,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/store.SecureBootKeySet"
+                            "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                         }
                     },
                     "413": {
@@ -1689,7 +1689,7 @@ const docTemplate = `{
                     "201": {
                         "description": "Created",
                         "schema": {
-                            "$ref": "#/definitions/store.SecureBootKeySet"
+                            "$ref": "#/definitions/handlers.SecureBootKeySetResponse"
                         }
                     },
                     "409": {
@@ -2081,12 +2081,14 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "iso": {
+                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, the same\nas uki, and needs signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "maas": {
                     "type": "boolean"
                 },
                 "netboot": {
+                    "description": "Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and\nmaas: a Trusted Boot image has no GRUB and no separate initrd.",
                     "type": "boolean"
                 },
                 "rawDisk": {
@@ -2099,6 +2101,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "uki": {
+                    "description": "The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "vhd": {
@@ -2581,6 +2584,29 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "version": {
+                    "type": "string"
+                }
+            }
+        },
+        "handlers.SecureBootKeySetResponse": {
+            "type": "object",
+            "properties": {
+                "createdAt": {
+                    "type": "string"
+                },
+                "hasTpmPcrKey": {
+                    "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "secureBootEnroll": {
+                    "type": "string"
+                },
+                "updatedAt": {
                     "type": "string"
                 }
             }
@@ -3183,32 +3209,6 @@ const docTemplate = `{
                 },
                 "uptimeSeconds": {
                     "type": "integer"
-                }
-            }
-        },
-        "store.SecureBootKeySet": {
-            "type": "object",
-            "properties": {
-                "createdAt": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "keysDir": {
-                    "type": "string"
-                },
-                "name": {
-                    "type": "string"
-                },
-                "secureBootEnroll": {
-                    "type": "string"
-                },
-                "tpmPcrKeyPath": {
-                    "type": "string"
-                },
-                "updatedAt": {
-                    "type": "string"
                 }
             }
         }
