@@ -33,8 +33,9 @@ type batch struct {
 // refused is not sound, and it is what made these specs flaky: at 50 rps a token
 // comes back every 20ms, and a loaded runner has taken longer than that to fire
 // the batch, so the request just past the burst was legitimately served
-// (AuroraBoot#776, #893). On a healthy run the slack is a single token, so the
-// boundary stays pinned.
+// (AuroraBoot#776, #893). The refill is rounded down, so the bound stays tight:
+// a healthy batch finishes inside one token period, the slack is zero, and a
+// limiter whose burst is one too large still fails here.
 func expectAllowance(b batch, rps float64, burst int) {
 	ExpectWithOffset(1, b.codes).To(HaveLen(burst + spentBurstProbe))
 	for i, code := range b.codes[:burst] {
@@ -48,7 +49,7 @@ func expectAllowance(b batch, rps float64, burst int) {
 			served++
 		}
 	}
-	refilled := int(math.Ceil(b.elapsed.Seconds() * rps))
+	refilled := int(math.Floor(b.elapsed.Seconds() * rps))
 	ExpectWithOffset(1, served).To(BeNumerically("<=", burst+refilled),
 		"a burst of %d plus the %d token(s) refilled in %s is the most that may be served", burst, refilled, b.elapsed)
 }
