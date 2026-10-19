@@ -127,13 +127,18 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		// feature flags instead of ignoring them, so a boot is the only honest
 		// proof that the filesystem these two carry is still readable. The VM
 		// above has booted, which is that proof; assert the type as well so the
-		// coverage cannot pass with the change silently reverted.
+		// coverage cannot pass with the change silently reverted. Images built
+		// without a recovery partition only have COS_OEM to check.
 		By("creating the GRUB-readable partitions with the filesystem an install gives them", func() {
-			for label, want := range map[string]string{
+			partitions := map[string]string{
 				"COS_OEM":      "ext4",
 				"COS_RECOVERY": "ext4",
-			} {
-				out, err := vm.Sudo(fmt.Sprintf("blkid -L %s -o device | xargs blkid -s TYPE -o value", label))
+			}
+			if os.Getenv("NO_RECOVERY") == "true" {
+				delete(partitions, "COS_RECOVERY")
+			}
+			for label, want := range partitions {
+				out, err := vm.Sudo(fmt.Sprintf("blkid -L %s -o device | xargs -r blkid -s TYPE -o value", label))
 				Expect(err).ToNot(HaveOccurred(), out)
 				Expect(strings.TrimSpace(out)).To(Equal(want), "%s should be %s, got %q", label, want, out)
 			}
