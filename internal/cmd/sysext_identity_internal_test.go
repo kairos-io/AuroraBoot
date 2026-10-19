@@ -20,7 +20,10 @@ func TestCheckPackingIdentity(t *testing.T) {
 			buildType: "sysext",
 			euid:      1001,
 			wantErr:   true,
-			wantIn:    []string{"sysext", "1001", "6.1.11", "6.1.12"},
+			// The refusal also fires for a host user who never passed --user and
+			// for a web UI build under a Helm securityContext.runAsUser, so it has
+			// to name every way to get root, not just the container one.
+			wantIn: []string{"sysext", "1001", "6.1.11", "6.1.12", "--user", "runAsUser", "sudo"},
 		},
 		{
 			name:      "a non-root confext build is refused",

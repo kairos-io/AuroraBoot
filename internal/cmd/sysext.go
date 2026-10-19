@@ -112,7 +112,7 @@ func checkPackingIdentity(buildType string, euid int) error {
 		buildType = "extension"
 	}
 	return fmt.Errorf(
-		"building a %s needs root: systemd-repart packs the staging tree with the uid and gid it finds, so running as uid %d would produce an extension whose files no Kairos node owns (CIS DIL 6.1.11 and 6.1.12 report every one of them). Drop --user from the container run",
+		"building a %s needs root: systemd-repart packs the staging tree with the uid and gid it finds, so running as uid %d would produce an extension whose files no Kairos node owns (CIS DIL 6.1.11 and 6.1.12 report every one of them). Run auroraboot as root: drop --user from the container run, unset securityContext.runAsUser in the Helm values, or run the host binary with sudo",
 		buildType, euid)
 }
 
