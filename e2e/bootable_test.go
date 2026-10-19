@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -44,6 +45,51 @@ func (v testVM) RootCommand(cmd string) (string, error) {
 	return v.machine.Command("sudo /bin/sh -c " + utils.ShellQuote(cmd))
 }
 
+// SudoOut runs cmd as root and returns its output with the lines sudo wrote
+// about itself removed.
+//
+// vm.Sudo is peg's session.CombinedOutput, so whatever the outer sudo prints
+// on stderr ends up in the same string as the output of cmd. The guest answers
+// to the hostname kairos and carries no /etc/hosts entry for it, so every sudo
+// looks that name up over DNS; when the lookup times out instead of being
+// refused, sudo writes
+//
+//	sudo: unable to resolve host kairos: Temporary failure in name resolution
+//
+// and an assertion that compares the output to an expected value fails on a
+// message about name resolution. Run 39292052264 reported
+// `COS_OEM should be ext4, got "ext4\nsudo: unable to resolve host kairos:
+// Temporary failure in name resolution\n"`.
+//
+// The two streams reach the buffer from separate pipes, so the warning can land
+// before or after the output of cmd and a marker to cut at would not be enough.
+// It is always a whole line of its own, which is what this drops.
+//
+// A failed command keeps its output whole: when sudo is the thing that went
+// wrong, its own lines are the only report of it there is.
+func (v testVM) SudoOut(cmd string) (string, error) {
+	out, err := v.Sudo(cmd)
+	if err != nil {
+		return out, err
+	}
+
+	return withoutSudoDiagnostics(out), nil
+}
+
+// withoutSudoDiagnostics drops every line sudo wrote about itself and leaves
+// the rest of out, including whatever cmd wrote to stderr, untouched.
+func withoutSudoDiagnostics(out string) string {
+	var kept []string
+	for _, line := range strings.Split(out, "\n") {
+		if strings.HasPrefix(line, "sudo: ") {
+			continue
+		}
+		kept = append(kept, line)
+	}
+
+	return strings.Join(kept, "\n")
+}
+
 var _ = Describe("bootable artifacts", Label("bootable"), func() {
 	var vm testVM
 	var err error
@@ -67,13 +113,13 @@ var _ = Describe("bootable artifacts", Label("bootable"), func() {
 	})
 	It("Should boot as expected", func() {
 		By("Have secureboot enabled", func() {
-			output, err := vm.Sudo("dmesg | grep -i secure")
+			output, err := vm.SudoOut("dmesg | grep -i secure")
 			Expect(err).ToNot(HaveOccurred(), output)
 			Expect(output).To(ContainSubstring("Secure boot enabled"))
 		})
 
 		By("Have our custom keys", func() {
-			output, err := vm.Sudo("kairos-agent state get \"kairos.eficerts|tojson\"")
+			output, err := vm.SudoOut("kairos-agent state get \"kairos.eficerts|tojson\"")
 			Expect(err).ToNot(HaveOccurred(), output)
 			// Check the test keys we created for this
 			Expect(output).To(ContainSubstring("Kairos DB"))
