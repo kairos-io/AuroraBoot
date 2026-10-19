@@ -19,7 +19,7 @@ var getVersionCmd = ". /etc/kairos-release; [ ! -z \"$KAIROS_VERSION\" ] && echo
 
 var stateAssertVM = func(vm testVM, query, expected string) {
 	By(fmt.Sprintf("Expecting state %s to be %s", query, expected))
-	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	out, err := vm.SudoOut(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
 	ExpectWithOffset(1, out).To(ContainSubstring(expected))
 }
@@ -29,7 +29,7 @@ var stateContains = func(vm testVM, query string, expected ...string) {
 	for _, e := range expected {
 		or = append(or, ContainSubstring(e))
 	}
-	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	out, err := vm.SudoOut(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
 	ExpectWithOffset(1, strings.ToLower(out)).To(Or(or...))
 }

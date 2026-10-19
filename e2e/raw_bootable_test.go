@@ -56,14 +56,14 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		// This checks both that the disk is bootable and with secureboot enabled
 		if os.Getenv("SECUREBOOT") == "true" {
 			By("Have secureboot enabled", func() {
-				output, err := vm.Sudo("dmesg | grep -i secure")
+				output, err := vm.SudoOut("dmesg | grep -i secure")
 				Expect(err).ToNot(HaveOccurred(), output)
 				Expect(output).To(ContainSubstring("Secure boot enabled"))
 			})
 		}
 
 		By("checking corresponding state", func() {
-			currentVersion, err := vm.Sudo(getVersionCmd)
+			currentVersion, err := vm.SudoOut(getVersionCmd)
 			Expect(err).ToNot(HaveOccurred(), currentVersion)
 
 			stateAssertVM(vm, "boot", "active_boot")
@@ -100,7 +100,7 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 				"COS_OEM":      "ext4",
 				"COS_RECOVERY": "ext4",
 			} {
-				out, err := vm.Sudo(fmt.Sprintf("blkid -L %s -o device | xargs blkid -s TYPE -o value", label))
+				out, err := vm.SudoOut(fmt.Sprintf("blkid -L %s -o device | xargs blkid -s TYPE -o value", label))
 				Expect(err).ToNot(HaveOccurred(), out)
 				Expect(strings.TrimSpace(out)).To(Equal(want), "%s should be %s, got %q", label, want, out)
 			}
