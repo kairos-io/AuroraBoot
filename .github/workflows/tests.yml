@@ -59,9 +59,9 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v5
         with:
-          version: v3.22.1
+          version: v4.3.1
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.5.2
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.2.1 --verify=false
       - name: Lint chart
         run: make helm-chart-lint
       - name: Run chart unit tests
