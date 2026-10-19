@@ -212,7 +212,7 @@ var RedFishDeployCmd = cli.Command{
 				},
 				&cli.BoolFlag{
 					Name:  "serve-tls",
-					Usage: "Set the InsertMedia transfer protocol to HTTPS (requires a BMC-trusted serving cert)",
+					Usage: "Serve the local ISO over HTTPS; requires --serve-tls-cert, --serve-tls-key and an https:// --redfish-serve-url. Not valid with --image-url (the transfer protocol follows its scheme)",
 					Value: false,
 				},
 				&cli.StringFlag{
