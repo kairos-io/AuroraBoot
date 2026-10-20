@@ -150,6 +150,11 @@ jobs:
           '
           ls -la /dev/loop*
       - name: Run e2e tests
+        # /tmp is a RAM-backed tmpfs capped at half the memory on 26.04
+        # runners, too small for the raw and GCE disks the specs stage there.
+        # TMPDIR moves os.MkdirTemp onto the runner's disk.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
       - name: Codecov
@@ -223,6 +228,7 @@ jobs:
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           KVM: true
           EFIVARS_EMPTY: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export ISO=$(find $PWD/build -name *.iso)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
@@ -283,6 +289,7 @@ jobs:
           KVM: true
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           EFIVARS_EMPTY: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
@@ -338,6 +345,7 @@ jobs:
       - name: Test raw image is bootable
         env:
           KVM: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
