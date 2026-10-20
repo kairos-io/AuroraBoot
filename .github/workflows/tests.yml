@@ -67,7 +67,7 @@ jobs:
       - name: Run chart unit tests
         run: make helm-chart-test
   build-image:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -95,7 +95,7 @@ jobs:
           path: /tmp/auroraboot-image.tar
           retention-days: 1
   e2e-tests:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -150,6 +150,11 @@ jobs:
           '
           ls -la /dev/loop*
       - name: Run e2e tests
+        # /tmp is a RAM-backed tmpfs capped at half the memory on 26.04
+        # runners, too small for the raw and GCE disks the specs stage there.
+        # TMPDIR moves os.MkdirTemp onto the runner's disk.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
       - name: Codecov
@@ -159,7 +164,7 @@ jobs:
         with:
           files: ./coverage.out
   test-bootable-iso-uki:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -168,7 +173,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm libpcsclite-dev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev swtpm libpcsclite-dev
       - name: Grant access to /dev/kvm
         run: |
           echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
@@ -223,11 +228,12 @@ jobs:
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           KVM: true
           EFIVARS_EMPTY: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export ISO=$(find $PWD/build -name *.iso)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -236,7 +242,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev libpcsclite-dev
       - name: Grant access to /dev/kvm
         run: |
           echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
@@ -283,11 +289,12 @@ jobs:
           KVM: true
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           EFIVARS_EMPTY: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-bios:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -296,7 +303,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev libpcsclite-dev
       - name: Grant access to /dev/kvm
         run: |
           echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
@@ -338,6 +345,7 @@ jobs:
       - name: Test raw image is bootable
         env:
           KVM: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
