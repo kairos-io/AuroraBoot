@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"io"
+	"time"
 
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
@@ -57,3 +58,15 @@ var StderrTail = stderrTail
 
 // ImageExportTimeout exposes the upper bound on one image export build.
 const ImageExportTimeout = imageExportTimeout
+
+// RemoveExportLeftovers exposes the cleanup of a crashed export's docker
+// objects.
+var RemoveExportLeftovers = removeExportLeftovers
+
+// SetDockerCleanupTimeout shortens the bound on docker cleanup commands and
+// returns a function that restores it. Test-only.
+func SetDockerCleanupTimeout(d time.Duration) func() {
+	prev := dockerCleanupTimeout
+	dockerCleanupTimeout = d
+	return func() { dockerCleanupTimeout = prev }
+}

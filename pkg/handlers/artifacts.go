@@ -1101,10 +1101,6 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		fmt.Fprintf(os.Stderr, "delete: builder.Cancel(%q) failed: %v\n", id, cancelErr)
 	}
 
-	// Remove build output directory.
-	outputDir := filepath.Join(h.artifactsDir, id)
-	os.RemoveAll(outputDir)
-
 	if records, err := h.store.List(ctx); err == nil {
 		h.removeOverlay(records, rec.OverlayID, func(r *store.ArtifactRecord) bool { return r.ID == id })
 	} else {
@@ -1121,6 +1117,11 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 	if err := h.store.Delete(ctx, id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
 	}
+
+	// Remove the build output directory after the record, so an image export
+	// still running for this artifact either finds the record gone before it
+	// publishes its tar or has the tar removed here.
+	os.RemoveAll(filepath.Join(h.artifactsDir, id))
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -1480,6 +1481,15 @@ func (h *ArtifactHandler) buildImageExport(ctx context.Context, id, containerIma
 	if err := tmp.Close(); err != nil {
 		return fmt.Errorf("closing temp file: %w", err)
 	}
+	if _, err := h.store.GetByID(ctx, id); err != nil {
+		// The artifact may have been deleted while the build ran, after Delete
+		// removed its directory and this build recreated it. Remove only what
+		// the build owns, and the artifact directory only once it is empty, so
+		// a transient store error cannot take the build outputs with it.
+		_ = os.RemoveAll(dir)
+		_ = os.Remove(filepath.Dir(dir))
+		return fmt.Errorf("looking up artifact before publishing its export: %w", err)
+	}
 	if err := os.Rename(tmp.Name(), path); err != nil {
 		return fmt.Errorf("renaming temp file: %w", err)
 	}
@@ -1493,12 +1503,24 @@ func exportDockerNames(id string) (container, flatImage string) {
 	return "auroraboot-export-" + id, "auroraboot-flat:" + id
 }
 
+// dockerCleanupTimeout bounds each docker cleanup command, so a hung daemon
+// cannot hold an export build past its own deadline.
+var dockerCleanupTimeout = time.Minute
+
 // removeExportLeftovers removes, best effort, the container and image an
 // export of the artifact creates.
 func removeExportLeftovers(id string) {
 	cid, flatImage := exportDockerNames(id)
-	_ = exec.Command("docker", "rm", "-f", cid).Run()
-	_ = exec.Command("docker", "rmi", "-f", flatImage).Run()
+	dockerCleanup("rm", "-f", cid)
+	dockerCleanup("rmi", "-f", flatImage)
+}
+
+// dockerCleanup runs a best-effort docker cleanup command. It takes no context
+// so cleanup still runs after a cancelled build, and is bounded on its own.
+func dockerCleanup(args ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCleanupTimeout)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "docker", args...).Run()
 }
 
 // dockerFlattenExport writes containerImage to w as a docker save tar of a
@@ -1517,7 +1539,7 @@ func dockerFlattenExport(ctx context.Context, id, containerImage string, w io.Wr
 	if err := createCmd.Run(); err != nil {
 		return fmt.Errorf("docker create: %w%s", err, stderrTail(createErr.Bytes()))
 	}
-	defer exec.Command("docker", "rm", "-f", cid).Run()
+	defer dockerCleanup("rm", "-f", cid)
 
 	var exportErr, importErr bytes.Buffer
 	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
@@ -1540,7 +1562,7 @@ func dockerFlattenExport(ctx context.Context, id, containerImage string, w io.Wr
 	if err := importCmd.Wait(); err != nil {
 		return fmt.Errorf("docker import: %w%s", err, stderrTail(importErr.Bytes()))
 	}
-	defer exec.Command("docker", "rmi", "-f", flatImage).Run()
+	defer dockerCleanup("rmi", "-f", flatImage)
 
 	var saveErr bytes.Buffer
 	saveCmd := exec.CommandContext(ctx, "docker", "save", flatImage)

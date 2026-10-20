@@ -38,7 +38,6 @@ type fakeImageExporter struct {
 }
 
 func (f *fakeImageExporter) export(ctx context.Context, id, containerImage string, w io.Writer) error {
-	f.calls.Add(1)
 	f.mu.Lock()
 	if f.perID == nil {
 		f.perID = map[string]int{}
@@ -46,6 +45,9 @@ func (f *fakeImageExporter) export(ctx context.Context, id, containerImage strin
 	f.perID[id]++
 	f.ctxs = append(f.ctxs, ctx)
 	f.mu.Unlock()
+	// Counted after the context is recorded, so a spec that waits on calls can
+	// read ctxs.
+	f.calls.Add(1)
 	if f.started != nil {
 		f.started <- id
 	}
@@ -67,12 +69,43 @@ func (f *fakeImageExporter) callsFor(id string) int {
 	return f.perID[id]
 }
 
+// pausingArtifactStore holds one GetByID call after it has read the record, so
+// a spec can delete the artifact between an export request's lookup and its
+// build.
+type pausingArtifactStore struct {
+	*fakeArtifactStore
+	mu      sync.Mutex
+	reached chan struct{}
+	release chan struct{}
+}
+
+func (s *pausingArtifactStore) pauseNextGet() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.reached = make(chan struct{})
+	s.release = make(chan struct{})
+}
+
+func (s *pausingArtifactStore) GetByID(ctx context.Context, id string) (*store.ArtifactRecord, error) {
+	rec, err := s.fakeArtifactStore.GetByID(ctx, id)
+	s.mu.Lock()
+	reached, release := s.reached, s.release
+	s.reached, s.release = nil, nil
+	s.mu.Unlock()
+	if reached != nil {
+		close(reached)
+		<-release
+	}
+	return rec, err
+}
+
 var _ = Describe("ArtifactHandler: ExportImage", func() {
 	var (
 		e            *echo.Echo
 		handler      *handlers.ArtifactHandler
 		artifactsDir string
 		exporter     *fakeImageExporter
+		artifacts    *pausingArtifactStore
 	)
 
 	imagePath := func(id string) string {
@@ -83,6 +116,7 @@ var _ = Describe("ArtifactHandler: ExportImage", func() {
 		e = echo.New()
 		artifactsDir = GinkgoT().TempDir()
 		as := &fakeArtifactStore{}
+		artifacts = &pausingArtifactStore{fakeArtifactStore: as}
 		for _, r := range []*store.ArtifactRecord{
 			{ID: "a1", Phase: store.ArtifactReady, ContainerImage: "registry.local/a1:latest"},
 			{ID: "a2", Phase: store.ArtifactReady, ContainerImage: "registry.local/a2:latest"},
@@ -91,7 +125,7 @@ var _ = Describe("ArtifactHandler: ExportImage", func() {
 			Expect(as.Create(context.Background(), r)).To(Succeed())
 		}
 		exporter = &fakeImageExporter{body: func(id string) string { return "image-tar-of-" + id }}
-		handler = handlers.NewArtifactHandler(&fakeBuilder{}, as, nil, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080").
+		handler = handlers.NewArtifactHandler(&fakeBuilder{}, artifacts, nil, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080").
 			WithTestImageExporter(exporter.export)
 	})
 
@@ -245,6 +279,46 @@ var _ = Describe("ArtifactHandler: ExportImage", func() {
 		Expect(time.Until(deadline)).To(BeNumerically("~", handlers.ImageExportTimeout, time.Minute))
 	})
 
+	It("removes an export whose artifact was deleted while it was being built", func() {
+		artifacts.pauseNextGet()
+		reached := artifacts.reached
+		release := artifacts.release
+		done := make(chan *httptest.ResponseRecorder, 1)
+		go func() {
+			defer GinkgoRecover()
+			done <- request("a1")
+		}()
+		Eventually(reached).Should(BeClosed())
+
+		del := httptest.NewRecorder()
+		c := e.NewContext(httptest.NewRequest(http.MethodDelete, "/api/v1/artifacts/a1", nil), del)
+		c.SetParamNames("id")
+		c.SetParamValues("a1")
+		Expect(handler.Delete(c)).To(Succeed())
+		Expect(del.Code).To(Equal(http.StatusNoContent))
+
+		close(release)
+		var rec *httptest.ResponseRecorder
+		Eventually(done).Should(Receive(&rec))
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		Expect(filepath.Join(artifactsDir, "a1")).NotTo(BeADirectory())
+	})
+
+	It("keeps the artifact's other files when the store lookup before publishing fails", func() {
+		Expect(os.MkdirAll(filepath.Join(artifactsDir, "a1"), 0o755)).To(Succeed())
+		Expect(os.WriteFile(filepath.Join(artifactsDir, "a1", "kairos.iso"), []byte("iso"), 0o644)).To(Succeed())
+		exporter.fail = func(string, io.Writer) error {
+			artifacts.getErr = errors.New("database is locked")
+			return nil
+		}
+
+		rec := request("a1")
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		Expect(errorOf(rec)).To(ContainSubstring("database is locked"))
+		Expect(filepath.Join(artifactsDir, "a1", "kairos.iso")).To(BeAnExistingFile())
+		Expect(imagePath("a1")).NotTo(BeAnExistingFile())
+	})
+
 	It("answers a Range request with 206 and the requested bytes", func() {
 		rec := requestCtx(context.Background(), "a1", http.Header{"Range": {"bytes=6-8"}})
 		Expect(rec.Code).To(Equal(http.StatusPartialContent))
@@ -291,5 +365,18 @@ var _ = Describe("StderrTail", func() {
 	It("keeps the last 512 bytes of a long message", func() {
 		long := strings.Repeat("a", 600) + strings.Repeat("b", 512)
 		Expect(handlers.StderrTail([]byte(long))).To(Equal(": " + strings.Repeat("b", 512)))
+	})
+})
+
+var _ = Describe("RemoveExportLeftovers", func() {
+	It("gives up on a docker command that hangs", func() {
+		bin := GinkgoT().TempDir()
+		Expect(os.WriteFile(filepath.Join(bin, "docker"), []byte("#!/bin/sh\nexec sleep 30\n"), 0o755)).To(Succeed())
+		GinkgoT().Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+		DeferCleanup(handlers.SetDockerCleanupTimeout(100 * time.Millisecond))
+
+		start := time.Now()
+		handlers.RemoveExportLeftovers("a1")
+		Expect(time.Since(start)).To(BeNumerically("<", 5*time.Second))
 	})
 })
