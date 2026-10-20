@@ -1,6 +1,9 @@
 package handlers
 
 import (
+	"context"
+	"io"
+
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
 
@@ -40,3 +43,17 @@ func (h *DeployHandler) WithTestNetboot(nb NetbootController) *DeployHandler {
 	h.netboot = nb
 	return h
 }
+
+// WithTestImageExporter replaces the docker pipeline that ExportImage runs to
+// build an artifact's image tar. Test-only.
+func (h *ArtifactHandler) WithTestImageExporter(f func(ctx context.Context, id, containerImage string, w io.Writer) error) *ArtifactHandler {
+	h.exportImage = f
+	return h
+}
+
+// StderrTail exposes the unexported stderrTail helper used to attach docker
+// stderr to export errors.
+var StderrTail = stderrTail
+
+// ImageExportTimeout exposes the upper bound on one image export build.
+const ImageExportTimeout = imageExportTimeout
