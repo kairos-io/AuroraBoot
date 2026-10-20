@@ -37,7 +37,7 @@ export function Login() {
     setError("");
     setLoading(true);
 
-    let result: LoginResult | null = null;
+    let result: LoginResult | null;
     try {
       result = await login(password);
     } catch {
