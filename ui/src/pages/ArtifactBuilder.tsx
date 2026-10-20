@@ -393,7 +393,7 @@ const TEMPLATES: BuildTemplate[] = [
     },
   },
   {
-    name: "Ubuntu 24.04",
+    name: `Ubuntu ${UBUNTU_VERSION}`,
     description: "Ubuntu base, auto-kairosified, ISO",
     values: {
       baseImage: `ubuntu:${UBUNTU_VERSION}`,
