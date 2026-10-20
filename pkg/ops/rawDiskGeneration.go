@@ -224,7 +224,7 @@ stages:
 		sdkConstants.StateLabel,         // 2
 		stateSize,                       // 3
 		sdkConstants.StatePartName,      // 4
-		sdkConstants.LinuxImgFs,         // 5
+		sdkConstants.LinuxFs,            // 5
 		sdkConstants.PersistentLabel,    // 6
 		sdkConstants.PersistentPartName, // 7
 		resetCloudInit,                  // 8
