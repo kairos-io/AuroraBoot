@@ -9,7 +9,7 @@ function makeNode(id: string, hostname: string, extra: Record<string, unknown> =
     id,
     hostname,
     machineID: `m-${id}`,
-    groupID: "",
+    groupID: null,
     labels: {},
     phase: "Online",
     osRelease: null,

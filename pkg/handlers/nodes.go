@@ -491,7 +491,8 @@ func (h *NodeHandler) SetLabels(c echo.Context) error {
 
 // setGroupRequest is the expected body for setting a group.
 type setGroupRequest struct {
-	GroupID string `json:"groupID"`
+	// GroupID names the target group; null moves the node out of any group.
+	GroupID *string `json:"groupID"`
 }
 
 // SetGroup handles PUT /api/v1/nodes/:nodeID/group.
@@ -510,6 +511,9 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 	var req setGroupRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.GroupID != nil && *req.GroupID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "groupID must name a group, or be null for no group"})
 	}
 	if err := h.nodes.SetGroup(c.Request().Context(), nodeID, req.GroupID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to set group"})

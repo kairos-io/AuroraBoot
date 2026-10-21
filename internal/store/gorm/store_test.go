@@ -88,8 +88,8 @@ var _ = Describe("Gorm Store", func() {
 			g := &store.NodeGroup{Name: "to-delete-with-nodes"}
 			Expect(s.Create(ctx, g)).To(Succeed())
 
-			n1 := &store.ManagedNode{MachineID: "del-n1", GroupID: g.ID}
-			n2 := &store.ManagedNode{MachineID: "del-n2", GroupID: g.ID}
+			n1 := &store.ManagedNode{MachineID: "del-n1", GroupID: new(g.ID)}
+			n2 := &store.ManagedNode{MachineID: "del-n2", GroupID: new(g.ID)}
 			Expect(s.Register(ctx, n1)).To(Succeed())
 			Expect(s.Register(ctx, n2)).To(Succeed())
 
@@ -102,11 +102,11 @@ var _ = Describe("Gorm Store", func() {
 			// Nodes still registered, but no longer attached to the deleted group.
 			found1, err := s.NodeGetByID(ctx, n1.ID)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(found1.GroupID).To(BeEmpty())
+			Expect(found1.GroupID).To(BeNil())
 
 			found2, err := s.NodeGetByID(ctx, n2.ID)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(found2.GroupID).To(BeEmpty())
+			Expect(found2.GroupID).To(BeNil())
 		})
 
 		It("counts nodes per group, skipping empty and ungrouped", func() {
@@ -115,8 +115,8 @@ var _ = Describe("Gorm Store", func() {
 			Expect(s.Create(ctx, a)).To(Succeed())
 			Expect(s.Create(ctx, b)).To(Succeed())
 
-			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-1", GroupID: a.ID})).To(Succeed())
-			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-2", GroupID: a.ID})).To(Succeed())
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-1", GroupID: new(a.ID)})).To(Succeed())
+			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-2", GroupID: new(a.ID)})).To(Succeed())
 			Expect(s.Register(ctx, &store.ManagedNode{MachineID: "cnt-3"})).To(Succeed())
 
 			counts, err := s.GroupNodeCounts(ctx)
@@ -188,7 +188,7 @@ var _ = Describe("Gorm Store", func() {
 			g := &store.NodeGroup{Name: "grp"}
 			Expect(s.Create(ctx, g)).To(Succeed())
 
-			n1 := &store.ManagedNode{MachineID: "n1", GroupID: g.ID}
+			n1 := &store.ManagedNode{MachineID: "n1", GroupID: new(g.ID)}
 			n2 := &store.ManagedNode{MachineID: "n2"}
 			Expect(s.Register(ctx, n1)).To(Succeed())
 			Expect(s.Register(ctx, n2)).To(Succeed())
@@ -217,9 +217,9 @@ var _ = Describe("Gorm Store", func() {
 			g := &store.NodeGroup{Name: "sel-grp"}
 			Expect(s.Create(ctx, g)).To(Succeed())
 
-			n1 := &store.ManagedNode{MachineID: "s1", GroupID: g.ID, Labels: map[string]string{"role": "worker"}}
-			n2 := &store.ManagedNode{MachineID: "s2", GroupID: g.ID, Labels: map[string]string{"role": "worker"}}
-			n3 := &store.ManagedNode{MachineID: "s3", GroupID: g.ID, Labels: map[string]string{"role": "control"}}
+			n1 := &store.ManagedNode{MachineID: "s1", GroupID: new(g.ID), Labels: map[string]string{"role": "worker"}}
+			n2 := &store.ManagedNode{MachineID: "s2", GroupID: new(g.ID), Labels: map[string]string{"role": "worker"}}
+			n3 := &store.ManagedNode{MachineID: "s3", GroupID: new(g.ID), Labels: map[string]string{"role": "control"}}
 			Expect(s.Register(ctx, n1)).To(Succeed())
 			Expect(s.Register(ctx, n2)).To(Succeed())
 			Expect(s.Register(ctx, n3)).To(Succeed())
@@ -239,7 +239,7 @@ var _ = Describe("Gorm Store", func() {
 			g := &store.NodeGroup{Name: "only-grp"}
 			Expect(s.Create(ctx, g)).To(Succeed())
 
-			n1 := &store.ManagedNode{MachineID: "og1", GroupID: g.ID}
+			n1 := &store.ManagedNode{MachineID: "og1", GroupID: new(g.ID)}
 			n2 := &store.ManagedNode{MachineID: "og2"}
 			Expect(s.Register(ctx, n1)).To(Succeed())
 			Expect(s.Register(ctx, n2)).To(Succeed())
@@ -338,11 +338,11 @@ var _ = Describe("Gorm Store", func() {
 			n := &store.ManagedNode{MachineID: "sg1"}
 			Expect(s.Register(ctx, n)).To(Succeed())
 
-			Expect(s.SetGroup(ctx, n.ID, g.ID)).To(Succeed())
+			Expect(s.SetGroup(ctx, n.ID, &g.ID)).To(Succeed())
 
 			found, err := s.NodeGetByID(ctx, n.ID)
 			Expect(err).NotTo(HaveOccurred())
-			Expect(found.GroupID).To(Equal(g.ID))
+			Expect(found.GroupID).To(HaveValue(Equal(g.ID)))
 			Expect(found.Group).NotTo(BeNil())
 			Expect(found.Group.Name).To(Equal("target-grp"))
 		})

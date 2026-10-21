@@ -34,9 +34,9 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	AfterEach(func() { Expect(s.Close()).To(Succeed()) })
 
-	It("SetResetPending marks the node pending and stamps the request time", func() {
+	It("issuing a reset marks the node pending and stamps the request time", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		got, err := s.NodeGetByID(ctx, n.ID)
 		Expect(err).NotTo(HaveOccurred())
@@ -47,7 +47,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("advances pending -> in-progress without stamping LastReset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		ok, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
 		Expect(err).NotTo(HaveOccurred())
@@ -64,7 +64,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 	It("does not stamp ResetProgressAt on the terminal transitions", func() {
 		for _, to := range []string{store.ResetStateDone, store.ResetStateFailed} {
 			n := register("n-" + to)
-			Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+			issueCommand(ctx, s, n.ID, store.CmdReset)
 
 			ok, err := s.AdvanceReset(ctx, n.ID,
 				[]string{store.ResetStatePending, store.ResetStateInProgress}, to, to == store.ResetStateDone)
@@ -80,7 +80,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 	// from the request, or a node that is actively wiping gets reported failed.
 	It("does not fail a reset whose node re-registered after the deadline", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		requested, err := s.NodeGetByID(ctx, n.ID)
 		Expect(err).NotTo(HaveOccurred())
 		deadline := requested.ResetRequestedAt.Add(time.Millisecond)
@@ -101,7 +101,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("fails a reset whose re-register is itself older than the deadline", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		ok, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeTrue())
@@ -114,15 +114,20 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 		Expect(got.ResetState).To(Equal(store.ResetStateFailed))
 	})
 
-	It("clears ResetProgressAt when a new reset is requested", func() {
+	// CreateBatch leaves a reset that is still pending or in-progress alone, so
+	// the stamp can only be inherited across a reset that already resolved.
+	It("clears ResetProgressAt when the next reset is requested", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		_, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
 		Expect(err).NotTo(HaveOccurred())
 		mid, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(mid.ResetProgressAt).NotTo(BeNil())
 
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		_, err = s.AdvanceReset(ctx, n.ID, []string{store.ResetStateInProgress}, store.ResetStateDone, true)
+		Expect(err).NotTo(HaveOccurred())
+
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		got, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(got.ResetState).To(Equal(store.ResetStatePending))
 		Expect(got.ResetProgressAt).To(BeNil())
@@ -130,7 +135,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("advances an in-flight reset -> done and stamps LastReset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		ok, err := s.AdvanceReset(ctx, n.ID,
 			[]string{store.ResetStatePending, store.ResetStateInProgress}, store.ResetStateDone, true)
@@ -144,7 +149,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("advances an in-flight reset -> failed", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		ok, err := s.AdvanceReset(ctx, n.ID,
 			[]string{store.ResetStatePending, store.ResetStateInProgress}, store.ResetStateFailed, false)
@@ -156,15 +161,21 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 		Expect(got.LastReset).To(BeNil())
 	})
 
+	// The request time can only move while a reset is in flight if the first one
+	// resolved first: CreateBatch leaves a pending or in-progress reset alone.
 	It("does not fail a reset whose request timestamp was refreshed", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		first, err := s.NodeGetByID(ctx, n.ID)
 		Expect(err).NotTo(HaveOccurred())
 		oldDeadline := *first.ResetRequestedAt
 
+		_, err = s.AdvanceReset(ctx, n.ID,
+			[]string{store.ResetStatePending}, store.ResetStateFailed, false)
+		Expect(err).NotTo(HaveOccurred())
+
 		time.Sleep(time.Millisecond)
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		matched, err := s.FailResetBefore(ctx, n.ID, oldDeadline)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(matched).To(BeFalse())
@@ -176,7 +187,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("fails an in-flight reset requested before the deadline", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		matched, err := s.FailResetBefore(ctx, n.ID, time.Now().Add(time.Minute))
 		Expect(err).NotTo(HaveOccurred())
@@ -200,7 +211,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("resolves exactly once under concurrent AdvanceReset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		const workers = 12
 		wins := make(chan bool, workers)
@@ -252,7 +263,7 @@ var _ = Describe("Gorm Store StampResetProgress", func() {
 
 	It("stamps a pending reset and re-anchors the expiry budget", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		// The expiry sweep passes now-timeout, so the deadline it compares
 		// against is always older than a delivery that has just happened.
 		deadline := time.Now()
@@ -278,7 +289,7 @@ var _ = Describe("Gorm Store StampResetProgress", func() {
 
 	It("stamps an in-progress reset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		_, err := s.AdvanceReset(ctx, n.ID,
 			[]string{store.ResetStatePending}, store.ResetStateInProgress, false)
 		Expect(err).NotTo(HaveOccurred())
@@ -290,7 +301,7 @@ var _ = Describe("Gorm Store StampResetProgress", func() {
 
 	It("refuses to stamp a reset that already resolved", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		_, err := s.AdvanceReset(ctx, n.ID,
 			[]string{store.ResetStatePending}, store.ResetStateDone, true)
 		Expect(err).NotTo(HaveOccurred())
@@ -311,13 +322,19 @@ var _ = Describe("Gorm Store StampResetProgress", func() {
 		Expect(stamped).To(BeFalse())
 	})
 
-	It("clears the delivery stamp when a new reset is requested", func() {
+	It("clears the delivery stamp when the next reset is requested", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		_, err := s.StampResetProgress(ctx, n.ID)
 		Expect(err).NotTo(HaveOccurred())
 
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		// CreateBatch keeps a reset that is still in flight, so the stamp can
+		// only survive into a reset issued after this one resolved.
+		_, err = s.AdvanceReset(ctx, n.ID,
+			[]string{store.ResetStatePending}, store.ResetStateFailed, false)
+		Expect(err).NotTo(HaveOccurred())
+
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 		got, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(got.ResetProgressAt).To(BeNil(),
 			"a new reset must not inherit the previous delivery stamp")

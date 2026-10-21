@@ -36,7 +36,7 @@ var _ = Describe("Reset lifecycle", func() {
 
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
-			cs = &fakeCommandStore{}
+			cs = &fakeCommandStore{nodes: ns}
 			cmdHandler = handlers.NewCommandHandler(cs, ns, nil, nil, nil)
 		})
 
@@ -75,10 +75,12 @@ var _ = Describe("Reset lifecycle", func() {
 
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{
-				{ID: "node-1", GroupID: "grp-1"},
-				{ID: "node-2", GroupID: "grp-1"},
+				{ID: "node-1", GroupID: new("grp-1")},
+				{ID: "node-2", GroupID: new("grp-1")},
 			}
-			cs = &fakeCommandStore{}
+			// A fan-out marks the lifecycle through CreateBatch, so the fake
+			// command store has to reach the node store the specs read back.
+			cs = &fakeCommandStore{nodes: ns}
 			cmdHandler = handlers.NewCommandHandler(cs, ns, nil, nil, nil)
 		})
 
@@ -357,7 +359,7 @@ var _ = Describe("Reset lifecycle", func() {
 		It("clears ResetProgressAt when a new reset is requested", func() {
 			progressAt := time.Now().Add(-2 * time.Hour)
 			ns.nodes = []*store.ManagedNode{{ID: "node-1", ResetProgressAt: &progressAt}}
-			cs := &fakeCommandStore{}
+			cs := &fakeCommandStore{nodes: ns}
 			cmdHandler := handlers.NewCommandHandler(cs, ns, nil, nil, nil)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/node-1/commands", strings.NewReader(`{"command":"reset"}`))

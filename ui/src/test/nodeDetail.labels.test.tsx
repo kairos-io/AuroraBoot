@@ -12,7 +12,7 @@ const node = {
   id: NODE_ID,
   hostname: "edge-01",
   machineID: "9f8e7d6c5b4a",
-  groupID: "",
+  groupID: null,
   labels: { role: "worker" },
   phase: "active",
   osRelease: null,

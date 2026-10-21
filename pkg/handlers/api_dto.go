@@ -118,7 +118,8 @@ type APISetLabelsRequest struct {
 
 // APISetGroupRequest is the JSON body of PUT /api/v1/nodes/:nodeID/group.
 type APISetGroupRequest struct {
-	GroupID string `json:"groupID" example:"b1db4f35-6195-410a-94f2-09e66e0a6a83"`
+	// GroupID names the target group; null moves the node out of any group.
+	GroupID *string `json:"groupID" example:"b1db4f35-6195-410a-94f2-09e66e0a6a83" extensions:"x-nullable"`
 }
 
 // --- Groups ---
@@ -194,14 +195,19 @@ type APICreateArtifactRequest struct {
 
 // APIArtifactOutputs toggles the build's output formats.
 type APIArtifactOutputs struct {
-	ISO         bool `json:"iso"`
-	CloudImage  bool `json:"cloudImage"`
-	Netboot     bool `json:"netboot"`
-	RawDisk     bool `json:"rawDisk"`
-	Tar         bool `json:"tar"`
-	GCE         bool `json:"gce"`
-	VHD         bool `json:"vhd"`
-	MAAS        bool `json:"maas"`
+	// The installer ISO. With trustedBoot it is the signed UKI ISO, the same
+	// as uki, and needs signing.ukiKeySetId.
+	ISO        bool `json:"iso"`
+	CloudImage bool `json:"cloudImage"`
+	// Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and
+	// maas: a Trusted Boot image has no GRUB and no separate initrd.
+	Netboot bool `json:"netboot"`
+	RawDisk bool `json:"rawDisk"`
+	Tar     bool `json:"tar"`
+	GCE     bool `json:"gce"`
+	VHD     bool `json:"vhd"`
+	MAAS    bool `json:"maas"`
+	// The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.
 	UKI         bool `json:"uki"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`

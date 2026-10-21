@@ -51,7 +51,7 @@ type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
 	Hostname      string            `json:"hostname"`
-	GroupID       string            `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1"`
+	GroupID       *string           `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1" extensions:"x-nullable"`
 	Group         *NodeGroup        `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 	Phase         string            `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat"`
@@ -133,9 +133,11 @@ const (
 )
 
 // Reset states (ManagedNode.ResetState) for the day-2 automatic-reset lifecycle
-// (kairos-io/kairos#4255). SetResetPending sets `pending` when a reset command is
-// issued; the re-register resolver advances it from the reported boot state:
-// autoreset → in-progress, active → done, passive/recovery → failed.
+// (kairos-io/kairos#4255). CommandStore.CreateBatch sets `pending` when a reset
+// command is issued; the re-register resolver advances it from the reported boot state:
+// autoreset → in-progress, active → done, passive/recovery → failed. A reset
+// command that reports Failed while the reset is still pending also moves it to
+// failed.
 const (
 	ResetStatePending    = "pending"
 	ResetStateInProgress = "in-progress"
@@ -144,9 +146,10 @@ const (
 )
 
 // Upgrade states (ManagedNode.UpgradeState) for the upgrade lifecycle.
-// SetUpgradePending sets `pending` when an upgrade command is issued; the
+// CommandStore.CreateBatch sets `pending` when an upgrade command is issued; the
 // re-register resolver advances it from the reported boot state: active → done,
-// passive/recovery → failed (the node fell back off the upgraded image).
+// passive/recovery → failed (the node fell back off the upgraded image). An
+// upgrade command that reports Failed before the reboot also moves it to failed.
 const (
 	UpgradeStatePending = "pending"
 	UpgradeStateDone    = "done"
@@ -173,6 +176,17 @@ type NodeCommand struct {
 	DeliveredAt   *time.Time        `json:"deliveredAt"`
 	CompletedAt   *time.Time        `json:"completedAt"`
 	CreatedAt     time.Time         `json:"createdAt"`
+
+	// BatchID names the fan-out this command was created by, so the rows a
+	// single bulk or group request produced can be found again as one
+	// operation. It is empty on a command addressed to one node.
+	BatchID string `json:"batchID,omitempty" gorm:"index"`
+	// FailFast asks for the still-Pending rows of the batch to be canceled
+	// once any node in it fails; a row already Delivered to its node is left
+	// to report its own result. It is carried on every row of the batch rather
+	// than in a batch table so the rule travels with the command that has to
+	// apply it.
+	FailFast bool `json:"failFast,omitempty"`
 }
 
 // Command phases.
@@ -183,7 +197,22 @@ const (
 	CommandCompleted = "Completed"
 	CommandFailed    = "Failed"
 	CommandExpired   = "Expired"
+	// CommandCanceled is a command that will never be delivered because the
+	// fail-fast batch it belongs to was stopped by an earlier node's failure.
+	// It is terminal and distinct from Failed: the node never ran anything.
+	CommandCanceled = "Canceled"
 )
+
+// IsTerminalCommandPhase reports whether a phase is one the command can no
+// longer move out of, so a caller can tell the rows that still have work
+// ahead of them from the ones that are only history.
+func IsTerminalCommandPhase(phase string) bool {
+	switch phase {
+	case CommandCompleted, CommandFailed, CommandExpired, CommandCanceled:
+		return true
+	}
+	return false
+}
 
 // Command types.
 const (
@@ -234,7 +263,9 @@ type NodeStore interface {
 	// value instead of blanking it.
 	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string, remoteIP string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
-	SetGroup(ctx context.Context, nodeID string, groupID string) error
+	// SetGroup moves nodeID into groupID, or out of any group when groupID
+	// is nil.
+	SetGroup(ctx context.Context, nodeID string, groupID *string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
 	// ClaimNode atomically assigns one unclaimed node in groupID to claimKey and
 	// returns it. It is idempotent: re-issuing with the same (groupID, claimKey)
@@ -251,12 +282,6 @@ type NodeStore interface {
 	// caller inspects the node to distinguish those and must not assume ownership
 	// from a false result.
 	ReleaseNode(ctx context.Context, nodeID, claimKey string) (released bool, err error)
-	// SetResetPending marks nodeID as awaiting an automatic reset: ResetState is
-	// set to pending, ResetRequestedAt to now and ResetProgressAt back to nil, so
-	// a new reset never inherits the previous one's progress stamp. Called when a
-	// reset command is issued; the outcome is resolved later by AdvanceReset when
-	// the node re-registers with its post-reboot boot state.
-	SetResetPending(ctx context.Context, nodeID string) error
 	// AdvanceReset atomically transitions nodeID's ResetState from any of
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
@@ -278,11 +303,6 @@ type NodeStore interface {
 	// either by a new request (ResetRequestedAt) or by the reset making progress
 	// (ResetProgressAt).
 	FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error)
-	// SetUpgradePending marks nodeID as awaiting an upgrade: UpgradeState is set
-	// to pending and UpgradeRequestedAt to now. Called when an upgrade command is
-	// issued; the outcome is resolved later by AdvanceUpgrade when the node
-	// re-registers with its post-reboot boot state.
-	SetUpgradePending(ctx context.Context, nodeID string) error
 	// AdvanceUpgrade atomically transitions nodeID's UpgradeState from any of
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
@@ -295,6 +315,24 @@ type NodeStore interface {
 // CommandStore manages the command queue.
 type CommandStore interface {
 	Create(ctx context.Context, cmd *NodeCommand) error
+	// CreateBatch stores every command of one fan-out and marks the lifecycle
+	// of their target nodes in a single transaction: a reset command sets the
+	// node's reset state to pending and an upgrade command its upgrade state,
+	// and stamps the request time.
+	// Marking a reset pending also clears the node's reset progress stamp, so
+	// the new reset's timeout window is measured from this request and never
+	// inherits the previous reset's stamp.
+	// A node whose upgrade is already pending, or whose reset is pending or
+	// in-progress, keeps its state and request time, which belong to the
+	// operation still waiting for the node to reboot.
+	// Agents claim committed Pending rows on their own, so no row of the
+	// batch may become visible before all of them and their lifecycle state
+	// exist. Either everything is written or nothing is.
+	//
+	// Unlike Create, it keeps the ID and Phase the caller set, so the caller
+	// can push the rows it built without reading them back. A command with an
+	// empty ID gets a fresh one and an empty Phase becomes CommandPending.
+	CreateBatch(ctx context.Context, cmds []*NodeCommand) error
 	GetByID(ctx context.Context, id string) (*NodeCommand, error)
 	GetPending(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	MarkDelivered(ctx context.Context, ids []string) error
@@ -304,9 +342,14 @@ type CommandStore interface {
 	// or two concurrent polls) wins. A command that is missing or no longer
 	// Pending yields (false, nil).
 	ClaimForDelivery(ctx context.Context, id string) (bool, error)
+	// UpdateStatus records a command's phase and result. A Failed reset or
+	// upgrade also marks its node's pending lifecycle state failed in the same
+	// write, unless another command of the same kind still owns that state: a
+	// command that fails before the reboot never brings the node back with a
+	// boot state the re-register resolvers could settle it from.
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
-	// UpdateStatusForNode updates a command's status only if it belongs to
-	// nodeID. It returns ErrCommandNotFound when no command matches both the
+	// UpdateStatusForNode is UpdateStatus scoped to the commands of nodeID. It
+	// returns ErrCommandNotFound when no command matches both the
 	// command id and the owning node, so callers can fail closed (403/404)
 	// instead of silently succeeding on a foreign or missing command.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error
@@ -318,6 +361,23 @@ type CommandStore interface {
 	// advance: DeleteTerminal does not collect it and the dashboard offers no
 	// delete button for a Pending command.
 	ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error
+	// ListByBatch returns every command created by one fan-out, in the order
+	// they were created, so a caller can report the batch as one operation.
+	// An empty batch id matches nothing: an unbatched single-node command has
+	// no batch id, so matching on it would return the whole table.
+	ListByBatch(ctx context.Context, batchID string) ([]*NodeCommand, error)
+	// CancelPendingInBatch moves every still-Pending command of a batch to
+	// Canceled and records reason as its result, returning how many rows it
+	// moved. Commands that were already claimed for delivery are left alone:
+	// there is no abort message on the wire, so a delivered command cannot be
+	// recalled and has to be allowed to report its own outcome.
+	//
+	// A canceled reset or upgrade never runs, so the pending reset or upgrade
+	// state CreateBatch set on its node is cleared in the same write, unless
+	// another command of the same kind owns it: one that is Pending,
+	// Delivered or Running, or one that Completed after the node's request
+	// time and is waiting for the node to reboot.
+	CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error)
 	Delete(ctx context.Context, id string) error
 	// DeleteTerminal removes every command of nodeID that reached a terminal
 	// phase: Completed, Failed or Expired.
@@ -536,11 +596,13 @@ type NodeExtensionStore interface {
 }
 
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.
+// KeysDir and TPMPCRKeyPath are server paths: the builders read them, and the
+// API never returns them.
 type SecureBootKeySet struct {
 	ID               string    `json:"id" gorm:"primaryKey"`
 	Name             string    `json:"name" gorm:"uniqueIndex"`
-	KeysDir          string    `json:"keysDir"`
-	TPMPCRKeyPath    string    `json:"tpmPcrKeyPath"`
+	KeysDir          string    `json:"-"`
+	TPMPCRKeyPath    string    `json:"-"`
 	SecureBootEnroll string    `json:"secureBootEnroll"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`

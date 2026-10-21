@@ -347,11 +347,11 @@ func streamAll(ctx context.Context, src podSource, pod *corev1.Pod, sink logSink
 // so a build step that echoes the injected cloud-config cannot land the
 // fleet registration token or the default node password in either sink.
 type broadcastingSink struct {
-	ctx           context.Context
-	buildID       string
-	store         store.ArtifactStore
-	broadcaster   builder.LogBroadcaster
-	redactValues  []string
+	ctx          context.Context
+	buildID      string
+	store        store.ArtifactStore
+	broadcaster  builder.LogBroadcaster
+	redactValues []string
 }
 
 func (b *broadcastingSink) WriteLine(container, line string) error {

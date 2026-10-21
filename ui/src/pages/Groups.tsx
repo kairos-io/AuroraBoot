@@ -147,11 +147,13 @@ export function Groups() {
     const node = nodes.find((n) => n.id === nodeId);
     if (!node) return;
     const previous = node.groupID;
-    const patch = (groupID: string) =>
+    const patch = (groupID: string | null) =>
       setNodes((cur) => cur.map((n) => (n.id === nodeId ? { ...n, groupID } : n)));
-    patch(groupId);
+    // The board names "not in a group" with an empty id.
+    const target = groupId === "" ? null : groupId;
+    patch(target);
     try {
-      await setGroup(nodeId, groupId);
+      await setGroup(nodeId, target);
     } catch (err) {
       patch(previous);
       toast(`Could not move ${node.hostname || node.id}: ${(err as Error).message}`, "error");

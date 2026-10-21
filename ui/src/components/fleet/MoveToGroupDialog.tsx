@@ -41,7 +41,7 @@ export function MoveToGroupDialog({ open, onOpenChange, nodeIds, groups, onDone 
   async function submit() {
     if (choice === null) return;
     setBusy(true);
-    const results = await Promise.allSettled(nodeIds.map((id) => setGroup(id, choice)));
+    const results = await Promise.allSettled(nodeIds.map((id) => setGroup(id, choice === NO_GROUP ? null : choice)));
     setBusy(false);
     const failed = results.filter((r) => r.status === "rejected").length;
     if (failed > 0) toast(`Could not move ${plural(failed)}`, "error");

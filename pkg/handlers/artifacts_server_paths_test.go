@@ -1,7 +1,9 @@
 package handlers_test
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -159,6 +162,33 @@ var _ = Describe("ArtifactHandler: no server paths in the API", func() {
 			Expect(fb.lastOpts.OverlayRootfs).To(BeEmpty())
 			Expect(fb.lastOpts.OverlayID).To(BeEmpty())
 		})
+	})
+
+	It("returns the stored record from Create", func() {
+		overlayID := makeOverlay()
+		rec := create(`{"name":"edge","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"overlayId":"` + overlayID + `"}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+
+		var out store.ArtifactRecord
+		Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+		Expect(out.ID).NotTo(BeEmpty())
+		Expect(out.Name).To(Equal("edge"))
+		Expect(out.OverlayID).To(Equal(overlayID))
+		Expect(out.Phase).To(Equal(store.ArtifactPending))
+		Expect(out.BaseImage).To(Equal("quay.io/kairos/ubuntu:24.04"))
+	})
+
+	It("returns the row the builder wrote when it persists the record itself", func() {
+		h := handlers.NewArtifactHandler(&persistingBuilder{fakeBuilder: fb, store: as}, as, nil, nil, nil, nil, artifactsDir, "reg-token", "http://localhost:8080")
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(`{"name":"edge","baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true}}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		Expect(h.Create(e.NewContext(req, rec))).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+
+		var out store.ArtifactRecord
+		Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+		Expect(out.Name).To(Equal("written-by-builder"))
 	})
 
 	Describe("UploadOverlay", func() {
@@ -323,4 +353,62 @@ func refusedOverlayIDEntries() []TableEntry {
 		Entry("path under the artifacts dir that climbs out of it", "{dir}/overlays/../victim"),
 		Entry("artifacts dir itself", "{dir}"),
 	}
+}
+
+// readBackFailingStore fails GetByID once Create has stored a record, so the
+// read-back after a build has started fails while the existence check before
+// it does not.
+type readBackFailingStore struct {
+	*fakeArtifactStore
+	created bool
+}
+
+func (s *readBackFailingStore) Create(ctx context.Context, rec *store.ArtifactRecord) error {
+	if err := s.fakeArtifactStore.Create(ctx, rec); err != nil {
+		return err
+	}
+	s.created = true
+	return nil
+}
+
+func (s *readBackFailingStore) GetByID(ctx context.Context, id string) (*store.ArtifactRecord, error) {
+	if s.created {
+		return nil, errors.New("read-back failed")
+	}
+	return s.fakeArtifactStore.GetByID(ctx, id)
+}
+
+var _ = Describe("ArtifactHandler.Create when the stored build cannot be read back", func() {
+	It("answers 201 with the build status, because the build has started", func() {
+		fb := &fakeBuilder{}
+		failing := &readBackFailingStore{fakeArtifactStore: &fakeArtifactStore{}}
+		handler := handlers.NewArtifactHandler(fb, failing, nil, nil, nil, nil, GinkgoT().TempDir(), "reg-token", "http://localhost:8080")
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(`{"baseImage":"ubuntu:24.04","outputs":{"iso":true}}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		Expect(handler.Create(echo.New().NewContext(req, rec))).To(Succeed())
+
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		var resp map[string]any
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp).To(HaveKeyWithValue("id", fb.builds[0].ID))
+		Expect(resp).To(HaveKeyWithValue("phase", "Pending"))
+	})
+})
+
+// persistingBuilder writes the artifact row inside Build, as the local
+// builder does, so Create finds an existing row instead of writing its own.
+type persistingBuilder struct {
+	*fakeBuilder
+	store *fakeArtifactStore
+}
+
+func (b *persistingBuilder) Build(ctx context.Context, opts builder.BuildOptions) (*builder.BuildStatus, error) {
+	st, err := b.fakeBuilder.Build(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	Expect(b.store.Create(ctx, &store.ArtifactRecord{ID: st.ID, Name: "written-by-builder", Phase: store.ArtifactPending})).To(Succeed())
+	return st, nil
 }

@@ -33,9 +33,9 @@ var _ = Describe("Gorm Store upgrade lifecycle", func() {
 
 	AfterEach(func() { Expect(s.Close()).To(Succeed()) })
 
-	It("SetUpgradePending marks the node pending and stamps the request time", func() {
+	It("issuing an upgrade marks the node pending and stamps the request time", func() {
 		n := register("n1")
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 
 		got, err := s.NodeGetByID(ctx, n.ID)
 		Expect(err).NotTo(HaveOccurred())
@@ -44,10 +44,10 @@ var _ = Describe("Gorm Store upgrade lifecycle", func() {
 		Expect(got.LastUpgrade).To(BeNil())
 	})
 
-	It("SetUpgradePending leaves the reset lifecycle alone", func() {
+	It("issuing an upgrade leaves the reset lifecycle alone", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 
 		got, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(got.ResetState).To(Equal(store.ResetStatePending))
@@ -56,19 +56,19 @@ var _ = Describe("Gorm Store upgrade lifecycle", func() {
 
 	It("re-issuing an upgrade after a finished one moves it back to pending", func() {
 		n := register("n1")
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 		ok, err := s.AdvanceUpgrade(ctx, n.ID, []string{store.UpgradeStatePending}, store.UpgradeStateFailed, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeTrue())
 
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 		got, _ := s.NodeGetByID(ctx, n.ID)
 		Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
 	})
 
 	It("advances pending -> done and stamps LastUpgrade", func() {
 		n := register("n1")
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 
 		ok, err := s.AdvanceUpgrade(ctx, n.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
 		Expect(err).NotTo(HaveOccurred())
@@ -81,7 +81,7 @@ var _ = Describe("Gorm Store upgrade lifecycle", func() {
 
 	It("advances pending -> failed without stamping LastUpgrade", func() {
 		n := register("n1")
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 
 		ok, err := s.AdvanceUpgrade(ctx, n.ID, []string{store.UpgradeStatePending}, store.UpgradeStateFailed, false)
 		Expect(err).NotTo(HaveOccurred())
@@ -105,7 +105,7 @@ var _ = Describe("Gorm Store upgrade lifecycle", func() {
 
 	It("does not resolve an already finished upgrade a second time", func() {
 		n := register("n1")
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 		ok, err := s.AdvanceUpgrade(ctx, n.ID, []string{store.UpgradeStatePending}, store.UpgradeStateFailed, false)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(ok).To(BeTrue())
@@ -121,7 +121,7 @@ var _ = Describe("Gorm Store upgrade lifecycle", func() {
 
 	It("resolves exactly once under concurrent AdvanceUpgrade", func() {
 		n := register("n1")
-		Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdUpgrade)
 
 		const workers = 12
 		wins := make(chan bool, workers)

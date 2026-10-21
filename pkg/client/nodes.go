@@ -67,9 +67,10 @@ func (s *NodesService) SetLabels(ctx context.Context, nodeID string, labels map[
 	return s.c.do(ctx, http.MethodPut, "/api/v1/nodes/"+nodeID+"/labels", nil, body, nil)
 }
 
-// SetGroup assigns a node to a group (or clears it, if groupID is "").
-func (s *NodesService) SetGroup(ctx context.Context, nodeID, groupID string) error {
-	body := map[string]string{"groupID": groupID}
+// SetGroup assigns a node to a group, or moves it out of any group when groupID
+// is nil.
+func (s *NodesService) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
+	body := map[string]*string{"groupID": groupID}
 	return s.c.do(ctx, http.MethodPut, "/api/v1/nodes/"+nodeID+"/group", nil, body, nil)
 }
 

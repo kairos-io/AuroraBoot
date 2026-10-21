@@ -40,7 +40,7 @@ func (a *NodeStoreAdapter) UpdateHeartbeat(ctx context.Context, id string, agent
 func (a *NodeStoreAdapter) UpdatePhase(ctx context.Context, id string, phase string) error {
 	return a.S.UpdatePhase(ctx, id, phase)
 }
-func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID string) error {
+func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
 	return a.S.SetGroup(ctx, nodeID, groupID)
 }
 func (a *NodeStoreAdapter) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {
@@ -52,9 +52,6 @@ func (a *NodeStoreAdapter) ClaimNode(ctx context.Context, groupID, claimKey stri
 func (a *NodeStoreAdapter) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool, error) {
 	return a.S.ReleaseNode(ctx, nodeID, claimKey)
 }
-func (a *NodeStoreAdapter) SetResetPending(ctx context.Context, nodeID string) error {
-	return a.S.SetResetPending(ctx, nodeID)
-}
 func (a *NodeStoreAdapter) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	return a.S.AdvanceReset(ctx, nodeID, fromStates, to, stampLastReset)
 }
@@ -63,9 +60,6 @@ func (a *NodeStoreAdapter) StampResetProgress(ctx context.Context, nodeID string
 }
 func (a *NodeStoreAdapter) FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error) {
 	return a.S.FailResetBefore(ctx, nodeID, deadline)
-}
-func (a *NodeStoreAdapter) SetUpgradePending(ctx context.Context, nodeID string) error {
-	return a.S.SetUpgradePending(ctx, nodeID)
 }
 func (a *NodeStoreAdapter) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	return a.S.AdvanceUpgrade(ctx, nodeID, fromStates, to, stampLastUpgrade)
@@ -79,6 +73,9 @@ type CommandStoreAdapter struct{ S *Store }
 
 func (a *CommandStoreAdapter) Create(ctx context.Context, cmd *store.NodeCommand) error {
 	return a.S.CommandCreate(ctx, cmd)
+}
+func (a *CommandStoreAdapter) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	return a.S.CreateBatch(ctx, cmds)
 }
 func (a *CommandStoreAdapter) GetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
 	return a.S.CommandGetByID(ctx, id)
@@ -103,6 +100,13 @@ func (a *CommandStoreAdapter) ListByNode(ctx context.Context, nodeID string) ([]
 }
 func (a *CommandStoreAdapter) ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error {
 	return a.S.CommandExpireBefore(ctx, nodeID, deadline)
+}
+
+func (a *CommandStoreAdapter) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
+	return a.S.ListByBatch(ctx, batchID)
+}
+func (a *CommandStoreAdapter) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
+	return a.S.CancelPendingInBatch(ctx, batchID, reason)
 }
 func (a *CommandStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.CommandDelete(ctx, id)

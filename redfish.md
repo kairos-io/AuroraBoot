@@ -209,7 +209,12 @@ Without `--redfish-serve-addr`, the server has no ISO server and every Redfish d
 request must supply an explicit `imageUrl`.
 
 The `--redfish-serve-tls-cert` and `--redfish-serve-tls-key` flags activate HTTPS on the
-ISO server (same posture as the CLI `--serve-tls`).
+ISO server (same posture as the CLI `--serve-tls`). The advertised URL carries the scheme
+the BMC reads, so it must agree: pass both TLS flags together with an `https://`
+`--redfish-serve-url`, and leave the URL `http://` when they are not set. AuroraBoot
+refuses to start on a mismatch, because the BMC would otherwise be told to fetch over one
+protocol from a URL naming the other. Note that `--redfish-serve-url` falls back to
+`--url`, so enabling TLS means setting one of the two to an `https://` URL.
 
 Environment variable equivalents: `AURORABOOT_REDFISH_SERVE_URL`,
 `AURORABOOT_REDFISH_SERVE_ADDR`.

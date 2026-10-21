@@ -12,7 +12,7 @@ function nodeWithHostname(hostname: string) {
     id: NODE_ID,
     hostname,
     machineID: "a1b2c3d4",
-    groupID: "",
+    groupID: null,
     labels: { role: "worker" },
     phase: "online",
     osRelease: null,
