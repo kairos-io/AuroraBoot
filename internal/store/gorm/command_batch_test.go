@@ -227,6 +227,58 @@ var _ = Describe("Gorm Store command batches", func() {
 			Expect(got.ResetState).To(BeEmpty())
 		})
 
+		// A node whose earlier upgrade or reset is still waiting for its
+		// reboot keeps the request time of that operation, so the resolver
+		// that runs when it re-registers judges the operation that is in
+		// flight.
+		It("leaves an upgrade that is already pending and its request time alone", func() {
+			n1, n2 := register("m1"), register("m2")
+			Expect(s.SetUpgradePending(ctx, n1.ID)).To(Succeed())
+			requested := *node(n1.ID).UpgradeRequestedAt
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			got := node(n1.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(*got.UpgradeRequestedAt).To(BeTemporally("==", requested))
+			Expect(node(n2.ID).UpgradeState).To(Equal(store.UpgradeStatePending))
+		})
+
+		It("marks an upgrade target whose last upgrade finished", func() {
+			n1 := register("m1")
+			Expect(s.SetUpgradePending(ctx, n1.ID)).To(Succeed())
+			_, err := s.AdvanceUpgrade(ctx, n1.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
+			Expect(err).NotTo(HaveOccurred())
+			requested := *node(n1.ID).UpgradeRequestedAt
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1"}, n1))).To(Succeed())
+
+			got := node(n1.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(*got.UpgradeRequestedAt).To(BeTemporally(">", requested))
+		})
+
+		DescribeTable("leaves a reset that is already in flight and its request time alone",
+			func(state string) {
+				n1, n2 := register("m1"), register("m2")
+				Expect(s.SetResetPending(ctx, n1.ID)).To(Succeed())
+				if state != store.ResetStatePending {
+					_, err := s.AdvanceReset(ctx, n1.ID, []string{store.ResetStatePending}, state, false)
+					Expect(err).NotTo(HaveOccurred())
+				}
+				requested := *node(n1.ID).ResetRequestedAt
+
+				Expect(s.CreateBatch(ctx, batchOf(store.CmdReset, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+				got := node(n1.ID)
+				Expect(got.ResetState).To(Equal(state))
+				Expect(*got.ResetRequestedAt).To(BeTemporally("==", requested))
+				Expect(node(n2.ID).ResetState).To(Equal(store.ResetStatePending))
+			},
+			Entry("pending", store.ResetStatePending),
+			Entry("in-progress", store.ResetStateInProgress),
+		)
+
 		// An agent may claim any committed Pending row, so a batch that is
 		// half written can be half delivered. A failure part way through has
 		// to leave nothing behind.
@@ -370,6 +422,102 @@ var _ = Describe("Gorm Store command batches", func() {
 			got := node(n2.ID)
 			Expect(got.ResetState).To(Equal(store.ResetStateInProgress))
 			Expect(got.ResetRequestedAt).NotTo(BeNil())
+		})
+
+		// single queues one command outside any batch and marks the node
+		// pending, as the single-node command handler does, then moves the
+		// command to phase.
+		single := func(n *store.ManagedNode, command, phase string) string {
+			cmd := &store.NodeCommand{ManagedNodeID: n.ID, Command: command}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+			switch command {
+			case store.CmdUpgrade:
+				Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+			case store.CmdReset:
+				Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+			}
+			Expect(s.UpdateStatus(ctx, cmd.ID, phase, "")).To(Succeed())
+			return cmd.ID
+		}
+
+		// A Completed upgrade means the agent staged the image and scheduled
+		// the reboot. The node's pending state belongs to that upgrade until
+		// the node re-registers after the reboot.
+		It("keeps the pending upgrade of a node whose earlier upgrade awaits its reboot", func() {
+			n1, n2 := register("m1"), register("m2")
+			single(n2, store.CmdUpgrade, store.CommandCompleted)
+			requested := *node(n2.ID).UpgradeRequestedAt
+			ids := publish("batch-a", store.CmdUpgrade, n1, n2)
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			n, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(n).To(Equal(1))
+
+			got := node(n2.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(*got.UpgradeRequestedAt).To(BeTemporally("==", requested))
+		})
+
+		It("keeps the pending reset of a node whose earlier reset awaits its reboot", func() {
+			n1, n2 := register("m1"), register("m2")
+			single(n2, store.CmdReset, store.CommandCompleted)
+			requested := *node(n2.ID).ResetRequestedAt
+			ids := publish("batch-a", store.CmdReset, n1, n2)
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			n, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(n).To(Equal(1))
+
+			got := node(n2.ID)
+			Expect(got.ResetState).To(Equal(store.ResetStatePending))
+			Expect(*got.ResetRequestedAt).To(BeTemporally("==", requested))
+		})
+
+		// An upgrade that completed before the current request is history:
+		// its reboot has already been resolved, so it owns nothing.
+		DescribeTable("clears the pending upgrade when the node's completed upgrade is older than the request",
+			func(settle func(n *store.ManagedNode)) {
+				n1, n2 := register("m1"), register("m2")
+				cmd := &store.NodeCommand{ManagedNodeID: n2.ID, Command: store.CmdUpgrade}
+				Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+				Expect(s.UpdateStatus(ctx, cmd.ID, store.CommandCompleted, "")).To(Succeed())
+				settle(n2)
+				ids := publish("batch-a", store.CmdUpgrade, n1, n2)
+				Expect(node(n2.ID).UpgradeState).To(Equal(store.UpgradeStatePending))
+				Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+				_, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+				Expect(err).NotTo(HaveOccurred())
+
+				got := node(n2.ID)
+				Expect(got.UpgradeState).To(BeEmpty())
+				Expect(got.UpgradeRequestedAt).To(BeNil())
+			},
+			Entry("node never marked", func(*store.ManagedNode) {}),
+			Entry("node marked and resolved done", func(n *store.ManagedNode) {
+				Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+				_, err := s.AdvanceUpgrade(ctx, n.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
+				Expect(err).NotTo(HaveOccurred())
+			}),
+		)
+
+		It("clears the pending reset when the node's completed reset is older than the request", func() {
+			n1, n2 := register("m1"), register("m2")
+			single(n2, store.CmdReset, store.CommandCompleted)
+			_, err := s.AdvanceReset(ctx, n2.ID, []string{store.ResetStatePending}, store.ResetStateDone, true)
+			Expect(err).NotTo(HaveOccurred())
+			ids := publish("batch-a", store.CmdReset, n1, n2)
+			Expect(node(n2.ID).ResetState).To(Equal(store.ResetStatePending))
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			_, err = s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+
+			got := node(n2.ID)
+			Expect(got.ResetState).To(BeEmpty())
+			Expect(got.ResetRequestedAt).To(BeNil())
 		})
 
 		// Agents claim commands and report status on their own connections

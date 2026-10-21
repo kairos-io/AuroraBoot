@@ -300,6 +300,9 @@ type CommandStore interface {
 	// of their target nodes in a single transaction: a reset command sets the
 	// node's reset state to pending and an upgrade command its upgrade state,
 	// with the request time, as SetResetPending and SetUpgradePending do.
+	// A node whose upgrade is already pending, or whose reset is pending or
+	// in-progress, keeps its state and request time, which belong to the
+	// operation still waiting for the node to reboot.
 	// Agents claim committed Pending rows on their own, so no row of the
 	// batch may become visible before all of them and their lifecycle state
 	// exist. Either everything is written or nothing is.
@@ -344,7 +347,9 @@ type CommandStore interface {
 	//
 	// A canceled reset or upgrade never runs, so the pending reset or upgrade
 	// state CreateBatch set on its node is cleared in the same write, unless
-	// the node has another live command of the same kind that owns it.
+	// another command of the same kind owns it: one that is Pending,
+	// Delivered or Running, or one that Completed after the node's request
+	// time and is waiting for the node to reboot.
 	CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error)
 	Delete(ctx context.Context, id string) error
 	// DeleteTerminal removes every command of nodeID that reached a terminal

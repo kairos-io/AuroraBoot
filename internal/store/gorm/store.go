@@ -531,6 +531,11 @@ func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error
 // reset or upgrade lifecycle pending in one transaction. The rows are inserted
 // one at a time inside it so each gets its own created_at and ListByBatch keeps
 // returning them in the order the caller built them.
+//
+// A node whose upgrade is already pending, or whose reset is pending or
+// in-progress, is left as it is. That state and its request time belong to an
+// operation still waiting for the node to reboot and re-register, and the
+// resolver needs the request time of that operation.
 func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
 	if len(cmds) == 0 {
 		return nil
@@ -558,6 +563,8 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 		if len(resetNodes) > 0 {
 			if err := tx.Model(&store.ManagedNode{}).
 				Where("id IN ?", resetNodes).
+				Where("reset_state IS NULL OR reset_state NOT IN ?",
+					[]string{store.ResetStatePending, store.ResetStateInProgress}).
 				Updates(map[string]any{
 					"reset_state":        store.ResetStatePending,
 					"reset_requested_at": &now,
@@ -568,6 +575,7 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 		if len(upgradeNodes) > 0 {
 			if err := tx.Model(&store.ManagedNode{}).
 				Where("id IN ?", upgradeNodes).
+				Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
 				Updates(map[string]any{
 					"upgrade_state":        store.UpgradeStatePending,
 					"upgrade_requested_at": &now,
@@ -760,19 +768,33 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 }
 
 // clearPendingLifecycle resets stateColumn and requestedColumn on the nodes in
-// nodeIDs whose state is still pendingState and that have no command of the
-// given kind left in Pending, Delivered or Running.
+// nodeIDs whose state is still pendingState and that no command of the given
+// kind owns. A command in Pending, Delivered or Running owns the state, and so
+// does a Completed one that finished at or after requestedColumn: the agent
+// completes an upgrade or reset once it has scheduled the reboot, and the
+// state stays pending until the node re-registers and the resolver settles it.
+// A Completed command that finished before the request belongs to an earlier
+// operation and owns nothing.
+//
+// On SQLite both columns hold the text the driver writes for a time.Time, with
+// trailing fractional zeros trimmed and the zone offset of time.Now. Text
+// comparison orders such values by time as long as the offsets match, which
+// holds for timestamps the same server wrote.
 func clearPendingLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateColumn, pendingState, requestedColumn string) error {
 	if len(nodeIDs) == 0 {
 		return nil
 	}
-	live := tx.Model(&store.NodeCommand{}).Select("1").
-		Where("node_commands.managed_node_id = managed_nodes.id AND node_commands.command = ? AND node_commands.phase IN ?",
-			command, []string{store.CommandPending, store.CommandDelivered, store.CommandRunning})
+	owner := tx.Model(&store.NodeCommand{}).Select("1").
+		Where("node_commands.managed_node_id = managed_nodes.id AND node_commands.command = ?"+
+			" AND (node_commands.phase IN ?"+
+			" OR (node_commands.phase = ? AND node_commands.completed_at >= managed_nodes."+requestedColumn+"))",
+			command,
+			[]string{store.CommandPending, store.CommandDelivered, store.CommandRunning},
+			store.CommandCompleted)
 	return tx.Model(&store.ManagedNode{}).
 		Where("id IN ?", nodeIDs).
 		Where(stateColumn+" = ?", pendingState).
-		Where("NOT EXISTS (?)", live).
+		Where("NOT EXISTS (?)", owner).
 		Updates(map[string]any{
 			stateColumn:     "",
 			requestedColumn: nil,
