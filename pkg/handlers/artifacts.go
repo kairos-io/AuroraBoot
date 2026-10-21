@@ -107,16 +107,16 @@ func NewArtifactHandler(
 
 // createArtifactRequest is the expected body for creating an artifact build.
 type createArtifactRequest struct {
-	Name                    string `json:"name"`
-	BaseImage               string `json:"baseImage"`
-	KairosVersion           string `json:"kairosVersion"`
-	Model                   string `json:"model"`
-	Arch                    string `json:"arch"`
-	Variant                 string `json:"variant"`
-	KubernetesDistro        string `json:"kubernetesDistro"`
-	KubernetesVersion       string `json:"kubernetesVersion"`
-	KubernetesEnabled       *bool  `json:"kubernetesEnabled"`
-	AllowInsecureRegistries bool   `json:"allow-insecure-registries"`
+	Name                    string   `json:"name"`
+	BaseImage               string   `json:"baseImage"`
+	KairosVersion           string   `json:"kairosVersion"`
+	Model                   string   `json:"model"`
+	Arch                    string   `json:"arch"`
+	Variant                 string   `json:"variant"`
+	KubernetesDistro        string   `json:"kubernetesDistro"`
+	KubernetesVersion       string   `json:"kubernetesVersion"`
+	KubernetesEnabled       *bool    `json:"kubernetesEnabled"`
+	AllowInsecureRegistries bool     `json:"allow-insecure-registries"`
 	Dockerfile              string   `json:"dockerfile"`
 	HadronBase              string   `json:"hadronBase"`
 	HadronFirmware          []string `json:"hadronFirmware"`
@@ -1599,14 +1599,14 @@ type cloudConfigParams struct {
 	groupName          string
 	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
 	// Callers substitute phonehomeSafeDefaults for nil input before calling.
-	allowedCommands []string
+	allowedCommands   []string
 	variant           string // "core" or "standard"
 	kubernetesDistro  string // "k3s" or "k0s" when variant=standard
 	kubernetesEnabled bool   // cloud-config k3s/k0s.enabled (standard variant only)
 	userMode          string // "default", "custom", "none"
-	username        string
-	password        string
-	sshKeys         string // newline-separated public keys
+	username          string
+	password          string
+	sshKeys           string // newline-separated public keys
 	// sysextHierarchies and confextHierarchies are the operator-supplied
 	// mount points (already validated and normalized; /usr and /etc stripped).
 	// When either is non-empty the emitted cloud-config includes a systemd
@@ -1615,7 +1615,7 @@ type cloudConfigParams struct {
 	// /usr and /etc.
 	sysextHierarchies  []string
 	confextHierarchies []string
-	extraYAML       string // optional: appended verbatim after the canonical block
+	extraYAML          string // optional: appended verbatim after the canonical block
 }
 
 // buildCloudConfig assembles a Kairos cloud-config YAML document from structured
