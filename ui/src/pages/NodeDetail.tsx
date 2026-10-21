@@ -474,7 +474,7 @@ export function NodeDetail() {
                   <Select
                     value={n.groupID || "__none__"}
                     onValueChange={async (v) => {
-                      await setGroup(id!, v === "__none__" ? "" : v);
+                      await setGroup(id!, v === "__none__" ? null : v);
                       fetchNode();
                     }}
                   >

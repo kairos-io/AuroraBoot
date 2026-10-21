@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
@@ -12,7 +12,7 @@ function makeNode(over: Record<string, unknown> = {}) {
     id: NODE_ID,
     hostname: "edge-01",
     machineID: "9f8e7d6c5b4a3f2e1d0c",
-    groupID: "",
+    groupID: null,
     labels: { role: "worker" },
     phase: "online",
     osRelease: { KAIROS_VERSION: "v1.1.0", CPU_COUNT: "4", MEM_TOTAL: "8024512 kB" },
@@ -140,6 +140,29 @@ describe("NodeDetail layout", () => {
 
     const strip = screen.getByRole("region", { name: "Health" });
     expect(within(strip).getByText("Failed")).toHaveClass("text-danger");
+  });
+
+  it("sends a null group when the group is set to None", async () => {
+    // jsdom has no scrollIntoView, which the open Select calls on its items.
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    });
+    const f = mockFetch({ node: makeNode({ groupID: "g1" }) });
+    vi.stubGlobal("fetch", f.fn);
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Group" }), { key: "Enter" });
+    fireEvent.keyDown(await screen.findByRole("option", { name: "None" }), { key: "Enter" });
+
+    await waitFor(() =>
+      expect(f.calls).toContainEqual({
+        method: "PUT",
+        url: `/api/v1/nodes/${NODE_ID}/group`,
+        body: JSON.stringify({ groupID: null }),
+      }),
+    );
   });
 
   it("puts Decommission and Clear command history in the more-actions menu", async () => {

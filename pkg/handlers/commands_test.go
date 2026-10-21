@@ -27,8 +27,8 @@ var _ = Describe("CommandHandler", func() {
 		e = echo.New()
 		ns = &fakeNodeStore{
 			nodes: []*store.ManagedNode{
-				{ID: "node-1", GroupID: "grp-1"},
-				{ID: "node-2", GroupID: "grp-1"},
+				{ID: "node-1", GroupID: new("grp-1")},
+				{ID: "node-2", GroupID: new("grp-1")},
 			},
 		}
 		cs = &fakeCommandStore{}

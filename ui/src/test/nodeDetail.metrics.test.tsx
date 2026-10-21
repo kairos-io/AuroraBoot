@@ -12,7 +12,7 @@ const node = {
   id: NODE_ID,
   hostname: "edge-01",
   machineID: "m1",
-  groupID: "",
+  groupID: null,
   labels: {},
   phase: "online",
   osRelease: { CPU_COUNT: "16", ARCH: "amd64" },

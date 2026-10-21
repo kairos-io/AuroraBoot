@@ -20,12 +20,13 @@ const (
 	NodePhaseOffline    NodePhase = "Offline"
 )
 
-// Node describes a Kairos node known to AuroraBoot.
+// Node describes a Kairos node known to AuroraBoot. GroupID is nil for a node
+// outside any group.
 type Node struct {
 	ID            string            `json:"id"`
 	MachineID     string            `json:"machineID"`
 	Hostname      string            `json:"hostname"`
-	GroupID       string            `json:"groupID,omitempty"`
+	GroupID       *string           `json:"groupID,omitempty"`
 	Group         *Group            `json:"group,omitempty"`
 	Phase         NodePhase         `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat,omitempty"`

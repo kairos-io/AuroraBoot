@@ -51,7 +51,7 @@ type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
 	Hostname      string            `json:"hostname"`
-	GroupID       string            `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1"`
+	GroupID       *string           `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1"`
 	Group         *NodeGroup        `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 	Phase         string            `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat"`
@@ -254,7 +254,9 @@ type NodeStore interface {
 	// value instead of blanking it.
 	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string, remoteIP string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
-	SetGroup(ctx context.Context, nodeID string, groupID string) error
+	// SetGroup moves nodeID into groupID, or out of any group when groupID
+	// is nil.
+	SetGroup(ctx context.Context, nodeID string, groupID *string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
 	// ClaimNode atomically assigns one unclaimed node in groupID to claimKey and
 	// returns it. It is idempotent: re-issuing with the same (groupID, claimKey)

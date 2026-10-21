@@ -65,7 +65,7 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _
 	return nil
 }
 func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error    { return nil }
+func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ *string) error   { return nil }
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }

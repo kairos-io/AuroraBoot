@@ -67,7 +67,7 @@ func (f *fakeNodeStore) ListByGroup(_ context.Context, groupID string) ([]*store
 	defer f.mu.Unlock()
 	var result []*store.ManagedNode
 	for _, n := range f.nodes {
-		if n.GroupID == groupID {
+		if inGroup(n, groupID) {
 			result = append(result, n)
 		}
 	}
@@ -110,7 +110,7 @@ func (f *fakeNodeStore) ListBySelector(_ context.Context, sel store.CommandSelec
 	if sel.GroupID != "" {
 		var result []*store.ManagedNode
 		for _, n := range f.nodes {
-			if n.GroupID == sel.GroupID {
+			if inGroup(n, sel.GroupID) {
 				result = append(result, n)
 			}
 		}
@@ -157,7 +157,7 @@ func (f *fakeNodeStore) UpdatePhase(_ context.Context, id string, phase string) 
 	return fmt.Errorf("not found")
 }
 
-func (f *fakeNodeStore) SetGroup(_ context.Context, nodeID string, groupID string) error {
+func (f *fakeNodeStore) SetGroup(_ context.Context, nodeID string, groupID *string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
@@ -186,13 +186,13 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, groupID, claimKey string) (
 	defer f.mu.Unlock()
 	// Idempotent replay: this key already owns a node in the group.
 	for _, n := range f.nodes {
-		if n.GroupID == groupID && n.ClaimKey != nil && *n.ClaimKey == claimKey {
+		if inGroup(n, groupID) && n.ClaimKey != nil && *n.ClaimKey == claimKey {
 			return n, nil
 		}
 	}
 	// Claim the first unclaimed node in the group.
 	for _, n := range f.nodes {
-		if n.GroupID == groupID && n.ClaimKey == nil {
+		if inGroup(n, groupID) && n.ClaimKey == nil {
 			key := claimKey
 			now := time.Now()
 			n.ClaimKey = &key
@@ -1144,4 +1144,9 @@ func (f *fakeBundleStore) removeNameMapLocked(name, artifactID string) {
 		}
 	}
 	f.byName[name] = out
+}
+
+// inGroup reports whether n belongs to the group with the given id.
+func inGroup(n *store.ManagedNode, groupID string) bool {
+	return n.GroupID != nil && *n.GroupID == groupID
 }

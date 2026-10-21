@@ -118,7 +118,8 @@ type APISetLabelsRequest struct {
 
 // APISetGroupRequest is the JSON body of PUT /api/v1/nodes/:nodeID/group.
 type APISetGroupRequest struct {
-	GroupID string `json:"groupID" example:"b1db4f35-6195-410a-94f2-09e66e0a6a83"`
+	// GroupID names the target group; null moves the node out of any group.
+	GroupID *string `json:"groupID" example:"b1db4f35-6195-410a-94f2-09e66e0a6a83" extensions:"x-nullable"`
 }
 
 // --- Groups ---

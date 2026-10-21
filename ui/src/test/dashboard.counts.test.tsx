@@ -5,7 +5,7 @@ import { MemoryRouter } from "react-router";
 import { Dashboard } from "@/pages/Dashboard";
 
 const baseNode = {
-  groupID: "",
+  groupID: null,
   labels: {},
   osRelease: null,
   agentVersion: "v2.31.2",

@@ -40,7 +40,7 @@ func (a *NodeStoreAdapter) UpdateHeartbeat(ctx context.Context, id string, agent
 func (a *NodeStoreAdapter) UpdatePhase(ctx context.Context, id string, phase string) error {
 	return a.S.UpdatePhase(ctx, id, phase)
 }
-func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID string) error {
+func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
 	return a.S.SetGroup(ctx, nodeID, groupID)
 }
 func (a *NodeStoreAdapter) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {

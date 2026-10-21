@@ -3,9 +3,6 @@ package gorm_test
 import (
 	"context"
 	"fmt"
-	"net/url"
-	"os"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -13,17 +10,11 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
-
-// postgresDSNEnv names a PostgreSQL server the suite may create databases on.
-// SQLite runs one writer at a time, so the overlaps below can only happen on
-// PostgreSQL, and the specs are skipped without one.
-const postgresDSNEnv = "AURORABOOT_TEST_POSTGRES_DSN"
 
 // rendezvous holds the first two callers until both have arrived, then lets
 // every caller through. It gives up after a timeout so a store that
@@ -48,10 +39,10 @@ func (r *rendezvous) arrive() {
 	}
 }
 
+// SQLite runs one writer at a time, so the overlaps below can only happen on
+// PostgreSQL.
 var _ = Describe("Gorm Store lifecycle on PostgreSQL", func() {
 	var (
-		admin *gorm.DB
-		base  *url.URL
 		s     *gormstore.Store
 		ctx   context.Context
 		meet  *rendezvous
@@ -59,33 +50,8 @@ var _ = Describe("Gorm Store lifecycle on PostgreSQL", func() {
 	)
 
 	BeforeEach(func() {
-		dsn := os.Getenv(postgresDSNEnv)
-		if dsn == "" {
-			Skip(postgresDSNEnv + " is not set")
-		}
-		var err error
-		base, err = url.Parse(dsn)
-		Expect(err).NotTo(HaveOccurred())
-		admin, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() {
-			sqlDB, err := admin.DB()
-			Expect(err).NotTo(HaveOccurred())
-			Expect(sqlDB.Close()).To(Succeed())
-		})
-
 		ctx = context.Background()
-		name := "auroraboot_" + strings.ReplaceAll(uuid.NewString(), "-", "")
-		Expect(admin.Exec("CREATE DATABASE " + name).Error).To(Succeed())
-		DeferCleanup(func() {
-			Expect(admin.Exec("DROP DATABASE " + name + " WITH (FORCE)").Error).To(Succeed())
-		})
-
-		target := *base
-		target.Path = "/" + name
-		s, err = gormstore.New(target.String())
-		Expect(err).NotTo(HaveOccurred())
-		DeferCleanup(func() { Expect(s.Close()).To(Succeed()) })
+		s = newPostgresStore()
 
 		// Each transaction under test reaches managed_nodes only after it
 		// wrote its command row. Holding both there makes them overlap at
@@ -102,12 +68,8 @@ var _ = Describe("Gorm Store lifecycle on PostgreSQL", func() {
 		Expect(cb.Update().Before("gorm:update").Register("test:rendezvous", hold)).To(Succeed())
 	})
 
-	// register puts the node in a group: on PostgreSQL the foreign key on
-	// group_id rejects the empty string an ungrouped node carries.
 	register := func() *store.ManagedNode {
-		g := &store.NodeGroup{Name: uuid.NewString()}
-		Expect(s.Create(ctx, g)).To(Succeed())
-		n := &store.ManagedNode{MachineID: uuid.NewString(), GroupID: g.ID}
+		n := &store.ManagedNode{MachineID: uuid.NewString()}
 		Expect(s.Register(ctx, n)).To(Succeed())
 		return n
 	}

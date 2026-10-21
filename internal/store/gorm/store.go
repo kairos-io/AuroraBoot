@@ -77,6 +77,14 @@ func New(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 
+	// An ungrouped node has a NULL group_id, which the foreign key to
+	// node_groups accepts. SQLite does not enforce that key, so a database
+	// can hold ungrouped nodes with an empty group_id instead.
+	if err := db.Model(&store.ManagedNode{}).Where("group_id = ''").
+		Update("group_id", nil).Error; err != nil {
+		return nil, fmt.Errorf("clearing empty group ids: %w", err)
+	}
+
 	return &Store{db: db}, nil
 }
 
@@ -133,7 +141,7 @@ func (s *Store) GroupNodeCounts(ctx context.Context) (map[string]int, error) {
 	}
 	if err := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Select("group_id, COUNT(*) AS count").
-		Where("group_id <> ''").
+		Where("group_id IS NOT NULL").
 		Group("group_id").
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -158,7 +166,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&store.ManagedNode{}).
 			Where("group_id = ?", id).
-			Update("group_id", "").Error; err != nil {
+			Update("group_id", nil).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&store.NodeGroup{}, "id = ?", id).Error
@@ -324,7 +332,7 @@ func (s *Store) UpdatePhase(ctx context.Context, id string, phase string) error 
 	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).Where("id = ?", id).Update("phase", phase).Error
 }
 
-func (s *Store) SetGroup(ctx context.Context, nodeID string, groupID string) error {
+func (s *Store) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
 	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).Where("id = ?", nodeID).Update("group_id", groupID).Error
 }
 

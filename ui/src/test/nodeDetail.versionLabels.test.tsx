@@ -20,7 +20,7 @@ function nodeWithVersions() {
     id: NODE_ID,
     hostname: "edge-01",
     machineID: "a1b2c3d4",
-    groupID: "",
+    groupID: null,
     labels: { role: "worker" },
     phase: "online",
     osRelease: { KAIROS_VERSION: IMAGE_VERSION },
