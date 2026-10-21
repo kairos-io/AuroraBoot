@@ -54,7 +54,7 @@ var _ = Describe("Command delivery when the WebSocket write fails", func() {
 
 	BeforeEach(func() {
 		e = echo.New()
-		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", GroupID: "grp-1"}}}
+		ns = &fakeNodeStore{nodes: []*store.ManagedNode{{ID: "node-1", GroupID: new("grp-1")}}}
 		cs = &fakeCommandStore{}
 		hub = ws.NewHub()
 	})
