@@ -80,8 +80,33 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libpcsclite-dev
 
       - name: Build binary
+        # Same reasoning as the test step below: a healthy run of this step
+        # takes 21 to 25 minutes, so 45 bounds a stall without ever cutting a
+        # good build short.
+        timeout-minutes: 45
         run: |
-          go build -tags ui -v -o auroraboot .
+          # go build -v names each package as it starts it, but when the
+          # toolchain is killed rather than failing it writes no diagnostic at
+          # all: on 2026-10-21 runs 39561127549 and 39568879746 both exited 1
+          # after ~19 minutes, on different branches, with the last line being
+          # the package name and nothing after it. Report what the kernel and
+          # the runner have to say so the next red is readable. The exit status
+          # is preserved, so this reports a failure, it does not swallow one.
+          go build -tags ui -v -o auroraboot . || {
+            status=$?
+            echo "::error::go build exited ${status} without a compiler diagnostic. Runner state follows; a silent kill here is usually the OOM killer."
+            echo "--- memory"; free -m || true
+            echo "--- disk"; df -h . "${HOME}" || true
+            echo "--- kernel log"
+            # Piping dmesg straight into tail would hide its own failure
+            # behind tail's exit status, so the fallback would never print.
+            if sudo dmesg -T >/tmp/dmesg.txt 2>/dev/null; then
+              tail -40 /tmp/dmesg.txt
+            else
+              echo "dmesg unavailable on this runner"
+            fi
+            exit "${status}"
+          }
 
       - name: Run tests
         # On 2026-10-13 four jobs stalled in this step and each held one of the
