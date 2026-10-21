@@ -216,11 +216,17 @@ func (f *fakeNodeStore) ReleaseNode(_ context.Context, nodeID, claimKey string) 
 	return false, nil
 }
 
-func (f *fakeNodeStore) SetResetPending(_ context.Context, nodeID string) error {
+// markResetPending is the reset half of what the gorm CreateBatch does to a
+// target node: a reset that is already pending or in progress keeps its state
+// and request time.
+func (f *fakeNodeStore) markResetPending(nodeID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
 		if n.ID == nodeID {
+			if n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress {
+				return nil
+			}
 			now := time.Now()
 			n.ResetState = store.ResetStatePending
 			n.ResetRequestedAt = &now
@@ -250,11 +256,17 @@ func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromState
 	}
 	return false, nil
 }
-func (f *fakeNodeStore) SetUpgradePending(_ context.Context, nodeID string) error {
+
+// markUpgradePending is the upgrade half of what the gorm CreateBatch does to a
+// target node: an upgrade that is already pending keeps its request time.
+func (f *fakeNodeStore) markUpgradePending(nodeID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
 		if n.ID == nodeID {
+			if n.UpgradeState == store.UpgradeStatePending {
+				return nil
+			}
 			now := time.Now()
 			n.UpgradeState = store.UpgradeStatePending
 			n.UpgradeRequestedAt = &now
@@ -334,9 +346,9 @@ func (f *fakeCommandStore) CreateBatch(ctx context.Context, cmds []*store.NodeCo
 	for _, cmd := range cmds {
 		switch cmd.Command {
 		case store.CmdReset:
-			_ = f.nodes.SetResetPending(ctx, cmd.ManagedNodeID)
+			_ = f.nodes.markResetPending(cmd.ManagedNodeID)
 		case store.CmdUpgrade:
-			_ = f.nodes.SetUpgradePending(ctx, cmd.ManagedNodeID)
+			_ = f.nodes.markUpgradePending(cmd.ManagedNodeID)
 		}
 	}
 	return nil

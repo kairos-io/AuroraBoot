@@ -456,17 +456,6 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 	return res.RowsAffected == 1, nil
 }
 
-// SetResetPending marks a node as awaiting an automatic reset.
-func (s *Store) SetResetPending(ctx context.Context, nodeID string) error {
-	now := time.Now()
-	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).
-		Where("id = ?", nodeID).
-		Updates(map[string]any{
-			"reset_state":        store.ResetStatePending,
-			"reset_requested_at": &now,
-		}).Error
-}
-
 // AdvanceReset compare-and-sets a node's ResetState. The conditional UPDATE
 // (... WHERE id = ? AND reset_state IN fromStates) means exactly one of several
 // concurrent re-register resolvers performs any given transition; the losers see
@@ -486,17 +475,6 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 		return false, res.Error
 	}
 	return res.RowsAffected == 1, nil
-}
-
-// SetUpgradePending marks a node as awaiting an upgrade.
-func (s *Store) SetUpgradePending(ctx context.Context, nodeID string) error {
-	now := time.Now()
-	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).
-		Where("id = ?", nodeID).
-		Updates(map[string]any{
-			"upgrade_state":        store.UpgradeStatePending,
-			"upgrade_requested_at": &now,
-		}).Error
 }
 
 // AdvanceUpgrade compare-and-sets a node's UpgradeState with the same

@@ -30,7 +30,7 @@ var _ = Describe("Upgrade lifecycle", func() {
 
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
-			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil, nil, nil)
+			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{nodes: ns}, ns, nil, nil, nil)
 		})
 
 		create := func(body string) {

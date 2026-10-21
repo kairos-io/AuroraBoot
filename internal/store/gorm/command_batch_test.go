@@ -233,7 +233,7 @@ var _ = Describe("Gorm Store command batches", func() {
 		// flight.
 		It("leaves an upgrade that is already pending and its request time alone", func() {
 			n1, n2 := register("m1"), register("m2")
-			Expect(s.SetUpgradePending(ctx, n1.ID)).To(Succeed())
+			issueCommand(ctx, s, n1.ID, store.CmdUpgrade)
 			requested := *node(n1.ID).UpgradeRequestedAt
 
 			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
@@ -246,7 +246,7 @@ var _ = Describe("Gorm Store command batches", func() {
 
 		It("marks an upgrade target whose last upgrade finished", func() {
 			n1 := register("m1")
-			Expect(s.SetUpgradePending(ctx, n1.ID)).To(Succeed())
+			issueCommand(ctx, s, n1.ID, store.CmdUpgrade)
 			_, err := s.AdvanceUpgrade(ctx, n1.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
 			Expect(err).NotTo(HaveOccurred())
 			requested := *node(n1.ID).UpgradeRequestedAt
@@ -261,7 +261,7 @@ var _ = Describe("Gorm Store command batches", func() {
 		DescribeTable("leaves a reset that is already in flight and its request time alone",
 			func(state string) {
 				n1, n2 := register("m1"), register("m2")
-				Expect(s.SetResetPending(ctx, n1.ID)).To(Succeed())
+				issueCommand(ctx, s, n1.ID, store.CmdReset)
 				if state != store.ResetStatePending {
 					_, err := s.AdvanceReset(ctx, n1.ID, []string{store.ResetStatePending}, state, false)
 					Expect(err).NotTo(HaveOccurred())
@@ -424,20 +424,12 @@ var _ = Describe("Gorm Store command batches", func() {
 			Expect(got.ResetRequestedAt).NotTo(BeNil())
 		})
 
-		// single queues one command outside any batch and marks the node
-		// pending, as the single-node command handler does, then moves the
-		// command to phase.
+		// single queues one command outside any batch, as the single-node
+		// command handler does, then moves it to phase.
 		single := func(n *store.ManagedNode, command, phase string) string {
-			cmd := &store.NodeCommand{ManagedNodeID: n.ID, Command: command}
-			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
-			switch command {
-			case store.CmdUpgrade:
-				Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
-			case store.CmdReset:
-				Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
-			}
-			Expect(s.UpdateStatus(ctx, cmd.ID, phase, "")).To(Succeed())
-			return cmd.ID
+			id := issueCommand(ctx, s, n.ID, command)
+			Expect(s.UpdateStatus(ctx, id, phase, "")).To(Succeed())
+			return id
 		}
 
 		// A Completed upgrade means the agent staged the image and scheduled
@@ -497,7 +489,8 @@ var _ = Describe("Gorm Store command batches", func() {
 			},
 			Entry("node never marked", func(*store.ManagedNode) {}),
 			Entry("node marked and resolved done", func(n *store.ManagedNode) {
-				Expect(s.SetUpgradePending(ctx, n.ID)).To(Succeed())
+				id := issueCommand(ctx, s, n.ID, store.CmdUpgrade)
+				Expect(s.UpdateStatus(ctx, id, store.CommandCompleted, "")).To(Succeed())
 				_, err := s.AdvanceUpgrade(ctx, n.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
 				Expect(err).NotTo(HaveOccurred())
 			}),

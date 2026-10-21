@@ -124,8 +124,8 @@ const (
 )
 
 // Reset states (ManagedNode.ResetState) for the day-2 automatic-reset lifecycle
-// (kairos-io/kairos#4255). SetResetPending sets `pending` when a reset command is
-// issued; the re-register resolver advances it from the reported boot state:
+// (kairos-io/kairos#4255). CommandStore.CreateBatch sets `pending` when a reset
+// command is issued; the re-register resolver advances it from the reported boot state:
 // autoreset → in-progress, active → done, passive/recovery → failed. A reset
 // command that reports Failed while the reset is still pending also moves it to
 // failed.
@@ -137,7 +137,7 @@ const (
 )
 
 // Upgrade states (ManagedNode.UpgradeState) for the upgrade lifecycle.
-// SetUpgradePending sets `pending` when an upgrade command is issued; the
+// CommandStore.CreateBatch sets `pending` when an upgrade command is issued; the
 // re-register resolver advances it from the reported boot state: active → done,
 // passive/recovery → failed (the node fell back off the upgraded image). An
 // upgrade command that reports Failed before the reboot also moves it to failed.
@@ -271,22 +271,12 @@ type NodeStore interface {
 	// caller inspects the node to distinguish those and must not assume ownership
 	// from a false result.
 	ReleaseNode(ctx context.Context, nodeID, claimKey string) (released bool, err error)
-	// SetResetPending marks nodeID as awaiting an automatic reset: ResetState is
-	// set to pending and ResetRequestedAt to now. Called when a reset command is
-	// issued; the outcome is resolved later by AdvanceReset when the node
-	// re-registers with its post-reboot boot state.
-	SetResetPending(ctx context.Context, nodeID string) error
 	// AdvanceReset atomically transitions nodeID's ResetState from any of
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
 	// stampLastReset is set (the transition to done), LastReset is set to now in
 	// the same update.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
-	// SetUpgradePending marks nodeID as awaiting an upgrade: UpgradeState is set
-	// to pending and UpgradeRequestedAt to now. Called when an upgrade command is
-	// issued; the outcome is resolved later by AdvanceUpgrade when the node
-	// re-registers with its post-reboot boot state.
-	SetUpgradePending(ctx context.Context, nodeID string) error
 	// AdvanceUpgrade atomically transitions nodeID's UpgradeState from any of
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
@@ -302,7 +292,7 @@ type CommandStore interface {
 	// CreateBatch stores every command of one fan-out and marks the lifecycle
 	// of their target nodes in a single transaction: a reset command sets the
 	// node's reset state to pending and an upgrade command its upgrade state,
-	// with the request time, as SetResetPending and SetUpgradePending do.
+	// and stamps the request time.
 	// A node whose upgrade is already pending, or whose reset is pending or
 	// in-progress, keeps its state and request time, which belong to the
 	// operation still waiting for the node to reboot.
