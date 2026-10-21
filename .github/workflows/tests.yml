@@ -355,7 +355,7 @@ jobs:
           --set "disk.efi=true" \
           ${{ matrix.extra_args }} \
           --set "disk.size=16000" \
-          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
