@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"strings"
@@ -537,6 +538,9 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
 			}
 		}
+		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+			return err
+		}
 		now := time.Now()
 		if len(resetNodes) > 0 {
 			if err := tx.Model(&store.ManagedNode{}).
@@ -667,6 +671,9 @@ func (s *Store) updateStatus(ctx context.Context, phase, result, where string, a
 			return nil
 		}
 		resetNodes, upgradeNodes := lifecycleNodes(updated)
+		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+			return err
+		}
 		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
 			"reset_state", store.ResetStatePending, "reset_requested_at",
 			map[string]any{"reset_state": store.ResetStateFailed}); err != nil {
@@ -756,6 +763,9 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 		}
 
 		resetNodes, upgradeNodes := lifecycleNodes(canceled)
+		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+			return err
+		}
 		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
 			"reset_state", store.ResetStatePending, "reset_requested_at",
 			map[string]any{"reset_state": "", "reset_requested_at": nil}); err != nil {
@@ -769,6 +779,43 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 		return 0, err
 	}
 	return len(canceled), nil
+}
+
+// lockNodes takes the row locks of the given nodes, in id order, before a
+// transaction reads which commands own their lifecycle state.
+//
+// The ownership check in settleOrphanedLifecycle and the guard in CreateBatch
+// are UPDATEs whose WHERE can match no row, and an UPDATE that matches no row
+// locks nothing. On PostgreSQL, two transactions that each wrote a command row
+// of the same node would then each read the other's command as it was before
+// that write, and both could skip the node: two upgrades failing at once
+// would leave it pending. Holding the node row makes the second transaction
+// wait for the first to commit, and its next statement sees the first one's
+// command. CreateBatch, updateStatus and CancelPendingInBatch all write their
+// command rows first and lock node rows after, in id order, so they cannot
+// deadlock one another.
+//
+// SQLite has no row locks, so the statement is skipped there: the write each
+// caller makes first already holds the database's single write lock.
+func lockNodes(tx *gorm.DB, groups ...[]string) error {
+	if tx.Dialector.Name() == "sqlite" {
+		return nil
+	}
+	var ids []string
+	for _, g := range groups {
+		ids = append(ids, g...)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	var locked []string
+	return tx.Model(&store.ManagedNode{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).
+		Order("id").
+		Pluck("id", &locked).Error
 }
 
 // lifecycleNodes splits the nodes of cmds by the lifecycle their command

@@ -1,0 +1,192 @@
+package gorm_test
+
+import (
+	"context"
+	"fmt"
+	"net/url"
+	"os"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"time"
+
+	"github.com/google/uuid"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
+)
+
+// postgresDSNEnv names a PostgreSQL server the suite may create databases on.
+// SQLite runs one writer at a time, so the overlaps below can only happen on
+// PostgreSQL, and the specs are skipped without one.
+const postgresDSNEnv = "AURORABOOT_TEST_POSTGRES_DSN"
+
+// rendezvous holds the first two callers until both have arrived, then lets
+// every caller through. It gives up after a timeout so a store that
+// serializes the callers some other way fails an assertion instead of
+// hanging.
+type rendezvous struct {
+	arrived atomic.Int32
+	both    chan struct{}
+}
+
+func newRendezvous() *rendezvous { return &rendezvous{both: make(chan struct{})} }
+
+func (r *rendezvous) arrive() {
+	switch r.arrived.Add(1) {
+	case 1:
+		select {
+		case <-r.both:
+		case <-time.After(5 * time.Second):
+		}
+	case 2:
+		close(r.both)
+	}
+}
+
+var _ = Describe("Gorm Store lifecycle on PostgreSQL", func() {
+	var (
+		admin *gorm.DB
+		base  *url.URL
+		s     *gormstore.Store
+		ctx   context.Context
+		meet  *rendezvous
+		armed atomic.Bool
+	)
+
+	BeforeEach(func() {
+		dsn := os.Getenv(postgresDSNEnv)
+		if dsn == "" {
+			Skip(postgresDSNEnv + " is not set")
+		}
+		var err error
+		base, err = url.Parse(dsn)
+		Expect(err).NotTo(HaveOccurred())
+		admin, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() {
+			sqlDB, err := admin.DB()
+			Expect(err).NotTo(HaveOccurred())
+			Expect(sqlDB.Close()).To(Succeed())
+		})
+
+		ctx = context.Background()
+		name := "auroraboot_" + strings.ReplaceAll(uuid.NewString(), "-", "")
+		Expect(admin.Exec("CREATE DATABASE " + name).Error).To(Succeed())
+		DeferCleanup(func() {
+			Expect(admin.Exec("DROP DATABASE " + name + " WITH (FORCE)").Error).To(Succeed())
+		})
+
+		target := *base
+		target.Path = "/" + name
+		s, err = gormstore.New(target.String())
+		Expect(err).NotTo(HaveOccurred())
+		DeferCleanup(func() { Expect(s.Close()).To(Succeed()) })
+
+		// Each transaction under test reaches managed_nodes only after it
+		// wrote its command row. Holding both there makes them overlap at
+		// the point where one has to see the other's outcome.
+		meet = newRendezvous()
+		armed.Store(false)
+		hold := func(db *gorm.DB) {
+			if armed.Load() && db.Statement.Table == "managed_nodes" {
+				meet.arrive()
+			}
+		}
+		cb := s.UnsafeDB().Callback()
+		Expect(cb.Query().Before("gorm:query").Register("test:rendezvous", hold)).To(Succeed())
+		Expect(cb.Update().Before("gorm:update").Register("test:rendezvous", hold)).To(Succeed())
+	})
+
+	// register puts the node in a group: on PostgreSQL the foreign key on
+	// group_id rejects the empty string an ungrouped node carries.
+	register := func() *store.ManagedNode {
+		g := &store.NodeGroup{Name: uuid.NewString()}
+		Expect(s.Create(ctx, g)).To(Succeed())
+		n := &store.ManagedNode{MachineID: uuid.NewString(), GroupID: g.ID}
+		Expect(s.Register(ctx, n)).To(Succeed())
+		return n
+	}
+
+	upgradeState := func(id string) string {
+		got, err := s.NodeGetByID(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		return got.UpgradeState
+	}
+
+	together := func(fns ...func() error) {
+		armed.Store(true)
+		defer armed.Store(false)
+		var wg sync.WaitGroup
+		errs := make([]error, len(fns))
+		for i, fn := range fns {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				errs[i] = fn()
+			}()
+		}
+		wg.Wait()
+		for _, err := range errs {
+			Expect(err).NotTo(HaveOccurred())
+		}
+	}
+
+	It("marks the node failed when its two upgrades fail at the same time", func() {
+		n := register()
+		a := issueCommand(ctx, s, n.ID, store.CmdUpgrade)
+		b := issueCommand(ctx, s, n.ID, store.CmdUpgrade)
+		Expect(s.UpdateStatus(ctx, a, store.CommandRunning, "")).To(Succeed())
+		Expect(s.UpdateStatus(ctx, b, store.CommandRunning, "")).To(Succeed())
+
+		together(
+			func() error { return s.UpdateStatusForNode(ctx, a, n.ID, store.CommandFailed, "boom") },
+			func() error { return s.UpdateStatusForNode(ctx, b, n.ID, store.CommandFailed, "boom") },
+		)
+
+		Expect(upgradeState(n.ID)).To(Equal(store.UpgradeStateFailed))
+	})
+
+	It("keeps the node pending when an upgrade is issued while the previous one fails", func() {
+		n := register()
+		a := issueCommand(ctx, s, n.ID, store.CmdUpgrade)
+		Expect(s.UpdateStatus(ctx, a, store.CommandRunning, "")).To(Succeed())
+
+		together(
+			func() error { return s.UpdateStatusForNode(ctx, a, n.ID, store.CommandFailed, "boom") },
+			func() error {
+				return s.CreateBatch(ctx, []*store.NodeCommand{{ManagedNodeID: n.ID, Command: store.CmdUpgrade}})
+			},
+		)
+
+		Expect(upgradeState(n.ID)).To(Equal(store.UpgradeStatePending))
+	})
+
+	It("settles the node when a batch is canceled while another upgrade of the node fails", func() {
+		n, other := register(), register()
+		a := issueCommand(ctx, s, n.ID, store.CmdUpgrade)
+		Expect(s.UpdateStatus(ctx, a, store.CommandRunning, "")).To(Succeed())
+		batch := []*store.NodeCommand{
+			{ManagedNodeID: other.ID, Command: store.CmdUpgrade, BatchID: "batch-a", FailFast: true},
+			{ManagedNodeID: n.ID, Command: store.CmdUpgrade, BatchID: "batch-a", FailFast: true},
+		}
+		Expect(s.CreateBatch(ctx, batch)).To(Succeed())
+
+		together(
+			func() error { return s.UpdateStatusForNode(ctx, a, n.ID, store.CommandFailed, "boom") },
+			func() error {
+				_, err := s.CancelPendingInBatch(ctx, "batch-a", fmt.Sprintf("stopped by %s", other.ID))
+				return err
+			},
+		)
+
+		// Both of the node's upgrades ended without running, so nothing is
+		// left to resolve the pending state: the failure marks it failed
+		// or the cancel clears it, depending on which commits last.
+		Expect(upgradeState(n.ID)).To(BeElementOf(store.UpgradeStateFailed, ""))
+	})
+})
