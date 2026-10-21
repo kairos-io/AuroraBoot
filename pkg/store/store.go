@@ -126,7 +126,9 @@ const (
 // Reset states (ManagedNode.ResetState) for the day-2 automatic-reset lifecycle
 // (kairos-io/kairos#4255). SetResetPending sets `pending` when a reset command is
 // issued; the re-register resolver advances it from the reported boot state:
-// autoreset → in-progress, active → done, passive/recovery → failed.
+// autoreset → in-progress, active → done, passive/recovery → failed. A reset
+// command that reports Failed while the reset is still pending also moves it to
+// failed.
 const (
 	ResetStatePending    = "pending"
 	ResetStateInProgress = "in-progress"
@@ -137,7 +139,8 @@ const (
 // Upgrade states (ManagedNode.UpgradeState) for the upgrade lifecycle.
 // SetUpgradePending sets `pending` when an upgrade command is issued; the
 // re-register resolver advances it from the reported boot state: active → done,
-// passive/recovery → failed (the node fell back off the upgraded image).
+// passive/recovery → failed (the node fell back off the upgraded image). An
+// upgrade command that reports Failed before the reboot also moves it to failed.
 const (
 	UpgradeStatePending = "pending"
 	UpgradeStateDone    = "done"
@@ -320,9 +323,14 @@ type CommandStore interface {
 	// or two concurrent polls) wins. A command that is missing or no longer
 	// Pending yields (false, nil).
 	ClaimForDelivery(ctx context.Context, id string) (bool, error)
+	// UpdateStatus records a command's phase and result. A Failed reset or
+	// upgrade also marks its node's pending lifecycle state failed in the same
+	// write, unless another command of the same kind still owns that state: a
+	// command that fails before the reboot never brings the node back with a
+	// boot state the re-register resolvers could settle it from.
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
-	// UpdateStatusForNode updates a command's status only if it belongs to
-	// nodeID. It returns ErrCommandNotFound when no command matches both the
+	// UpdateStatusForNode is UpdateStatus scoped to the commands of nodeID. It
+	// returns ErrCommandNotFound when no command matches both the
 	// command id and the owning node, so callers can fail closed (403/404)
 	// instead of silently succeeding on a foreign or missing command.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error

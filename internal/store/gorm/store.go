@@ -634,24 +634,39 @@ func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	return res.RowsAffected == 1, nil
 }
 
+// UpdateStatus records a command's phase and result.
 func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
-	updates := map[string]any{
-		"phase":  phase,
-		"result": result,
-	}
-	if phase == store.CommandCompleted || phase == store.CommandFailed {
-		now := time.Now()
-		updates["completed_at"] = &now
-	}
-	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).Where("id = ?", id).Updates(updates).Error
+	_, err := s.updateStatus(ctx, phase, result, "id = ?", id)
+	return err
 }
 
 // UpdateStatusForNode updates a command's status scoped to its owning node.
 // The WHERE clause matches both the command id and managed_node_id, so a node
 // can only update commands addressed to it. GORM's Updates returns a nil error
-// even when the WHERE matches zero rows, so we inspect RowsAffected and surface
-// a miss as store.ErrCommandNotFound — never a silent success.
+// even when the WHERE matches zero rows, so a miss surfaces as
+// store.ErrCommandNotFound, never a silent success.
 func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error {
+	n, err := s.updateStatus(ctx, phase, result, "id = ? AND managed_node_id = ?", id, nodeID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return store.ErrCommandNotFound
+	}
+	return nil
+}
+
+// updateStatus writes phase and result to the commands matching where and
+// returns how many it wrote.
+//
+// A reset or upgrade that fails before the reboot leaves the pending state
+// CreateBatch set for it with nothing to settle it: the node never comes back
+// with a new boot state for the re-register resolvers to read. A Failed report
+// therefore marks that state failed, in the same transaction as the command
+// row, unless another command still owns it. The UPDATE runs first so the
+// transaction never holds a read snapshot when it writes (see
+// CancelPendingInBatch).
+func (s *Store) updateStatus(ctx context.Context, phase, result, where string, args ...any) (int, error) {
 	updates := map[string]any{
 		"phase":  phase,
 		"result": result,
@@ -660,16 +675,33 @@ func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID strin
 		now := time.Now()
 		updates["completed_at"] = &now
 	}
-	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
-		Where("id = ? AND managed_node_id = ?", id, nodeID).
-		Updates(updates)
-	if res.Error != nil {
-		return res.Error
+	var updated []store.NodeCommand
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&updated).
+			Clauses(clause.Returning{Columns: []clause.Column{
+				{Name: "managed_node_id"}, {Name: "command"},
+			}}).
+			Where(where, args...).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+		if phase != store.CommandFailed {
+			return nil
+		}
+		resetNodes, upgradeNodes := lifecycleNodes(updated)
+		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
+			"reset_state", store.ResetStatePending, "reset_requested_at",
+			map[string]any{"reset_state": store.ResetStateFailed}); err != nil {
+			return err
+		}
+		return settleOrphanedLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at",
+			map[string]any{"upgrade_state": store.UpgradeStateFailed})
+	})
+	if err != nil {
+		return 0, err
 	}
-	if res.RowsAffected == 0 {
-		return store.ErrCommandNotFound
-	}
-	return nil
+	return len(updated), nil
 }
 
 func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {
@@ -721,7 +753,7 @@ func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeC
 //
 // A canceled reset or upgrade never runs, so nothing would ever resolve the
 // pending state CreateBatch set for it, and the node's next unrelated active
-// boot would report the operation done. clearPendingLifecycle clears that
+// boot would report the operation done. settleOrphanedLifecycle clears that
 // state for the nodes of the canceled rows unless something else still owns
 // it. Everything runs in one transaction so the rows and the node state never
 // disagree.
@@ -745,21 +777,15 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 			return err
 		}
 
-		var resetNodes, upgradeNodes []string
-		for _, cmd := range canceled {
-			switch cmd.Command {
-			case store.CmdReset:
-				resetNodes = append(resetNodes, cmd.ManagedNodeID)
-			case store.CmdUpgrade:
-				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
-			}
-		}
-		if err := clearPendingLifecycle(tx, store.CmdReset, resetNodes,
-			"reset_state", store.ResetStatePending, "reset_requested_at"); err != nil {
+		resetNodes, upgradeNodes := lifecycleNodes(canceled)
+		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
+			"reset_state", store.ResetStatePending, "reset_requested_at",
+			map[string]any{"reset_state": "", "reset_requested_at": nil}); err != nil {
 			return err
 		}
-		return clearPendingLifecycle(tx, store.CmdUpgrade, upgradeNodes,
-			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at")
+		return settleOrphanedLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at",
+			map[string]any{"upgrade_state": "", "upgrade_requested_at": nil})
 	})
 	if err != nil {
 		return 0, err
@@ -767,10 +793,25 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 	return len(canceled), nil
 }
 
-// clearPendingLifecycle resets stateColumn and requestedColumn on the nodes in
-// nodeIDs whose state is still pendingState and that no command of the given
-// kind owns. A command in Pending, Delivered or Running owns the state, and so
-// does a Completed one that finished at or after requestedColumn: the agent
+// lifecycleNodes splits the nodes of cmds by the lifecycle their command
+// drives: resets and upgrades. Other commands do not reboot the node and drive
+// none.
+func lifecycleNodes(cmds []store.NodeCommand) (resetNodes, upgradeNodes []string) {
+	for _, cmd := range cmds {
+		switch cmd.Command {
+		case store.CmdReset:
+			resetNodes = append(resetNodes, cmd.ManagedNodeID)
+		case store.CmdUpgrade:
+			upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+		}
+	}
+	return resetNodes, upgradeNodes
+}
+
+// settleOrphanedLifecycle applies updates to the nodes in nodeIDs whose
+// stateColumn is still pendingState and that no command of the given kind
+// owns. A command in Pending, Delivered or Running owns the state, and so does
+// a Completed one that finished at or after requestedColumn: the agent
 // completes an upgrade or reset once it has scheduled the reboot, and the
 // state stays pending until the node re-registers and the resolver settles it.
 // A Completed command that finished before the request belongs to an earlier
@@ -780,7 +821,7 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 // trailing fractional zeros trimmed and the zone offset of time.Now. Text
 // comparison orders such values by time as long as the offsets match, which
 // holds for timestamps the same server wrote.
-func clearPendingLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateColumn, pendingState, requestedColumn string) error {
+func settleOrphanedLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateColumn, pendingState, requestedColumn string, updates map[string]any) error {
 	if len(nodeIDs) == 0 {
 		return nil
 	}
@@ -795,10 +836,7 @@ func clearPendingLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateC
 		Where("id IN ?", nodeIDs).
 		Where(stateColumn+" = ?", pendingState).
 		Where("NOT EXISTS (?)", owner).
-		Updates(map[string]any{
-			stateColumn:     "",
-			requestedColumn: nil,
-		}).Error
+		Updates(updates).Error
 }
 
 func (s *Store) CommandDelete(ctx context.Context, id string) error {
