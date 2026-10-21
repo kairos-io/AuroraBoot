@@ -21,6 +21,8 @@ export interface Node {
   bootState?: string;
   resetState?: string;
   lastReset?: string | null;
+  upgradeState?: string;
+  lastUpgrade?: string | null;
   createdAt: string;
   updatedAt: string;
 }

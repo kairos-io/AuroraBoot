@@ -77,6 +77,18 @@ function bootTone(state: string): Tone {
   return state === "active" ? "success" : "warning";
 }
 
+// lifecycleTone flags the upgrade or reset that failed: the node did not come
+// back on the new image, or the command failed before it could reboot.
+function lifecycleTone(state: string | undefined): Tone | undefined {
+  return state === "failed" ? "danger" : undefined;
+}
+
+function LifecycleState({ state, idle }: { state: string | undefined; idle: string }) {
+  if (!state) return <>{idle}</>;
+  const tone = lifecycleTone(state);
+  return <span className={cn(tone && toneText[tone])}>{capitalize(state)}</span>;
+}
+
 const bootText: Record<string, string> = {
   active: "Booted from the active image",
   passive: "Booted from the fallback (passive) image",
@@ -319,7 +331,7 @@ export function NodeDetail() {
       )}
 
       {/* Health strip */}
-      <section aria-label="Health" className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+      <section aria-label="Health" className="mb-6 grid grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-6">
         <StatTile
           label="Connection"
           icon={Activity}
@@ -347,10 +359,18 @@ export function NodeDetail() {
           sub={osLine || undefined}
         />
         <StatTile
+          label="Upgrade"
+          icon={ArrowUpCircle}
+          tone={lifecycleTone(n.upgradeState)}
+          value={<span className="text-lg">{n.lastUpgrade ? timeAgo(n.lastUpgrade) : "Never"}</span>}
+          sub={<LifecycleState state={n.upgradeState} idle="No upgrade pending" />}
+        />
+        <StatTile
           label="Reset"
           icon={RotateCcw}
+          tone={lifecycleTone(n.resetState)}
           value={<span className="text-lg">{n.lastReset ? timeAgo(n.lastReset) : "Never"}</span>}
-          sub={n.resetState ? capitalize(n.resetState) : "No reset pending"}
+          sub={<LifecycleState state={n.resetState} idle="No reset pending" />}
         />
       </section>
 

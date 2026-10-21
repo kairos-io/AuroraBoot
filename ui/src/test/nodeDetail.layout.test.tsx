@@ -65,6 +65,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -100,6 +101,45 @@ describe("NodeDetail layout", () => {
 
     const strip = screen.getByRole("region", { name: "Health" });
     expect(within(strip).getByText("Active")).toHaveClass("text-success");
+  });
+
+  it("shows when the node last upgraded and the state of its upgrade", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-28T12:00:00Z"));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({ node: makeNode({ lastUpgrade: "2026-08-28T10:00:00Z", upgradeState: "pending" }) }).fn,
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    const strip = screen.getByRole("region", { name: "Health" });
+    const tile = within(strip).getByText("Upgrade").closest("div[class*='border']") as HTMLElement;
+    expect(within(tile).getByText("2h ago")).toBeInTheDocument();
+    expect(within(tile).getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("says when a node was never upgraded", async () => {
+    vi.stubGlobal("fetch", mockFetch().fn);
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    const strip = screen.getByRole("region", { name: "Health" });
+    const tile = within(strip).getByText("Upgrade").closest("div[class*='border']") as HTMLElement;
+    expect(within(tile).getByText("Never")).toBeInTheDocument();
+    expect(within(tile).getByText("No upgrade pending")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["upgrade", { upgradeState: "failed" }],
+    ["reset", { resetState: "failed" }],
+  ])("shows a failed %s in the danger tone", async (_kind, over) => {
+    vi.stubGlobal("fetch", mockFetch({ node: makeNode(over) }).fn);
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    const strip = screen.getByRole("region", { name: "Health" });
+    expect(within(strip).getByText("Failed")).toHaveClass("text-danger");
   });
 
   it("puts Decommission and Clear command history in the more-actions menu", async () => {
