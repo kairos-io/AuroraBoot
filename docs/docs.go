@@ -618,6 +618,39 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/v1/commands/batches/{batchID}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Commands"
+                ],
+                "summary": "Report the state of one fan-out of commands",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Batch ID",
+                        "name": "batchID",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.BatchOutcome"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/extensions": {
             "post": {
                 "security": [
@@ -2482,7 +2515,9 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "groupID": {
+                    "description": "GroupID names the target group; null moves the node out of any group.",
                     "type": "string",
+                    "x-nullable": true,
                     "example": "b1db4f35-6195-410a-94f2-09e66e0a6a83"
                 }
             }
@@ -2929,6 +2964,52 @@ const docTemplate = `{
                 }
             }
         },
+        "store.BatchOutcome": {
+            "type": "object",
+            "properties": {
+                "batchID": {
+                    "type": "string"
+                },
+                "canceled": {
+                    "type": "integer"
+                },
+                "command": {
+                    "type": "string"
+                },
+                "commands": {
+                    "description": "Commands are the per-node rows, kept so a failed batch can still say\nwhich node failed and with what result.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.NodeCommand"
+                    }
+                },
+                "completed": {
+                    "type": "integer"
+                },
+                "expired": {
+                    "type": "integer"
+                },
+                "failFast": {
+                    "type": "boolean"
+                },
+                "failed": {
+                    "type": "integer"
+                },
+                "pending": {
+                    "type": "integer"
+                },
+                "phase": {
+                    "description": "Phase is the batch as a whole: Pending while any node still has work\nahead of it, then Failed if any node failed, Canceled if the batch was\nstopped before every node ran, and Completed when every node succeeded.",
+                    "type": "string"
+                },
+                "running": {
+                    "type": "integer"
+                },
+                "total": {
+                    "type": "integer"
+                }
+            }
+        },
         "store.CPUMetrics": {
             "type": "object",
             "properties": {
@@ -3096,6 +3177,10 @@ const docTemplate = `{
                         "type": "string"
                     }
                 },
+                "batchID": {
+                    "description": "BatchID names the fan-out this command was created by, so the rows a\nsingle bulk or group request produced can be found again as one\noperation. It is empty on a command addressed to one node.",
+                    "type": "string"
+                },
                 "command": {
                     "type": "string"
                 },
@@ -3110,6 +3195,10 @@ const docTemplate = `{
                 },
                 "expiresAt": {
                     "type": "string"
+                },
+                "failFast": {
+                    "description": "FailFast asks for the still-Pending rows of the batch to be canceled\nonce any node in it fails; a row already Delivered to its node is left\nto report its own result. It is carried on every row of the batch rather\nthan in a batch table so the rule travels with the command that has to\napply it.",
+                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"

@@ -325,8 +325,11 @@ definitions:
   handlers.APISetGroupRequest:
     properties:
       groupID:
+        description: GroupID names the target group; null moves the node out of any
+          group.
         example: b1db4f35-6195-410a-94f2-09e66e0a6a83
         type: string
+        x-nullable: true
     type: object
   handlers.APISetLabelsRequest:
     properties:
@@ -628,6 +631,42 @@ definitions:
       vhd:
         type: boolean
     type: object
+  store.BatchOutcome:
+    properties:
+      batchID:
+        type: string
+      canceled:
+        type: integer
+      command:
+        type: string
+      commands:
+        description: |-
+          Commands are the per-node rows, kept so a failed batch can still say
+          which node failed and with what result.
+        items:
+          $ref: '#/definitions/store.NodeCommand'
+        type: array
+      completed:
+        type: integer
+      expired:
+        type: integer
+      failFast:
+        type: boolean
+      failed:
+        type: integer
+      pending:
+        type: integer
+      phase:
+        description: |-
+          Phase is the batch as a whole: Pending while any node still has work
+          ahead of it, then Failed if any node failed, Canceled if the batch was
+          stopped before every node ran, and Completed when every node succeeded.
+        type: string
+      running:
+        type: integer
+      total:
+        type: integer
+    type: object
   store.CPUMetrics:
     properties:
       usedPercent:
@@ -777,6 +816,12 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      batchID:
+        description: |-
+          BatchID names the fan-out this command was created by, so the rows a
+          single bulk or group request produced can be found again as one
+          operation. It is empty on a command addressed to one node.
+        type: string
       command:
         type: string
       completedAt:
@@ -787,6 +832,14 @@ definitions:
         type: string
       expiresAt:
         type: string
+      failFast:
+        description: |-
+          FailFast asks for the still-Pending rows of the batch to be canceled
+          once any node in it fails; a row already Delivered to its node is left
+          to report its own result. It is carried on every row of the batch rather
+          than in a batch table so the rule travels with the command that has to
+          apply it.
+        type: boolean
       id:
         type: string
       managedNodeID:
@@ -1265,6 +1318,26 @@ paths:
       summary: Upload a rootfs overlay
       tags:
       - Artifacts
+  /api/v1/commands/batches/{batchID}:
+    get:
+      parameters:
+      - description: Batch ID
+        in: path
+        name: batchID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.BatchOutcome'
+      security:
+      - AdminBearer: []
+      summary: Report the state of one fan-out of commands
+      tags:
+      - Commands
   /api/v1/extensions:
     post:
       consumes:
