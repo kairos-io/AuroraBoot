@@ -24,6 +24,9 @@ func (f *fakeCommandStore) ListByNode(_ context.Context, nodeID string) ([]*stor
 	return f.byNode[nodeID], nil
 }
 func (f *fakeCommandStore) Create(context.Context, *store.NodeCommand) error { return nil }
+func (f *fakeCommandStore) CreateBatch(context.Context, []*store.NodeCommand) error {
+	return nil
+}
 func (f *fakeCommandStore) GetByID(context.Context, string) (*store.NodeCommand, error) {
 	return nil, nil
 }

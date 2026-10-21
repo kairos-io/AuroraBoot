@@ -305,12 +305,40 @@ type fakeCommandStore struct {
 	// phase back while the caller is still inside pushCommand. It runs outside
 	// f.mu so the hook may call back into the store.
 	onClaim func(id string)
+	// creates counts single-row Create calls and batches records every
+	// CreateBatch call, so a spec can tell how a fan-out was written.
+	creates int
+	batches [][]*store.NodeCommand
+	// nodes, when set, receives the lifecycle marking CreateBatch does in the
+	// gorm store's transaction. Left nil, the fake shows whether the handler
+	// marks the lifecycle on its own.
+	nodes *fakeNodeStore
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, cmd *store.NodeCommand) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.creates++
 	f.cmds = append(f.cmds, cmd)
+	return nil
+}
+
+func (f *fakeCommandStore) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	f.mu.Lock()
+	f.batches = append(f.batches, cmds)
+	f.cmds = append(f.cmds, cmds...)
+	f.mu.Unlock()
+	if f.nodes == nil {
+		return nil
+	}
+	for _, cmd := range cmds {
+		switch cmd.Command {
+		case store.CmdReset:
+			_ = f.nodes.SetResetPending(ctx, cmd.ManagedNodeID)
+		case store.CmdUpgrade:
+			_ = f.nodes.SetUpgradePending(ctx, cmd.ManagedNodeID)
+		}
+	}
 	return nil
 }
 

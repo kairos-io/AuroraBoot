@@ -129,6 +129,38 @@ var _ = Describe("CommandHandler batches", func() {
 		})
 	})
 
+	// An agent claims any committed Pending row on its own, through its poll or
+	// a reconnect replay, so a batch written row by row can have its first node
+	// fail and cancel the batch before the later rows exist. Those rows would
+	// then be created Pending and delivered anyway.
+	Describe("publishing", func() {
+		It("writes the whole fan-out through one CreateBatch call", func() {
+			cmds := postBulk(`{"selector":{"nodeIDs":["node-1","node-2","node-3"]},"command":"upgrade","failFast":true}`)
+
+			Expect(cs.creates).To(BeZero())
+			Expect(cs.batches).To(HaveLen(1))
+			Expect(cs.batches[0]).To(HaveLen(3))
+			for i, cmd := range cs.batches[0] {
+				Expect(cmd.ID).To(Equal(cmds[i].ID))
+				Expect(cmd.BatchID).To(Equal(cmds[0].BatchID))
+				Expect(cmd.Phase).To(Equal(store.CommandPending))
+			}
+		})
+
+		// The store marks the lifecycle inside the same transaction as the
+		// rows. A second write from the handler would land after the rows are
+		// visible, where a fast failure and cancel can already have run.
+		It("leaves the lifecycle marking to CreateBatch", func() {
+			postBulk(`{"selector":{"nodeIDs":["node-1","node-2"]},"command":"upgrade"}`)
+			postBulk(`{"selector":{"nodeIDs":["node-3"]},"command":"reset"}`)
+
+			for _, n := range ns.nodes {
+				Expect(n.UpgradeState).To(BeEmpty())
+				Expect(n.ResetState).To(BeEmpty())
+			}
+		})
+	})
+
 	Describe("fail-fast", func() {
 		It("cancels the pending rest of the batch when a node fails", func() {
 			cmds := postBulk(`{"selector":{"nodeIDs":["node-1","node-2","node-3"]},"command":"upgrade","failFast":true}`)

@@ -296,6 +296,18 @@ type NodeStore interface {
 // CommandStore manages the command queue.
 type CommandStore interface {
 	Create(ctx context.Context, cmd *NodeCommand) error
+	// CreateBatch stores every command of one fan-out and marks the lifecycle
+	// of their target nodes in a single transaction: a reset command sets the
+	// node's reset state to pending and an upgrade command its upgrade state,
+	// with the request time, as SetResetPending and SetUpgradePending do.
+	// Agents claim committed Pending rows on their own, so no row of the
+	// batch may become visible before all of them and their lifecycle state
+	// exist. Either everything is written or nothing is.
+	//
+	// Unlike Create, it keeps the ID and Phase the caller set, so the caller
+	// can push the rows it built without reading them back. A command with an
+	// empty ID gets a fresh one and an empty Phase becomes CommandPending.
+	CreateBatch(ctx context.Context, cmds []*NodeCommand) error
 	GetByID(ctx context.Context, id string) (*NodeCommand, error)
 	GetPending(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	MarkDelivered(ctx context.Context, ids []string) error

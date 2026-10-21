@@ -184,13 +184,15 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 // came from the same request is what the batch status in the API is built on,
 // and it costs one column.
 //
-// Every row is written before any of them is pushed. A node that is already
-// online can report Failed while the fan-out is still running, and
-// CancelBatchAfterFailure can only cancel the siblings that exist as Pending
-// rows by then. Pushing inside the create loop would let the first node's
-// failure leave the nodes further down the slice untouched, and they would then
-// be created Pending and pushed anyway, which is exactly what fail-fast is
-// supposed to prevent.
+// The rows are published with one CreateBatch call before any of them is
+// pushed. CancelBatchAfterFailure can only cancel the siblings that exist as
+// Pending rows when a node reports Failed, and an agent can claim a committed
+// row through its own poll or a reconnect replay without waiting for the push.
+// Writing the batch row by row would let the first node fail and cancel the
+// batch before the later rows exist, and they would then be created Pending
+// and delivered anyway. CreateBatch also marks the reset or upgrade lifecycle
+// in the same transaction, so a cancel can never run before that state is set
+// and leave it behind.
 //
 // Delivery itself is still one unthrottled pass. Holding a node back until an
 // earlier one finishes is the concurrency limit, and that needs the held command
@@ -209,19 +211,10 @@ func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode,
 			BatchID:       batchID,
 			FailFast:      failFast,
 		}
-		if err := h.commands.Create(ctx, cmd); err != nil {
-			return nil, err
-		}
-		// A reset reboots the node, so mark it pending here too — the bulk and
-		// group command paths must track resets the same as the single-node
-		// Create (kairos-io/kairos#4255). Best-effort.
-		if command == store.CmdReset {
-			_ = h.nodes.SetResetPending(ctx, node.ID)
-		}
-		if command == store.CmdUpgrade {
-			_ = h.nodes.SetUpgradePending(ctx, node.ID)
-		}
 		created = append(created, cmd)
+	}
+	if err := h.commands.CreateBatch(ctx, created); err != nil {
+		return nil, err
 	}
 	for _, cmd := range created {
 		h.pushCommand(ctx, cmd)

@@ -144,6 +144,105 @@ var _ = Describe("Gorm Store command batches", func() {
 		Expect(phaseOf(id)).To(Equal(store.CommandCanceled))
 	})
 
+	Describe("CreateBatch", func() {
+		register := func(machineID string) *store.ManagedNode {
+			n := &store.ManagedNode{MachineID: machineID}
+			Expect(s.Register(ctx, n)).To(Succeed())
+			return n
+		}
+
+		node := func(id string) *store.ManagedNode {
+			got, err := s.NodeGetByID(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+			return got
+		}
+
+		batchOf := func(command string, ids []string, nodes ...*store.ManagedNode) []*store.NodeCommand {
+			cmds := make([]*store.NodeCommand, 0, len(nodes))
+			for i, n := range nodes {
+				cmds = append(cmds, &store.NodeCommand{
+					ID:            ids[i],
+					ManagedNodeID: n.ID,
+					Command:       command,
+					Phase:         store.CommandPending,
+					BatchID:       "batch-a",
+					FailFast:      true,
+				})
+			}
+			return cmds
+		}
+
+		It("writes every row with the ids the caller gave it", func() {
+			n1, n2 := register("m1"), register("m2")
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			got, err := s.ListByBatch(ctx, "batch-a")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(HaveLen(2))
+			Expect([]string{got[0].ID, got[1].ID}).To(ConsistOf("c1", "c2"))
+			for _, cmd := range got {
+				Expect(cmd.Phase).To(Equal(store.CommandPending))
+				Expect(cmd.FailFast).To(BeTrue())
+			}
+		})
+
+		It("marks every upgrade target pending in the same write", func() {
+			n1, n2, other := register("m1"), register("m2"), register("m3")
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			for _, id := range []string{n1.ID, n2.ID} {
+				got := node(id)
+				Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+				Expect(got.UpgradeRequestedAt).NotTo(BeNil())
+				Expect(got.ResetState).To(BeEmpty())
+			}
+			Expect(node(other.ID).UpgradeState).To(BeEmpty())
+		})
+
+		It("marks every reset target pending in the same write", func() {
+			n1, n2 := register("m1"), register("m2")
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdReset, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			for _, id := range []string{n1.ID, n2.ID} {
+				got := node(id)
+				Expect(got.ResetState).To(Equal(store.ResetStatePending))
+				Expect(got.ResetRequestedAt).NotTo(BeNil())
+				Expect(got.UpgradeState).To(BeEmpty())
+			}
+		})
+
+		It("leaves the lifecycle alone for a command that does not reboot the node", func() {
+			n1 := register("m1")
+
+			Expect(s.CreateBatch(ctx, batchOf("reboot", []string{"c1"}, n1))).To(Succeed())
+
+			got := node(n1.ID)
+			Expect(got.UpgradeState).To(BeEmpty())
+			Expect(got.ResetState).To(BeEmpty())
+		})
+
+		// An agent may claim any committed Pending row, so a batch that is
+		// half written can be half delivered. A failure part way through has
+		// to leave nothing behind.
+		It("writes nothing when one row of the batch cannot be stored", func() {
+			n1, n2 := register("m1"), register("m2")
+
+			err := s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"dup", "dup"}, n1, n2))
+			Expect(err).To(HaveOccurred())
+
+			got, err := s.ListByBatch(ctx, "batch-a")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got).To(BeEmpty())
+			for _, id := range []string{n1.ID, n2.ID} {
+				Expect(node(id).UpgradeState).To(BeEmpty())
+				Expect(node(id).UpgradeRequestedAt).To(BeNil())
+			}
+		})
+	})
+
 	It("CommandDeleteTerminal clears canceled commands with the rest of the history", func() {
 		queue("n1", "batch-a", store.CommandCompleted)
 		queue("n1", "batch-a", store.CommandCanceled)

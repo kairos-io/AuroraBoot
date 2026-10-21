@@ -527,6 +527,58 @@ func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error
 	return s.db.WithContext(ctx).Create(cmd).Error
 }
 
+// CreateBatch inserts the commands of one fan-out and marks their nodes'
+// reset or upgrade lifecycle pending in one transaction. The rows are inserted
+// one at a time inside it so each gets its own created_at and ListByBatch keeps
+// returning them in the order the caller built them.
+func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	if len(cmds) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resetNodes, upgradeNodes []string
+		for _, cmd := range cmds {
+			if cmd.ID == "" {
+				cmd.ID = uuid.New().String()
+			}
+			if cmd.Phase == "" {
+				cmd.Phase = store.CommandPending
+			}
+			if err := tx.Create(cmd).Error; err != nil {
+				return err
+			}
+			switch cmd.Command {
+			case store.CmdReset:
+				resetNodes = append(resetNodes, cmd.ManagedNodeID)
+			case store.CmdUpgrade:
+				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+			}
+		}
+		now := time.Now()
+		if len(resetNodes) > 0 {
+			if err := tx.Model(&store.ManagedNode{}).
+				Where("id IN ?", resetNodes).
+				Updates(map[string]any{
+					"reset_state":        store.ResetStatePending,
+					"reset_requested_at": &now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		if len(upgradeNodes) > 0 {
+			if err := tx.Model(&store.ManagedNode{}).
+				Where("id IN ?", upgradeNodes).
+				Updates(map[string]any{
+					"upgrade_state":        store.UpgradeStatePending,
+					"upgrade_requested_at": &now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Store) CommandGetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
 	var cmd store.NodeCommand
 	if err := s.db.WithContext(ctx).First(&cmd, "id = ?", id).Error; err != nil {
