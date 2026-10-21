@@ -40,7 +40,7 @@ func (a *NodeStoreAdapter) UpdateHeartbeat(ctx context.Context, id string, agent
 func (a *NodeStoreAdapter) UpdatePhase(ctx context.Context, id string, phase string) error {
 	return a.S.UpdatePhase(ctx, id, phase)
 }
-func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID string) error {
+func (a *NodeStoreAdapter) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
 	return a.S.SetGroup(ctx, nodeID, groupID)
 }
 func (a *NodeStoreAdapter) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {
@@ -52,14 +52,8 @@ func (a *NodeStoreAdapter) ClaimNode(ctx context.Context, groupID, claimKey stri
 func (a *NodeStoreAdapter) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool, error) {
 	return a.S.ReleaseNode(ctx, nodeID, claimKey)
 }
-func (a *NodeStoreAdapter) SetResetPending(ctx context.Context, nodeID string) error {
-	return a.S.SetResetPending(ctx, nodeID)
-}
 func (a *NodeStoreAdapter) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	return a.S.AdvanceReset(ctx, nodeID, fromStates, to, stampLastReset)
-}
-func (a *NodeStoreAdapter) SetUpgradePending(ctx context.Context, nodeID string) error {
-	return a.S.SetUpgradePending(ctx, nodeID)
 }
 func (a *NodeStoreAdapter) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	return a.S.AdvanceUpgrade(ctx, nodeID, fromStates, to, stampLastUpgrade)

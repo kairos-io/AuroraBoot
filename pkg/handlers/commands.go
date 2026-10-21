@@ -83,22 +83,13 @@ func (h *CommandHandler) Create(c echo.Context) error {
 		Phase:         store.CommandPending,
 	}
 
-	if err := h.commands.Create(c.Request().Context(), cmd); err != nil {
+	// CreateBatch also marks a reset or upgrade target pending, in the same
+	// write, without taking over a reset or upgrade that is already pending.
+	// Both reboot the node, so the agent's ack only means the reboot is
+	// scheduled, and the re-register resolver reports the real outcome
+	// (kairos-io/kairos#4255).
+	if err := h.commands.CreateBatch(c.Request().Context(), []*store.NodeCommand{cmd}); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
-	}
-
-	// A reset reboots the node (the agent selects the statereset boot entry), so it
-	// can't complete synchronously. Mark the node as awaiting reset so the
-	// re-register resolver reports the real outcome from the post-reboot boot state
-	// (kairos-io/kairos#4255). Best-effort: a failure here doesn't invalidate the
-	// queued command.
-	if cmd.Command == store.CmdReset {
-		_ = h.nodes.SetResetPending(c.Request().Context(), nodeID)
-	}
-	// An upgrade also reboots the node, into the new image, so the agent's ack
-	// only means the upgrade is scheduled. Track it the same way. Best-effort.
-	if cmd.Command == store.CmdUpgrade {
-		_ = h.nodes.SetUpgradePending(c.Request().Context(), nodeID)
 	}
 
 	// Push command via WebSocket if node is online.

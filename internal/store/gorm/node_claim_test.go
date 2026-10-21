@@ -22,7 +22,7 @@ var _ = Describe("Gorm Store node claim", func() {
 
 	// register adds a node to groupID and returns it (with its generated ID).
 	register := func(groupID, machineID string) *store.ManagedNode {
-		n := &store.ManagedNode{MachineID: machineID, GroupID: groupID}
+		n := &store.ManagedNode{MachineID: machineID, GroupID: new(groupID)}
 		Expect(s.Register(ctx, n)).To(Succeed())
 		return n
 	}

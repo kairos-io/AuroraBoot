@@ -9,7 +9,7 @@ function makeNode(id: string, hostname: string, extra: Record<string, unknown> =
     id,
     hostname,
     machineID: `m-${id}`,
-    groupID: "",
+    groupID: null,
     labels: {},
     phase: "Online",
     osRelease: null,
@@ -135,6 +135,20 @@ describe("Nodes selection", () => {
     const puts = m.calls.filter((c) => c.method === "PUT");
     expect(puts.map((c) => c.url).sort()).toEqual(["/api/v1/nodes/id-lab/group", "/api/v1/nodes/id-milan/group"]);
     for (const c of puts) expect(c.body).toEqual({ groupID: "g1" });
+  });
+
+  it("sends a null group when the selected nodes move to No group", async () => {
+    renderAt();
+    await selectTwo();
+    fireEvent.click(screen.getByRole("button", { name: "Move to group" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("radio", { name: "No group" }));
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Move 2 nodes" }));
+    });
+
+    await waitFor(() => expect(m.calls.filter((c) => c.method === "PUT")).toHaveLength(2));
+    for (const c of m.calls.filter((c) => c.method === "PUT")) expect(c.body).toEqual({ groupID: null });
   });
 
   it("adds a label to every selected node, keeping existing labels", async () => {

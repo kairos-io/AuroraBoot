@@ -79,9 +79,9 @@ func (m *memArtifactStore) Delete(_ context.Context, id string) error {
 	return nil
 }
 
-func (m *memArtifactStore) DeleteByPhase(_ context.Context, _ string) error       { return nil }
-func (m *memArtifactStore) GetLogs(_ context.Context, _ string) (string, error)   { return "", nil }
-func (m *memArtifactStore) AppendLog(_ context.Context, _, _ string) error        { return nil }
+func (m *memArtifactStore) DeleteByPhase(_ context.Context, _ string) error     { return nil }
+func (m *memArtifactStore) GetLogs(_ context.Context, _ string) (string, error) { return "", nil }
+func (m *memArtifactStore) AppendLog(_ context.Context, _, _ string) error      { return nil }
 
 // testLogSink implements builder.LogBroadcaster by collecting every chunk
 // into a mutex-guarded slice so specs can Eventually-assert log arrival.

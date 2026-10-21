@@ -65,7 +65,7 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _
 	return nil
 }
 func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error    { return nil }
+func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ *string) error   { return nil }
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
@@ -73,11 +73,9 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, _, _ string) (*store.Manage
 	return nil, store.ErrNoClaimCapacity
 }
 func (f *fakeNodeStore) ReleaseNode(_ context.Context, _, _ string) (bool, error) { return false, nil }
-func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error        { return nil }
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
-func (f *fakeNodeStore) SetUpgradePending(_ context.Context, _ string) error { return nil }
 func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }

@@ -51,7 +51,7 @@ type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
 	Hostname      string            `json:"hostname"`
-	GroupID       string            `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1"`
+	GroupID       *string           `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1" extensions:"x-nullable"`
 	Group         *NodeGroup        `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 	Phase         string            `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat"`
@@ -124,9 +124,11 @@ const (
 )
 
 // Reset states (ManagedNode.ResetState) for the day-2 automatic-reset lifecycle
-// (kairos-io/kairos#4255). SetResetPending sets `pending` when a reset command is
-// issued; the re-register resolver advances it from the reported boot state:
-// autoreset → in-progress, active → done, passive/recovery → failed.
+// (kairos-io/kairos#4255). CommandStore.CreateBatch sets `pending` when a reset
+// command is issued; the re-register resolver advances it from the reported boot state:
+// autoreset → in-progress, active → done, passive/recovery → failed. A reset
+// command that reports Failed while the reset is still pending also moves it to
+// failed.
 const (
 	ResetStatePending    = "pending"
 	ResetStateInProgress = "in-progress"
@@ -135,9 +137,10 @@ const (
 )
 
 // Upgrade states (ManagedNode.UpgradeState) for the upgrade lifecycle.
-// SetUpgradePending sets `pending` when an upgrade command is issued; the
+// CommandStore.CreateBatch sets `pending` when an upgrade command is issued; the
 // re-register resolver advances it from the reported boot state: active → done,
-// passive/recovery → failed (the node fell back off the upgraded image).
+// passive/recovery → failed (the node fell back off the upgraded image). An
+// upgrade command that reports Failed before the reboot also moves it to failed.
 const (
 	UpgradeStatePending = "pending"
 	UpgradeStateDone    = "done"
@@ -251,7 +254,9 @@ type NodeStore interface {
 	// value instead of blanking it.
 	UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []NodeAddress, bootState string, hostname string, remoteIP string) error
 	UpdatePhase(ctx context.Context, id string, phase string) error
-	SetGroup(ctx context.Context, nodeID string, groupID string) error
+	// SetGroup moves nodeID into groupID, or out of any group when groupID
+	// is nil.
+	SetGroup(ctx context.Context, nodeID string, groupID *string) error
 	SetLabels(ctx context.Context, nodeID string, labels map[string]string) error
 	// ClaimNode atomically assigns one unclaimed node in groupID to claimKey and
 	// returns it. It is idempotent: re-issuing with the same (groupID, claimKey)
@@ -268,22 +273,12 @@ type NodeStore interface {
 	// caller inspects the node to distinguish those and must not assume ownership
 	// from a false result.
 	ReleaseNode(ctx context.Context, nodeID, claimKey string) (released bool, err error)
-	// SetResetPending marks nodeID as awaiting an automatic reset: ResetState is
-	// set to pending and ResetRequestedAt to now. Called when a reset command is
-	// issued; the outcome is resolved later by AdvanceReset when the node
-	// re-registers with its post-reboot boot state.
-	SetResetPending(ctx context.Context, nodeID string) error
 	// AdvanceReset atomically transitions nodeID's ResetState from any of
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
 	// stampLastReset is set (the transition to done), LastReset is set to now in
 	// the same update.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
-	// SetUpgradePending marks nodeID as awaiting an upgrade: UpgradeState is set
-	// to pending and UpgradeRequestedAt to now. Called when an upgrade command is
-	// issued; the outcome is resolved later by AdvanceUpgrade when the node
-	// re-registers with its post-reboot boot state.
-	SetUpgradePending(ctx context.Context, nodeID string) error
 	// AdvanceUpgrade atomically transitions nodeID's UpgradeState from any of
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
@@ -299,7 +294,7 @@ type CommandStore interface {
 	// CreateBatch stores every command of one fan-out and marks the lifecycle
 	// of their target nodes in a single transaction: a reset command sets the
 	// node's reset state to pending and an upgrade command its upgrade state,
-	// with the request time, as SetResetPending and SetUpgradePending do.
+	// and stamps the request time.
 	// A node whose upgrade is already pending, or whose reset is pending or
 	// in-progress, keeps its state and request time, which belong to the
 	// operation still waiting for the node to reboot.
@@ -320,9 +315,14 @@ type CommandStore interface {
 	// or two concurrent polls) wins. A command that is missing or no longer
 	// Pending yields (false, nil).
 	ClaimForDelivery(ctx context.Context, id string) (bool, error)
+	// UpdateStatus records a command's phase and result. A Failed reset or
+	// upgrade also marks its node's pending lifecycle state failed in the same
+	// write, unless another command of the same kind still owns that state: a
+	// command that fails before the reboot never brings the node back with a
+	// boot state the re-register resolvers could settle it from.
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
-	// UpdateStatusForNode updates a command's status only if it belongs to
-	// nodeID. It returns ErrCommandNotFound when no command matches both the
+	// UpdateStatusForNode is UpdateStatus scoped to the commands of nodeID. It
+	// returns ErrCommandNotFound when no command matches both the
 	// command id and the owning node, so callers can fail closed (403/404)
 	// instead of silently succeeding on a foreign or missing command.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error

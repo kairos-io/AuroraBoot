@@ -12,6 +12,20 @@ permissions:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    # The store specs that need concurrent writers run against this server;
+    # they are skipped when AURORABOOT_TEST_POSTGRES_DSN is unset.
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -41,8 +55,10 @@ jobs:
         with:
           driver-opts: network=host
       - name: Run tests
+        env:
+          AURORABOOT_TEST_POSTGRES_DSN: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo --tags ui -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
+          sudo env AURORABOOT_TEST_POSTGRES_DSN="$AURORABOOT_TEST_POSTGRES_DSN" go run github.com/onsi/ginkgo/v2/ginkgo --tags ui -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
       - name: Codecov
         uses: codecov/codecov-action@v7
         env:
