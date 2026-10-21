@@ -296,6 +296,21 @@ type NodeStore interface {
 // CommandStore manages the command queue.
 type CommandStore interface {
 	Create(ctx context.Context, cmd *NodeCommand) error
+	// CreateBatch stores every command of one fan-out and marks the lifecycle
+	// of their target nodes in a single transaction: a reset command sets the
+	// node's reset state to pending and an upgrade command its upgrade state,
+	// with the request time, as SetResetPending and SetUpgradePending do.
+	// A node whose upgrade is already pending, or whose reset is pending or
+	// in-progress, keeps its state and request time, which belong to the
+	// operation still waiting for the node to reboot.
+	// Agents claim committed Pending rows on their own, so no row of the
+	// batch may become visible before all of them and their lifecycle state
+	// exist. Either everything is written or nothing is.
+	//
+	// Unlike Create, it keeps the ID and Phase the caller set, so the caller
+	// can push the rows it built without reading them back. A command with an
+	// empty ID gets a fresh one and an empty Phase becomes CommandPending.
+	CreateBatch(ctx context.Context, cmds []*NodeCommand) error
 	GetByID(ctx context.Context, id string) (*NodeCommand, error)
 	GetPending(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	MarkDelivered(ctx context.Context, ids []string) error
@@ -329,6 +344,12 @@ type CommandStore interface {
 	// moved. Commands that were already claimed for delivery are left alone:
 	// there is no abort message on the wire, so a delivered command cannot be
 	// recalled and has to be allowed to report its own outcome.
+	//
+	// A canceled reset or upgrade never runs, so the pending reset or upgrade
+	// state CreateBatch set on its node is cleared in the same write, unless
+	// another command of the same kind owns it: one that is Pending,
+	// Delivered or Running, or one that Completed after the node's request
+	// time and is waiting for the node to reboot.
 	CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error)
 	Delete(ctx context.Context, id string) error
 	// DeleteTerminal removes every command of nodeID that reached a terminal

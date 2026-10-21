@@ -527,6 +527,66 @@ func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error
 	return s.db.WithContext(ctx).Create(cmd).Error
 }
 
+// CreateBatch inserts the commands of one fan-out and marks their nodes'
+// reset or upgrade lifecycle pending in one transaction. The rows are inserted
+// one at a time inside it so each gets its own created_at and ListByBatch keeps
+// returning them in the order the caller built them.
+//
+// A node whose upgrade is already pending, or whose reset is pending or
+// in-progress, is left as it is. That state and its request time belong to an
+// operation still waiting for the node to reboot and re-register, and the
+// resolver needs the request time of that operation.
+func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	if len(cmds) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resetNodes, upgradeNodes []string
+		for _, cmd := range cmds {
+			if cmd.ID == "" {
+				cmd.ID = uuid.New().String()
+			}
+			if cmd.Phase == "" {
+				cmd.Phase = store.CommandPending
+			}
+			if err := tx.Create(cmd).Error; err != nil {
+				return err
+			}
+			switch cmd.Command {
+			case store.CmdReset:
+				resetNodes = append(resetNodes, cmd.ManagedNodeID)
+			case store.CmdUpgrade:
+				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+			}
+		}
+		now := time.Now()
+		if len(resetNodes) > 0 {
+			if err := tx.Model(&store.ManagedNode{}).
+				Where("id IN ?", resetNodes).
+				Where("reset_state IS NULL OR reset_state NOT IN ?",
+					[]string{store.ResetStatePending, store.ResetStateInProgress}).
+				Updates(map[string]any{
+					"reset_state":        store.ResetStatePending,
+					"reset_requested_at": &now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		if len(upgradeNodes) > 0 {
+			if err := tx.Model(&store.ManagedNode{}).
+				Where("id IN ?", upgradeNodes).
+				Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
+				Updates(map[string]any{
+					"upgrade_state":        store.UpgradeStatePending,
+					"upgrade_requested_at": &now,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+}
+
 func (s *Store) CommandGetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
 	var cmd store.NodeCommand
 	if err := s.db.WithContext(ctx).First(&cmd, "id = ?", id).Error; err != nil {
@@ -641,30 +701,104 @@ func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeC
 	return cmds, nil
 }
 
-// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled.
+// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled
+// and clears the lifecycle state those commands left pending on their nodes.
 //
-// The WHERE clause carries `phase = Pending` for the same reason
+// The cancel UPDATE carries `phase = Pending` for the same reason
 // ClaimForDelivery does: a command another goroutine is claiming for delivery
 // right now must be won by exactly one of the two. A claim that lands first
 // leaves no Pending row for this UPDATE to match, so the command is delivered
 // and will report its own result; a cancel that lands first leaves no Pending
 // row for the claim's compare-and-set, so it is never pushed.
+//
+// The UPDATE is the first statement of the transaction and returns the rows it
+// changed. Under SQLite WAL a transaction that reads first holds a snapshot,
+// and if an agent commits a claim or a status report on another connection
+// before the transaction writes, the write fails at once with "database is
+// locked" (SQLITE_BUSY_SNAPSHOT) and busy_timeout does not retry it. Writing
+// first takes the write lock up front, so a concurrent writer only makes the
+// statement wait.
+//
+// A canceled reset or upgrade never runs, so nothing would ever resolve the
+// pending state CreateBatch set for it, and the node's next unrelated active
+// boot would report the operation done. clearPendingLifecycle clears that
+// state for the nodes of the canceled rows unless something else still owns
+// it. Everything runs in one transaction so the rows and the node state never
+// disagree.
 func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
 	if batchID == "" {
 		return 0, nil
 	}
-	now := time.Now()
-	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
-		Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
-		Updates(map[string]any{
-			"phase":        store.CommandCanceled,
-			"result":       reason,
-			"completed_at": &now,
-		})
-	if res.Error != nil {
-		return 0, res.Error
+	var canceled []store.NodeCommand
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.Model(&canceled).
+			Clauses(clause.Returning{Columns: []clause.Column{
+				{Name: "id"}, {Name: "managed_node_id"}, {Name: "command"},
+			}}).
+			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
+			Updates(map[string]any{
+				"phase":        store.CommandCanceled,
+				"result":       reason,
+				"completed_at": &now,
+			}).Error; err != nil {
+			return err
+		}
+
+		var resetNodes, upgradeNodes []string
+		for _, cmd := range canceled {
+			switch cmd.Command {
+			case store.CmdReset:
+				resetNodes = append(resetNodes, cmd.ManagedNodeID)
+			case store.CmdUpgrade:
+				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+			}
+		}
+		if err := clearPendingLifecycle(tx, store.CmdReset, resetNodes,
+			"reset_state", store.ResetStatePending, "reset_requested_at"); err != nil {
+			return err
+		}
+		return clearPendingLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at")
+	})
+	if err != nil {
+		return 0, err
 	}
-	return int(res.RowsAffected), nil
+	return len(canceled), nil
+}
+
+// clearPendingLifecycle resets stateColumn and requestedColumn on the nodes in
+// nodeIDs whose state is still pendingState and that no command of the given
+// kind owns. A command in Pending, Delivered or Running owns the state, and so
+// does a Completed one that finished at or after requestedColumn: the agent
+// completes an upgrade or reset once it has scheduled the reboot, and the
+// state stays pending until the node re-registers and the resolver settles it.
+// A Completed command that finished before the request belongs to an earlier
+// operation and owns nothing.
+//
+// On SQLite both columns hold the text the driver writes for a time.Time, with
+// trailing fractional zeros trimmed and the zone offset of time.Now. Text
+// comparison orders such values by time as long as the offsets match, which
+// holds for timestamps the same server wrote.
+func clearPendingLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateColumn, pendingState, requestedColumn string) error {
+	if len(nodeIDs) == 0 {
+		return nil
+	}
+	owner := tx.Model(&store.NodeCommand{}).Select("1").
+		Where("node_commands.managed_node_id = managed_nodes.id AND node_commands.command = ?"+
+			" AND (node_commands.phase IN ?"+
+			" OR (node_commands.phase = ? AND node_commands.completed_at >= managed_nodes."+requestedColumn+"))",
+			command,
+			[]string{store.CommandPending, store.CommandDelivered, store.CommandRunning},
+			store.CommandCompleted)
+	return tx.Model(&store.ManagedNode{}).
+		Where("id IN ?", nodeIDs).
+		Where(stateColumn+" = ?", pendingState).
+		Where("NOT EXISTS (?)", owner).
+		Updates(map[string]any{
+			stateColumn:     "",
+			requestedColumn: nil,
+		}).Error
 }
 
 func (s *Store) CommandDelete(ctx context.Context, id string) error {

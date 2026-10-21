@@ -130,11 +130,21 @@ type BatchOutcome struct {
 	Commands  []NodeCommand `json:"commands"`
 }
 
-// CreateCommandRequest is the body for single-node and group-wide
-// command creation.
+// CreateCommandRequest is the body of POST /api/v1/nodes/:nodeID/commands.
 type CreateCommandRequest struct {
 	Command string            `json:"command"`
 	Args    map[string]string `json:"args,omitempty"`
+}
+
+// GroupCommandRequest is the body of POST /api/v1/groups/:id/commands. The
+// group is named in the path, so unlike BulkCommandRequest it has no selector.
+type GroupCommandRequest struct {
+	Command string            `json:"command"`
+	Args    map[string]string `json:"args,omitempty"`
+	// FailFast cancels the commands of this fan-out that are still Pending
+	// once any node of it reports Failed. A node that was online when the
+	// fan-out ran already holds its command and is not stopped.
+	FailFast bool `json:"failFast,omitempty"`
 }
 
 // CommandSelector targets nodes for a bulk command operation.

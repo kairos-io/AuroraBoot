@@ -100,6 +100,9 @@ type fakeCommandStore struct {
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, _ *store.NodeCommand) error { return nil }
+func (f *fakeCommandStore) CreateBatch(_ context.Context, _ []*store.NodeCommand) error {
+	return nil
+}
 func (f *fakeCommandStore) GetByID(_ context.Context, _ string) (*store.NodeCommand, error) {
 	return nil, fmt.Errorf("not found")
 }

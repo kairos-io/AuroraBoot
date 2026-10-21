@@ -74,6 +74,9 @@ type CommandStoreAdapter struct{ S *Store }
 func (a *CommandStoreAdapter) Create(ctx context.Context, cmd *store.NodeCommand) error {
 	return a.S.CommandCreate(ctx, cmd)
 }
+func (a *CommandStoreAdapter) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	return a.S.CreateBatch(ctx, cmds)
+}
 func (a *CommandStoreAdapter) GetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
 	return a.S.CommandGetByID(ctx, id)
 }
