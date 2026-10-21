@@ -96,33 +96,39 @@ func firstPositive(v, fallback float64) float64 {
 	return fallback
 }
 
-// redactToken returns requestURI with the value of any "token" query parameter
-// replaced by "REDACTED", so credentials passed as ?token= (WebSocket auth and
-// artifact download links) never reach the access log. Other query parameters
-// and the path are preserved to keep the log useful. If the URI cannot be
-// parsed but still references a token, it is fully redacted to err on the side
-// of never emitting the secret.
+// redactedParams are query parameters that carry credentials: a node key, a
+// per-extension download token, or a download link signature.
+var redactedParams = []string{"token", "sig"}
+
+// redactToken returns requestURI with the value of every credential query
+// parameter (token, sig) replaced by "REDACTED", so node keys, extension
+// download tokens and link signatures never reach the access log. Other query
+// parameters and the path are preserved to keep the log useful. The query is
+// always parsed, because a percent-encoded name such as %74oken is decoded to
+// token by the handlers too. If it cannot be parsed, the whole query is
+// redacted to err on the side of never emitting the secret.
 func redactToken(requestURI string) string {
-	if !strings.Contains(requestURI, "token=") {
+	i := strings.IndexByte(requestURI, '?')
+	if i < 0 {
 		return requestURI
 	}
-
-	path := requestURI
-	rawQuery := ""
-	if i := strings.IndexByte(requestURI, '?'); i >= 0 {
-		path = requestURI[:i]
-		rawQuery = requestURI[i+1:]
-	}
+	path, rawQuery := requestURI[:i], requestURI[i+1:]
 
 	values, err := url.ParseQuery(rawQuery)
 	if err != nil {
-		// Could not parse the query string; refuse to risk leaking the token.
+		// Could not parse the query string; refuse to risk leaking a credential.
 		return path + "?REDACTED"
 	}
-	if !values.Has("token") {
+	changed := false
+	for _, p := range redactedParams {
+		if values.Has(p) {
+			values.Set(p, "REDACTED")
+			changed = true
+		}
+	}
+	if !changed {
 		return requestURI
 	}
-	values.Set("token", "REDACTED")
 	return path + "?" + values.Encode()
 }
 
@@ -132,13 +138,13 @@ func New(cfg Config) *echo.Echo {
 	e.HideBanner = true
 
 	// Use a request logger whose URI is run through redactToken before it is
-	// written. All three auth schemes accept the credential as a ?token= query
-	// param (agent and UI WebSockets, artifact download links), so the raw
-	// request URI would otherwise leak admin passwords, node API keys, and the
-	// registration token straight into the access log (and any downstream proxy
-	// logs). RequestLoggerWithConfig (the non-deprecated logger) lets us emit a
-	// redacted URI explicitly instead of the verbatim ${uri} the default
-	// middleware.Logger() prints.
+	// written. The agent WebSocket takes the node API key as a ?token= query
+	// param, the extension download route takes the per-extension download
+	// token there, and signed artifact download links carry a ?sig= signature,
+	// so the raw request URI would otherwise leak those credentials into the
+	// access log (and any downstream proxy logs). RequestLoggerWithConfig (the
+	// non-deprecated logger) lets us emit a redacted URI explicitly instead of
+	// the verbatim ${uri} the default middleware.Logger() prints.
 	e.Use(middleware.RequestLoggerWithConfig(middleware.RequestLoggerConfig{
 		LogRemoteIP: true,
 		LogMethod:   true,
@@ -154,6 +160,9 @@ func New(cfg Config) *echo.Echo {
 	e.Use(middleware.Recover())
 
 	regToken := cfg.RegToken
+	sessions := auth.NewSessionStore()
+	adminAuth := auth.NewAdminAuth(cfg.AdminPassword, sessions, cfg.AuroraBootURL)
+	linkSigner := auth.NewLinkSigner()
 
 	// Create WebSocket hub.
 	hub := cfg.Hub
@@ -208,7 +217,7 @@ func New(cfg Config) *echo.Echo {
 	}
 	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore)
-	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL)
+	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL).WithLinkSigner(linkSigner)
 	var extensionHandler *handlers.ExtensionHandler
 	if cfg.ExtensionBuilder != nil {
 		extensionHandler = handlers.NewExtensionHandler(
@@ -223,9 +232,10 @@ func New(cfg Config) *echo.Echo {
 
 	// WebSocket handlers
 	agentWSHandler := &ws.AgentHandler{
-		Hub:      hub,
-		Nodes:    cfg.NodeStore,
-		Commands: cfg.CommandStore,
+		Hub:       hub,
+		Nodes:     cfg.NodeStore,
+		Commands:  cfg.CommandStore,
+		PublicURL: cfg.AuroraBootURL,
 		// Agents report command results over the WS, so the node_extensions
 		// tracking write must hook in here too (not just on the REST
 		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
@@ -239,12 +249,12 @@ func New(cfg Config) *echo.Echo {
 		agentWSHandler.Finalize = deployHandler.MaybeFinalizeForNode
 		agentWSHandler.BaseCtx = cfg.BaseContext
 	}
-	uiWSHandler := &ws.UIHandler{Hub: hub}
+	uiWSHandler := &ws.UIHandler{Hub: hub, PublicURL: cfg.AuroraBootURL}
 
 	// Public endpoints
 	e.GET("/api/v1/install-agent", nodeHandler.InstallScript)
 
-	// WebSocket endpoints (agent auth via query param token)
+	// WebSocket endpoints (the node key comes from the Authorization header or ?token=)
 	e.GET("/api/v1/ws", agentWSHandler.HandleAgentWS)
 
 	// Rate limits for the node-driven endpoints (fleet-server hardening,
@@ -286,12 +296,12 @@ func New(cfg Config) *echo.Echo {
 	// Shared command routes used by BOTH the agent (poll/report) and the
 	// admin/UI (inspect/override). Registered ONCE under AgentOrAdminMiddleware:
 	// registering them on two separate auth groups makes Echo silently shadow
-	// the first, which previously routed every agent poll into the admin-only
-	// handler (401). The handlers branch on the authenticated identity
+	// the first, which would route every agent poll into the admin-only handler
+	// (401). The handlers branch on the authenticated identity
 	// (auth.AuthNodeID): agents are node-scoped (own commands only), admins act
 	// across nodes.
 	sharedCmd := e.Group("/api/v1/nodes/:nodeID")
-	sharedCmd.Use(auth.AgentOrAdminMiddleware(cfg.AdminPassword, cfg.NodeStore))
+	sharedCmd.Use(auth.AgentOrAdminMiddleware(adminAuth, cfg.NodeStore))
 	// After auth, so it limits node polls but skips admin (which sets no node ID)
 	// — keeping the CAPI infra provider's command polling exempt. Same instance as
 	// the heartbeat group, so both share one bucket per node.
@@ -302,8 +312,15 @@ func New(cfg Config) *echo.Echo {
 
 	// Admin/UI endpoints (admin password auth)
 	adminGroup := e.Group("/api/v1")
-	adminGroup.Use(auth.AdminMiddleware(cfg.AdminPassword))
+	adminGroup.Use(auth.AdminMiddleware(adminAuth))
 	adminGroup.Use(bodyLimit(maxRequestBodyBytes, skipOwnBodyLimit))
+
+	// Session: login reads a capped body before authentication; logout clears
+	// whatever cookie it is given; the check sits behind the admin middleware.
+	sessionHandler := handlers.NewSessionHandler(adminAuth)
+	e.POST("/api/v1/session", sessionHandler.Login)
+	e.DELETE("/api/v1/session", sessionHandler.Logout)
+	adminGroup.GET("/session", sessionHandler.Check)
 
 	// Node management
 	adminGroup.GET("/nodes", nodeHandler.List)
@@ -323,6 +340,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.DELETE("/nodes/:nodeID/commands/:commandID", cmdHandler.Delete)
 	adminGroup.DELETE("/nodes/:nodeID/commands", cmdHandler.ClearHistory)
 	adminGroup.POST("/nodes/commands", cmdHandler.CreateBulk)
+	adminGroup.GET("/commands/batches/:batchID", cmdHandler.BatchStatus)
 
 	// Group management
 	adminGroup.POST("/groups", groupHandler.Create)
@@ -341,6 +359,7 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.GET("/artifacts/:id", artifactHandler.Get)
 	adminGroup.GET("/artifacts/:id/logs", artifactHandler.GetLogs)
 	adminGroup.POST("/artifacts/:id/cancel", artifactHandler.Cancel)
+	adminGroup.POST("/artifacts/:id/download-link", artifactHandler.CreateDownloadLink)
 	adminGroup.PATCH("/artifacts/:id", artifactHandler.Update)
 	adminGroup.DELETE("/artifacts/:id", artifactHandler.Delete)
 	adminGroup.GET("/artifacts/:id/bundle-extensions", artifactHandler.ListBundleExtensions)
@@ -367,24 +386,25 @@ func New(cfg Config) *echo.Echo {
 	//
 	// Raw build files (ISO/UKI/raw disk/netboot) are admin-only: no node flow
 	// consumes them over HTTP (netboot/Redfish read them from disk server-side), so
-	// a node key must not reach them. AdminMiddleware still honours ?token= for the
-	// UI's browser download links.
-	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.AdminMiddleware(cfg.AdminPassword))
+	// a node key must not reach them. They are served to an admin (session cookie
+	// or bearer) or to a signed link from POST /artifacts/:id/download-link that
+	// names exactly this file and has not expired.
+	e.GET("/api/v1/artifacts/:id/download/*", artifactHandler.Download, auth.DownloadMiddleware(adminAuth, linkSigner))
 	// The container image is the one artifact a node downloads (to satisfy an
 	// "upgrade from built artifact" command), so it is admin OR a node that such a
 	// command actually assigned this artifact to — never an arbitrary artifact.
 	e.GET("/api/v1/artifacts/:id/image", artifactHandler.ExportImage,
-		auth.ArtifactImageMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.CommandStore))
+		auth.ArtifactImageMiddleware(adminAuth, cfg.NodeStore, cfg.CommandStore))
 	// Extension downloads: admin, the extension's own download token, OR any
 	// authenticated node. Nodes need to fetch extensions bundled into an
 	// assigned upgrade command; per-command scoping analogous to
-	// ArtifactImageMiddleware is a follow-up. Admin may use ?token= here (the
-	// UI's download anchor cannot set a header), and so may the per-extension
-	// token, which is what an install command's source URL carries so that URL
-	// never holds the admin password. A node key stays header-only.
+	// ArtifactImageMiddleware is a follow-up. The per-extension token in ?token= is
+	// what an install command's source URL carries, so that URL never holds the
+	// admin password. An admin uses the session cookie or a Bearer header, and a
+	// node key stays header-only.
 	if extensionHandler != nil {
 		e.GET("/api/v1/extensions/:id/download/:filename", extensionHandler.Download,
-			auth.ExtensionDownloadMiddleware(cfg.AdminPassword, cfg.NodeStore, cfg.ExtensionStore))
+			auth.ExtensionDownloadMiddleware(adminAuth, cfg.NodeStore, cfg.ExtensionStore))
 	}
 
 	// Artifact upload — per-build UploadToken bearer (minted at Create time,

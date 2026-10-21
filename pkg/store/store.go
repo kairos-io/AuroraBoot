@@ -96,9 +96,21 @@ type ManagedNode struct {
 	ResetRequestedAt *time.Time `json:"resetRequestedAt,omitempty"`
 	// LastReset is when the most recent automatic reset completed successfully.
 	LastReset *time.Time `json:"lastReset,omitempty"`
-	APIKey    string     `json:"-" gorm:"index"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
+	// UpgradeState tracks the upgrade lifecycle across the reboot an upgrade
+	// command triggers. The agent acks the command once the new image is staged,
+	// before it reboots into it, so a Completed upgrade command only means the
+	// upgrade was scheduled; the real outcome is resolved here when the node
+	// re-registers and reports its post-reboot boot state. One of:
+	// "" (none) | pending | done | failed.
+	UpgradeState string `json:"upgradeState,omitempty"`
+	// UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set
+	// to pending); nil when no upgrade has been requested.
+	UpgradeRequestedAt *time.Time `json:"upgradeRequestedAt,omitempty"`
+	// LastUpgrade is when the most recent upgrade completed successfully.
+	LastUpgrade *time.Time `json:"lastUpgrade,omitempty"`
+	APIKey      string     `json:"-" gorm:"index"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	UpdatedAt   time.Time  `json:"updatedAt"`
 }
 
 // Reported boot states (ManagedNode.BootState) — the short fleet vocabulary the
@@ -122,6 +134,16 @@ const (
 	ResetStateFailed     = "failed"
 )
 
+// Upgrade states (ManagedNode.UpgradeState) for the upgrade lifecycle.
+// SetUpgradePending sets `pending` when an upgrade command is issued; the
+// re-register resolver advances it from the reported boot state: active → done,
+// passive/recovery → failed (the node fell back off the upgraded image).
+const (
+	UpgradeStatePending = "pending"
+	UpgradeStateDone    = "done"
+	UpgradeStateFailed  = "failed"
+)
+
 // Node phases.
 const (
 	PhasePending    = "Pending"
@@ -142,6 +164,17 @@ type NodeCommand struct {
 	DeliveredAt   *time.Time        `json:"deliveredAt"`
 	CompletedAt   *time.Time        `json:"completedAt"`
 	CreatedAt     time.Time         `json:"createdAt"`
+
+	// BatchID names the fan-out this command was created by, so the rows a
+	// single bulk or group request produced can be found again as one
+	// operation. It is empty on a command addressed to one node.
+	BatchID string `json:"batchID,omitempty" gorm:"index"`
+	// FailFast asks for the still-Pending rows of the batch to be canceled
+	// once any node in it fails; a row already Delivered to its node is left
+	// to report its own result. It is carried on every row of the batch rather
+	// than in a batch table so the rule travels with the command that has to
+	// apply it.
+	FailFast bool `json:"failFast,omitempty"`
 }
 
 // Command phases.
@@ -152,7 +185,22 @@ const (
 	CommandCompleted = "Completed"
 	CommandFailed    = "Failed"
 	CommandExpired   = "Expired"
+	// CommandCanceled is a command that will never be delivered because the
+	// fail-fast batch it belongs to was stopped by an earlier node's failure.
+	// It is terminal and distinct from Failed: the node never ran anything.
+	CommandCanceled = "Canceled"
 )
+
+// IsTerminalCommandPhase reports whether a phase is one the command can no
+// longer move out of, so a caller can tell the rows that still have work
+// ahead of them from the ones that are only history.
+func IsTerminalCommandPhase(phase string) bool {
+	switch phase {
+	case CommandCompleted, CommandFailed, CommandExpired, CommandCanceled:
+		return true
+	}
+	return false
+}
 
 // Command types.
 const (
@@ -231,12 +279,38 @@ type NodeStore interface {
 	// stampLastReset is set (the transition to done), LastReset is set to now in
 	// the same update.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
+	// SetUpgradePending marks nodeID as awaiting an upgrade: UpgradeState is set
+	// to pending and UpgradeRequestedAt to now. Called when an upgrade command is
+	// issued; the outcome is resolved later by AdvanceUpgrade when the node
+	// re-registers with its post-reboot boot state.
+	SetUpgradePending(ctx context.Context, nodeID string) error
+	// AdvanceUpgrade atomically transitions nodeID's UpgradeState from any of
+	// fromStates to `to`, returning true only if this call performed the
+	// transition — so concurrent re-registers resolve exactly once. When
+	// stampLastUpgrade is set (the transition to done), LastUpgrade is set to now
+	// in the same update.
+	AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error)
 	Delete(ctx context.Context, id string) error
 }
 
 // CommandStore manages the command queue.
 type CommandStore interface {
 	Create(ctx context.Context, cmd *NodeCommand) error
+	// CreateBatch stores every command of one fan-out and marks the lifecycle
+	// of their target nodes in a single transaction: a reset command sets the
+	// node's reset state to pending and an upgrade command its upgrade state,
+	// with the request time, as SetResetPending and SetUpgradePending do.
+	// A node whose upgrade is already pending, or whose reset is pending or
+	// in-progress, keeps its state and request time, which belong to the
+	// operation still waiting for the node to reboot.
+	// Agents claim committed Pending rows on their own, so no row of the
+	// batch may become visible before all of them and their lifecycle state
+	// exist. Either everything is written or nothing is.
+	//
+	// Unlike Create, it keeps the ID and Phase the caller set, so the caller
+	// can push the rows it built without reading them back. A command with an
+	// empty ID gets a fresh one and an empty Phase becomes CommandPending.
+	CreateBatch(ctx context.Context, cmds []*NodeCommand) error
 	GetByID(ctx context.Context, id string) (*NodeCommand, error)
 	GetPending(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	MarkDelivered(ctx context.Context, ids []string) error
@@ -260,6 +334,23 @@ type CommandStore interface {
 	// advance: DeleteTerminal does not collect it and the dashboard offers no
 	// delete button for a Pending command.
 	ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error
+	// ListByBatch returns every command created by one fan-out, in the order
+	// they were created, so a caller can report the batch as one operation.
+	// An empty batch id matches nothing: an unbatched single-node command has
+	// no batch id, so matching on it would return the whole table.
+	ListByBatch(ctx context.Context, batchID string) ([]*NodeCommand, error)
+	// CancelPendingInBatch moves every still-Pending command of a batch to
+	// Canceled and records reason as its result, returning how many rows it
+	// moved. Commands that were already claimed for delivery are left alone:
+	// there is no abort message on the wire, so a delivered command cannot be
+	// recalled and has to be allowed to report its own outcome.
+	//
+	// A canceled reset or upgrade never runs, so the pending reset or upgrade
+	// state CreateBatch set on its node is cleared in the same write, unless
+	// another command of the same kind owns it: one that is Pending,
+	// Delivered or Running, or one that Completed after the node's request
+	// time and is waiting for the node to reboot.
+	CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error)
 	Delete(ctx context.Context, id string) error
 	// DeleteTerminal removes every command of nodeID that reached a terminal
 	// phase: Completed, Failed or Expired.
@@ -478,11 +569,13 @@ type NodeExtensionStore interface {
 }
 
 // SecureBootKeySet tracks a named set of SecureBoot keys on the filesystem.
+// KeysDir and TPMPCRKeyPath are server paths: the builders read them, and the
+// API never returns them.
 type SecureBootKeySet struct {
 	ID               string    `json:"id" gorm:"primaryKey"`
 	Name             string    `json:"name" gorm:"uniqueIndex"`
-	KeysDir          string    `json:"keysDir"`
-	TPMPCRKeyPath    string    `json:"tpmPcrKeyPath"`
+	KeysDir          string    `json:"-"`
+	TPMPCRKeyPath    string    `json:"-"`
 	SecureBootEnroll string    `json:"secureBootEnroll"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`

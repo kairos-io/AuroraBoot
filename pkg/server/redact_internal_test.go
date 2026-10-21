@@ -44,6 +44,34 @@ func TestRedactToken(t *testing.T) {
 			in:        "/api/v1/ws?token=secret;%zz",
 			wantNoSec: "secret",
 		},
+		{
+			name:      "signed link signature",
+			in:        "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&sig=c2lnbmF0dXJl",
+			wantNoSec: "c2lnbmF0dXJl",
+			want:      "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&sig=REDACTED",
+		},
+		{
+			name:      "percent-encoded token name",
+			in:        "/api/v1/ws?%74oken=supersecret",
+			wantNoSec: "supersecret",
+			want:      "/api/v1/ws?token=REDACTED",
+		},
+		{
+			name:      "percent-encoded signature name",
+			in:        "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&%73ig=c2lnbmF0dXJl",
+			wantNoSec: "c2lnbmF0dXJl",
+			want:      "/api/v1/artifacts/5/download/foo.iso?exp=1760000000&sig=REDACTED",
+		},
+		{
+			name:      "signature and token together hide the token",
+			in:        "/x?sig=aaaa&token=bbbb",
+			wantNoSec: "bbbb",
+		},
+		{
+			name:      "signature and token together hide the signature",
+			in:        "/x?sig=aaaa&token=bbbb",
+			wantNoSec: "aaaa",
+		},
 	}
 
 	for _, tt := range tests {
@@ -56,8 +84,8 @@ func TestRedactToken(t *testing.T) {
 			if tt.want != "" && got != tt.want {
 				t.Errorf("redactToken(%q) = %q, want %q", tt.in, got, tt.want)
 			}
-			// A token param must always become REDACTED.
-			if strings.Contains(tt.in, "token=") && !strings.Contains(got, "REDACTED") {
+			// A token or sig param must always become REDACTED.
+			if (strings.Contains(tt.in, "token=") || strings.Contains(tt.in, "sig=")) && !strings.Contains(got, "REDACTED") {
 				t.Errorf("redactToken(%q) = %q, expected REDACTED marker", tt.in, got)
 			}
 		})

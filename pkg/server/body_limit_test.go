@@ -204,6 +204,7 @@ var _ = Describe("Request body limits on every route", func() {
 	// Routes with a limit of their own, covered by their own specs above.
 	ownLimit := map[string]bool{
 		http.MethodPost + " /api/v1/nodes/register":           true,
+		http.MethodPost + " /api/v1/session":                  true,
 		http.MethodPost + " /api/v1/artifacts/upload-overlay": true,
 		http.MethodPost + " /api/v1/secureboot-keys/import":   true,
 		http.MethodPut + " /api/v1/artifacts/:id/upload/*":    true,
@@ -273,13 +274,17 @@ var _ = Describe("Request body limits on every route", func() {
 		return rec, body.read
 	}
 
-	It("reads no body before authenticating, apart from registration's capped token read", func() {
+	It("reads no body before authenticating, apart from the capped registration and login reads", func() {
 		for _, r := range bodyRoutes() {
 			route := r.Method + " " + r.Path
 			rec, read := send(r, "")
 			Expect(rec.Code).To(BeNumerically(">=", 400), route)
-			if route == http.MethodPost+" /api/v1/nodes/register" {
+			switch route {
+			case http.MethodPost + " /api/v1/nodes/register":
 				Expect(read).To(BeNumerically("<=", 64*1024+1), route)
+				continue
+			case http.MethodPost + " /api/v1/session":
+				Expect(read).To(BeNumerically("<=", 4*1024+1), route)
 				continue
 			}
 			Expect(read).To(BeZero(), route)

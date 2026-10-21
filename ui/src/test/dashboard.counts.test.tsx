@@ -3,7 +3,6 @@ import { render, screen, within } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { Dashboard } from "@/pages/Dashboard";
-import { setToken } from "@/api/client";
 
 const baseNode = {
   groupID: "",
@@ -40,7 +39,6 @@ function json(body: unknown, status = 200) {
 }
 
 beforeEach(() => {
-  setToken("t");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {

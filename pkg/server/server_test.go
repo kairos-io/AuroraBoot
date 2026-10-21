@@ -88,6 +88,10 @@ func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error      
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
+func (f *fakeNodeStore) SetUpgradePending(_ context.Context, _ string) error { return nil }
+func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
 
 type fakeCommandStore struct {
@@ -96,6 +100,9 @@ type fakeCommandStore struct {
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, _ *store.NodeCommand) error { return nil }
+func (f *fakeCommandStore) CreateBatch(_ context.Context, _ []*store.NodeCommand) error {
+	return nil
+}
 func (f *fakeCommandStore) GetByID(_ context.Context, _ string) (*store.NodeCommand, error) {
 	return nil, fmt.Errorf("not found")
 }
@@ -163,6 +170,12 @@ func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadli
 }
 func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }
+func (f *fakeCommandStore) ListByBatch(_ context.Context, _ string) ([]*store.NodeCommand, error) {
+	return nil, nil
+}
+func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, _ string, _ string) (int, error) {
+	return 0, nil
+}
 
 type fakeGroupStore struct{}
 

@@ -3,7 +3,6 @@ import { render, screen, waitFor, fireEvent, act, within } from "@testing-librar
 import { MemoryRouter, useLocation } from "react-router";
 
 import { Nodes } from "@/pages/Nodes";
-import { setToken } from "@/api/client";
 
 function makeNode(id: string, hostname: string, extra: Record<string, unknown> = {}) {
   return {
@@ -77,7 +76,6 @@ async function selectTwo() {
 let m: ReturnType<typeof mockFetch>;
 
 beforeEach(() => {
-  setToken("t");
   m = mockFetch();
   vi.stubGlobal("fetch", m.fn);
 });

@@ -155,14 +155,31 @@ func (d *Deployer) StepGenRawDisk() error {
 			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 		}),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS, d.diskExtensions())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.rawImageParams())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.diskExtensions())))
+		herd.WithCallback(ops.GenBiosRawDisk(d.rawImageParams())))
+}
+
+func (d *Deployer) rawImageParams() ops.RawImageParams {
+	return ops.RawImageParams{
+		Source:                   d.tmpRootFs(),
+		Output:                   d.rawDiskPath(),
+		FinalSize:                d.rawDiskSize(),
+		StateSize:                d.rawDiskStateSize(),
+		RecoveryImageSize:        d.rawDiskRecoveryImageSize(),
+		NoDefaultCloudConfig:     d.Config.NoDefaultCloudConfig,
+		SeparatePartitionsImages: d.Config.Disk.Partitions,
+		MAAS:                     d.Config.Disk.MAAS,
+		BootActive:               d.Config.Disk.BootActive,
+		StateSlots:               d.rawDiskStateSlots(),
+		NoRecovery:               d.Config.Disk.NoRecovery,
+		Extensions:               d.diskExtensions(),
+	}
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -409,6 +426,16 @@ func (d *Deployer) rawDiskStateSize() int64 {
 		return 0
 	}
 	return sizeInt
+}
+
+// rawDiskStateSlots returns disk.state_slots, 0 (the default) when unset or invalid; Validate rejects invalid values first.
+func (d *Deployer) rawDiskStateSlots() int {
+	slots, err := d.Config.Disk.StateSlotsCount()
+	if err != nil {
+		d.Log.Logger.Error().Err(err).Msg("Failed to parse disk state slots, using the default")
+		return 0
+	}
+	return slots
 }
 
 func (d *Deployer) rawDiskRecoveryImageSize() int64 {
