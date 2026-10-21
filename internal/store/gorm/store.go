@@ -289,15 +289,14 @@ func (s *Store) ListBySelector(ctx context.Context, sel store.CommandSelector) (
 }
 
 func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string, remoteIP string) error {
-	var n store.ManagedNode
-	if err := s.db.WithContext(ctx).First(&n, "id = ?", id).Error; err != nil {
-		return err
-	}
 	now := time.Now()
-	n.LastHeartbeat = &now
-	n.AgentVersion = agentVersion
-	n.OSRelease = osRelease
-	n.Phase = store.PhaseOnline
+	n := store.ManagedNode{
+		LastHeartbeat: &now,
+		AgentVersion:  agentVersion,
+		OSRelease:     osRelease,
+		Phase:         store.PhaseOnline,
+	}
+	columns := []string{"last_heartbeat", "agent_version", "os_release", "phase"}
 	// Addresses and boot state are only updated when the heartbeat actually
 	// carries them: an older agent (or the WebSocket heartbeat path, which does
 	// not collect them) omits the fields, and must not clobber values a node
@@ -305,9 +304,11 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	// change — sends the full current list, which replaces the stored one.
 	if addresses != nil {
 		n.Addresses = addresses
+		columns = append(columns, "addresses")
 	}
 	if bootState != "" {
 		n.BootState = bootState
+		columns = append(columns, "boot_state")
 	}
 	// The hostname a node registered with is the one it had at registration time,
 	// which for a templated hostname (hostname: kairos-{{ trunc 4 .MachineID }})
@@ -318,14 +319,37 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	// not report a hostname must not blank the one already on record.
 	if hostname != "" {
 		n.Hostname = hostname
+		columns = append(columns, "hostname")
 	}
 	// Same non-empty guard: a caller that cannot resolve a remote IP (a unit test,
 	// or a future transport that does not expose one) must not blank a value a
 	// prior heartbeat recorded.
 	if remoteIP != "" {
 		n.RemoteIP = remoteIP
+		columns = append(columns, "remote_ip")
 	}
-	return s.db.WithContext(ctx).Save(&n).Error
+	return s.updateNodeColumns(ctx, id, &n, columns...)
+}
+
+// updateNodeColumns writes only the given columns of node id, taking their
+// values from n. Writing the whole row back would also write every column the
+// caller did not mean to change, as it was when the caller read it, over a
+// lifecycle transition or group change another request committed meanwhile.
+// The update goes through the model so the JSON serializers of OSRelease,
+// Labels and Addresses apply. A node that does not exist is reported as
+// gorm.ErrRecordNotFound.
+func (s *Store) updateNodeColumns(ctx context.Context, id string, n *store.ManagedNode, columns ...string) error {
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ?", id).
+		Select(columns).
+		Updates(n)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (s *Store) UpdatePhase(ctx context.Context, id string, phase string) error {
@@ -337,12 +361,7 @@ func (s *Store) SetGroup(ctx context.Context, nodeID string, groupID *string) er
 }
 
 func (s *Store) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {
-	var n store.ManagedNode
-	if err := s.db.WithContext(ctx).First(&n, "id = ?", nodeID).Error; err != nil {
-		return err
-	}
-	n.Labels = labels
-	return s.db.WithContext(ctx).Save(&n).Error
+	return s.updateNodeColumns(ctx, nodeID, &store.ManagedNode{Labels: labels}, "labels")
 }
 
 func (s *Store) NodeDelete(ctx context.Context, id string) error {
