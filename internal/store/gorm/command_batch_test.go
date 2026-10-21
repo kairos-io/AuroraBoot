@@ -6,6 +6,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gorm.io/gorm"
 
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -13,8 +14,9 @@ import (
 
 var _ = Describe("Gorm Store command batches", func() {
 	var (
-		s   *gormstore.Store
-		ctx context.Context
+		s      *gormstore.Store
+		ctx    context.Context
+		dbPath string
 	)
 
 	// queue inserts one command and returns the id the store minted for it.
@@ -45,7 +47,8 @@ var _ = Describe("Gorm Store command batches", func() {
 
 	BeforeEach(func() {
 		var err error
-		s, err = gormstore.New(filepath.Join(GinkgoT().TempDir(), "batch.db"))
+		dbPath = filepath.Join(GinkgoT().TempDir(), "batch.db")
+		s, err = gormstore.New(dbPath)
 		Expect(err).NotTo(HaveOccurred())
 		ctx = context.Background()
 	})
@@ -367,6 +370,47 @@ var _ = Describe("Gorm Store command batches", func() {
 			got := node(n2.ID)
 			Expect(got.ResetState).To(Equal(store.ResetStateInProgress))
 			Expect(got.ResetRequestedAt).NotTo(BeNil())
+		})
+
+		// Agents claim commands and report status on their own connections
+		// while a fail-fast batch is being canceled. Under WAL a transaction
+		// that reads first works from a snapshot, and once another connection
+		// commits, its first write fails with SQLITE_BUSY_SNAPSHOT without
+		// waiting on busy_timeout. The spec commits such a write from a second
+		// store on the same file as soon as the cancel runs any query against
+		// the database; the cancel has to succeed and cancel every Pending row of the batch.
+		It("cancels the batch while another connection commits a write", func() {
+			n1, n2, n3 := register("m1"), register("m2"), register("m3")
+			ids := publish("batch-a", store.CmdUpgrade, n1, n2)
+			unrelated := publish("batch-b", store.CmdUpgrade, n3)
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			agent, err := gormstore.New(dbPath)
+			Expect(err).NotTo(HaveOccurred())
+			defer func() { Expect(agent.Close()).To(Succeed()) }()
+
+			armed := false
+			var agentErr error
+			Expect(s.UnsafeDB().Callback().Query().After("gorm:query").
+				Register("test:concurrent_agent_write", func(db *gorm.DB) {
+					// GORM renders a subquery by running the query
+					// callbacks in DryRun mode; that never reaches the
+					// database, so it holds no snapshot.
+					if !armed || db.DryRun {
+						return
+					}
+					armed = false
+					agentErr = agent.UpdateStatus(ctx, unrelated[0], store.CommandRunning, "")
+				})).To(Succeed())
+
+			armed = true
+			n, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			armed = false
+			Expect(agentErr).NotTo(HaveOccurred())
+			Expect(err).NotTo(HaveOccurred())
+			Expect(n).To(Equal(1))
+			Expect(phaseOf(ids[1])).To(Equal(store.CommandCanceled))
+			Expect(node(n2.ID).UpgradeState).To(BeEmpty())
 		})
 
 		It("leaves the delivered rows of the batch and their nodes alone", func() {

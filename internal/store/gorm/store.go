@@ -703,49 +703,42 @@ func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeC
 // and will report its own result; a cancel that lands first leaves no Pending
 // row for the claim's compare-and-set, so it is never pushed.
 //
+// The UPDATE is the first statement of the transaction and returns the rows it
+// changed. Under SQLite WAL a transaction that reads first holds a snapshot,
+// and if an agent commits a claim or a status report on another connection
+// before the transaction writes, the write fails at once with "database is
+// locked" (SQLITE_BUSY_SNAPSHOT) and busy_timeout does not retry it. Writing
+// first takes the write lock up front, so a concurrent writer only makes the
+// statement wait.
+//
 // A canceled reset or upgrade never runs, so nothing would ever resolve the
 // pending state CreateBatch set for it, and the node's next unrelated active
-// boot would report the operation done. The state is cleared only while it is
-// still pending and the node has no other command of the same kind in
-// Pending, Delivered or Running: such a command owns the state, including a
-// row of this batch that a claim moved to Delivered between the SELECT and the
-// cancel. A reset that is in-progress has already rebooted the node and is
-// left alone. Everything runs in one transaction so the rows and the node
-// state never disagree.
+// boot would report the operation done. clearPendingLifecycle clears that
+// state for the nodes of the canceled rows unless something else still owns
+// it. Everything runs in one transaction so the rows and the node state never
+// disagree.
 func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
 	if batchID == "" {
 		return 0, nil
 	}
-	canceled := 0
+	var canceled []store.NodeCommand
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var pending []*store.NodeCommand
-		if err := tx.Select("id", "managed_node_id", "command").
-			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
-			Find(&pending).Error; err != nil {
-			return err
-		}
-		if len(pending) == 0 {
-			return nil
-		}
-		ids := make([]string, 0, len(pending))
-		for _, cmd := range pending {
-			ids = append(ids, cmd.ID)
-		}
 		now := time.Now()
-		res := tx.Model(&store.NodeCommand{}).
-			Where("id IN ? AND phase = ?", ids, store.CommandPending).
+		if err := tx.Model(&canceled).
+			Clauses(clause.Returning{Columns: []clause.Column{
+				{Name: "id"}, {Name: "managed_node_id"}, {Name: "command"},
+			}}).
+			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
 			Updates(map[string]any{
 				"phase":        store.CommandCanceled,
 				"result":       reason,
 				"completed_at": &now,
-			})
-		if res.Error != nil {
-			return res.Error
+			}).Error; err != nil {
+			return err
 		}
-		canceled = int(res.RowsAffected)
 
 		var resetNodes, upgradeNodes []string
-		for _, cmd := range pending {
+		for _, cmd := range canceled {
 			switch cmd.Command {
 			case store.CmdReset:
 				resetNodes = append(resetNodes, cmd.ManagedNodeID)
@@ -763,7 +756,7 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 	if err != nil {
 		return 0, err
 	}
-	return canceled, nil
+	return len(canceled), nil
 }
 
 // clearPendingLifecycle resets stateColumn and requestedColumn on the nodes in
