@@ -733,6 +733,7 @@ definitions:
         $ref: '#/definitions/store.NodeGroup'
       groupID:
         type: string
+        x-nullable: true
       hostname:
         type: string
       id:

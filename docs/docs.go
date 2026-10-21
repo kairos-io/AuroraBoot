@@ -3084,7 +3084,8 @@ const docTemplate = `{
                     "$ref": "#/definitions/store.NodeGroup"
                 },
                 "groupID": {
-                    "type": "string"
+                    "type": "string",
+                    "x-nullable": true
                 },
                 "hostname": {
                     "type": "string"

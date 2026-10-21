@@ -51,7 +51,7 @@ type ManagedNode struct {
 	ID            string            `json:"id" gorm:"primaryKey"`
 	MachineID     string            `json:"machineID" gorm:"uniqueIndex"`
 	Hostname      string            `json:"hostname"`
-	GroupID       *string           `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1"`
+	GroupID       *string           `json:"groupID" gorm:"index;index:idx_node_group_claim,unique,priority:1" extensions:"x-nullable"`
 	Group         *NodeGroup        `json:"group,omitempty" gorm:"foreignKey:GroupID;constraint:OnDelete:SET NULL"`
 	Phase         string            `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat"`
