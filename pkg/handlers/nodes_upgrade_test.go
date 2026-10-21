@@ -76,7 +76,9 @@ var _ = Describe("Upgrade lifecycle", func() {
 				{ID: "node-1", GroupID: "grp-1"},
 				{ID: "node-2", GroupID: "grp-1"},
 			}
-			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{}, ns, nil, nil, nil)
+			// A fan-out marks the lifecycle through CreateBatch, so the fake
+			// command store has to reach the node store the specs read back.
+			cmdHandler = handlers.NewCommandHandler(&fakeCommandStore{nodes: ns}, ns, nil, nil, nil)
 		})
 
 		expectAllPending := func() {

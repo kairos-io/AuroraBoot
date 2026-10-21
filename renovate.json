@@ -66,6 +66,16 @@
       "matchUpdateTypes": [
         "major"
       ]
+    },
+    {
+      "description": "openSUSE Leap 42.x is the EOL 2017 line, older than 15.x and 16.x, but Renovate reads 42 as the newest version. Keep it out. See #923.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "opensuse/leap"
+      ],
+      "allowedVersions": "<42"
     }
   ],
   "customManagers": [

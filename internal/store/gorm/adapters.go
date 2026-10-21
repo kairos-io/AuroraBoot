@@ -74,6 +74,9 @@ type CommandStoreAdapter struct{ S *Store }
 func (a *CommandStoreAdapter) Create(ctx context.Context, cmd *store.NodeCommand) error {
 	return a.S.CommandCreate(ctx, cmd)
 }
+func (a *CommandStoreAdapter) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	return a.S.CreateBatch(ctx, cmds)
+}
 func (a *CommandStoreAdapter) GetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
 	return a.S.CommandGetByID(ctx, id)
 }
@@ -97,6 +100,13 @@ func (a *CommandStoreAdapter) ListByNode(ctx context.Context, nodeID string) ([]
 }
 func (a *CommandStoreAdapter) ExpireBefore(ctx context.Context, nodeID string, deadline time.Time) error {
 	return a.S.CommandExpireBefore(ctx, nodeID, deadline)
+}
+
+func (a *CommandStoreAdapter) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
+	return a.S.ListByBatch(ctx, batchID)
+}
+func (a *CommandStoreAdapter) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
+	return a.S.CancelPendingInBatch(ctx, batchID, reason)
 }
 func (a *CommandStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.CommandDelete(ctx, id)

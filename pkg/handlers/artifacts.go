@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/rand"
@@ -26,6 +27,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/sync/singleflight"
 	"gopkg.in/yaml.v3"
 )
 
@@ -70,6 +72,10 @@ type ArtifactHandler struct {
 	aurorabootURL  string
 	artifactsDir   string
 	linkSigner     *auth.LinkSigner
+	// exportImage writes the image tar that ExportImage caches and serves.
+	exportImage func(ctx context.Context, id, containerImage string, w io.Writer) error
+	// imageExports runs one export build per artifact ID at a time.
+	imageExports singleflight.Group
 }
 
 // NewArtifactHandler creates a new ArtifactHandler. The builder is wrapped so
@@ -95,6 +101,7 @@ func NewArtifactHandler(
 		regToken:       regToken,
 		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
+		exportImage:    dockerFlattenExport,
 	}
 }
 
@@ -1094,25 +1101,27 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		fmt.Fprintf(os.Stderr, "delete: builder.Cancel(%q) failed: %v\n", id, cancelErr)
 	}
 
-	// Remove build output directory.
-	outputDir := filepath.Join(h.artifactsDir, id)
-	os.RemoveAll(outputDir)
-
 	if records, err := h.store.List(ctx); err == nil {
 		h.removeOverlay(records, rec.OverlayID, func(r *store.ArtifactRecord) bool { return r.ID == id })
 	} else {
 		fmt.Fprintf(os.Stderr, "delete: keeping overlay %q, cannot list artifacts: %v\n", rec.OverlayID, err)
 	}
 
-	// Remove Docker image.
+	// Remove Docker images, including leftovers of a crashed image export.
 	if rec.ContainerImage != "" {
 		exec.Command("docker", "rmi", "-f", rec.ContainerImage).Run()
 	}
+	removeExportLeftovers(id)
 
 	// Delete DB record.
 	if err := h.store.Delete(ctx, id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
 	}
+
+	// Remove the build output directory after the record, so an image export
+	// still running for this artifact either finds the record gone before it
+	// publishes its tar or has the tar removed here.
+	os.RemoveAll(filepath.Join(h.artifactsDir, id))
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -1375,8 +1384,9 @@ func extractOverlayTarGz(r io.Reader, destDir string) error {
 }
 
 // ExportImage handles GET /api/v1/artifacts/:id/image.
-// Flattens multi-layer images via docker export + import + save to avoid
-// symlink ordering issues across OCI layers (e.g. /boot/vmlinuz).
+// The flattened image tar is built once per artifact, cached under the
+// artifact's directory and served from there, so a fleet upgrading at once
+// shares one docker pipeline run.
 func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
@@ -1389,47 +1399,195 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "no container image"})
 	}
 
-	// Flatten the image to a single layer to avoid symlink ordering issues.
-	// Multi-layer OCI images can have conflicting symlinks across layers
-	// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer).
-	// Pipeline: docker create → docker export (flat tar) → docker import (single-layer image) → docker save (OCI tar)
-	flatImage := fmt.Sprintf("auroraboot-flat:%s", id)
-	cid := fmt.Sprintf("auroraboot-export-%s", id)
-
-	// Create container and export flat tar, pipe into docker import
-	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, rec.ContainerImage, "true")
-	if err := createCmd.Run(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("creating container for export: %v", err)})
+	path := filepath.Join(h.artifactsDir, id, "image-export", "image.tar")
+	if err := h.ensureImageExport(ctx, id, rec.ContainerImage, path); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("exporting artifact image: %v", err)})
 	}
-	defer exec.Command("docker", "rm", cid).Run()
 
-	// Export flat tar and import as single-layer image
-	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
-	importCmd := exec.CommandContext(ctx, "docker", "import", "-", flatImage)
-	importCmd.Stdin, err = exportCmd.StdoutPipe()
+	f, err := os.Open(path)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "pipe setup failed"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("opening artifact image: %v", err)})
 	}
-
-	if err := importCmd.Start(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "docker import start failed"})
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("opening artifact image: %v", err)})
 	}
-	if err := exportCmd.Run(); err != nil {
-		importCmd.Process.Kill()
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker export failed: %v", err)})
-	}
-	if err := importCmd.Wait(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker import failed: %v", err)})
-	}
-	defer exec.Command("docker", "rmi", flatImage).Run()
-
 	c.Response().Header().Set("Content-Type", "application/octet-stream")
 	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", id))
+	http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), f)
+	return nil
+}
 
-	// Save the single-layer image as proper OCI tar
-	cmd := exec.CommandContext(ctx, "docker", "save", flatImage)
-	cmd.Stdout = c.Response().Writer
-	return cmd.Run()
+// imageExportTimeout bounds one export build. The build is detached from the
+// requests waiting on it, so without a bound a hung docker command would keep
+// every later request for the artifact waiting.
+const imageExportTimeout = time.Hour
+
+// ensureImageExport makes sure path holds the exported image tar of the
+// artifact. Concurrent callers for one artifact share a single build. The
+// build runs detached from the request so a client that hangs up does not
+// cancel it for everyone else waiting on it.
+func (h *ArtifactHandler) ensureImageExport(ctx context.Context, id, containerImage, path string) error {
+	if _, err := os.Stat(path); err == nil {
+		return nil
+	}
+	buildCtx := context.WithoutCancel(ctx)
+	ch := h.imageExports.DoChan(id, func() (any, error) {
+		// A previous flight may have finished between the check above and here.
+		if _, err := os.Stat(path); err == nil {
+			return nil, nil
+		}
+		buildCtx, cancel := context.WithTimeout(buildCtx, imageExportTimeout)
+		defer cancel()
+		return nil, h.buildImageExport(buildCtx, id, containerImage, path)
+	})
+	select {
+	case res := <-ch:
+		return res.Err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// buildImageExport writes the image tar to a temp file next to path and
+// renames it into place, so path only ever holds a complete tar. Recreating
+// the directory first clears temp files of a build that crashed.
+func (h *ArtifactHandler) buildImageExport(ctx context.Context, id, containerImage, path string) error {
+	dir := filepath.Dir(path)
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("clearing export directory: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating export directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, "image-*.tar.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if err := h.exportImage(ctx, id, containerImage, tmp); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("syncing temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if _, err := h.store.GetByID(ctx, id); err != nil {
+		// The artifact may have been deleted while the build ran, after Delete
+		// removed its directory and this build recreated it. Remove only what
+		// the build owns, and the artifact directory only once it is empty, so
+		// a transient store error cannot take the build outputs with it.
+		_ = os.RemoveAll(dir)
+		_ = os.Remove(filepath.Dir(dir))
+		return fmt.Errorf("looking up artifact before publishing its export: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("renaming temp file: %w", err)
+	}
+	return nil
+}
+
+// exportDockerNames returns the container and image names the export of an
+// artifact uses. They are fixed per artifact so a crashed export's leftovers
+// can be found and removed.
+func exportDockerNames(id string) (container, flatImage string) {
+	return "auroraboot-export-" + id, "auroraboot-flat:" + id
+}
+
+// dockerCleanupTimeout bounds each docker cleanup command, so a hung daemon
+// cannot hold an export build past its own deadline.
+var dockerCleanupTimeout = time.Minute
+
+// removeExportLeftovers removes, best effort, the container and image an
+// export of the artifact creates.
+func removeExportLeftovers(id string) {
+	cid, flatImage := exportDockerNames(id)
+	dockerCleanup("rm", "-f", cid)
+	dockerCleanup("rmi", "-f", flatImage)
+}
+
+// dockerCleanup runs a best-effort docker cleanup command. It takes no context
+// so cleanup still runs after a cancelled build, and is bounded on its own.
+func dockerCleanup(args ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCleanupTimeout)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "docker", args...).Run()
+}
+
+// dockerFlattenExport writes containerImage to w as a docker save tar of a
+// single-layer image.
+// Multi-layer OCI images can have conflicting symlinks across layers
+// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer), so the
+// image is flattened first.
+// Pipeline: docker create -> docker export (flat tar) -> docker import (single-layer image) -> docker save (OCI tar)
+func dockerFlattenExport(ctx context.Context, id, containerImage string, w io.Writer) error {
+	cid, flatImage := exportDockerNames(id)
+	removeExportLeftovers(id)
+
+	var createErr bytes.Buffer
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, containerImage, "true")
+	createCmd.Stderr = &createErr
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("docker create: %w%s", err, stderrTail(createErr.Bytes()))
+	}
+	defer dockerCleanup("rm", "-f", cid)
+
+	var exportErr, importErr bytes.Buffer
+	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
+	exportCmd.Stderr = &exportErr
+	importCmd := exec.CommandContext(ctx, "docker", "import", "-", flatImage)
+	importCmd.Stderr = &importErr
+	stdout, err := exportCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("docker export pipe: %w", err)
+	}
+	importCmd.Stdin = stdout
+	if err := importCmd.Start(); err != nil {
+		return fmt.Errorf("docker import: %w", err)
+	}
+	if err := exportCmd.Run(); err != nil {
+		_ = importCmd.Process.Kill()
+		_ = importCmd.Wait()
+		return fmt.Errorf("docker export: %w%s", err, stderrTail(exportErr.Bytes()))
+	}
+	if err := importCmd.Wait(); err != nil {
+		return fmt.Errorf("docker import: %w%s", err, stderrTail(importErr.Bytes()))
+	}
+	defer dockerCleanup("rmi", "-f", flatImage)
+
+	var saveErr bytes.Buffer
+	saveCmd := exec.CommandContext(ctx, "docker", "save", flatImage)
+	saveCmd.Stdout = w
+	saveCmd.Stderr = &saveErr
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("docker save: %w%s", err, stderrTail(saveErr.Bytes()))
+	}
+	return nil
+}
+
+// stderrTailBytes bounds how much docker stderr an export error carries.
+const stderrTailBytes = 512
+
+// stderrTail formats the end of a command's stderr for appending to its
+// error, so operators see docker's message and not only the exit status.
+func stderrTail(stderr []byte) string {
+	s := strings.TrimSpace(string(stderr))
+	if s == "" {
+		return ""
+	}
+	if len(s) > stderrTailBytes {
+		s = s[len(s)-stderrTailBytes:]
+	}
+	return ": " + s
 }
 
 // cloudConfigParams collects the inputs needed to assemble a node's cloud-config.
