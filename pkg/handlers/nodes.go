@@ -127,6 +127,31 @@ func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode,
 	}
 }
 
+// resolveUpgrade advances a node's upgrade lifecycle when it re-registers after
+// the upgrade reboot. A Register from a node whose UpgradeState is pending means
+// it rebooted; the reported boot state gives the outcome:
+//   - active           → done (the node came back up on the upgraded image),
+//     stamping LastUpgrade
+//   - passive/recovery → failed (the upgraded active image did not boot and the
+//     node fell back)
+//
+// Any other boot state leaves the upgrade pending. Transitions are
+// compare-and-set so concurrent re-registers resolve exactly once. Best-effort:
+// a store error is ignored and the next boot retries. A node not awaiting an
+// upgrade is left untouched.
+func (h *NodeHandler) resolveUpgrade(ctx context.Context, node *store.ManagedNode, bootState string) {
+	if node.UpgradeState != store.UpgradeStatePending {
+		return
+	}
+	inFlight := []string{store.UpgradeStatePending}
+	switch bootState {
+	case store.BootStateActive:
+		_, _ = h.nodes.AdvanceUpgrade(ctx, node.ID, inFlight, store.UpgradeStateDone, true)
+	case store.BootStatePassive, store.BootStateRecovery:
+		_, _ = h.nodes.AdvanceUpgrade(ctx, node.ID, inFlight, store.UpgradeStateFailed, false)
+	}
+}
+
 // registerRequest is the expected body for node registration.
 type registerRequest struct {
 	RegistrationToken string              `json:"registrationToken"`
@@ -149,6 +174,7 @@ type registerRequest struct {
 //	@Success		201		{object}	APIRegisterResponse
 //	@Failure		400		{object}	APIError
 //	@Failure		401		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/register [post]
 func (h *NodeHandler) Register(c echo.Context) error {
 	var req registerRequest
@@ -166,9 +192,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// A re-register is a strong "OS is up" signal too (a freshly-installed node
 		// phones home on first boot): attempt the auto eject-on-phone-home.
 		h.triggerFinalize(existing.ID)
-		// If this node is coming back from a reset reboot, resolve the reset
-		// lifecycle from the reported boot state (kairos-io/kairos#4255).
+		// If this node is coming back from a reset or upgrade reboot, resolve
+		// that lifecycle from the reported boot state (kairos-io/kairos#4255).
 		h.resolveReset(c.Request().Context(), existing, req.BootState)
+		h.resolveUpgrade(c.Request().Context(), existing, req.BootState)
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,
@@ -318,6 +345,7 @@ type decommissionResponse struct {
 //	@Param			nodeID	path		string	true	"Node ID"
 //	@Success		200		{object}	decommissionResponse
 //	@Failure		404		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/decommission [post]
 func (h *NodeHandler) Decommission(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -393,6 +421,7 @@ type setLabelsRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetLabelsRequest	true	"Labels payload"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/labels [put]
 func (h *NodeHandler) SetLabels(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -408,7 +437,8 @@ func (h *NodeHandler) SetLabels(c echo.Context) error {
 
 // setGroupRequest is the expected body for setting a group.
 type setGroupRequest struct {
-	GroupID string `json:"groupID"`
+	// GroupID names the target group; null moves the node out of any group.
+	GroupID *string `json:"groupID"`
 }
 
 // SetGroup handles PUT /api/v1/nodes/:nodeID/group.
@@ -420,12 +450,16 @@ type setGroupRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetGroupRequest	true	"Target group"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/group [put]
 func (h *NodeHandler) SetGroup(c echo.Context) error {
 	nodeID := c.Param("nodeID")
 	var req setGroupRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.GroupID != nil && *req.GroupID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "groupID must name a group, or be null for no group"})
 	}
 	if err := h.nodes.SetGroup(c.Request().Context(), nodeID, req.GroupID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to set group"})
@@ -454,6 +488,7 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 //	@Failure		400		{object}	APIError
 //	@Failure		404		{object}	APIError
 //	@Failure		409		{object}	APIError	"No unclaimed node available (code=NoCapacity)"
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/groups/{id}/claim [post]
 func (h *NodeHandler) Claim(c echo.Context) error {
 	groupID := c.Param("id")
@@ -505,6 +540,7 @@ func (h *NodeHandler) Claim(c echo.Context) error {
 //	@Failure		400		{object}	APIError
 //	@Failure		404		{object}	APIError
 //	@Failure		409		{object}	APIError	"Claimed by a different key (code=ClaimMismatch)"
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/release [post]
 func (h *NodeHandler) Release(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -570,6 +606,7 @@ type heartbeatRequest struct {
 //	@Param			nodeID	path		string					true	"Node ID"
 //	@Param			body	body		APIHeartbeatRequest	true	"Heartbeat payload"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/heartbeat [post]
 func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	nodeID := c.Param("nodeID")

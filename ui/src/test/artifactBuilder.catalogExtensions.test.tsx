@@ -251,7 +251,7 @@ describe("ArtifactBuilder: catalog per flavor", () => {
   }
 
   async function gotoUbuntuExtensionsStep() {
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
       target: { value: "edge" },
     });
@@ -332,7 +332,7 @@ describe("ArtifactBuilder: catalog per flavor", () => {
     // Back to Base, switch to Ubuntu, and forward again.
     fireEvent.click(screen.getByRole("button", { name: /Back/i }));
     fireEvent.click(screen.getByRole("button", { name: /Back/i }));
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
     fireEvent.click(screen.getByRole("button", { name: "Next: Extensions" }));
 
@@ -383,7 +383,7 @@ describe("ArtifactBuilder: the catalog follows the flavor from any step", () => 
     // Extensions step is never opened again, which is what used to leave the
     // Hadron catalog and the Hadron picks on an Ubuntu build.
     fireEvent.click(stepper("Base"));
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.click(stepper("Review"));
 
     fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));
@@ -403,7 +403,7 @@ describe("ArtifactBuilder: the catalog follows the flavor from any step", () => 
     expect(screen.getByLabelText(/Extension catalog URL/i)).toHaveValue(CATALOG_URL);
 
     fireEvent.click(stepper("Base"));
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.click(stepper("Extensions"));
 
     // Ubuntu has one configured catalog, so that one is selected, not the
@@ -429,7 +429,7 @@ describe("ArtifactBuilder: the catalog follows the flavor from any step", () => 
     gotoReviewStep();
 
     fireEvent.click(stepper("Base"));
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.click(stepper("Review"));
 
     fireEvent.click(await screen.findByRole("button", { name: /Start Build/i }));

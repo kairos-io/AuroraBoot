@@ -24,6 +24,20 @@
 //	    AgentVersion: "v2.27.0",
 //	})
 //
+// Builds never reference files on the server by path. Overlay files are
+// uploaded first and then referenced by ID. The ISO of a Trusted Boot
+// build is the signed UKI installer, signed with a key set stored on the
+// server and selected by its ID:
+//
+//	overlayID, err := cli.Artifacts.UploadOverlay(ctx,
+//	    client.OverlayFile{Name: "overlay.tar.gz", Content: archive})
+//	art, err := cli.Artifacts.Create(ctx, client.CreateArtifactRequest{
+//	    BaseImage: baseImage, // e.g. "quay.io/kairos/ubuntu:<tag>"
+//	    OverlayID: overlayID,
+//	    Outputs:   client.ArtifactOutputs{ISO: true, TrustedBoot: true},
+//	    Signing:   client.ArtifactSigning{UKIKeySetID: keySet.ID},
+//	})
+//
 // Every method takes a context.Context so callers control
 // cancellation and timeouts. Errors surfaced by the server (4xx/5xx)
 // are returned as *APIError with the parsed error body and raw HTTP

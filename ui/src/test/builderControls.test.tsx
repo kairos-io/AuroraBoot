@@ -134,7 +134,7 @@ function renderBuilder() {
 
 async function goToAccess() {
   renderBuilder();
-  fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+  fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
   fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), { target: { value: "edge" } });
   fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
   fireEvent.click(screen.getByRole("button", { name: "Next: Extensions" }));
@@ -144,7 +144,7 @@ async function goToAccess() {
 describe("ArtifactBuilder controls", () => {
   it("uses segmented controls for architecture and variant", async () => {
     renderBuilder();
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), { target: { value: "edge" } });
     fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
     expect(screen.getByRole("radiogroup", { name: "Architecture" })).toBeInTheDocument();

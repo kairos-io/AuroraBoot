@@ -3,6 +3,7 @@ package auth_test
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -64,7 +65,7 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _
 	return nil
 }
 func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error    { return nil }
+func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ *string) error   { return nil }
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
@@ -72,8 +73,10 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, _, _ string) (*store.Manage
 	return nil, store.ErrNoClaimCapacity
 }
 func (f *fakeNodeStore) ReleaseNode(_ context.Context, _, _ string) (bool, error) { return false, nil }
-func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error        { return nil }
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
@@ -86,7 +89,7 @@ var _ = Describe("AdminMiddleware", func() {
 
 	BeforeEach(func() {
 		e = echo.New()
-		middleware = auth.AdminMiddleware("secret-password")
+		middleware = auth.AdminMiddleware(auth.NewAdminAuth("secret-password", auth.NewSessionStore(), ""))
 	})
 
 	It("should allow requests with valid Bearer token", func() {
@@ -307,5 +310,55 @@ var _ = Describe("RegistrationTokenAuth", func() {
 		err := handler(c)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+
+	// paddedBody is a registration body carrying the valid token, padded to
+	// size bytes so only its size can make it fail.
+	paddedBody := func(size int) string {
+		prefix := `{"registrationToken":"reg-token-123","hostname":"`
+		suffix := `"}`
+		return prefix + strings.Repeat("h", size-len(prefix)-len(suffix)) + suffix
+	}
+
+	DescribeTable("refuses a body over 64 KiB with 413 without calling the next handler",
+		func(contentLength func(body string) int64) {
+			body := paddedBody(64*1024 + 1)
+			req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+			req.ContentLength = contentLength(body)
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			called := false
+			handler := middleware(func(c echo.Context) error {
+				called = true
+				return c.String(http.StatusOK, "ok")
+			})
+			Expect(handler(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusRequestEntityTooLarge))
+			Expect(rec.Body.String()).To(ContainSubstring(`"error"`))
+			Expect(called).To(BeFalse())
+		},
+		Entry("with a declared Content-Length", func(body string) int64 { return int64(len(body)) }),
+		Entry("with a body of unknown length", func(string) int64 { return -1 }),
+	)
+
+	It("authenticates a body of exactly 64 KiB and hands it on intact", func() {
+		body := paddedBody(64 * 1024)
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+
+		var seen []byte
+		handler := middleware(func(c echo.Context) error {
+			var err error
+			seen, err = io.ReadAll(c.Request().Body)
+			Expect(err).NotTo(HaveOccurred())
+			return c.String(http.StatusOK, "ok")
+		})
+		Expect(handler(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(string(seen)).To(Equal(body))
 	})
 })

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -56,9 +57,20 @@ type commandStatusData struct {
 	Result string `json:"result,omitempty"`
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+// newUpgrader returns an upgrader that refuses a browser upgrade from another
+// origin. Without it a page on any site could open the UI socket with the
+// admin's session cookie and read every event.
+func newUpgrader(publicURL string) *websocket.Upgrader {
+	return &websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return auth.OriginAllowed(r, publicURL) },
+	}
 }
+
+// maxMessageBytes caps one incoming WebSocket message on the agent and UI
+// connections: agent messages are small JSON envelopes and the UI sends next
+// to nothing, so 4 MiB is generous. A larger message makes gorilla close the
+// connection with 1009 (message too big) and fail the pending read.
+const maxMessageBytes = 4 * 1024 * 1024
 
 // finalizeTimeout bounds one auto eject-on-phone-home attempt fired from a WS
 // heartbeat, mirroring the REST handlers' budget (pkg/handlers/finalize.go).
@@ -93,6 +105,10 @@ type AgentHandler struct {
 	Hub      *Hub
 	Nodes    store.NodeStore
 	Commands store.CommandStore
+
+	// PublicURL is the server's public URL (--url); an upgrade whose Origin
+	// names it is accepted even when a proxy rewrote Host.
+	PublicURL string
 
 	// Finalize, when set, is the auto eject-on-phone-home hook (the same
 	// MaybeFinalizeForNode wired into the REST Register/Heartbeat handlers). A WS
@@ -139,9 +155,13 @@ func (h *AgentHandler) triggerFinalize(nodeID string) {
 	}()
 }
 
-// HandleAgentWS handles GET /api/v1/ws?token=<apiKey>.
+// HandleAgentWS handles GET /api/v1/ws. The node key is read from the
+// Authorization header, or from ?token= for agents that send it there.
 func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
-	token := c.QueryParam("token")
+	token := auth.BearerToken(c)
+	if token == "" {
+		token = c.QueryParam("token")
+	}
 	if token == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing token"})
 	}
@@ -152,11 +172,12 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
 
-	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := newUpgrader(h.PublicURL).Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	conn.SetReadLimit(maxMessageBytes)
 
 	// Captured once: the connection's remote address does not change over its
 	// life, and the read loop below no longer has c in scope by the time a
@@ -233,6 +254,8 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 			switch {
 			case websocket.IsUnexpectedCloseError(err, websocket.CloseGoingAway, websocket.CloseNormalClosure):
 				log.Printf("ws read error for node %s: %v", node.ID, err)
+			case errors.Is(err, websocket.ErrReadLimit):
+				log.Printf("ws: node %s sent a message over %d bytes, dropping connection", node.ID, maxMessageBytes)
 			case errors.Is(err, os.ErrDeadlineExceeded):
 				// Worth its own line: this is the silent-peer case, and it is
 				// not an abnormal close, so IsUnexpectedCloseError says nothing
@@ -340,6 +363,22 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 		}
 	}
 
+	// A fail-fast batch stops here: this is the path a real agent reports a
+	// failed upgrade on, so the rule has to be applied on it and not only on
+	// the REST status endpoint. The command is re-read so the batch identity
+	// and the fail-fast flag come from the server's own row rather than from
+	// the frame the node sent.
+	if status.Phase == store.CommandFailed {
+		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
+			cmd.Phase = status.Phase
+			if canceled, err := store.CancelBatchAfterFailure(ctx, h.Commands, cmd); err != nil {
+				log.Printf("ws: failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, status.ID, err)
+			} else if canceled > 0 {
+				log.Printf("ws: batch %s stopped after node %s failed; %d pending command(s) canceled", cmd.BatchID, nodeID, canceled)
+			}
+		}
+	}
+
 	if h.Hub != nil && h.Hub.UI != nil {
 		h.Hub.UI.Broadcast(wsMessage{
 			Type: "command_update",
@@ -414,15 +453,20 @@ func (h *AgentHandler) requeue(ctx context.Context, cmdID, nodeID string) {
 // UIHandler handles WebSocket connections from the UI.
 type UIHandler struct {
 	Hub *Hub
+
+	// PublicURL is the server's public URL (--url); an upgrade whose Origin
+	// names it is accepted even when a proxy rewrote Host.
+	PublicURL string
 }
 
 // HandleUIWS handles GET /api/v1/ws/ui.
 func (h *UIHandler) HandleUIWS(c echo.Context) error {
-	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := newUpgrader(h.PublicURL).Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}
 	defer conn.Close()
+	conn.SetReadLimit(maxMessageBytes)
 
 	// Register with UIHub for broadcast support. wc wraps conn with a
 	// per-connection write lock; the ping ticker below writes through it so it

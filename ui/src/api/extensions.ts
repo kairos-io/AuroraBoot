@@ -8,7 +8,6 @@ export interface ExtensionSource {
   baseImage?: string;
   dockerfile?: string;
   extraSteps?: string;
-  buildContextDir?: string;
 }
 
 export interface Extension {
@@ -98,14 +97,11 @@ export function extensionDownloadPath(id: string, filename: string): string {
   return `/api/v1/extensions/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}`;
 }
 
-// extensionDownloadUrl authenticates as the admin via ?token=, for the
-// browser's <a href download> anchor, which cannot set a header. Use it only
-// for links the operator's own browser follows. Anything that travels to a
-// node must use extensionSourceUrl instead: this URL carries the admin
-// password.
+// extensionDownloadUrl is the plain download path for the browser's
+// <a href download> anchor; the session cookie authenticates the request.
+// Anything that travels to a node must use extensionSourceUrl instead.
 export function extensionDownloadUrl(id: string, filename: string): string {
-  const token = localStorage.getItem("auroraboot_token") ?? "";
-  return `${extensionDownloadPath(id, filename)}?token=${encodeURIComponent(token)}`;
+  return extensionDownloadPath(id, filename);
 }
 
 // extensionSourceUrl builds the URL an install command hands to the agent. It

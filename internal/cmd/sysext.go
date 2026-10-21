@@ -192,6 +192,23 @@ func generateSysextConfext(ctx *cli.Context) error {
 		}
 	}
 
+	// A sysext may carry anything under /usr, and --include-path widens that
+	// further, but a Kairos node merges only the hierarchies named in
+	// SYSTEMD_SYSEXT_HIERARCHIES. Files outside them are packed into the image
+	// and then silently never appear, so the only symptom is a missing file on
+	// a build that reported success. Say so while the operator can still act on
+	// it. Confext merges /etc, which the list does not govern.
+	if buildType == "sysext" {
+		if werr := warnUnmergedHierarchies(dir, includes, func(line string) {
+			logger.Logger.Warn().Msg(line)
+		}); werr != nil {
+			// The tree was just extracted into a directory we own, so a walk
+			// failure says something is wrong with it, not with the check.
+			logger.Logger.Error().Str("dir", dir).Err(werr).Msg("⛔ checking extension hierarchies")
+			return werr
+		}
+	}
+
 	// Now create the file that tells systemd that this is a sysext/confext!
 	err = os.MkdirAll(extensionReleaseDir, os.ModeDir|os.ModePerm)
 	if err != nil {

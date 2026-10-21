@@ -93,3 +93,63 @@ var _ = Describe("UKI cmdline", func() {
 		})
 	})
 })
+
+// splashKeyword is the token kairos-splash.service gates on.
+//
+// kairos-init installs and enables that unit on every systemd image,
+// Trusted Boot included, with ConditionKernelCommandLine=splash
+// (kairos-init/pkg/bundled/bundled.go). On a GRUB system the token comes from
+// BootArgsCfg. Trusted Boot does not read that file and its cmdline is in a
+// signed section, so the only place the token can come from is the base
+// cmdline here. Without it the unit is skipped on every boot of every UKI
+// image. kairos-io/kairos#5285.
+const splashKeyword = "splash"
+
+var _ = Describe("UKI cmdline splash", func() {
+	It("puts the splash token on every entry it builds", func() {
+		entries := GetUkiCmdline("", "Kairos", nil, false)
+		entries = append(entries, GetUkiCmdline("extended=1", "Kairos", nil, false)...)
+		entries = append(entries, GetUkiCmdline("", "Kairos", []string{"extra=1"}, false)...)
+		entries = append(entries, GetUkiSingleCmdlines("Kairos", []string{"My Entry: single=1", "bare=1"}, sdkLogger.NewNullLogger())...)
+
+		Expect(entries).ToNot(BeEmpty())
+		for _, entry := range entries {
+			Expect(cmdlineHasKeyword(entry.Cmdline, splashKeyword)).To(BeTrue(),
+				"entry %q must carry %q, got %q", entry.FileName, splashKeyword, entry.Cmdline)
+		}
+	})
+
+	// The token is a whole word, not a substring: ConditionKernelCommandLine
+	// matches an argument, so "nosplash" or "splash=0" would not satisfy it.
+	It("carries the token as its own argument", func() {
+		Expect(strings.Fields(constants.UkiCmdline)).To(ContainElement(splashKeyword))
+	})
+
+	// Adding a token to the base cmdline must not rename any artifact.
+	// nameFromCmdline names an entry after what it adds to the base, so the
+	// default entry stays norole.efi and an extra entry stays named after its
+	// own addition. A rename here would break every tool that knows those
+	// names, and would silently change what the installer copies.
+	It("leaves the entry file names alone", func() {
+		entries := GetUkiCmdline("", "Kairos", []string{"extra=1", "rd.immucore.debug"}, false)
+
+		names := []string{}
+		for _, entry := range entries {
+			names = append(names, entry.FileName)
+		}
+		Expect(names).To(ConsistOf(
+			constants.ArtifactBaseName,
+			constants.ArtifactBaseName+"_extra_1",
+			constants.ArtifactBaseName+"_rd.immucore.debug",
+		))
+	})
+
+	// install.selinux rewrites the base cmdline in place before the entries
+	// are built, so the token has to survive that rewrite too.
+	It("keeps the token when selinux is spliced into the base cmdline", func() {
+		patched, err := spliceSelinuxCmdline(constants.UkiCmdline, true, "enforcing")
+		Expect(err).ToNot(HaveOccurred())
+		Expect(patched).ToNot(Equal(constants.UkiCmdline))
+		Expect(strings.Fields(patched)).To(ContainElement(splashKeyword))
+	})
+})

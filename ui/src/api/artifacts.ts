@@ -1,4 +1,4 @@
-import { apiFetch, apiFetchText } from "./client";
+import { apiErrorFrom, apiFetch, apiFetchText } from "./client";
 
 /** Discriminates the build pipeline. Empty and "kairos" are the classic path. */
 export type ArtifactKind = "" | "kairos";
@@ -45,6 +45,9 @@ export interface Artifact {
   kubernetesVersion?: string;
   kubernetesEnabled?: boolean;
   targetGroupId?: string;
+  // Uploaded overlay the artifact was built with, as returned by
+  // uploadOverlayFiles.
+  overlayId?: string;
   containerImage?: string;
   artifacts: string[];
   // Hierarchies the operator declared at build time. Used by the extension
@@ -71,10 +74,6 @@ export interface CreateArtifactOutputs {
 
 export interface CreateArtifactSigning {
   ukiKeySetId: string;
-  ukiSecureBootKey: string;
-  ukiSecureBootCert: string;
-  ukiTpmPcrKey: string;
-  ukiPublicKeysDir: string;
   ukiSecureBootEnroll: string;
 }
 
@@ -119,7 +118,9 @@ export interface CreateArtifactInput {
   // out means the server resolves them against its default catalog.
   extensions?: string[];
   extensionsCatalogs?: string[];
-  overlayRootfs?: string;
+  // ID returned by uploadOverlayFiles; the server copies that overlay on top
+  // of the built rootfs.
+  overlayId?: string;
   kairosInitImage?: string;
   outputs: CreateArtifactOutputs;
   signing: CreateArtifactSigning;
@@ -142,8 +143,7 @@ export interface CreateArtifactInput {
 export interface SecureBootKeySet {
   id: string;
   name: string;
-  keysDir: string;
-  tpmPcrKeyPath: string;
+  hasTpmPcrKey: boolean;
   secureBootEnroll: string;
   createdAt: string;
 }
@@ -168,10 +168,7 @@ export function deleteSecureBootKeySet(id: string): Promise<void> {
 // exportSecureBootKeySet fetches the tar.gz export for a key set as a Blob.
 // Uses raw fetch so we can surface a binary body; apiFetch assumes JSON.
 export async function exportSecureBootKeySet(id: string): Promise<{ blob: Blob; filename: string }> {
-  const token = localStorage.getItem("auroraboot_token");
-  const res = await fetch(`/api/v1/secureboot-keys/${id}/export`, {
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
-  });
+  const res = await fetch(`/api/v1/secureboot-keys/${id}/export`);
   if (!res.ok) {
     throw new Error(`API error ${res.status}: ${await res.text()}`);
   }
@@ -186,13 +183,11 @@ export async function exportSecureBootKeySet(id: string): Promise<{ blob: Blob; 
 // from the archive's manifest (useful when importing into an instance that
 // already has a key set with the same name).
 export async function importSecureBootKeySet(file: File, name?: string): Promise<SecureBootKeySet> {
-  const token = localStorage.getItem("auroraboot_token");
   const fd = new FormData();
   fd.append("file", file);
   const qs = name ? `?name=${encodeURIComponent(name)}` : "";
   const res = await fetch(`/api/v1/secureboot-keys/import${qs}`, {
     method: "POST",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
     body: fd,
   });
   if (!res.ok) {
@@ -228,8 +223,25 @@ export function cancelArtifact(id: string): Promise<void> {
 }
 
 export function artifactDownloadUrl(id: string, filename: string): string {
-  const token = localStorage.getItem("auroraboot_token") || "";
-  return `/api/v1/artifacts/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}?token=${encodeURIComponent(token)}`;
+  return `/api/v1/artifacts/${encodeURIComponent(id)}/download/${encodeURIComponent(filename)}`;
+}
+
+export function artifactImageUrl(id: string): string {
+  return `/api/v1/artifacts/${encodeURIComponent(id)}/image`;
+}
+
+export interface DownloadLink {
+  path: string;
+  expiresAt: string;
+}
+
+// createDownloadLink asks for a link to one file that works without signing in
+// for one hour, for pasting into a shell or a ticket.
+export function createDownloadLink(id: string, filename: string): Promise<DownloadLink> {
+  return apiFetch<DownloadLink>(`/api/v1/artifacts/${encodeURIComponent(id)}/download-link`, {
+    method: "POST",
+    body: JSON.stringify({ filename }),
+  });
 }
 
 export function updateArtifact(
@@ -250,20 +262,21 @@ export function clearFailedArtifacts(): Promise<void> {
   return apiFetch("/api/v1/artifacts/failed", { method: "DELETE" });
 }
 
+// Stores the files as a rootfs overlay on the server and returns its ID, to
+// be sent as CreateArtifactInput.overlayId.
 export async function uploadOverlayFiles(files: FileList | File[]): Promise<string> {
   const formData = new FormData();
   for (const file of Array.from(files)) {
     formData.append("files", file);
   }
-  const token = localStorage.getItem("auroraboot_token") || "";
   const res = await fetch("/api/v1/artifacts/upload-overlay", {
     method: "POST",
-    headers: { Authorization: `Bearer ${token}` },
     body: formData,
   });
-  if (!res.ok) throw new Error("Upload failed");
+  if (!res.ok) throw await apiErrorFrom(res);
   const data = await res.json();
-  return data.path;
+  if (typeof data?.id !== "string" || !data.id) throw new Error("Upload returned no overlay ID");
+  return data.id;
 }
 
 export interface ResolvedBundleEntry {
@@ -279,5 +292,28 @@ export function resolveBundle(artifactId: string): Promise<ResolvedBundleEntry[]
   return apiFetch<ResolvedBundleEntry[]>(
     `/api/v1/artifacts/${artifactId}/bundle-resolve`,
     { method: "POST" },
+  );
+}
+
+// BundleExtensionEntry is a stored bundle row, as the server keeps it. The
+// bundle lives in its own table and is not part of the artifact response, so
+// reading it back is a second request.
+export interface BundleExtensionEntry {
+  artifactId: string;
+  extensionName: string;
+  extensionType: string;
+  pinnedVersion?: string;
+  order: number;
+}
+
+// listBundleExtensions returns the raw bundle rows for an artifact. Unlike
+// resolveBundle, which resolves each entry to a concrete version for the
+// agent, this is the stored selection, which is what the builder needs to put
+// an existing bundle back in front of the operator.
+export function listBundleExtensions(
+  artifactId: string,
+): Promise<BundleExtensionEntry[]> {
+  return apiFetch<BundleExtensionEntry[]>(
+    `/api/v1/artifacts/${artifactId}/bundle-extensions`,
   );
 }

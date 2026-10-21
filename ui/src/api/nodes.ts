@@ -4,7 +4,8 @@ export interface Node {
   id: string;
   hostname: string;
   machineID: string;
-  groupID: string;
+  // null for a node outside any group.
+  groupID: string | null;
   group?: { id: string; name: string };
   labels: Record<string, string>;
   phase: string;
@@ -21,6 +22,8 @@ export interface Node {
   bootState?: string;
   resetState?: string;
   lastReset?: string | null;
+  upgradeState?: string;
+  lastUpgrade?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -88,9 +91,10 @@ export function setLabels(
   });
 }
 
-// setGroup assigns a node to a group. Same contract as setLabels: no node comes
-// back, re-read to see the change.
-export function setGroup(id: string, groupID: string): Promise<void> {
+// setGroup assigns a node to a group, or takes it out of its group when groupID
+// is null. Same contract as setLabels: no node comes back, re-read to see the
+// change.
+export function setGroup(id: string, groupID: string | null): Promise<void> {
   return apiFetch<void>(`/api/v1/nodes/${id}/group`, {
     method: "PUT",
     body: JSON.stringify({ groupID }),

@@ -50,7 +50,7 @@ ui-test: ui-install ## Run the React UI test suite
 # Build Go binary
 build-go: ## Build the Go binary
 	@echo "Building Go binary..."
-	go build -ldflags "-X main.version=v0.0.0" -o auroraboot
+	go build -tags ui -ldflags "-X main.version=v0.0.0" -o auroraboot
 	@echo "Go binary built successfully!"
 
 # Build everything
@@ -128,7 +128,7 @@ helm-chart-template: ## Render the helm chart with example values (for eyeballin
 helm-chart-test: ## Run helm-unittest suites against the AuroraBoot chart
 	@helm plugin list 2>/dev/null | grep -q '^unittest' || { \
 		echo "helm-unittest plugin missing. Install with:"; \
-		echo "  helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.5.2"; \
+		echo "  helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.2.1 --verify=false"; \
 		exit 1; \
 	}
 	helm unittest $(HELM_CHART_DIR)

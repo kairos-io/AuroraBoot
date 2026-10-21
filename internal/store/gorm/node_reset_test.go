@@ -33,9 +33,9 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	AfterEach(func() { Expect(s.Close()).To(Succeed()) })
 
-	It("SetResetPending marks the node pending and stamps the request time", func() {
+	It("issuing a reset marks the node pending and stamps the request time", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		got, err := s.NodeGetByID(ctx, n.ID)
 		Expect(err).NotTo(HaveOccurred())
@@ -46,7 +46,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("advances pending -> in-progress without stamping LastReset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		ok, err := s.AdvanceReset(ctx, n.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
 		Expect(err).NotTo(HaveOccurred())
@@ -59,7 +59,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("advances an in-flight reset -> done and stamps LastReset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		ok, err := s.AdvanceReset(ctx, n.ID,
 			[]string{store.ResetStatePending, store.ResetStateInProgress}, store.ResetStateDone, true)
@@ -73,7 +73,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("advances an in-flight reset -> failed", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		ok, err := s.AdvanceReset(ctx, n.ID,
 			[]string{store.ResetStatePending, store.ResetStateInProgress}, store.ResetStateFailed, false)
@@ -99,7 +99,7 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 
 	It("resolves exactly once under concurrent AdvanceReset", func() {
 		n := register("n1")
-		Expect(s.SetResetPending(ctx, n.ID)).To(Succeed())
+		issueCommand(ctx, s, n.ID, store.CmdReset)
 
 		const workers = 12
 		wins := make(chan bool, workers)

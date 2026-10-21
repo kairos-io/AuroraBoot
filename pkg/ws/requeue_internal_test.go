@@ -101,6 +101,18 @@ func (q *queueStore) ExpireBefore(context.Context, string, time.Time) error {
 	panic("not reached")
 }
 
+// CreateBatch, ListByBatch and CancelPendingInBatch belong to the fan-out
+// path, which never reaches the reconnect replay.
+func (q *queueStore) CreateBatch(context.Context, []*store.NodeCommand) error {
+	panic("not reached")
+}
+func (q *queueStore) ListByBatch(context.Context, string) ([]*store.NodeCommand, error) {
+	panic("not reached")
+}
+func (q *queueStore) CancelPendingInBatch(context.Context, string, string) (int, error) {
+	panic("not reached")
+}
+
 // deadWSConn is a real upgraded connection that has been closed, which is the
 // state the replay can observe for real: the agent reconnects, the handler
 // starts draining its queue, and the socket dies before the write lands.
