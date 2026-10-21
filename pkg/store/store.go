@@ -341,6 +341,10 @@ type CommandStore interface {
 	// moved. Commands that were already claimed for delivery are left alone:
 	// there is no abort message on the wire, so a delivered command cannot be
 	// recalled and has to be allowed to report its own outcome.
+	//
+	// A canceled reset or upgrade never runs, so the pending reset or upgrade
+	// state CreateBatch set on its node is cleared in the same write, unless
+	// the node has another live command of the same kind that owns it.
 	CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error)
 	Delete(ctx context.Context, id string) error
 	// DeleteTerminal removes every command of nodeID that reached a terminal

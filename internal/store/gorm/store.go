@@ -693,30 +693,97 @@ func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeC
 	return cmds, nil
 }
 
-// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled.
+// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled
+// and clears the lifecycle state those commands left pending on their nodes.
 //
-// The WHERE clause carries `phase = Pending` for the same reason
+// The cancel UPDATE carries `phase = Pending` for the same reason
 // ClaimForDelivery does: a command another goroutine is claiming for delivery
 // right now must be won by exactly one of the two. A claim that lands first
 // leaves no Pending row for this UPDATE to match, so the command is delivered
 // and will report its own result; a cancel that lands first leaves no Pending
 // row for the claim's compare-and-set, so it is never pushed.
+//
+// A canceled reset or upgrade never runs, so nothing would ever resolve the
+// pending state CreateBatch set for it, and the node's next unrelated active
+// boot would report the operation done. The state is cleared only while it is
+// still pending and the node has no other command of the same kind in
+// Pending, Delivered or Running: such a command owns the state, including a
+// row of this batch that a claim moved to Delivered between the SELECT and the
+// cancel. A reset that is in-progress has already rebooted the node and is
+// left alone. Everything runs in one transaction so the rows and the node
+// state never disagree.
 func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
 	if batchID == "" {
 		return 0, nil
 	}
-	now := time.Now()
-	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
-		Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
-		Updates(map[string]any{
-			"phase":        store.CommandCanceled,
-			"result":       reason,
-			"completed_at": &now,
-		})
-	if res.Error != nil {
-		return 0, res.Error
+	canceled := 0
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var pending []*store.NodeCommand
+		if err := tx.Select("id", "managed_node_id", "command").
+			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
+			Find(&pending).Error; err != nil {
+			return err
+		}
+		if len(pending) == 0 {
+			return nil
+		}
+		ids := make([]string, 0, len(pending))
+		for _, cmd := range pending {
+			ids = append(ids, cmd.ID)
+		}
+		now := time.Now()
+		res := tx.Model(&store.NodeCommand{}).
+			Where("id IN ? AND phase = ?", ids, store.CommandPending).
+			Updates(map[string]any{
+				"phase":        store.CommandCanceled,
+				"result":       reason,
+				"completed_at": &now,
+			})
+		if res.Error != nil {
+			return res.Error
+		}
+		canceled = int(res.RowsAffected)
+
+		var resetNodes, upgradeNodes []string
+		for _, cmd := range pending {
+			switch cmd.Command {
+			case store.CmdReset:
+				resetNodes = append(resetNodes, cmd.ManagedNodeID)
+			case store.CmdUpgrade:
+				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+			}
+		}
+		if err := clearPendingLifecycle(tx, store.CmdReset, resetNodes,
+			"reset_state", store.ResetStatePending, "reset_requested_at"); err != nil {
+			return err
+		}
+		return clearPendingLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at")
+	})
+	if err != nil {
+		return 0, err
 	}
-	return int(res.RowsAffected), nil
+	return canceled, nil
+}
+
+// clearPendingLifecycle resets stateColumn and requestedColumn on the nodes in
+// nodeIDs whose state is still pendingState and that have no command of the
+// given kind left in Pending, Delivered or Running.
+func clearPendingLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateColumn, pendingState, requestedColumn string) error {
+	if len(nodeIDs) == 0 {
+		return nil
+	}
+	live := tx.Model(&store.NodeCommand{}).Select("1").
+		Where("node_commands.managed_node_id = managed_nodes.id AND node_commands.command = ? AND node_commands.phase IN ?",
+			command, []string{store.CommandPending, store.CommandDelivered, store.CommandRunning})
+	return tx.Model(&store.ManagedNode{}).
+		Where("id IN ?", nodeIDs).
+		Where(stateColumn+" = ?", pendingState).
+		Where("NOT EXISTS (?)", live).
+		Updates(map[string]any{
+			stateColumn:     "",
+			requestedColumn: nil,
+		}).Error
 }
 
 func (s *Store) CommandDelete(ctx context.Context, id string) error {

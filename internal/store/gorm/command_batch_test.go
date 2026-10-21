@@ -243,6 +243,151 @@ var _ = Describe("Gorm Store command batches", func() {
 		})
 	})
 
+	// A canceled command never runs, so the pending lifecycle state its batch
+	// set has nothing left to resolve it. Left in place, the next unrelated
+	// active boot would report the upgrade or reset done.
+	Describe("CancelPendingInBatch lifecycle", func() {
+		register := func(machineID string) *store.ManagedNode {
+			n := &store.ManagedNode{MachineID: machineID}
+			Expect(s.Register(ctx, n)).To(Succeed())
+			return n
+		}
+
+		node := func(id string) *store.ManagedNode {
+			got, err := s.NodeGetByID(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+			return got
+		}
+
+		// publish writes one command per node as a fail-fast batch and returns
+		// the ids in node order.
+		publish := func(batchID, command string, nodes ...*store.ManagedNode) []string {
+			cmds := make([]*store.NodeCommand, 0, len(nodes))
+			ids := make([]string, 0, len(nodes))
+			for _, n := range nodes {
+				cmd := &store.NodeCommand{
+					ManagedNodeID: n.ID,
+					Command:       command,
+					BatchID:       batchID,
+					FailFast:      true,
+				}
+				cmds = append(cmds, cmd)
+			}
+			Expect(s.CreateBatch(ctx, cmds)).To(Succeed())
+			for _, cmd := range cmds {
+				ids = append(ids, cmd.ID)
+			}
+			return ids
+		}
+
+		It("clears the pending upgrade of a canceled target", func() {
+			n1, n2 := register("m1"), register("m2")
+			ids := publish("batch-a", store.CmdUpgrade, n1, n2)
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			n, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(n).To(Equal(1))
+
+			got := node(n2.ID)
+			Expect(got.UpgradeState).To(BeEmpty())
+			Expect(got.UpgradeRequestedAt).To(BeNil())
+			Expect(got.LastUpgrade).To(BeNil())
+		})
+
+		It("keeps the pending upgrade of a node that has another live upgrade", func() {
+			n1, n2 := register("m1"), register("m2")
+			ids := publish("batch-a", store.CmdUpgrade, n1, n2)
+			other := publish("batch-b", store.CmdUpgrade, n2)
+			Expect(s.UpdateStatus(ctx, other[0], store.CommandRunning, "")).To(Succeed())
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			_, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+
+			got := node(n2.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(got.UpgradeRequestedAt).NotTo(BeNil())
+		})
+
+		It("leaves an upgrade state that is no longer pending alone", func() {
+			n1, n2 := register("m1"), register("m2")
+			ids := publish("batch-a", store.CmdUpgrade, n1, n2)
+			_, err := s.AdvanceUpgrade(ctx, n2.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			_, err = s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+
+			got := node(n2.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStateDone))
+			Expect(got.UpgradeRequestedAt).NotTo(BeNil())
+			Expect(got.LastUpgrade).NotTo(BeNil())
+		})
+
+		It("clears the pending reset of a canceled target", func() {
+			n1, n2 := register("m1"), register("m2")
+			ids := publish("batch-a", store.CmdReset, n1, n2)
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			_, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+
+			got := node(n2.ID)
+			Expect(got.ResetState).To(BeEmpty())
+			Expect(got.ResetRequestedAt).To(BeNil())
+			Expect(got.LastReset).To(BeNil())
+		})
+
+		It("keeps the pending reset of a node that has another live reset", func() {
+			n1, n2 := register("m1"), register("m2")
+			ids := publish("batch-a", store.CmdReset, n1, n2)
+			publish("batch-b", store.CmdReset, n2)
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			_, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(node(n2.ID).ResetState).To(Equal(store.ResetStatePending))
+		})
+
+		// in-progress means the node has already rebooted into the reset, so
+		// the operation is real whatever happened to the command row.
+		It("leaves a reset that is already in progress alone", func() {
+			n1, n2 := register("m1"), register("m2")
+			ids := publish("batch-a", store.CmdReset, n1, n2)
+			_, err := s.AdvanceReset(ctx, n2.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			_, err = s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+
+			got := node(n2.ID)
+			Expect(got.ResetState).To(Equal(store.ResetStateInProgress))
+			Expect(got.ResetRequestedAt).NotTo(BeNil())
+		})
+
+		It("leaves the delivered rows of the batch and their nodes alone", func() {
+			n1, n2, n3 := register("m1"), register("m2"), register("m3")
+			ids := publish("batch-a", store.CmdUpgrade, n1, n2, n3)
+			claimed, err := s.ClaimForDelivery(ctx, ids[1])
+			Expect(err).NotTo(HaveOccurred())
+			Expect(claimed).To(BeTrue())
+			Expect(s.UpdateStatus(ctx, ids[0], store.CommandFailed, "boom")).To(Succeed())
+
+			n, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(n).To(Equal(1))
+
+			Expect(phaseOf(ids[1])).To(Equal(store.CommandDelivered))
+			Expect(node(n2.ID).UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(phaseOf(ids[2])).To(Equal(store.CommandCanceled))
+			Expect(node(n3.ID).UpgradeState).To(BeEmpty())
+		})
+	})
+
 	It("CommandDeleteTerminal clears canceled commands with the rest of the history", func() {
 		queue("n1", "batch-a", store.CommandCompleted)
 		queue("n1", "batch-a", store.CommandCanceled)
