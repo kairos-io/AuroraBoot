@@ -40,10 +40,10 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 		if bootActive {
 			By("Booting straight into active", func() {
 				stateAssertVM(vm, "boot", "active_boot")
-				boots, err := vm.Sudo("journalctl --list-boots --no-pager -q | wc -l")
+				boots, err := vm.SudoOut("journalctl --list-boots --no-pager -q | wc -l")
 				Expect(err).ToNot(HaveOccurred(), boots)
 				Expect(strings.TrimSpace(boots)).To(Equal("1"))
-				out, err := vm.Sudo("ls /oem")
+				out, err := vm.SudoOut("ls /oem")
 				Expect(err).ToNot(HaveOccurred(), out)
 				Expect(out).To(ContainSubstring("01_layout.yaml"))
 				Expect(out).ToNot(ContainSubstring("01_reset.yaml"))
