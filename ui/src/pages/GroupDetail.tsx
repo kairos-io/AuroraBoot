@@ -28,6 +28,7 @@ import {
 import { StatTile } from "@/components/fleet/StatTile";
 import { StackBar } from "@/components/fleet/StackBar";
 import { SelectionBar } from "@/components/fleet/SelectionBar";
+import { BatchProgress } from "@/components/fleet/BatchProgress";
 import { Activity, AlertTriangle, Cpu, Download, Layers, MoreHorizontal, ShieldAlert, Terminal } from "lucide-react";
 import { isOffline, isOnline } from "@/lib/phase";
 import { cpuCount, hasBootIssue, imageVersion, memGiB } from "@/lib/nodeInfo";
@@ -62,6 +63,9 @@ export function GroupDetail() {
   // "group" sends to the whole group, "selection" to the selected rows.
   const [cmdTarget, setCmdTarget] = useState<"group" | "selection" | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // The rollout the last command started, so it can be followed on the page
+  // that launched it instead of being lost at send time.
+  const [batchID, setBatchID] = useState("");
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDescription, setEditDescription] = useState("");
@@ -126,11 +130,13 @@ export function GroupDetail() {
 
   async function handleCommand(command: string, args: Record<string, unknown>) {
     if (!id) return;
-    if (cmdTarget === "selection") {
-      await sendBulkCommand({ nodeIDs: selectedIDs }, command, args);
-    } else {
-      await sendGroupCommand(id, command, args);
-    }
+    const created =
+      cmdTarget === "selection"
+        ? await sendBulkCommand({ nodeIDs: selectedIDs }, command, args)
+        : await sendGroupCommand(id, command, args);
+    // Every row of a fan-out carries the same batch, so the first one that has
+    // it names the rollout.
+    setBatchID(created?.find((c) => c.batchID)?.batchID ?? "");
     setCmdTarget(null);
   }
 
@@ -170,6 +176,12 @@ export function GroupDetail() {
           </DropdownMenuContent>
         </DropdownMenu>
       </PageHeader>
+
+      {batchID && (
+        <div className="mb-6">
+          <BatchProgress batchID={batchID} onDismiss={() => setBatchID("")} />
+        </div>
+      )}
 
       <section aria-label="Group summary" className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatTile label="Online" icon={Activity} tone="success" value={`${summary.online} of ${nodes.length} online`}>

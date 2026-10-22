@@ -18,6 +18,7 @@ import {
 import { Activity, Folder, FolderInput, LayoutGrid, List, Search, SearchX, Tag, Terminal } from "lucide-react";
 import { FilterChip } from "@/components/fleet/FilterChip";
 import { NodeSummary } from "@/components/fleet/NodeSummary";
+import { BatchProgress } from "@/components/fleet/BatchProgress";
 import { toast } from "@/hooks/useToast";
 import { EmptyState } from "@/components/fleet/EmptyState";
 import { SelectionBar } from "@/components/fleet/SelectionBar";
@@ -221,6 +222,9 @@ export function Nodes() {
   const targetCount = targetNodes.length;
   const anyFilterActive = hasActiveFilter(query);
   const [confirmCommand, setConfirmCommand] = useState("");
+  // The batch the last bulk command created, so the rollout it started can be
+  // followed instead of disappearing the moment it is sent.
+  const [batchID, setBatchID] = useState("");
 
   function afterBulkEdit() {
     setSelected(new Set());
@@ -230,9 +234,15 @@ export function Nodes() {
   function handleBulkSubmit(command: string, args: Record<string, unknown>) {
     const nodeIDs = targetNodes.map((n) => n.id);
     const send = () => {
-      sendBulkCommand({ nodeIDs }, command, args).catch((err) => {
-        toast(`Failed to send command: ${(err as Error).message}`, "error");
-      });
+      sendBulkCommand({ nodeIDs }, command, args)
+        .then((created) => {
+          // Every row of a fan-out carries the same batch, so the first one
+          // that has it names the rollout. A single-node command has none.
+          setBatchID(created?.find((c) => c.batchID)?.batchID ?? "");
+        })
+        .catch((err) => {
+          toast(`Failed to send command: ${(err as Error).message}`, "error");
+        });
       setBulkCmdOpen(false);
     };
 
@@ -260,6 +270,12 @@ export function Nodes() {
       </PageHeader>
 
       {nodes.length > 0 && <NodeSummary nodes={nodes} />}
+
+      {batchID && (
+        <div className="mb-4">
+          <BatchProgress batchID={batchID} onDismiss={() => setBatchID("")} />
+        </div>
+      )}
 
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <div className="relative w-full sm:w-72">

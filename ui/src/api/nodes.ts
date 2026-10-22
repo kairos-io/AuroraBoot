@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import type { Command } from "./commands";
 
 export interface Node {
   id: string;
@@ -34,16 +35,13 @@ export interface NodeListParams {
   phase?: string;
 }
 
-export interface CommandResult {
-  id: string;
-  node_id: string;
-  command: string;
-  args: Record<string, unknown>;
-  status: string;
-  result?: string;
-  created_at: string;
-  updated_at: string;
-}
+// A created command comes back as the stored row itself, so there is one
+// shape for a command everywhere. The snake_case interface this name used to
+// hold described no response the server has ever sent: the fields are tagged
+// `managedNodeID`, `phase` and `createdAt`, and there is no `updated_at` at
+// all. Keeping it meant `batchID` was invisible to callers, which is what a
+// fan-out has to be followed by.
+export type CommandResult = Command;
 
 export function listNodes(params?: NodeListParams): Promise<Node[]> {
   const query = new URLSearchParams();
