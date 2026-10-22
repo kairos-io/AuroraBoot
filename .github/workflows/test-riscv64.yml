@@ -109,18 +109,50 @@ jobs:
           }
 
       - name: Run tests
-        # On 2026-10-13 four jobs stalled in this step and each held one of the
-        # few riscv64 runners until the job ceiling killed it, with no output
-        # saying what was stuck. A healthy run of this step takes 9 to 11
-        # minutes, so 30 is generous and still bounds the step well inside the
-        # job cap above. The -timeout bounds a hung test and prints the
-        # goroutine dump that names it; the step timeout also covers a stall in
-        # the compile, which -timeout does not reach.
+        # Every stall this job has had since 2026-10-13 happened in this step,
+        # and none of them left anything to read. A healthy run takes 9 to 11
+        # minutes.
+        #
+        # The step timeout below is a backstop, not the bound. On run
+        # 39597587527 this step started at 13:23:23Z under a 30 minute cap and
+        # was still marked started when the 90 minute job cap ended the job at
+        # 14:31:22Z: a step timeout is applied by the runner process, so it
+        # cannot fire once the runner itself stops reporting. Only the
+        # job-level timeout-minutes, which the Actions service applies, survives
+        # that. A job ended that way is reported as cancelled, and a cancelled
+        # job uploads no step logs at all, which is why a week of six hour
+        # stalls has produced nothing to read.
+        #
+        # So bound the command rather than the step. timeout --signal=QUIT
+        # makes the Go runtime dump every goroutine before it exits, which names
+        # the stall even when it is in the toolchain's own build graph, where
+        # go test -timeout does not reach: that flag bounds a test binary, and
+        # this job has already shown the compiler itself misbehaving on riscv64
+        # (run 39568879746 died in go build with "fatal error: sync: unlock of
+        # unlocked mutex" inside cmd/compile). tee plus the upload below keeps
+        # that output even when the job ends as cancelled.
         timeout-minutes: 30
         run: |
+          # The default shell here is bash -e, without pipefail, so without this
+          # the pipeline would report tee's exit status and a timed-out or
+          # failing go test would read as a pass.
+          set -o pipefail
           # Skip e2e and integration tests - they require Docker images or have timing
           # issues on slower riscv64 runners
-          go test -tags ui -v -timeout 20m $(go list ./... | grep -v -E '/(e2e|integration)')
+          timeout --signal=QUIT --kill-after=2m 25m \
+            go test -tags ui -v -timeout 20m $(go list ./... | grep -v -E '/(e2e|integration)') \
+            2>&1 | tee /tmp/riscv64-tests.log
+
+      - name: Upload test log
+        # Runs on cancellation too, so the goroutine dump the step above leaves
+        # behind outlives a job the service kills at its timeout.
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: riscv64-test-log
+          path: /tmp/riscv64-tests.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Show binary info
         run: |
