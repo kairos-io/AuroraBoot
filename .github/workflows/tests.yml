@@ -16,7 +16,7 @@ jobs:
     # they are skipped when AURORABOOT_TEST_POSTGRES_DSN is unset.
     services:
       postgres:
-        image: postgres:17-alpine
+        image: postgres:18-alpine
         env:
           POSTGRES_PASSWORD: test
         ports:
