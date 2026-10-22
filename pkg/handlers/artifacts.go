@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -1433,20 +1434,33 @@ const imageExportTimeout = time.Hour
 // cancel it for everyone else waiting on it.
 func (h *ArtifactHandler) ensureImageExport(ctx context.Context, id, containerImage, path string) error {
 	if _, err := os.Stat(path); err == nil {
+		log.Printf("image export for artifact %s: served from the cache", id)
 		return nil
 	}
 	buildCtx := context.WithoutCancel(ctx)
+	// Only the request whose function singleflight runs sets the outcome; a
+	// request that joined a running build keeps the default.
+	outcome := "waited for the build of another request"
 	ch := h.imageExports.DoChan(id, func() (any, error) {
 		// A previous flight may have finished between the check above and here.
 		if _, err := os.Stat(path); err == nil {
+			outcome = "served from the cache"
 			return nil, nil
 		}
 		buildCtx, cancel := context.WithTimeout(buildCtx, imageExportTimeout)
 		defer cancel()
-		return nil, h.buildImageExport(buildCtx, id, containerImage, path)
+		start := time.Now()
+		if err := h.buildImageExport(buildCtx, id, containerImage, path); err != nil {
+			return nil, err
+		}
+		outcome = fmt.Sprintf("built in %s", time.Since(start).Round(time.Millisecond))
+		return nil, nil
 	})
 	select {
 	case res := <-ch:
+		if res.Err == nil {
+			log.Printf("image export for artifact %s: %s", id, outcome)
+		}
 		return res.Err
 	case <-ctx.Done():
 		return ctx.Err()

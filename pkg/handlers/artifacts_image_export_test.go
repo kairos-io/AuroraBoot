@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -17,6 +18,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/gbytes"
 
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -339,6 +341,54 @@ var _ = Describe("ArtifactHandler: ExportImage", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(entries).To(HaveLen(1))
 		Expect(entries[0].Name()).To(Equal("image.tar"))
+	})
+
+	Describe("logging how a request got its image", func() {
+		var logs *gbytes.Buffer
+
+		BeforeEach(func() {
+			logs = gbytes.NewBuffer()
+			log.SetOutput(logs)
+			DeferCleanup(func() { log.SetOutput(os.Stderr) })
+		})
+
+		It("logs the request that built the export", func() {
+			Expect(request("a1").Code).To(Equal(http.StatusOK))
+
+			Expect(logs).To(gbytes.Say(`image export for artifact a1: built in \S+`))
+		})
+
+		It("logs a later request as served from the cache", func() {
+			Expect(request("a1").Code).To(Equal(http.StatusOK))
+			Expect(logs).To(gbytes.Say(`image export for artifact a1: built`))
+
+			Expect(request("a1").Code).To(Equal(http.StatusOK))
+
+			Expect(logs).To(gbytes.Say(`image export for artifact a1: served from the cache`))
+		})
+
+		It("logs a request that waited for a build already running", func() {
+			exporter.gate = make(chan struct{})
+			results := make(chan *httptest.ResponseRecorder, 2)
+			go func() {
+				defer GinkgoRecover()
+				results <- request("a1")
+			}()
+			Eventually(exporter.calls.Load).Should(BeEquivalentTo(1))
+			go func() {
+				defer GinkgoRecover()
+				results <- request("a1")
+			}()
+			Consistently(results, 200*time.Millisecond).ShouldNot(Receive())
+			close(exporter.gate)
+			Eventually(results).Should(Receive())
+			Eventually(results).Should(Receive())
+
+			out := string(logs.Contents())
+			Expect(strings.Count(out, "image export for artifact a1: built")).To(Equal(1))
+			Expect(strings.Count(out, "image export for artifact a1: waited for the build of another request")).To(Equal(1))
+			Expect(out).NotTo(ContainSubstring("served from the cache"))
+		})
 	})
 
 	It("404s an unknown artifact without exporting", func() {
