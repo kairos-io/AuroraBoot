@@ -363,18 +363,28 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 		}
 	}
 
-	// A fail-fast batch stops here: this is the path a real agent reports a
-	// failed upgrade on, so the rule has to be applied on it and not only on
-	// the REST status endpoint. The command is re-read so the batch identity
-	// and the fail-fast flag come from the server's own row rather than from
-	// the frame the node sent.
-	if status.Phase == store.CommandFailed {
+	// The batch-wide rules are applied here as well as on the REST status
+	// endpoint: this is the path a real agent reports on, so a rollout that
+	// only the endpoint enforced would never stop and never advance. The
+	// command is re-read so the batch identity, the fail-fast flag and the
+	// concurrency limit come from the server's own row rather than from the
+	// frame the node sent.
+	if store.IsTerminalCommandPhase(status.Phase) {
 		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
 			cmd.Phase = status.Phase
 			if canceled, err := store.CancelBatchAfterFailure(ctx, h.Commands, cmd); err != nil {
 				log.Printf("ws: failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, status.ID, err)
 			} else if canceled > 0 {
 				log.Printf("ws: batch %s stopped after node %s failed; %d pending command(s) canceled", cmd.BatchID, nodeID, canceled)
+			}
+			// Cancelling first means a stopped batch leaves nothing to
+			// promote, so the two rules cannot contradict each other.
+			promoted, err := store.ReleaseBatchSlot(ctx, h.Commands, cmd)
+			if err != nil {
+				log.Printf("ws: failed to release the batch %s slot command %s held: %v", cmd.BatchID, status.ID, err)
+			}
+			for _, next := range promoted {
+				h.pushPromoted(ctx, next)
 			}
 		}
 	}
@@ -384,6 +394,32 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 			Type: "command_update",
 			Data: data,
 		})
+	}
+}
+
+// pushPromoted offers a command a concurrency limit had been holding back to
+// the node it is addressed to, which is a different node from the one whose
+// report released the slot.
+//
+// It claims Pending→Delivered first and only writes if it won the claim, the
+// same exactly-once rule sendPendingCommands and CommandHandler.pushCommand
+// follow. A node that is offline is left alone: the command stays Pending and
+// its slot stays taken, so the reconnect replay delivers it and the rollout
+// does not run ahead of a node that has not started.
+func (h *AgentHandler) pushPromoted(ctx context.Context, cmd *store.NodeCommand) {
+	if h.Hub == nil || !h.Hub.IsOnline(cmd.ManagedNodeID) {
+		return
+	}
+	claimed, err := h.Commands.ClaimForDelivery(ctx, cmd.ID)
+	if err != nil || !claimed {
+		return
+	}
+	if err := h.Hub.SendCommand(cmd.ManagedNodeID, commandData{
+		ID:      cmd.ID,
+		Command: cmd.Command,
+		Args:    cmd.Args,
+	}); err != nil {
+		log.Printf("ws: failed to push promoted command %s to node %s: %v", cmd.ID, cmd.ManagedNodeID, err)
 	}
 }
 

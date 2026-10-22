@@ -166,3 +166,122 @@ var _ = Describe("IsTerminalCommandPhase", func() {
 		}
 	})
 })
+
+// releaseSpy records what ReleaseBatchSlot asked the store to do, so the rule
+// can be checked without a database behind it.
+type releaseSpy struct {
+	store.CommandStore
+	calls    []string
+	limit    int
+	promoted []*store.NodeCommand
+	err      error
+}
+
+func (r *releaseSpy) PromoteQueuedInBatch(_ context.Context, batchID string, limit int) ([]*store.NodeCommand, error) {
+	r.calls = append(r.calls, batchID)
+	r.limit = limit
+	return r.promoted, r.err
+}
+
+var _ = Describe("ReleaseBatchSlot", func() {
+	var spy *releaseSpy
+
+	// done is a command of a throttled batch that has just reached a terminal
+	// phase, which is what releases the slot it held.
+	done := func(batchID string, limit int, phase string) *store.NodeCommand {
+		return &store.NodeCommand{
+			ID: "cmd-1", ManagedNodeID: "node-1", Command: store.CmdUpgrade,
+			Phase: phase, BatchID: batchID, MaxConcurrency: limit,
+		}
+	}
+
+	BeforeEach(func() { spy = &releaseSpy{} })
+
+	It("asks the store to fill the batch back up to its limit", func() {
+		spy.promoted = []*store.NodeCommand{{ID: "cmd-2", ManagedNodeID: "node-2"}}
+		next, err := store.ReleaseBatchSlot(context.Background(), spy, done("batch-a", 2, store.CommandCompleted))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(spy.calls).To(Equal([]string{"batch-a"}))
+		Expect(spy.limit).To(Equal(2))
+		Expect(next).To(HaveLen(1))
+	})
+
+	It("releases a slot on every terminal phase, not only on success", func() {
+		for _, phase := range []string{
+			store.CommandCompleted, store.CommandFailed,
+			store.CommandExpired, store.CommandCanceled,
+		} {
+			spy.calls = nil
+			_, err := store.ReleaseBatchSlot(context.Background(), spy, done("batch-a", 1, phase))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.calls).To(HaveLen(1), phase)
+		}
+	})
+
+	It("does nothing while the command still has work ahead of it", func() {
+		for _, phase := range []string{
+			store.CommandPending, store.CommandQueued,
+			store.CommandDelivered, store.CommandRunning,
+		} {
+			_, err := store.ReleaseBatchSlot(context.Background(), spy, done("batch-a", 1, phase))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(spy.calls).To(BeEmpty(), phase)
+		}
+	})
+
+	It("does nothing for a batch that asked for no limit", func() {
+		_, err := store.ReleaseBatchSlot(context.Background(), spy, done("batch-a", 0, store.CommandCompleted))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(spy.calls).To(BeEmpty())
+	})
+
+	It("does nothing for a command outside a batch", func() {
+		_, err := store.ReleaseBatchSlot(context.Background(), spy, done("", 2, store.CommandCompleted))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(spy.calls).To(BeEmpty())
+	})
+
+	It("does nothing for a nil command or a nil store", func() {
+		_, err := store.ReleaseBatchSlot(context.Background(), spy, nil)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(spy.calls).To(BeEmpty())
+
+		_, err = store.ReleaseBatchSlot(context.Background(), nil, done("batch-a", 1, store.CommandCompleted))
+		Expect(err).NotTo(HaveOccurred())
+	})
+
+	It("surfaces a store failure to the caller", func() {
+		spy.err = errors.New("database is gone")
+		_, err := store.ReleaseBatchSlot(context.Background(), spy, done("batch-a", 1, store.CommandCompleted))
+		Expect(err).To(MatchError(ContainSubstring("database is gone")))
+	})
+})
+
+var _ = Describe("SummarizeBatch of a throttled batch", func() {
+	queued := func(phase string, limit int) *store.NodeCommand {
+		return &store.NodeCommand{Command: store.CmdUpgrade, Phase: phase, MaxConcurrency: limit}
+	}
+
+	It("counts a queued node as still pending and reports it separately", func() {
+		out := store.SummarizeBatch("b", []*store.NodeCommand{
+			queued(store.CommandCompleted, 1),
+			queued(store.CommandDelivered, 1),
+			queued(store.CommandQueued, 1),
+			queued(store.CommandQueued, 1),
+		})
+		Expect(out.Phase).To(Equal(store.CommandPending))
+		Expect(out.Queued).To(Equal(2))
+		Expect(out.Pending).To(Equal(2))
+		Expect(out.Running).To(Equal(1))
+		Expect(out.MaxConcurrency).To(Equal(1))
+	})
+
+	It("leaves the limit at zero for a batch that was not throttled", func() {
+		out := store.SummarizeBatch("b", []*store.NodeCommand{
+			queued(store.CommandCompleted, 0), queued(store.CommandCompleted, 0),
+		})
+		Expect(out.MaxConcurrency).To(BeZero())
+		Expect(out.Queued).To(BeZero())
+		Expect(out.Phase).To(Equal(store.CommandCompleted))
+	})
+})

@@ -11,17 +11,24 @@ type BatchOutcome struct {
 	BatchID  string `json:"batchID"`
 	Command  string `json:"command"`
 	FailFast bool   `json:"failFast"`
+	// MaxConcurrency is the in-flight limit the batch was created with, zero
+	// when it was not throttled.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 	// Phase is the batch as a whole: Pending while any node still has work
 	// ahead of it, then Failed if any node failed, Canceled if the batch was
 	// stopped before every node ran, and Completed when every node succeeded.
-	Phase     string `json:"phase"`
-	Total     int    `json:"total"`
-	Pending   int    `json:"pending"`
-	Running   int    `json:"running"`
-	Completed int    `json:"completed"`
-	Failed    int    `json:"failed"`
-	Canceled  int    `json:"canceled"`
-	Expired   int    `json:"expired"`
+	Phase string `json:"phase"`
+	Total int    `json:"total"`
+	// Queued is how many nodes are held back by the concurrency limit and
+	// have not been offered their command yet. They are counted in Pending as
+	// well, so Pending stays "nodes with work still ahead of them".
+	Queued    int `json:"queued,omitempty"`
+	Pending   int `json:"pending"`
+	Running   int `json:"running"`
+	Completed int `json:"completed"`
+	Failed    int `json:"failed"`
+	Canceled  int `json:"canceled"`
+	Expired   int `json:"expired"`
 	// Commands are the per-node rows, kept so a failed batch can still say
 	// which node failed and with what result.
 	Commands []*NodeCommand `json:"commands"`
@@ -43,6 +50,12 @@ func SummarizeBatch(batchID string, cmds []*NodeCommand) BatchOutcome {
 		}
 		if cmd.FailFast {
 			out.FailFast = true
+		}
+		if cmd.MaxConcurrency > out.MaxConcurrency {
+			out.MaxConcurrency = cmd.MaxConcurrency
+		}
+		if cmd.Phase == CommandQueued {
+			out.Queued++
 		}
 		switch cmd.Phase {
 		case CommandCompleted:
@@ -94,4 +107,25 @@ func CancelBatchAfterFailure(ctx context.Context, cs CommandStore, cmd *NodeComm
 	}
 	reason := fmt.Sprintf("canceled: batch %s stopped after node %s failed", cmd.BatchID, cmd.ManagedNodeID)
 	return cs.CancelPendingInBatch(ctx, cmd.BatchID, reason)
+}
+
+// ReleaseBatchSlot hands the slot a finished command held to the next node
+// waiting in its throttled batch, and returns the commands that became
+// deliverable so the caller can push them.
+//
+// It is a free function over the CommandStore for the same reason
+// CancelBatchAfterFailure is: every path that can move a command to a terminal
+// phase has to release its slot, and pkg/ws cannot import pkg/handlers. A
+// batch with no concurrency limit, a command outside a batch, and any
+// non-terminal phase all release nothing.
+//
+// The caller has to push what comes back. A promoted command is Pending, and
+// the agent neither polls for commands nor is told about one it was never
+// offered, so without the push the rollout stops at the limit.
+func ReleaseBatchSlot(ctx context.Context, cs CommandStore, cmd *NodeCommand) ([]*NodeCommand, error) {
+	if cs == nil || cmd == nil || cmd.BatchID == "" || cmd.MaxConcurrency <= 0 ||
+		!IsTerminalCommandPhase(cmd.Phase) {
+		return nil, nil
+	}
+	return cs.PromoteQueuedInBatch(ctx, cmd.BatchID, cmd.MaxConcurrency)
 }

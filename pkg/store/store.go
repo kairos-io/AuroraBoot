@@ -178,6 +178,12 @@ type NodeCommand struct {
 	// than in a batch table so the rule travels with the command that has to
 	// apply it.
 	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency is how many commands of this batch may be in flight at
+	// once. Zero means no limit, which is the fan-out behaviour a caller that
+	// does not ask for a limit keeps. Like FailFast it is carried on every row
+	// rather than in a batch table, so the rule travels with the command that
+	// has to apply it.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // Command phases.
@@ -188,6 +194,12 @@ const (
 	CommandCompleted = "Completed"
 	CommandFailed    = "Failed"
 	CommandExpired   = "Expired"
+	// CommandQueued is a command of a throttled batch that is deliberately
+	// held back: it exists, it counts towards the batch, and no node can see
+	// it yet. GetPending matches Pending only, so a Queued row is invisible to
+	// the agent's own poll and to the reconnect replay, and ClaimForDelivery
+	// cannot claim it. It becomes Pending when a slot frees.
+	CommandQueued = "Queued"
 	// CommandCanceled is a command that will never be delivered because the
 	// fail-fast batch it belongs to was stopped by an earlier node's failure.
 	// It is terminal and distinct from Failed: the node never ran anything.
@@ -339,9 +351,19 @@ type CommandStore interface {
 	// An empty batch id matches nothing: an unbatched single-node command has
 	// no batch id, so matching on it would return the whole table.
 	ListByBatch(ctx context.Context, batchID string) ([]*NodeCommand, error)
-	// CancelPendingInBatch moves every still-Pending command of a batch to
-	// Canceled and records reason as its result, returning how many rows it
-	// moved. Commands that were already claimed for delivery are left alone:
+	// PromoteQueuedInBatch moves the Queued commands of a batch to Pending
+	// until limit of them are in flight, and returns the rows it moved so the
+	// caller can push them to their nodes. In flight means Pending, Delivered
+	// or Running: a command that has been handed to a node occupies a slot
+	// until it reports.
+	//
+	// It is the only way a Queued row can ever be delivered, because nothing
+	// else in the delivery path looks at that phase. A limit of zero or less
+	// promotes nothing; callers read the limit from the batch's own rows.
+	PromoteQueuedInBatch(ctx context.Context, batchID string, limit int) ([]*NodeCommand, error)
+	// CancelPendingInBatch moves every still-Pending or Queued command of a
+	// batch to Canceled and records reason as its result, returning how many
+	// rows it moved. Commands that were already claimed for delivery are left alone:
 	// there is no abort message on the wire, so a delivered command cannot be
 	// recalled and has to be allowed to report its own outcome.
 	//

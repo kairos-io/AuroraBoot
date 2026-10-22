@@ -745,15 +745,86 @@ func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeC
 	return cmds, nil
 }
 
-// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled
-// and clears the lifecycle state those commands left pending on their nodes.
+// PromoteQueuedInBatch releases the throttled commands of a batch, oldest
+// first, until limit of them are in flight, and returns the rows it released.
+//
+// It reads the free slots and the next row to fill them with, then promotes
+// that row with a conditional UPDATE on `phase = Queued` and a RowsAffected
+// check, the same compare-and-set ClaimForDelivery uses. The read is
+// deliberately not wrapped in a transaction with the write: under SQLite WAL a
+// transaction that reads before it writes fails outright when another
+// connection commits in between, which is what CancelPendingInBatch documents
+// at length, and holding the write lock across a rollout's whole promotion
+// loop would be worse than the race it closes.
+//
+// The race it leaves is bounded and benign. Two nodes reporting in the same
+// instant can both see the same slot free and promote one row each, so a batch
+// can briefly run one node over its limit; it can never run two batches'
+// worth, because the UPDATE is what decides who gets a given row and only one
+// caller can win it. A concurrency limit paces a rollout, it is not a lock on
+// a resource, and the next release reads the real count again.
+//
+// The loop is bounded by the number of rows it could possibly move so a row
+// that keeps losing its compare-and-set cannot spin.
+func (s *Store) PromoteQueuedInBatch(ctx context.Context, batchID string, limit int) ([]*store.NodeCommand, error) {
+	if batchID == "" || limit <= 0 {
+		return nil, nil
+	}
+	var promoted []*store.NodeCommand
+	for attempts := 0; attempts < limit*2; attempts++ {
+		var inFlight int64
+		if err := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+			Where("batch_id = ? AND phase IN ?", batchID,
+				[]string{store.CommandPending, store.CommandDelivered, store.CommandRunning}).
+			Count(&inFlight).Error; err != nil {
+			return promoted, err
+		}
+		if int(inFlight) >= limit {
+			return promoted, nil
+		}
+
+		var next store.NodeCommand
+		err := s.db.WithContext(ctx).
+			Where("batch_id = ? AND phase = ?", batchID, store.CommandQueued).
+			Order("created_at asc").
+			First(&next).Error
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return promoted, nil
+		}
+		if err != nil {
+			return promoted, err
+		}
+
+		res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
+			Where("id = ? AND phase = ?", next.ID, store.CommandQueued).
+			Update("phase", store.CommandPending)
+		if res.Error != nil {
+			return promoted, res.Error
+		}
+		if res.RowsAffected == 0 {
+			// Another release, a cancel or an expiry took this row between
+			// the read and the write. Look again rather than skipping a slot.
+			continue
+		}
+		next.Phase = store.CommandPending
+		promoted = append(promoted, &next)
+	}
+	return promoted, nil
+}
+
+// CancelPendingInBatch moves the still-Pending and still-Queued commands of a
+// batch to Canceled and clears the lifecycle state those commands left pending
+// on their nodes.
 //
 // The cancel UPDATE carries `phase = Pending` for the same reason
 // ClaimForDelivery does: a command another goroutine is claiming for delivery
 // right now must be won by exactly one of the two. A claim that lands first
 // leaves no Pending row for this UPDATE to match, so the command is delivered
 // and will report its own result; a cancel that lands first leaves no Pending
-// row for the claim's compare-and-set, so it is never pushed.
+// row for the claim's compare-and-set, so it is never pushed. A Queued row has
+// no such race — nothing can claim it — but it has to be canceled all the
+// same, or a stopped batch would leave rows that only a promotion no failure
+// can ever trigger could move.
 //
 // The UPDATE is the first statement of the transaction and returns the rows it
 // changed. Under SQLite WAL a transaction that reads first holds a snapshot,
@@ -780,7 +851,8 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 			Clauses(clause.Returning{Columns: []clause.Column{
 				{Name: "id"}, {Name: "managed_node_id"}, {Name: "command"},
 			}}).
-			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
+			Where("batch_id = ? AND phase IN ?", batchID,
+				[]string{store.CommandPending, store.CommandQueued}).
 			Updates(map[string]any{
 				"phase":        store.CommandCanceled,
 				"result":       reason,
@@ -921,7 +993,7 @@ func (s *Store) CommandExpireBefore(ctx context.Context, nodeID string, deadline
 	now := time.Now()
 	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).
 		Where("managed_node_id = ? AND expires_at IS NOT NULL AND expires_at <= ? AND phase IN ?",
-			nodeID, deadline, []string{store.CommandPending, store.CommandDelivered, store.CommandRunning}).
+			nodeID, deadline, []string{store.CommandQueued, store.CommandPending, store.CommandDelivered, store.CommandRunning}).
 		Updates(map[string]any{
 			"phase":        store.CommandExpired,
 			"completed_at": &now,

@@ -94,6 +94,9 @@ const (
 	// CommandPhaseCanceled is a command a fail-fast batch stopped before it was
 	// ever delivered, so the node ran nothing.
 	CommandPhaseCanceled CommandPhase = "Canceled"
+	// CommandPhaseQueued is a command of a throttled batch that is held back
+	// until an earlier node of the batch reports. No node can see it yet.
+	CommandPhaseQueued CommandPhase = "Queued"
 )
 
 // NodeCommand describes a queued remote operation.
@@ -112,16 +115,25 @@ type NodeCommand struct {
 	// command addressed to one node.
 	BatchID  string `json:"batchID,omitempty"`
 	FailFast bool   `json:"failFast,omitempty"`
+	// MaxConcurrency is how many commands of this batch may be in flight at
+	// once; zero means the batch was not throttled.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // BatchOutcome is the state of one fan-out of commands, derived from the
 // per-node commands it created.
 type BatchOutcome struct {
-	BatchID   string        `json:"batchID"`
-	Command   string        `json:"command"`
-	FailFast  bool          `json:"failFast"`
-	Phase     CommandPhase  `json:"phase"`
-	Total     int           `json:"total"`
+	BatchID  string `json:"batchID"`
+	Command  string `json:"command"`
+	FailFast bool   `json:"failFast"`
+	// MaxConcurrency is the in-flight limit the batch was created with, zero
+	// when it was not throttled.
+	MaxConcurrency int          `json:"maxConcurrency,omitempty"`
+	Phase          CommandPhase `json:"phase"`
+	Total          int          `json:"total"`
+	// Queued is how many nodes the concurrency limit is still holding back.
+	// They are counted in Pending as well.
+	Queued    int           `json:"queued,omitempty"`
 	Pending   int           `json:"pending"`
 	Running   int           `json:"running"`
 	Completed int           `json:"completed"`
@@ -146,6 +158,10 @@ type GroupCommandRequest struct {
 	// once any node of it reports Failed. A node that was online when the
 	// fan-out ran already holds its command and is not stopped.
 	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency caps how many nodes of this fan-out hold a command at
+	// once. The rest are queued and released one at a time as earlier nodes
+	// report. Zero dispatches to every node at once, one is sequential.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // CommandSelector targets nodes for a bulk command operation.
@@ -165,6 +181,10 @@ type BulkCommandRequest struct {
 	// once any node of it reports Failed. A node that was online when the
 	// fan-out ran already holds its command and is not stopped.
 	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency caps how many nodes of this fan-out hold a command at
+	// once. The rest are queued and released one at a time as earlier nodes
+	// report. Zero dispatches to every node at once, one is sequential.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // UpdateCommandStatusRequest is the body used by agents to report

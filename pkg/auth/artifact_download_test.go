@@ -47,6 +47,9 @@ func (f *fakeCommandStore) DeleteTerminal(context.Context, string) error        
 func (f *fakeCommandStore) ListByBatch(context.Context, string) ([]*store.NodeCommand, error) {
 	return nil, nil
 }
+func (f *fakeCommandStore) PromoteQueuedInBatch(context.Context, string, int) ([]*store.NodeCommand, error) {
+	return nil, nil
+}
 func (f *fakeCommandStore) CancelPendingInBatch(context.Context, string, string) (int, error) {
 	return 0, nil
 }

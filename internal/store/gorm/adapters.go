@@ -99,6 +99,9 @@ func (a *CommandStoreAdapter) ExpireBefore(ctx context.Context, nodeID string, d
 func (a *CommandStoreAdapter) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
 	return a.S.ListByBatch(ctx, batchID)
 }
+func (a *CommandStoreAdapter) PromoteQueuedInBatch(ctx context.Context, batchID string, limit int) ([]*store.NodeCommand, error) {
+	return a.S.PromoteQueuedInBatch(ctx, batchID, limit)
+}
 func (a *CommandStoreAdapter) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
 	return a.S.CancelPendingInBatch(ctx, batchID, reason)
 }

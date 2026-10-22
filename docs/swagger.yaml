@@ -185,6 +185,17 @@ definitions:
         - exec
         example: upgrade
         type: string
+      failFast:
+        description: |-
+          FailFast stops the fan-out at the first node that fails. It is read on
+          the group endpoint only; a command addressed to one node is not a batch.
+        type: boolean
+      maxConcurrency:
+        description: |-
+          MaxConcurrency caps how many nodes of the fan-out hold a command at
+          once; 1 makes the rollout sequential and 0 dispatches to all of them. It
+          is read on the group endpoint only, for the same reason as FailFast.
+        type: integer
     type: object
   handlers.APICreateGroupRequest:
     properties:
@@ -654,6 +665,11 @@ definitions:
         type: boolean
       failed:
         type: integer
+      maxConcurrency:
+        description: |-
+          MaxConcurrency is the in-flight limit the batch was created with, zero
+          when it was not throttled.
+        type: integer
       pending:
         type: integer
       phase:
@@ -662,6 +678,12 @@ definitions:
           ahead of it, then Failed if any node failed, Canceled if the batch was
           stopped before every node ran, and Completed when every node succeeded.
         type: string
+      queued:
+        description: |-
+          Queued is how many nodes are held back by the concurrency limit and
+          have not been offered their command yet. They are counted in Pending as
+          well, so Pending stays "nodes with work still ahead of them".
+        type: integer
       running:
         type: integer
       total:
@@ -845,6 +867,14 @@ definitions:
         type: string
       managedNodeID:
         type: string
+      maxConcurrency:
+        description: |-
+          MaxConcurrency is how many commands of this batch may be in flight at
+          once. Zero means no limit, which is the fan-out behaviour a caller that
+          does not ask for a limit keeps. Like FailFast it is carried on every row
+          rather than in a batch table, so the rule travels with the command that
+          has to apply it.
+        type: integer
       phase:
         type: string
       result:

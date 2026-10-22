@@ -50,6 +50,11 @@ type groupCommandRequest struct {
 	// once any node of it reports Failed. A node that was online when the
 	// fan-out ran already holds its command and is not stopped.
 	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency caps how many nodes of this fan-out hold a command at
+	// once. The rest are created Queued and released one at a time as earlier
+	// nodes report. Zero, the default, dispatches to every node at once, and
+	// one makes the rollout sequential.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // Create handles POST /api/v1/nodes/:nodeID/commands.
@@ -109,6 +114,11 @@ type bulkCommandRequest struct {
 	// false, so a caller that does not send it keeps the fan-out behaviour it
 	// had.
 	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency caps how many nodes of this fan-out hold a command at
+	// once. The rest are created Queued and released one at a time as earlier
+	// nodes report. Zero, the default, dispatches to every node at once, and
+	// one makes the rollout sequential.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // CreateBulk handles POST /api/v1/nodes/commands.
@@ -126,13 +136,17 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "selector must specify at least one of: groupID, nodeIDs, or labels"})
 	}
 
+	if req.MaxConcurrency < 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "maxConcurrency must not be negative"})
+	}
+
 	ctx := c.Request().Context()
 	nodes, err := h.nodes.ListBySelector(ctx, req.Selector)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to find nodes"})
 	}
 
-	created, err := h.fanOut(ctx, nodes, req.Command, req.Args, req.FailFast)
+	created, err := h.fanOut(ctx, nodes, req.Command, req.Args, batchPolicy{FailFast: req.FailFast, MaxConcurrency: req.MaxConcurrency})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 	}
@@ -152,13 +166,17 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
 	}
 
+	if req.MaxConcurrency < 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "maxConcurrency must not be negative"})
+	}
+
 	ctx := c.Request().Context()
 	nodes, err := h.nodes.ListByGroup(ctx, groupID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to find nodes in group"})
 	}
 
-	created, err := h.fanOut(ctx, nodes, req.Command, req.Args, req.FailFast)
+	created, err := h.fanOut(ctx, nodes, req.Command, req.Args, batchPolicy{FailFast: req.FailFast, MaxConcurrency: req.MaxConcurrency})
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 	}
@@ -185,22 +203,30 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 // in the same transaction, so a cancel can never run before that state is set
 // and leave it behind.
 //
-// Delivery itself is still one unthrottled pass. Holding a node back until an
-// earlier one finishes is the concurrency limit, and that needs the held command
-// to be hidden from the agent's own GetPending poll as well, which is a change
-// to the delivery path rather than to this fan-out.
-func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode, command string, args map[string]string, failFast bool) ([]*store.NodeCommand, error) {
+// A concurrency limit is applied here, by phase rather than by withholding
+// rows: the first MaxConcurrency nodes are created Pending and pushed, and the
+// rest are created Queued, which GetPending, the reconnect replay and
+// ClaimForDelivery all ignore. Every node of the batch therefore exists from
+// the first write, so fail-fast can still cancel the ones that have not run
+// and the batch status can report them. store.ReleaseBatchSlot turns the next
+// Queued row Pending as each node reports.
+func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode, command string, args map[string]string, policy batchPolicy) ([]*store.NodeCommand, error) {
 	batchID := uuid.New().String()
 	created := make([]*store.NodeCommand, 0, len(nodes))
-	for _, node := range nodes {
+	for i, node := range nodes {
+		phase := store.CommandPending
+		if policy.MaxConcurrency > 0 && i >= policy.MaxConcurrency {
+			phase = store.CommandQueued
+		}
 		cmd := &store.NodeCommand{
-			ID:            uuid.New().String(),
-			ManagedNodeID: node.ID,
-			Command:       command,
-			Args:          args,
-			Phase:         store.CommandPending,
-			BatchID:       batchID,
-			FailFast:      failFast,
+			ID:             uuid.New().String(),
+			ManagedNodeID:  node.ID,
+			Command:        command,
+			Args:           args,
+			Phase:          phase,
+			BatchID:        batchID,
+			FailFast:       policy.FailFast,
+			MaxConcurrency: policy.MaxConcurrency,
 		}
 		created = append(created, cmd)
 	}
@@ -208,9 +234,19 @@ func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode,
 		return nil, err
 	}
 	for _, cmd := range created {
+		if cmd.Phase != store.CommandPending {
+			continue
+		}
 		h.pushCommand(ctx, cmd)
 	}
 	return created, nil
+}
+
+// batchPolicy is how one fan-out is paced: whether a failure stops it and how
+// many of its nodes may hold a command at the same time.
+type batchPolicy struct {
+	FailFast       bool
+	MaxConcurrency int
 }
 
 // pushCommand attempts to deliver a command via WebSocket if the hub is available
@@ -309,7 +345,7 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 				h.applyExtensionTracking(ctx, authNodeID, cmd)
 			}
 		}
-		h.cancelBatchOnFailure(ctx, commandID, req.Phase)
+		h.applyBatchRules(ctx, commandID, req.Phase)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 
@@ -325,26 +361,30 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 		}
 	}
 
-	h.cancelBatchOnFailure(ctx, commandID, req.Phase)
+	h.applyBatchRules(ctx, commandID, req.Phase)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// cancelBatchOnFailure stops the rest of a fail-fast batch when the status just
-// written is a failure.
+// applyBatchRules applies the two batch-wide rules a command's new status can
+// trigger: a fail-fast batch stops at the first failure, and a throttled batch
+// hands the slot a finished command held to the next node waiting for one.
 //
 // It re-reads the command rather than trusting the request, because the batch
-// identity and the fail-fast flag are the server's, not the reporting node's: a
-// node that put failFast and a foreign batchID in its status body could
-// otherwise stop a rollout it is not part of.
+// identity, the fail-fast flag and the concurrency limit are the server's, not
+// the reporting node's: a node that put failFast and a foreign batchID in its
+// status body could otherwise stop a rollout it is not part of.
 //
-// The phase check here only saves the read; whether a batch is actually stopped
-// is decided by store.CancelBatchAfterFailure from the row, so removing this
+// The phase check here only saves the read; whether a batch is stopped or a
+// slot released is decided by the store helpers from the row, so removing this
 // line changes nothing but the cost. Errors are logged and not returned: the
 // status report itself succeeded, and telling the node to retry it would make
-// it report the same failure again.
-func (h *CommandHandler) cancelBatchOnFailure(ctx context.Context, commandID, phase string) {
-	if phase != store.CommandFailed {
+// it report the same result again.
+//
+// Cancelling runs before releasing, so a stopped batch has no Queued row left
+// for the release to promote.
+func (h *CommandHandler) applyBatchRules(ctx context.Context, commandID, phase string) {
+	if !store.IsTerminalCommandPhase(phase) {
 		return
 	}
 	cmd, err := h.commands.GetByID(ctx, commandID)
@@ -356,6 +396,14 @@ func (h *CommandHandler) cancelBatchOnFailure(ctx context.Context, commandID, ph
 	cmd.Phase = phase
 	if _, err := store.CancelBatchAfterFailure(ctx, h.commands, cmd); err != nil {
 		log.Printf("failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, commandID, err)
+	}
+	promoted, err := store.ReleaseBatchSlot(ctx, h.commands, cmd)
+	if err != nil {
+		log.Printf("failed to release the batch %s slot command %s held: %v", cmd.BatchID, commandID, err)
+		return
+	}
+	for _, next := range promoted {
+		h.pushCommand(ctx, next)
 	}
 }
 

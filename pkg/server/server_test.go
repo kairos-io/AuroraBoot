@@ -171,6 +171,9 @@ func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { r
 func (f *fakeCommandStore) ListByBatch(_ context.Context, _ string) ([]*store.NodeCommand, error) {
 	return nil, nil
 }
+func (f *fakeCommandStore) PromoteQueuedInBatch(_ context.Context, _ string, _ int) ([]*store.NodeCommand, error) {
+	return nil, nil
+}
 func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, _ string, _ string) (int, error) {
 	return 0, nil
 }

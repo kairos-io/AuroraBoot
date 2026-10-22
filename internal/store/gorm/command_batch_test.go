@@ -2,7 +2,9 @@ package gorm_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -584,5 +586,189 @@ var _ = Describe("Gorm Store command batches", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(left).To(HaveLen(1))
 		Expect(left[0].ID).To(Equal(stillPending))
+	})
+})
+
+// A throttled batch holds most of its rows in Queued and releases them one
+// slot at a time (kairos-io/kairos#4267, acceptance criterion 2).
+var _ = Describe("Gorm Store batch concurrency", func() {
+	var (
+		s   *gormstore.Store
+		ctx context.Context
+	)
+
+	BeforeEach(func() {
+		var err error
+		s, err = gormstore.New(filepath.Join(GinkgoT().TempDir(), "concurrency.db"))
+		Expect(err).NotTo(HaveOccurred())
+		ctx = context.Background()
+	})
+
+	AfterEach(func() { Expect(s.Close()).To(Succeed()) })
+
+	// seed writes one throttled batch the way fanOut does: the first limit
+	// rows Pending and the rest Queued, all in one CreateBatch. CreatedAt is
+	// stamped explicitly and one second apart so "oldest first" is a fact of
+	// the fixture rather than of how fast the inserts ran.
+	seed := func(batchID string, nodes int, limit int) []*store.NodeCommand {
+		base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+		cmds := make([]*store.NodeCommand, 0, nodes)
+		for i := 0; i < nodes; i++ {
+			phase := store.CommandPending
+			if limit > 0 && i >= limit {
+				phase = store.CommandQueued
+			}
+			cmds = append(cmds, &store.NodeCommand{
+				ManagedNodeID:  fmt.Sprintf("n%d", i+1),
+				Command:        store.CmdUpgrade,
+				Phase:          phase,
+				BatchID:        batchID,
+				MaxConcurrency: limit,
+				CreatedAt:      base.Add(time.Duration(i) * time.Second),
+			})
+		}
+		Expect(s.CreateBatch(ctx, cmds)).To(Succeed())
+		return cmds
+	}
+
+	phaseOf := func(id string) string {
+		got, err := s.CommandGetByID(ctx, id)
+		Expect(err).NotTo(HaveOccurred())
+		return got.Phase
+	}
+
+	It("keeps the Queued phase CreateBatch was given", func() {
+		cmds := seed("batch-a", 3, 1)
+		Expect(phaseOf(cmds[0].ID)).To(Equal(store.CommandPending))
+		Expect(phaseOf(cmds[1].ID)).To(Equal(store.CommandQueued))
+		Expect(phaseOf(cmds[2].ID)).To(Equal(store.CommandQueued))
+	})
+
+	// GetPending is both the agent's poll and the reconnect replay. A Queued
+	// row it returned would be delivered the moment the node came back, and
+	// the limit would mean nothing.
+	It("hides a Queued row from GetPending and from a delivery claim", func() {
+		cmds := seed("batch-a", 2, 1)
+
+		pending, err := s.GetPending(ctx, "n2")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pending).To(BeEmpty())
+
+		claimed, err := s.ClaimForDelivery(ctx, cmds[1].ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(claimed).To(BeFalse())
+		Expect(phaseOf(cmds[1].ID)).To(Equal(store.CommandQueued))
+	})
+
+	It("promotes nothing while the batch is at its limit", func() {
+		cmds := seed("batch-a", 3, 1)
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "batch-a", 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(BeEmpty())
+		Expect(phaseOf(cmds[1].ID)).To(Equal(store.CommandQueued))
+	})
+
+	It("promotes the oldest queued row once a slot frees", func() {
+		cmds := seed("batch-a", 3, 1)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandCompleted, "done")).To(Succeed())
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "batch-a", 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(HaveLen(1))
+		Expect(promoted[0].ID).To(Equal(cmds[1].ID))
+		Expect(promoted[0].Phase).To(Equal(store.CommandPending))
+		Expect(phaseOf(cmds[1].ID)).To(Equal(store.CommandPending))
+		Expect(phaseOf(cmds[2].ID)).To(Equal(store.CommandQueued))
+	})
+
+	It("fills every free slot in one call", func() {
+		cmds := seed("batch-a", 5, 2)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandCompleted, "done")).To(Succeed())
+		Expect(s.UpdateStatus(ctx, cmds[1].ID, store.CommandFailed, "boom")).To(Succeed())
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "batch-a", 2)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(HaveLen(2))
+		Expect(phaseOf(cmds[2].ID)).To(Equal(store.CommandPending))
+		Expect(phaseOf(cmds[3].ID)).To(Equal(store.CommandPending))
+		Expect(phaseOf(cmds[4].ID)).To(Equal(store.CommandQueued))
+	})
+
+	// Delivered and Running are what a node holds while it works. Counting
+	// them as free would let the rollout run ahead of the nodes doing it.
+	It("counts a delivered or running node as holding its slot", func() {
+		cmds := seed("batch-a", 3, 2)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandDelivered, "")).To(Succeed())
+		Expect(s.UpdateStatus(ctx, cmds[1].ID, store.CommandRunning, "")).To(Succeed())
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "batch-a", 2)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(BeEmpty())
+	})
+
+	It("stops when the queue is empty rather than looping", func() {
+		cmds := seed("batch-a", 2, 2)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandCompleted, "done")).To(Succeed())
+		Expect(s.UpdateStatus(ctx, cmds[1].ID, store.CommandCompleted, "done")).To(Succeed())
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "batch-a", 2)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(BeEmpty())
+	})
+
+	It("leaves another batch alone", func() {
+		a := seed("batch-a", 2, 1)
+		b := seed("batch-b", 2, 1)
+		Expect(s.UpdateStatus(ctx, a[0].ID, store.CommandCompleted, "done")).To(Succeed())
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "batch-a", 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(HaveLen(1))
+		Expect(phaseOf(b[1].ID)).To(Equal(store.CommandQueued))
+	})
+
+	// An empty batch id is what an unbatched single-node command carries, so a
+	// match on it would promote rows belonging to no rollout at all.
+	It("promotes nothing for an empty batch id or a limit of zero", func() {
+		cmds := seed("batch-a", 2, 1)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandCompleted, "done")).To(Succeed())
+
+		promoted, err := s.PromoteQueuedInBatch(ctx, "", 1)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(BeEmpty())
+
+		promoted, err = s.PromoteQueuedInBatch(ctx, "batch-a", 0)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(promoted).To(BeEmpty())
+		Expect(phaseOf(cmds[1].ID)).To(Equal(store.CommandQueued))
+	})
+
+	// Without this a stopped batch would keep rows only a promotion could move,
+	// and no promotion is coming: the failure that stopped it was the last
+	// report anyone will make.
+	It("cancels the queued rows of a batch, not only the pending ones", func() {
+		cmds := seed("batch-a", 3, 1)
+
+		n, err := s.CancelPendingInBatch(ctx, "batch-a", "stopped: node n1 failed")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(n).To(Equal(3))
+		Expect(phaseOf(cmds[1].ID)).To(Equal(store.CommandCanceled))
+		Expect(phaseOf(cmds[2].ID)).To(Equal(store.CommandCanceled))
+	})
+
+	// GetPending already refuses an overdue command, so a Queued row the sweep
+	// skipped would sit in a phase nothing can advance and no delete collects.
+	It("expires an overdue queued command", func() {
+		past := time.Now().Add(-time.Hour)
+		cmd := &store.NodeCommand{
+			ManagedNodeID: "n1", Command: store.CmdUpgrade,
+			Phase: store.CommandQueued, BatchID: "batch-a",
+			MaxConcurrency: 1, ExpiresAt: &past,
+		}
+		Expect(s.CreateBatch(ctx, []*store.NodeCommand{cmd})).To(Succeed())
+
+		Expect(s.CommandExpireBefore(ctx, "n1", time.Now())).To(Succeed())
+		Expect(phaseOf(cmd.ID)).To(Equal(store.CommandExpired))
 	})
 })

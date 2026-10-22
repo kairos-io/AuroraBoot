@@ -2325,6 +2325,14 @@
                         "exec"
                     ],
                     "example": "upgrade"
+                },
+                "failFast": {
+                    "description": "FailFast stops the fan-out at the first node that fails. It is read on\nthe group endpoint only; a command addressed to one node is not a batch.",
+                    "type": "boolean"
+                },
+                "maxConcurrency": {
+                    "description": "MaxConcurrency caps how many nodes of the fan-out hold a command at\nonce; 1 makes the rollout sequential and 0 dispatches to all of them. It\nis read on the group endpoint only, for the same reason as FailFast.",
+                    "type": "integer"
                 }
             }
         },
@@ -2988,12 +2996,20 @@
                 "failed": {
                     "type": "integer"
                 },
+                "maxConcurrency": {
+                    "description": "MaxConcurrency is the in-flight limit the batch was created with, zero\nwhen it was not throttled.",
+                    "type": "integer"
+                },
                 "pending": {
                     "type": "integer"
                 },
                 "phase": {
                     "description": "Phase is the batch as a whole: Pending while any node still has work\nahead of it, then Failed if any node failed, Canceled if the batch was\nstopped before every node ran, and Completed when every node succeeded.",
                     "type": "string"
+                },
+                "queued": {
+                    "description": "Queued is how many nodes are held back by the concurrency limit and\nhave not been offered their command yet. They are counted in Pending as\nwell, so Pending stays \"nodes with work still ahead of them\".",
+                    "type": "integer"
                 },
                 "running": {
                     "type": "integer"
@@ -3199,6 +3215,10 @@
                 },
                 "managedNodeID": {
                     "type": "string"
+                },
+                "maxConcurrency": {
+                    "description": "MaxConcurrency is how many commands of this batch may be in flight at\nonce. Zero means no limit, which is the fan-out behaviour a caller that\ndoes not ask for a limit keeps. Like FailFast it is carried on every row\nrather than in a batch table, so the rule travels with the command that\nhas to apply it.",
+                    "type": "integer"
                 },
                 "phase": {
                     "type": "string"

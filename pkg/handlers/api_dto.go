@@ -143,6 +143,13 @@ type APIUpdateGroupRequest struct {
 type APICreateCommandRequest struct {
 	Command string            `json:"command" example:"upgrade" enums:"upgrade,upgrade-recovery,reset,apply-cloud-config,reboot,exec"`
 	Args    map[string]string `json:"args"`
+	// FailFast stops the fan-out at the first node that fails. It is read on
+	// the group endpoint only; a command addressed to one node is not a batch.
+	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency caps how many nodes of the fan-out hold a command at
+	// once; 1 makes the rollout sequential and 0 dispatches to all of them. It
+	// is read on the group endpoint only, for the same reason as FailFast.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // APIBulkCommandRequest is the JSON body of POST /api/v1/nodes/commands.
@@ -150,6 +157,11 @@ type APIBulkCommandRequest struct {
 	Selector store.CommandSelector `json:"selector"`
 	Command  string                `json:"command" example:"upgrade"`
 	Args     map[string]string     `json:"args"`
+	// FailFast stops the fan-out at the first node that fails.
+	FailFast bool `json:"failFast,omitempty"`
+	// MaxConcurrency caps how many nodes of the fan-out hold a command at
+	// once; 1 makes the rollout sequential and 0 dispatches to all of them.
+	MaxConcurrency int `json:"maxConcurrency,omitempty"`
 }
 
 // APIUpdateCommandStatusRequest is the JSON body of

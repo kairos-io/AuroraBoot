@@ -485,10 +485,45 @@ func (f *fakeCommandStore) ListByBatch(_ context.Context, batchID string) ([]*st
 	return result, nil
 }
 
-// CancelPendingInBatch mirrors the gorm store: only the rows still Pending are
-// moved, so a command another path already claimed for delivery is left to
-// report its own result. A fake that moved every row regardless of phase would
-// pass a handler that cancels a running upgrade.
+// PromoteQueuedInBatch mirrors the gorm store: it fills the free slots of the
+// batch from its Queued rows, oldest first, and returns what it moved. A fake
+// that promoted unconditionally would hide a handler that releases a slot the
+// batch never had.
+func (f *fakeCommandStore) PromoteQueuedInBatch(_ context.Context, batchID string, limit int) ([]*store.NodeCommand, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if batchID == "" || limit <= 0 {
+		return nil, nil
+	}
+	inFlight := 0
+	for _, cmd := range f.cmds {
+		if cmd.BatchID != batchID {
+			continue
+		}
+		switch cmd.Phase {
+		case store.CommandPending, store.CommandDelivered, store.CommandRunning:
+			inFlight++
+		}
+	}
+	var promoted []*store.NodeCommand
+	for _, cmd := range f.cmds {
+		if inFlight >= limit {
+			break
+		}
+		if cmd.BatchID != batchID || cmd.Phase != store.CommandQueued {
+			continue
+		}
+		cmd.Phase = store.CommandPending
+		promoted = append(promoted, cmd)
+		inFlight++
+	}
+	return promoted, nil
+}
+
+// CancelPendingInBatch mirrors the gorm store: only the rows still Pending or
+// Queued are moved, so a command another path already claimed for delivery is
+// left to report its own result. A fake that moved every row regardless of
+// phase would pass a handler that cancels a running upgrade.
 func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, batchID string, reason string) (int, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -498,7 +533,8 @@ func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, batchID strin
 	now := time.Now()
 	n := 0
 	for _, cmd := range f.cmds {
-		if cmd.BatchID == batchID && cmd.Phase == store.CommandPending {
+		if cmd.BatchID == batchID &&
+			(cmd.Phase == store.CommandPending || cmd.Phase == store.CommandQueued) {
 			cmd.Phase = store.CommandCanceled
 			cmd.Result = reason
 			cmd.CompletedAt = &now
