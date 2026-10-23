@@ -19,7 +19,9 @@ export function RecentBatches({ groupID, nodeID }: { groupID?: string; nodeID?: 
     let live = true;
     listBatches({ groupID, nodeID, limit: RECENT_LIMIT })
       .then((res) => {
-        if (live) setBatches(res.batches);
+        if (!live) return;
+        setBatches(res.batches);
+        setError(null);
       })
       .catch((err) => {
         if (live) setError((err as Error).message);
