@@ -136,6 +136,18 @@ func (a *BatchStoreAdapter) BusyNodes(ctx context.Context, nodeIDs []string) ([]
 func (a *BatchStoreAdapter) Advance(ctx context.Context, batchID string, now time.Time) ([]*store.NodeCommand, error) {
 	return a.S.BatchAdvance(ctx, batchID, now)
 }
+func (a *BatchStoreAdapter) Stop(ctx context.Context, batchID, reason string, now time.Time) error {
+	return a.S.BatchStop(ctx, batchID, reason, now)
+}
+func (a *BatchStoreAdapter) NodeBooted(ctx context.Context, nodeID, bootState string, bootedAt *time.Time, now time.Time) ([]string, error) {
+	return a.S.BatchNodeBooted(ctx, nodeID, bootState, bootedAt, now)
+}
+func (a *BatchStoreAdapter) ActiveIDs(ctx context.Context) ([]string, error) {
+	return a.S.BatchActiveIDs(ctx)
+}
+func (a *BatchStoreAdapter) PostponeExpiredDeadlines(ctx context.Context, now time.Time) error {
+	return a.S.BatchPostponeExpiredDeadlines(ctx, now)
+}
 
 // ArtifactStoreAdapter adapts Store to the store.ArtifactStore interface.
 type ArtifactStoreAdapter struct{ S *Store }

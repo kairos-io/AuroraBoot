@@ -79,4 +79,72 @@ var _ = Describe("Gorm batch store on PostgreSQL", func() {
 			Count(&commands).Error).To(Succeed())
 		Expect(commands).To(Equal(int64(2)))
 	})
+
+	// rebootingOnPostgres starts an upgrade batch over n nodes with
+	// concurrency 1 and brings node 0 to rebooting since a minute ago.
+	rebootingOnPostgres := func(n int) (*store.CommandBatch, []*store.ManagedNode, time.Time) {
+		nodes := make([]*store.ManagedNode, n)
+		rows := make([]*store.BatchNode, n)
+		for i := range nodes {
+			nodes[i] = &store.ManagedNode{MachineID: uuid.NewString(), Hostname: uuid.NewString()}
+			Expect(s.Register(ctx, nodes[i])).To(Succeed())
+			Expect(s.UpdatePhase(ctx, nodes[i].ID, store.PhaseOnline)).To(Succeed())
+			rows[i] = &store.BatchNode{NodeID: nodes[i].ID, Position: i, Hostname: nodes[i].Hostname}
+		}
+		b := &store.CommandBatch{
+			ID: uuid.NewString(), Command: store.CmdUpgrade, Concurrency: 1,
+			StopOnFailure: true, RebootTimeoutSeconds: store.DefaultRebootTimeoutSeconds,
+		}
+		Expect(s.BatchCreate(ctx, b, rows)).To(Succeed())
+		cmds, err := s.BatchAdvance(ctx, b.ID, time.Now())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandCompleted, "")).To(Succeed())
+		since := time.Now().Add(-time.Minute).UTC().Truncate(time.Second)
+		Expect(s.UnsafeDB().Model(&store.NodeCommand{}).Where("id = ?", cmds[0].ID).
+			Update("completed_at", since).Error).To(Succeed())
+		_, err = s.BatchAdvance(ctx, b.ID, time.Now())
+		Expect(err).NotTo(HaveOccurred())
+		return b, nodes, since
+	}
+
+	It("stops the batch when a node comes back on a fallback", func() {
+		b, nodes, since := rebootingOnPostgres(2)
+
+		bootedAt := since.Add(time.Minute)
+		ids, err := s.BatchNodeBooted(ctx, nodes[0].ID, store.BootStatePassive, &bootedAt, time.Now())
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ids).To(Equal([]string{b.ID}))
+
+		got, err := s.BatchGet(ctx, b.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.Phase).To(Equal(store.BatchStopped))
+		Expect(got.StoppedByNodeID).To(HaveValue(Equal(nodes[0].ID)))
+		Expect(got.Nodes[0].State).To(Equal(store.BatchNodeFailed))
+		Expect(got.Nodes[1].State).To(Equal(store.BatchNodeCanceled))
+		Expect(got.FinishedAt).NotTo(BeNil())
+	})
+
+	It("postpones an expired deadline, then times the node out and fails its upgrade", func() {
+		b, nodes, since := rebootingOnPostgres(1)
+		restart := since.Add(20 * time.Minute)
+
+		Expect(s.BatchPostponeExpiredDeadlines(ctx, restart)).To(Succeed())
+		got, err := s.BatchGet(ctx, b.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.Nodes[0].Deadline).To(HaveValue(BeTemporally("==", restart.Add(10*time.Minute))))
+
+		_, err = s.BatchAdvance(ctx, b.ID, restart.Add(11*time.Minute))
+		Expect(err).NotTo(HaveOccurred())
+		got, err = s.BatchGet(ctx, b.ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(got.Nodes[0].State).To(Equal(store.BatchNodeTimedOut))
+		Expect(got.Phase).To(Equal(store.BatchStopped))
+		node, err := s.NodeGetByID(ctx, nodes[0].ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(node.UpgradeState).To(Equal(store.UpgradeStateFailed))
+
+		ids, err := s.BatchActiveIDs(ctx)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(ids).NotTo(ContainElement(b.ID))
+	})
 })
