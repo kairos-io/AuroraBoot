@@ -268,6 +268,73 @@ var _ = Describe("Rolling batches", func() {
 		})
 	})
 
+	Describe("an upgrade batch whose node registers again", func() {
+		var batchID string
+
+		// reregister sends a registration without uptime, as an agent whose
+		// heartbeats carry no metrics does after it boots.
+		reregister := func(a *agent, bootState string) {
+			resp := doPost(testServerURL, "/api/v1/nodes/register", "", map[string]any{
+				"registrationToken": testRegToken,
+				"machineID":         a.machineID,
+				"hostname":          "host-batch-0",
+				"bootState":         bootState,
+			})
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			resp.Body.Close()
+		}
+
+		upgradeState := func(a *agent) func() string {
+			return func() string {
+				n, err := nodeGormStore.NodeGetByID(context.Background(), a.id)
+				Expect(err).NotTo(HaveOccurred())
+				return n.UpgradeState
+			}
+		}
+
+		rowState := func() string {
+			b, err := nodeGormStore.BatchGet(context.Background(), batchID)
+			Expect(err).NotTo(HaveOccurred())
+			return b.Nodes[0].State
+		}
+
+		BeforeEach(func() {
+			online(1)
+			batchID = startGroup(map[string]any{
+				"command": "upgrade",
+				"args":    map[string]string{"source": "oci:quay.io/kairos/kairos:v4"},
+			})["id"].(string)
+		})
+
+		It("settles the upgrade the batch timed out from the boot state it reports", func() {
+			cmd := nextCommand(agents[0], 5*time.Second)
+			Expect(cmd).NotTo(BeEmpty())
+			report(agents[0], cmd, "Completed", "rebooting")
+			Eventually(rowState, 5*time.Second, 50*time.Millisecond).Should(Equal(store.BatchNodeRebooting))
+
+			_, err := nodeGormStore.BatchAdvance(context.Background(), batchID, time.Now().Add(time.Hour))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rowState()).To(Equal(store.BatchNodeTimedOut))
+			Expect(upgradeState(agents[0])()).To(Equal(store.UpgradeStateFailed))
+
+			reregister(agents[0], "active")
+
+			Expect(upgradeState(agents[0])()).To(Equal(store.UpgradeStateDone))
+			Expect(rowState()).To(Equal(store.BatchNodeTimedOut))
+		})
+
+		It("keeps an upgrade failed when its command failed", func() {
+			cmd := nextCommand(agents[0], 5*time.Second)
+			Expect(cmd).NotTo(BeEmpty())
+			report(agents[0], cmd, "Failed", "image pull failed")
+			Eventually(upgradeState(agents[0]), 5*time.Second, 50*time.Millisecond).Should(Equal(store.UpgradeStateFailed))
+
+			reregister(agents[0], "active")
+
+			Expect(upgradeState(agents[0])()).To(Equal(store.UpgradeStateFailed))
+		})
+	})
+
 	Describe("the batch endpoints", func() {
 		getBatch := func(id string) map[string]any {
 			resp := adminGet(testServerURL, "/api/v1/batches/"+id, testAdminPassword)
