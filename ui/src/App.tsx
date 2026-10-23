@@ -5,6 +5,8 @@ import { Login } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Groups } from "./pages/Groups";
 import { GroupDetail } from "./pages/GroupDetail";
+import { Batches } from "./pages/Batches";
+import { BatchDetail } from "./pages/BatchDetail";
 import { Nodes } from "./pages/Nodes";
 import { NodeDetail } from "./pages/NodeDetail";
 import { Artifacts } from "./pages/Artifacts";
@@ -55,6 +57,8 @@ export default function App() {
         <Route index element={<Dashboard />} />
         <Route path="groups" element={<Groups />} />
         <Route path="groups/:id" element={<GroupDetail />} />
+        <Route path="batches" element={<Batches />} />
+        <Route path="batches/:id" element={<BatchDetail />} />
         <Route path="nodes" element={<Nodes />} />
         <Route path="nodes/:id" element={<NodeDetail />} />
         <Route path="artifacts" element={<Artifacts />} />

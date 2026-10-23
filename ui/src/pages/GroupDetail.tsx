@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { getGroup, deleteGroup, sendGroupCommand, updateGroup, type Group } from "@/api/groups";
-import type { Rollout } from "@/api/batches";
+import type { Batch, Rollout } from "@/api/batches";
 import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -131,12 +131,14 @@ export function GroupDetail() {
     rollout?: Rollout,
   ) {
     if (!id) return;
+    let batch: Batch;
     if (cmdTarget === "selection") {
-      await sendBulkCommand({ nodeIDs: selectedIDs }, command, args, rollout);
+      batch = await sendBulkCommand({ nodeIDs: selectedIDs }, command, args, rollout);
     } else {
-      await sendGroupCommand(id, command, args, rollout);
+      batch = await sendGroupCommand(id, command, args, rollout);
     }
     setCmdTarget(null);
+    navigate(`/batches/${batch.id}`);
   }
 
   if (!group) {
