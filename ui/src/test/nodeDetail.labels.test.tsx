@@ -65,6 +65,7 @@ function mockFetch(opts: { labelsStatus?: number; labelsBody?: unknown } = {}) {
         return json(labelsBody, labelsStatus);
       }
       if (url === `/api/v1/nodes/${NODE_ID}`) return json(node);
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
       return json([]);
     }),
   };

@@ -49,6 +49,7 @@ function mockFetch() {
     }
     if (url.startsWith("/api/v1/groups/g1")) return json(group);
     if (url.startsWith("/api/v1/nodes")) return json(nodes);
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
     return json([]);
   });
   return { fn, calls };

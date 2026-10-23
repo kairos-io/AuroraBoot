@@ -50,6 +50,7 @@ function mockFetch(opts: { node?: unknown; commands?: unknown[] } = {}) {
       if (url.endsWith("/labels") && method === "PUT") return json({ status: "ok" });
       if (url === `/api/v1/nodes/${NODE_ID}`) return json(node);
       if (url === `/api/v1/nodes/${NODE_ID}/commands`) return json(commands);
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
       return json([]);
     }),
   };

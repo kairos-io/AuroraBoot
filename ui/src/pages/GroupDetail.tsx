@@ -29,6 +29,7 @@ import {
 import { StatTile } from "@/components/fleet/StatTile";
 import { StackBar } from "@/components/fleet/StackBar";
 import { SelectionBar } from "@/components/fleet/SelectionBar";
+import { RecentBatches } from "@/components/fleet/RecentBatches";
 import { Activity, AlertTriangle, Cpu, Download, Layers, MoreHorizontal, ShieldAlert, Terminal } from "lucide-react";
 import { isOffline, isOnline } from "@/lib/phase";
 import { cpuCount, hasBootIssue, imageVersion, memGiB } from "@/lib/nodeInfo";
@@ -236,6 +237,10 @@ export function GroupDetail() {
         </Button>
       </SelectionBar>
       <NodeTable nodes={nodes} showGroupColumn={false} selectable selected={selected} onSelectedChange={setSelected} />
+
+      <div className="mt-6">
+        <RecentBatches groupID={group.id} />
+      </div>
 
       <ConfirmDialog
         open={confirmDelete}
