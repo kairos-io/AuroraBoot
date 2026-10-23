@@ -61,6 +61,22 @@ var _ = Describe("Gorm Store reset lifecycle", func() {
 		Expect(got.ResetProgressAt).NotTo(BeNil())
 	})
 
+	It("stamps ResetProgressAt when a heartbeat after the reboot reports autoreset", func() {
+		n := register("n1")
+		cmdID := issueCommand(ctx, s, n.ID, store.CmdReset)
+		Expect(s.UpdateStatus(ctx, cmdID, store.CommandCompleted, "")).To(Succeed())
+
+		before := time.Now()
+		Expect(s.SettleAfterReboot(ctx, n.ID, store.BootStateAutoReset, time.Now().Add(time.Second))).To(Succeed())
+
+		got, _ := s.NodeGetByID(ctx, n.ID)
+		Expect(got.ResetState).To(Equal(store.ResetStateInProgress))
+		// An agent with credentials heartbeats instead of re-registering, so this
+		// path has to re-anchor the expiry budget too (kairos-io/kairos#4287).
+		Expect(got.ResetProgressAt).NotTo(BeNil())
+		Expect(got.ResetProgressAt.Before(before)).To(BeFalse())
+	})
+
 	It("does not stamp ResetProgressAt on the terminal transitions", func() {
 		for _, to := range []string{store.ResetStateDone, store.ResetStateFailed} {
 			n := register("n-" + to)

@@ -491,8 +491,8 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 // statement so the "done" transition and its timestamp land atomically. This
 // mirrors the store's existing CAS idiom (ClaimForDelivery / CASEjectState).
 //
-// The transition to in-progress also stamps reset_progress_at, because the only
-// way to reach it is a re-register reporting bootState=autoreset. That re-anchors
+// The transition to in-progress also stamps reset_progress_at, because reaching
+// it means the node came back reporting bootState=autoreset. That re-anchors
 // the reset timeout on the last proof of liveness, which is what
 // kairos-io/kairos#4287 asks for: fail a reset only when the node has not come
 // back since.
@@ -567,6 +567,83 @@ func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []
 	return res.RowsAffected == 1, nil
 }
 
+// SettleAfterReboot resolves a node's pending upgrade or reset from a node that
+// booted at bootedAt. It locks the node row, so the check against the recorded
+// reboot and the transition see the same operation: an upgrade or reset
+// requested in between clears the recorded reboot and waits for the next one.
+func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string, bootedAt time.Time) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNodes(tx, []string{nodeID}); err != nil {
+			return err
+		}
+		var n store.ManagedNode
+		if err := tx.Where("id = ?", nodeID).First(&n).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		now := time.Now()
+		updates := map[string]any{}
+		if n.UpgradeState == store.UpgradeStatePending && rebootedAfter(n.UpgradeRebootAt, bootedAt) {
+			if to, ok := store.UpgradeOutcome(bootState); ok {
+				updates["upgrade_state"] = to
+				if to == store.UpgradeStateDone {
+					updates["last_upgrade"] = &now
+				}
+			}
+		}
+		resetPending := n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress
+		if resetPending && rebootedAfter(n.ResetRebootAt, bootedAt) {
+			if to, ok := store.ResetOutcome(n.ResetState, bootState); ok {
+				updates["reset_state"] = to
+				if to == store.ResetStateDone {
+					updates["last_reset"] = &now
+				}
+				// Re-anchor the reset timeout, as AdvanceReset does for a
+				// re-register (kairos-io/kairos#4287).
+				if to == store.ResetStateInProgress {
+					updates["reset_progress_at"] = &now
+				}
+			}
+		}
+		if len(updates) == 0 {
+			return nil
+		}
+		return tx.Model(&store.ManagedNode{}).Where("id = ?", nodeID).Updates(updates).Error
+	})
+}
+
+// rebootedAfter reports whether a node that booted at bootedAt went through
+// the reboot scheduled at rebootAt.
+func rebootedAfter(rebootAt *time.Time, bootedAt time.Time) bool {
+	return rebootAt != nil && bootedAt.After(*rebootAt)
+}
+
+// recordReboot stamps the reboot an upgrade or reset command scheduled when it
+// completed, on nodes still waiting for that operation's outcome.
+func recordReboot(tx *gorm.DB, completed []store.NodeCommand) error {
+	resetNodes, upgradeNodes := lifecycleNodes(completed)
+	if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		return err
+	}
+	now := time.Now()
+	if len(resetNodes) > 0 {
+		if err := tx.Model(&store.ManagedNode{}).
+			Where("id IN ? AND reset_state IN ?", resetNodes,
+				[]string{store.ResetStatePending, store.ResetStateInProgress}).
+			Update("reset_reboot_at", &now).Error; err != nil {
+			return err
+		}
+	}
+	if len(upgradeNodes) > 0 {
+		return tx.Model(&store.ManagedNode{}).
+			Where("id IN ? AND upgrade_state = ?", upgradeNodes, store.UpgradeStatePending).
+			Update("upgrade_reboot_at", &now).Error
+	}
+	return nil
+}
+
 // --- CommandStore ---
 
 func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error {
@@ -623,6 +700,7 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 					"reset_state":        store.ResetStatePending,
 					"reset_requested_at": &now,
 					"reset_progress_at":  nil,
+					"reset_reboot_at":    nil,
 				}).Error; err != nil {
 				return err
 			}
@@ -634,6 +712,7 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 				Updates(map[string]any{
 					"upgrade_state":        store.UpgradeStatePending,
 					"upgrade_requested_at": &now,
+					"upgrade_reboot_at":    nil,
 				}).Error; err != nil {
 				return err
 			}
@@ -740,6 +819,9 @@ func (s *Store) updateStatus(ctx context.Context, phase, result, where string, a
 			Where(where, args...).
 			Updates(updates).Error; err != nil {
 			return err
+		}
+		if phase == store.CommandCompleted {
+			return recordReboot(tx, updated)
 		}
 		if phase != store.CommandFailed {
 			return nil

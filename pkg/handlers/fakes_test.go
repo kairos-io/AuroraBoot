@@ -335,6 +335,10 @@ func (f *fakeNodeStore) markUpgradePending(nodeID string) error {
 	}
 	return fmt.Errorf("not found")
 }
+func (f *fakeNodeStore) SettleAfterReboot(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+
 func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()

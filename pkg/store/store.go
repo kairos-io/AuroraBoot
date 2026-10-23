@@ -96,13 +96,19 @@ type ManagedNode struct {
 	ResetRequestedAt *time.Time `json:"resetRequestedAt,omitempty"`
 	// ResetProgressAt is when the reset last made observable progress. Two
 	// events stamp it: the node claiming the reset command for delivery, and
-	// the node re-registering reporting bootState=autoreset (the lifecycle
-	// moving from pending to in-progress). The reset timeout is measured from
+	// the node coming back reporting bootState=autoreset, by re-registering or
+	// by a heartbeat after the reset reboot (the lifecycle moving from pending
+	// to in-progress). The reset timeout is measured from
 	// this timestamp when it is set, so a node that picks the command up late
 	// still gets a full window to reboot, wipe and come back instead of sharing
 	// the one that started at ResetRequestedAt. Nil until the reset reaches the
 	// node, and cleared when a new reset is requested.
 	ResetProgressAt *time.Time `json:"resetProgressAt,omitempty"`
+	// ResetRebootAt is when the agent reported the pending reset command
+	// Completed, which is when it scheduled the reboot. A heartbeat from a boot
+	// after it settles the reset. It is kept on the node, not read from the
+	// command, so clearing the command history cannot strand the reset.
+	ResetRebootAt *time.Time `json:"-"`
 	// LastReset is when the most recent automatic reset completed successfully.
 	LastReset *time.Time `json:"lastReset,omitempty"`
 	// UpgradeState tracks the upgrade lifecycle across the reboot an upgrade
@@ -115,6 +121,10 @@ type ManagedNode struct {
 	// UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set
 	// to pending); nil when no upgrade has been requested.
 	UpgradeRequestedAt *time.Time `json:"upgradeRequestedAt,omitempty"`
+	// UpgradeRebootAt is when the agent reported the pending upgrade command
+	// Completed, which is when it scheduled the reboot. A heartbeat from a boot
+	// after it settles the upgrade, for the same reason as ResetRebootAt.
+	UpgradeRebootAt *time.Time `json:"-"`
 	// LastUpgrade is when the most recent upgrade completed successfully.
 	LastUpgrade *time.Time `json:"lastUpgrade,omitempty"`
 	APIKey      string     `json:"-" gorm:"index"`
@@ -309,6 +319,12 @@ type NodeStore interface {
 	// stampLastUpgrade is set (the transition to done), LastUpgrade is set to now
 	// in the same update.
 	AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error)
+	// SettleAfterReboot resolves nodeID's pending upgrade or reset from the
+	// boot state of a node that booted at bootedAt, when that is after the
+	// reboot the pending command scheduled (UpgradeRebootAt, ResetRebootAt).
+	// The check and the transition happen in one transaction, so a heartbeat
+	// cannot settle an operation requested after the one it observed.
+	SettleAfterReboot(ctx context.Context, nodeID, bootState string, bootedAt time.Time) error
 	Delete(ctx context.Context, id string) error
 }
 

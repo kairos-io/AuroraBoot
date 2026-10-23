@@ -64,6 +64,9 @@ func (a *NodeStoreAdapter) FailResetBefore(ctx context.Context, nodeID string, d
 func (a *NodeStoreAdapter) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	return a.S.AdvanceUpgrade(ctx, nodeID, fromStates, to, stampLastUpgrade)
 }
+func (a *NodeStoreAdapter) SettleAfterReboot(ctx context.Context, nodeID, bootState string, bootedAt time.Time) error {
+	return a.S.SettleAfterReboot(ctx, nodeID, bootState, bootedAt)
+}
 func (a *NodeStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.NodeDelete(ctx, id)
 }

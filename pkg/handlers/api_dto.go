@@ -72,6 +72,15 @@ type APIRegisterRequest struct {
 	// BootState is the node's reported boot state (optional): one of
 	// active | passive | recovery | autoreset (unknown values pass through).
 	BootState string `json:"bootState,omitempty" example:"active"`
+	// Group is the name of the group a new node joins (optional). The holder
+	// of the registration token chooses it for a new node, so the
+	// registration token decides group placement. An unknown name leaves the
+	// node ungrouped. Ignored when the node registers again.
+	Group string `json:"group,omitempty" example:"edge-sites"`
+	// Labels are a new node's initial labels (optional). The holder of the
+	// registration token chooses them for a new node. Ignored when the node
+	// registers again.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // APIRegisterResponse is the JSON body returned by POST /api/v1/nodes/register.

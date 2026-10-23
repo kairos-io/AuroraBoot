@@ -57,6 +57,11 @@ type NodeRegisterRequest struct {
 	MachineID         string `json:"machineID"`
 	Hostname          string `json:"hostname,omitempty"`
 	AgentVersion      string `json:"agentVersion,omitempty"`
+	// Group is the name of the group a new node joins; an unknown name leaves
+	// it ungrouped.
+	Group string `json:"group,omitempty"`
+	// Labels are a new node's initial labels.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // NodeRegisterResponse is returned by POST /api/v1/nodes/register.
