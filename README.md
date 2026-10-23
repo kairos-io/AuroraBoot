@@ -74,6 +74,7 @@ Behind a reverse proxy that rewrites the `Host` header, set `AURORABOOT_URL` (`-
 | `AURORABOOT_ADMIN_PASSWORD` | Override admin password |
 | `AURORABOOT_REG_TOKEN` | Override registration token |
 | `--disable-rate-limit` | Turn off per-identity rate limiting of the node-driven endpoints |
+| `--reset-timeout 30m` / `AURORABOOT_RESET_TIMEOUT` | How long a node has to come back after a reset before the reset is reported failed. Defaults to 30 minutes; the clock restarts when the node picks the reset command up and again when it re-registers mid-reset, and a negative duration disables expiry |
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
 

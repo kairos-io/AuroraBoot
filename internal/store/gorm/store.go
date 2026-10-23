@@ -490,15 +490,57 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 // RowsAffected == 0. When stampLastReset is set, last_reset is written in the same
 // statement so the "done" transition and its timestamp land atomically. This
 // mirrors the store's existing CAS idiom (ClaimForDelivery / CASEjectState).
+//
+// The transition to in-progress also stamps reset_progress_at, because reaching
+// it means the node came back reporting bootState=autoreset. That re-anchors
+// the reset timeout on the last proof of liveness, which is what
+// kairos-io/kairos#4287 asks for: fail a reset only when the node has not come
+// back since.
 func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	updates := map[string]any{"reset_state": to}
 	if stampLastReset {
 		now := time.Now()
 		updates["last_reset"] = &now
 	}
+	if to == store.ResetStateInProgress {
+		now := time.Now()
+		updates["reset_progress_at"] = &now
+	}
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND reset_state IN ?", nodeID, fromStates).
 		Updates(updates)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// StampResetProgress refreshes reset_progress_at to now for a reset that is
+// still in flight. The state predicate is part of the conditional update, so a
+// delivery that lands after the lifecycle already resolved cannot re-anchor a
+// done or failed reset. Returns true only when a row was stamped.
+func (s *Store) StampResetProgress(ctx context.Context, nodeID string) (bool, error) {
+	now := time.Now()
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND reset_state IN ?",
+			nodeID, []string{store.ResetStatePending, store.ResetStateInProgress}).
+		Update("reset_progress_at", &now)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// FailResetBefore compare-and-sets an overdue in-flight reset to failed. Both
+// timestamps participate in the conditional update so nothing that refreshed the
+// budget concurrently can be failed from a stale read: a new reset request
+// refreshes reset_requested_at, and either taking delivery of the reset command
+// or re-registering mid-reset refreshes reset_progress_at.
+func (s *Store) FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error) {
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND reset_state IN ? AND reset_requested_at <= ? AND (reset_progress_at IS NULL OR reset_progress_at <= ?)",
+			nodeID, []string{store.ResetStatePending, store.ResetStateInProgress}, deadline, deadline).
+		Update("reset_state", store.ResetStateFailed)
 	if res.Error != nil {
 		return false, res.Error
 	}
@@ -558,6 +600,11 @@ func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string,
 				if to == store.ResetStateDone {
 					updates["last_reset"] = &now
 				}
+				// Re-anchor the reset timeout, as AdvanceReset does for a
+				// re-register (kairos-io/kairos#4287).
+				if to == store.ResetStateInProgress {
+					updates["reset_progress_at"] = &now
+				}
 			}
 		}
 		if len(updates) == 0 {
@@ -610,6 +657,9 @@ func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error
 // one at a time inside it so each gets its own created_at and ListByBatch keeps
 // returning them in the order the caller built them.
 //
+// reset_progress_at is cleared with it, so the new reset's timeout window is
+// measured from this request and never inherits the previous reset's stamp.
+//
 // A node whose upgrade is already pending, or whose reset is pending or
 // in-progress, is left as it is. That state and its request time belong to an
 // operation still waiting for the node to reboot and re-register, and the
@@ -649,6 +699,7 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 				Updates(map[string]any{
 					"reset_state":        store.ResetStatePending,
 					"reset_requested_at": &now,
+					"reset_progress_at":  nil,
 					"reset_reboot_at":    nil,
 				}).Error; err != nil {
 				return err
@@ -698,15 +749,16 @@ func (s *Store) MarkDelivered(ctx context.Context, ids []string) error {
 }
 
 // ClaimForDelivery atomically transitions a single Pending command to Delivered.
-// The conditional WHERE (id = ? AND phase = Pending) plus a RowsAffected check
-// makes the claim a race-free compare-and-set: when a WS push and an agent poll
-// (or two concurrent polls) both target the same command, exactly one UPDATE
-// matches the still-Pending row and the loser sees RowsAffected == 0. Mirrors
-// the RowsAffected pattern in UpdateStatusForNode.
+// The conditional WHERE (id = ? AND phase = Pending AND not expired) plus a
+// RowsAffected check makes the claim a race-free compare-and-set: when a WS push
+// and an agent poll (or two concurrent polls) both target the same command,
+// exactly one UPDATE matches the still-deliverable row and the loser sees
+// RowsAffected == 0. The expiry predicate is repeated here, rather than relying
+// only on GetPending, so a command cannot expire between selection and claim.
 func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	now := time.Now()
 	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
-		Where("id = ? AND phase = ?", id, store.CommandPending).
+		Where("id = ? AND phase = ? AND (expires_at IS NULL OR expires_at > ?)", id, store.CommandPending, now).
 		Updates(map[string]any{
 			"phase":        store.CommandDelivered,
 			"delivered_at": &now,

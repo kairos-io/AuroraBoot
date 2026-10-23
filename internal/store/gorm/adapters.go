@@ -55,6 +55,12 @@ func (a *NodeStoreAdapter) ReleaseNode(ctx context.Context, nodeID, claimKey str
 func (a *NodeStoreAdapter) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	return a.S.AdvanceReset(ctx, nodeID, fromStates, to, stampLastReset)
 }
+func (a *NodeStoreAdapter) StampResetProgress(ctx context.Context, nodeID string) (bool, error) {
+	return a.S.StampResetProgress(ctx, nodeID)
+}
+func (a *NodeStoreAdapter) FailResetBefore(ctx context.Context, nodeID string, deadline time.Time) (bool, error) {
+	return a.S.FailResetBefore(ctx, nodeID, deadline)
+}
 func (a *NodeStoreAdapter) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	return a.S.AdvanceUpgrade(ctx, nodeID, fromStates, to, stampLastUpgrade)
 }
