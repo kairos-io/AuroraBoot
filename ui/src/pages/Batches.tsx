@@ -14,7 +14,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { commandLabel, countsText } from "@/lib/batch";
+import { commandLabel, countsText, phaseStatus } from "@/lib/batch";
 import { timeAgo } from "@/lib/time";
 
 const PAGE_SIZE = 50;
@@ -83,7 +83,7 @@ export function Batches() {
                     </TableCell>
                     <TableCell>{b.selection}</TableCell>
                     <TableCell>
-                      <StatusBadge status={b.phase} />
+                      <StatusBadge status={phaseStatus(b.phase)} label={b.phase} />
                     </TableCell>
                     <TableCell className="text-sm text-muted-foreground">
                       {countsText(b)}

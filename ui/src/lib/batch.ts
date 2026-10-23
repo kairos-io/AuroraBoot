@@ -9,6 +9,11 @@ const commandLabels: Record<string, string> = {
   exec: "Run command",
 };
 
+// A stopped batch needs attention, so its badge reads as a failure.
+export function phaseStatus(phase: string): string {
+  return phase === "stopped" ? "failed" : phase;
+}
+
 export function commandLabel(command: string): string {
   return commandLabels[command] ?? command;
 }
