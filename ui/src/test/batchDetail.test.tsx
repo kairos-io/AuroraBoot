@@ -135,6 +135,34 @@ describe("BatchDetail", () => {
     expect(getNode).toHaveBeenCalledWith("n1");
   });
 
+  it("keeps looking for the node that timed out until it comes back", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getBatch.mockResolvedValue(
+      makeBatch({
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "host-n1 did not come back in time",
+        stoppedByNodeID: "n1",
+        counts: { timed_out: 1 },
+        nodes: [row("n1", "timed_out", { deadline: "2026-10-23T10:20:00Z" })],
+      }),
+    );
+    getNode.mockResolvedValue({ id: "n1", hostname: "host-n1", lastHeartbeat: "2026-10-23T10:00:00Z" });
+    renderPage();
+    const banner = await screen.findByRole("alert");
+    await waitFor(() => expect(getNode).toHaveBeenCalledTimes(1));
+    expect(banner).not.toHaveTextContent(/came back at/);
+
+    getNode.mockResolvedValue({ id: "n1", hostname: "host-n1", lastHeartbeat: "2026-10-23T10:45:00Z" });
+    await tick(5000);
+    await tick(0);
+
+    await waitFor(() => expect(banner).toHaveTextContent(/host-n1 came back at .*\. The batch stays stopped\./));
+    const calls = getNode.mock.calls.length;
+    await tick(15000);
+    expect(getNode.mock.calls.length).toBe(calls);
+  });
+
   it("offers a new batch for the nodes that did not finish, without deleted nodes", async () => {
     getBatch.mockResolvedValue(
       makeBatch({
