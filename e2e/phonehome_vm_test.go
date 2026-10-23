@@ -192,7 +192,9 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 		spec := vmSpec{ISO: iso, Memory: envOr("MEMORY", "4000"), CPUs: envOr("CPUS", "2")}
 		for range 2 {
 			vm, err := startVMWith(spec)
-			Expect(err).ToNot(HaveOccurred())
+			// A VM that failed to start is still collected and destroyed,
+			// so its serial log explains the failure and its state
+			// directory goes away.
 			vms = append(vms, vm)
 			// Registered right after the start so an interrupt while the
 			// logs are written cannot skip it. DeferCleanup runs after
@@ -203,6 +205,7 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 					fmt.Printf("Could not destroy VM %s: %s\n", vm.machine.Config().ID, err)
 				}
 			})
+			Expect(err).ToNot(HaveOccurred())
 		}
 		// Booting the live ISO, installing, rebooting from disk and
 		// registering share one 15-minute budget.

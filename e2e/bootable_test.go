@@ -152,19 +152,20 @@ func startVMWith(spec vmSpec) (testVM, error) {
 	return startVMIn(stateDir, append(vmOpts(stateDir, spec), types.WithDriveSize("25000")))
 }
 
+// startVMIn starts the swtpm the options point qemu at, then the VM. On a
+// failed start it stops the swtpm, which nothing else would, and still returns
+// the VM: the caller saves its serial log from the state directory and
+// destroys it like a VM that started.
 func startVMIn(stateDir string, opts []types.MachineOption) (testVM, error) {
 	m, err := machine.New(opts...)
 	Expect(err).ToNot(HaveOccurred())
 
+	emulateTPM(stateDir)
 	vm := NewVM(m, stateDir)
 	if _, err = vm.Start(context.Background()); err != nil {
-		// The caller never receives a VM to destroy, so the swtpm vmOpts
-		// started and the state directory are released here.
 		stopTPM(stateDir)
-		_ = os.RemoveAll(stateDir)
-		return testVM{}, err
 	}
-	return testVM{VM: vm, machine: m}, nil
+	return testVM{VM: vm, machine: m}, err
 }
 
 func defaultVMOpts(stateDir string) []types.MachineOption {
@@ -188,8 +189,6 @@ func vmOpts(stateDir string, spec vmSpec) []types.MachineOption {
 
 	uid, _ := uuid.NewV4()
 	vmName := uid.String()
-
-	emulateTPM(stateDir)
 
 	sshPort, err = getFreePort()
 	Expect(err).ToNot(HaveOccurred())

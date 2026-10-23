@@ -1,10 +1,7 @@
 package e2e_test
 
 import (
-	"os"
 	"path/filepath"
-	"strconv"
-	"syscall"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -16,16 +13,6 @@ var _ = Describe("vmOpts", Label("e2e"), func() {
 
 	BeforeEach(func() {
 		stateDir = GinkgoT().TempDir()
-		// vmOpts starts a swtpm for the state dir; stop it with the spec.
-		DeferCleanup(func() {
-			pid, err := os.ReadFile(filepath.Join(stateDir, "tpm", "pid"))
-			if err != nil {
-				return
-			}
-			if p, err := strconv.Atoi(string(pid)); err == nil {
-				_ = syscall.Kill(p, syscall.SIGTERM)
-			}
-		})
 	})
 
 	build := func(spec vmSpec) *types.MachineConfig {
@@ -35,6 +22,12 @@ var _ = Describe("vmOpts", Label("e2e"), func() {
 		}
 		return cfg
 	}
+
+	It("builds the options without starting a TPM", func() {
+		build(vmSpec{ISO: "/x.iso"})
+
+		Expect(filepath.Join(stateDir, "tpm")).NotTo(BeADirectory())
+	})
 
 	It("boots the ISO it is given", func() {
 		GinkgoT().Setenv("ISO", "")
