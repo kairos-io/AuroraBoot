@@ -235,9 +235,11 @@ export function Nodes() {
   ) {
     const nodeIDs = targetNodes.map((n) => n.id);
     const send = () => {
-      sendBulkCommand({ nodeIDs }, command, args, rollout).catch((err) => {
-        toast(`Failed to send command: ${(err as Error).message}`, "error");
-      });
+      sendBulkCommand({ nodeIDs }, command, args, rollout)
+        .then((batch) => navigate(`/batches/${batch.id}`))
+        .catch((err) => {
+          toast(`Failed to send command: ${(err as Error).message}`, "error");
+        });
       setBulkCmdOpen(false);
     };
 

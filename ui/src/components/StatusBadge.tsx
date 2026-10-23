@@ -4,6 +4,8 @@ import { cn } from "@/lib/utils";
 
 interface StatusBadgeProps {
   status: string;
+  // Text shown instead of the status, which still decides the color.
+  label?: string;
   className?: string;
 }
 
@@ -19,8 +21,8 @@ const toneStyles: Record<Tone, string> = {
 // A node whose phase is missing must not be able to throw out of render and
 // take the whole page down with it, so an absent status reads as "unknown"
 // rather than as a blank screen.
-export function StatusBadge({ status, className }: StatusBadgeProps) {
-  const label = status || "unknown";
+export function StatusBadge({ status, label: text, className }: StatusBadgeProps) {
+  const label = text ?? (status || "unknown");
   return (
     <Badge variant="outline" className={cn(toneStyles[phaseTone(status)], className)}>
       {label}

@@ -36,7 +36,7 @@ import {
 // for that specific action. When opened from a quick-action menu the
 // parent passes defaultCommand and we skip straight to step 2.
 
-type CommandKey =
+export type CommandKey =
   | "upgrade"
   | "upgrade-recovery"
   | "reset"
@@ -140,6 +140,7 @@ interface CommandDialogProps {
     command: string,
     args: Record<string, unknown>,
     rollout?: Rollout,
+    nodeIDs?: string[],
   ) => void;
   // How many nodes the command reaches. The Rollout section appears when it
   // is more than one.
@@ -149,6 +150,14 @@ interface CommandDialogProps {
   // command preselected. Used by GroupDetail/NodeDetail quick-action
   // menus so the user doesn't re-pick something they just clicked.
   defaultCommand?: CommandKey | null;
+  // Prefill for the rollout settings and the command's arguments, used to
+  // repeat a batch.
+  defaultRollout?: Rollout;
+  defaultArgs?: Record<string, string>;
+  // When set, the dialog lists these nodes with a checkbox each (all checked)
+  // and passes the checked ids as the fourth argument of onSubmit. The target
+  // count is then the number checked.
+  nodeChoices?: { id: string; label: string }[];
 }
 
 export function CommandDialog({
@@ -157,7 +166,10 @@ export function CommandDialog({
   onSubmit,
   title = "Send command",
   defaultCommand,
-  targetCount,
+  targetCount: targetCountProp,
+  defaultRollout,
+  defaultArgs,
+  nodeChoices,
 }: CommandDialogProps) {
   const rolloutIds = useId();
   const [concurrencyArg, setConcurrencyArg] = useState("");
@@ -181,11 +193,36 @@ export function CommandDialog({
   }>({ artifactId: "", rows: [] });
   const [bundlePicks, setBundlePicks] = useState<Record<string, boolean>>({});
 
+  const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
+  const checkedIDs = nodeChoices
+    ?.filter((n) => !unchecked.has(n.id))
+    .map((n) => n.id);
+  const targetCount = checkedIDs ? checkedIDs.length : targetCountProp;
   const isRollout = (targetCount ?? 0) > 1;
   const reboots =
     command === "upgrade" || command === "reset" || command === "reboot";
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
+
+  function seedFromDefaults() {
+    if (defaultRollout) {
+      setConcurrencyArg(
+        defaultRollout.concurrency ? String(defaultRollout.concurrency) : "",
+      );
+      setStopOnFailure(defaultRollout.stopOnFailure);
+      setTimeoutMinutes(String(defaultRollout.rebootTimeoutSeconds / 60));
+    }
+    const source = defaultArgs?.source ?? "";
+    if (source.startsWith("artifact:")) {
+      setUpgradeSourceMode("artifact");
+      setSelectedArtifactId(source.slice("artifact:".length));
+    } else if (source.startsWith("oci:")) {
+      setUpgradeSourceMode("image");
+      setImageArg(source.slice("oci:".length));
+    }
+    if (defaultArgs?.config) setConfigArg(defaultArgs.config);
+    if (defaultArgs?.command) setShellCmd(defaultArgs.command);
+  }
 
   // Prefill or reset state on open/defaultCommand change. On open transition
   // we seed `command` with `defaultCommand`; on close transition we wipe
@@ -199,7 +236,9 @@ export function CommandDialog({
     setPrevDefaultCommand(defaultCommand);
     if (open) {
       setCommand(defaultCommand ?? "");
+      seedFromDefaults();
     } else {
+      setUnchecked(new Set());
       setCommand("");
       setImageArg("");
       setConfigArg("");
@@ -300,9 +339,9 @@ export function CommandDialog({
       if (Number.isFinite(concurrency) && concurrency > 0) {
         rollout.concurrency = concurrency;
       }
-      onSubmit(command, args, rollout);
+      onSubmit(command, args, rollout, checkedIDs);
     } else {
-      onSubmit(command, args);
+      onSubmit(command, args, undefined, checkedIDs);
     }
     onOpenChange(false);
   }
@@ -310,6 +349,7 @@ export function CommandDialog({
   // Whether the Send button should be enabled given the current args.
   const canSubmit = (() => {
     if (!command) return false;
+    if (checkedIDs && checkedIDs.length === 0) return false;
     if (command === "exec") return shellCmd.trim().length > 0;
     if (command === "upgrade" || command === "upgrade-recovery") {
       if (upgradeSourceMode === "image") return imageArg.trim().length > 0;
@@ -575,6 +615,31 @@ export function CommandDialog({
                 <p className="text-xs text-muted-foreground">
                   Output will be captured in the command history on the node page.
                 </p>
+              </div>
+            )}
+
+            {nodeChoices && (
+              <div className="grid gap-2 border-t pt-4">
+                <h3 className="text-sm font-semibold">Nodes</h3>
+                <div className="grid max-h-48 gap-1 overflow-y-auto">
+                  {nodeChoices.map((n) => (
+                    <label key={n.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={!unchecked.has(n.id)}
+                        onChange={(e) =>
+                          setUnchecked((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.delete(n.id);
+                            else next.add(n.id);
+                            return next;
+                          })
+                        }
+                      />
+                      {n.label}
+                    </label>
+                  ))}
+                </div>
               </div>
             )}
 
