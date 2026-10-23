@@ -496,6 +496,10 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 // the reset timeout on the last proof of liveness, which is what
 // kairos-io/kairos#4287 asks for: fail a reset only when the node has not come
 // back since.
+//
+// A transition to failed clears reset_reboot_at in the same statement: the node
+// itself showed the failure, so SettleAfterReboot must not turn it into done on
+// a later boot.
 func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	updates := map[string]any{"reset_state": to}
 	if stampLastReset {
@@ -505,6 +509,9 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 	if to == store.ResetStateInProgress {
 		now := time.Now()
 		updates["reset_progress_at"] = &now
+	}
+	if to == store.ResetStateFailed {
+		updates["reset_reboot_at"] = nil
 	}
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND reset_state IN ?", nodeID, fromStates).
@@ -551,12 +558,16 @@ func (s *Store) FailResetBefore(ctx context.Context, nodeID string, deadline tim
 // conditional UPDATE as AdvanceReset (... WHERE id = ? AND upgrade_state IN
 // fromStates), so exactly one of several concurrent re-register resolvers
 // performs any given transition. When stampLastUpgrade is set, last_upgrade is
-// written in the same statement as the transition to done.
+// written in the same statement as the transition to done. A transition to
+// failed clears upgrade_reboot_at for the same reason as in AdvanceReset.
 func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	updates := map[string]any{"upgrade_state": to}
 	if stampLastUpgrade {
 		now := time.Now()
 		updates["last_upgrade"] = &now
+	}
+	if to == store.UpgradeStateFailed {
+		updates["upgrade_reboot_at"] = nil
 	}
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND upgrade_state IN ?", nodeID, fromStates).

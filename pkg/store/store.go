@@ -289,7 +289,9 @@ type NodeStore interface {
 	// transition — so concurrent re-registers resolve exactly once. When
 	// stampLastReset is set (the transition to done), LastReset is set to now in
 	// the same update. The transition to in-progress additionally stamps
-	// ResetProgressAt, because reaching it means the node re-registered.
+	// ResetProgressAt, because reaching it means the node re-registered. A
+	// transition to failed clears ResetRebootAt, so a later boot does not
+	// settle the failure as done.
 	AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error)
 	// StampResetProgress refreshes ResetProgressAt to now, but only while the
 	// reset is still in flight (pending or in-progress), so a late delivery can
@@ -309,7 +311,8 @@ type NodeStore interface {
 	// fromStates to `to`, returning true only if this call performed the
 	// transition — so concurrent re-registers resolve exactly once. When
 	// stampLastUpgrade is set (the transition to done), LastUpgrade is set to now
-	// in the same update.
+	// in the same update. A transition to failed clears UpgradeRebootAt, so a
+	// later boot does not settle the failure as done.
 	AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error)
 	// SettleAfterReboot resolves nodeID's pending upgrade or reset from the
 	// boot state of a node that booted at bootedAt, when that is after the
