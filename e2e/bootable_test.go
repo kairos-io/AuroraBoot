@@ -157,8 +157,14 @@ func startVMIn(stateDir string, opts []types.MachineOption) (testVM, error) {
 	Expect(err).ToNot(HaveOccurred())
 
 	vm := NewVM(m, stateDir)
-	_, err = vm.Start(context.Background())
-	return testVM{VM: vm, machine: m}, err
+	if _, err = vm.Start(context.Background()); err != nil {
+		// The caller never receives a VM to destroy, so the swtpm vmOpts
+		// started and the state directory are released here.
+		stopTPM(stateDir)
+		_ = os.RemoveAll(stateDir)
+		return testVM{}, err
+	}
+	return testVM{VM: vm, machine: m}, nil
 }
 
 func defaultVMOpts(stateDir string) []types.MachineOption {

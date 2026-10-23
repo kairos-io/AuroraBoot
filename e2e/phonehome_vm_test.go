@@ -191,6 +191,15 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 			vm, err := startVMWith(spec)
 			Expect(err).ToNot(HaveOccurred())
 			vms = append(vms, vm)
+			// Registered right after the start so an interrupt while the
+			// logs are written cannot skip it. DeferCleanup runs after
+			// AfterAll, which gathers the logs from the live VMs.
+			DeferCleanup(func() {
+				stopTPM(vm.StateDir)
+				if err := vm.Destroy(nil); err != nil {
+					fmt.Printf("Could not destroy VM %s: %s\n", vm.machine.Config().ID, err)
+				}
+			})
 		}
 		// Booting the live ISO, installing, rebooting from disk and
 		// registering share one 15-minute budget.
@@ -270,12 +279,6 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 			// startWebServer hands out its cleanup only once the server is
 			// healthy, so a container that never got there is removed here.
 			_ = exec.Command("docker", "rm", "-f", webContainerName).Run()
-		}
-		for _, vm := range vms {
-			stopTPM(vm.StateDir)
-			if err := vm.Destroy(nil); err != nil {
-				fmt.Printf("Could not destroy VM %s: %s\n", vm.machine.Config().ID, err)
-			}
 		}
 	})
 
