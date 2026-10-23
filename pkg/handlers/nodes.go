@@ -98,59 +98,6 @@ func (h *NodeHandler) triggerFinalize(nodeID string) {
 	}()
 }
 
-// resolveReset advances a node's automatic-reset lifecycle (kairos-io/kairos#4255)
-// when it re-registers after the reset reboot. The phonehome agent calls Register
-// on every boot, so a Register from a node whose ResetState is pending/in-progress
-// means it rebooted; the reported boot state gives the outcome:
-//   - autoreset        → in-progress (the node booted the statereset entry and is
-//     mid-reset; the following boot will be active)
-//   - active           → done (the reset finished and the node is healthy again),
-//     stamping LastReset
-//   - passive/recovery → failed (the active image did not survive the reset)
-//
-// Transitions are compare-and-set so concurrent re-registers resolve exactly once.
-// Best-effort: a store error is ignored — the next boot/heartbeat retries. A node
-// not awaiting a reset is left untouched.
-func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode, bootState string) {
-	if node.ResetState != store.ResetStatePending && node.ResetState != store.ResetStateInProgress {
-		return
-	}
-	inFlight := []string{store.ResetStatePending, store.ResetStateInProgress}
-	switch bootState {
-	case store.BootStateAutoReset:
-		_, _ = h.nodes.AdvanceReset(ctx, node.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
-	case store.BootStateActive:
-		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateDone, true)
-	case store.BootStatePassive, store.BootStateRecovery:
-		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateFailed, false)
-	}
-}
-
-// resolveUpgrade advances a node's upgrade lifecycle when it re-registers after
-// the upgrade reboot. A Register from a node whose UpgradeState is pending means
-// it rebooted; the reported boot state gives the outcome:
-//   - active           → done (the node came back up on the upgraded image),
-//     stamping LastUpgrade
-//   - passive/recovery → failed (the upgraded active image did not boot and the
-//     node fell back)
-//
-// Any other boot state leaves the upgrade pending. Transitions are
-// compare-and-set so concurrent re-registers resolve exactly once. Best-effort:
-// a store error is ignored and the next boot retries. A node not awaiting an
-// upgrade is left untouched.
-func (h *NodeHandler) resolveUpgrade(ctx context.Context, node *store.ManagedNode, bootState string) {
-	if node.UpgradeState != store.UpgradeStatePending {
-		return
-	}
-	inFlight := []string{store.UpgradeStatePending}
-	switch bootState {
-	case store.BootStateActive:
-		_, _ = h.nodes.AdvanceUpgrade(ctx, node.ID, inFlight, store.UpgradeStateDone, true)
-	case store.BootStatePassive, store.BootStateRecovery:
-		_, _ = h.nodes.AdvanceUpgrade(ctx, node.ID, inFlight, store.UpgradeStateFailed, false)
-	}
-}
-
 // registerRequest is the expected body for node registration.
 type registerRequest struct {
 	RegistrationToken string              `json:"registrationToken"`
@@ -159,6 +106,12 @@ type registerRequest struct {
 	AgentVersion      string              `json:"agentVersion"`
 	Addresses         []store.NodeAddress `json:"addresses,omitempty"`
 	BootState         string              `json:"bootState,omitempty"`
+	// Group names the group a new node joins, as written into the phonehome
+	// config by an artifact built with a target group. An unknown name
+	// leaves the node ungrouped.
+	Group string `json:"group,omitempty"`
+	// Labels are a new node's initial labels.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Register handles POST /api/v1/nodes/register.
@@ -191,10 +144,11 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// A re-register is a strong "OS is up" signal too (a freshly-installed node
 		// phones home on first boot): attempt the auto eject-on-phone-home.
 		h.triggerFinalize(existing.ID)
-		// If this node is coming back from a reset or upgrade reboot, resolve
-		// that lifecycle from the reported boot state (kairos-io/kairos#4255).
-		h.resolveReset(c.Request().Context(), existing, req.BootState)
-		h.resolveUpgrade(c.Request().Context(), existing, req.BootState)
+		// A node that registers again has rebooted: one that lost its
+		// credentials in a reset comes back through here. Resolve a pending
+		// reset or upgrade from the boot state it reports (kairos-io/kairos#4255).
+		store.ResolveReset(c.Request().Context(), h.nodes, existing, req.BootState)
+		store.ResolveUpgrade(c.Request().Context(), h.nodes, existing, req.BootState)
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,
@@ -210,6 +164,7 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		Phase:        store.PhaseRegistered,
 		APIKey:       uuid.New().String(),
 		Labels:       make(map[string]string),
+		GroupID:      h.groupIDByName(c.Request().Context(), req.Group),
 		// Optional; empty when an older agent does not report them. Stored exactly
 		// as received — interface filtering is the agent's responsibility.
 		Addresses: req.Addresses,
@@ -217,6 +172,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// RemoteIP is server-observed, not agent-reported: the request the agent
 		// just made to register is itself the observation.
 		RemoteIP: c.RealIP(),
+	}
+
+	for k, v := range req.Labels {
+		node.Labels[k] = v
 	}
 
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
@@ -231,6 +190,20 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		"id":     node.ID,
 		"apiKey": node.APIKey,
 	})
+}
+
+// groupIDByName returns the ID of the group called name, or nil when name is
+// empty or no such group exists. Registration goes ahead either way: the
+// group only places the node, and an admin can place it later.
+func (h *NodeHandler) groupIDByName(ctx context.Context, name string) *string {
+	if name == "" || h.groups == nil {
+		return nil
+	}
+	g, err := h.groups.GetByName(ctx, name)
+	if err != nil || g == nil {
+		return nil
+	}
+	return &g.ID
 }
 
 // List handles GET /api/v1/nodes.
@@ -616,6 +589,11 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update phase"})
 	}
 	h.recordMetrics(c, nodeID, req.Metrics)
+	if bootedAt, ok := store.BootedAt(time.Now(), req.Metrics); ok {
+		if err := h.nodes.SettleAfterReboot(c.Request().Context(), nodeID, req.BootState, bootedAt); err != nil {
+			c.Logger().Warnf("settling node %s after its reboot: %v", nodeID, err)
+		}
+	}
 	// Heartbeat is the universal "OS is up" signal (and the fallback when a node
 	// never re-registers): attempt the auto eject-on-phone-home off-request. The
 	// per-deployment CAS makes a repeated heartbeat a harmless no-op once ejected.
