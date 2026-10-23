@@ -2,14 +2,15 @@ package e2e_test
 
 import (
 	"fmt"
-	"github.com/kairos-io/kairos/v4/sdk/utils"
-	"github.com/onsi/gomega/types"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kairos-io/kairos/v4/sdk/utils"
+	"github.com/onsi/gomega/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
