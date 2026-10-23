@@ -22,8 +22,8 @@ type wsMessage struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-// heartbeatData is sent by the agent. It declares the fields handleHeartbeat
-// applies.
+// heartbeatData is the heartbeat payload the agent sends. handleHeartbeat
+// applies every field except Labels, which is decoded but not applied.
 type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`

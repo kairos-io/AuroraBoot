@@ -2460,7 +2460,7 @@ const docTemplate = `{
                     "example": "active"
                 },
                 "group": {
-                    "description": "Group is the name of the group a new node joins (optional). An unknown\nname leaves the node ungrouped. Ignored when the node registers again.",
+                    "description": "Group is the name of the group a new node joins (optional). The holder\nof the registration token chooses it for a new node, so the\nregistration token decides group placement. An unknown name leaves the\nnode ungrouped. Ignored when the node registers again.",
                     "type": "string",
                     "example": "edge-sites"
                 },
@@ -2469,7 +2469,7 @@ const docTemplate = `{
                     "example": "kairos-node-01"
                 },
                 "labels": {
-                    "description": "Labels are a new node's initial labels (optional). Ignored when the\nnode registers again.",
+                    "description": "Labels are a new node's initial labels (optional). The holder of the\nregistration token chooses them for a new node. Ignored when the node\nregisters again.",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
