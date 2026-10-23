@@ -117,7 +117,9 @@ function BatchView({ id }: { id: string | undefined }) {
   }, [active, load]);
 
   // The banner mentions a node that timed out and later sent a heartbeat. The
-  // node is looked up once the batch has stopped.
+  // node is looked up once the batch has stopped and then every POLL_MS while
+  // the page is open, because the batch itself stops changing once its rows
+  // are final and the node may come back long after that.
   const stoppedBy =
     batch?.phase === "stopped" && batch.stoppedByNodeID
       ? (batch.nodes ?? []).find(
@@ -127,20 +129,25 @@ function BatchView({ id }: { id: string | undefined }) {
   const stoppedByID = stoppedBy?.nodeID;
   const stoppedByDeadline = stoppedBy?.deadline;
   useEffect(() => {
-    if (!stoppedByID || !stoppedByDeadline) return;
+    if (!stoppedByID || !stoppedByDeadline || cameBack) return;
     let live = true;
-    getNode(stoppedByID)
-      .then((n) => {
-        if (!live || !n.lastHeartbeat) return;
-        if (new Date(n.lastHeartbeat) > new Date(stoppedByDeadline)) {
-          setCameBack(n.lastHeartbeat);
-        }
-      })
-      .catch(() => {});
+    const check = () => {
+      getNode(stoppedByID)
+        .then((n) => {
+          if (!live || !n.lastHeartbeat) return;
+          if (new Date(n.lastHeartbeat) > new Date(stoppedByDeadline)) {
+            setCameBack(n.lastHeartbeat);
+          }
+        })
+        .catch(() => {});
+    };
+    check();
+    const t = setInterval(check, POLL_MS);
     return () => {
       live = false;
+      clearInterval(t);
     };
-  }, [stoppedByID, stoppedByDeadline]);
+  }, [stoppedByID, stoppedByDeadline, cameBack]);
 
   if (!batch) {
     return (
