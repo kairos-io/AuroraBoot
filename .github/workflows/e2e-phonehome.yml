@@ -1,0 +1,86 @@
+name: E2E phonehome VMs
+on:
+  pull_request:
+    paths:
+      - 'pkg/handlers/**'
+      - 'pkg/ws/**'
+      - 'internal/store/**'
+      - 'internal/builder/**'
+      - 'e2e/phonehome*'
+      - 'e2e/bootable_test.go'
+      - 'e2e/extensions_web_test.go'
+      - '.github/workflows/e2e-phonehome.yml'
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+concurrency:
+  group: ci-e2e-phonehome-${{ github.head_ref || github.ref }}-${{ github.repository }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  phonehome-vm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev swtpm libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        run: |
+          echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          test -w /dev/kvm
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Prefer IPv4
+        uses: ./.github/actions/prefer-ipv4
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
+      # The spec builds its own artifacts through the host docker socket, from
+      # the auroraboot:test image, so the image must be loaded into the local
+      # docker daemon.
+      - name: Build local image
+        uses: docker/build-push-action@v7
+        with:
+          push: false
+          load: true
+          context: .
+          file: ./Dockerfile
+          target: default
+          platforms: linux/amd64
+          tags: auroraboot:test
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
+        with:
+          prefer_secboot: false
+      - name: Run phonehome VM tier
+        env:
+          KVM: true
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
+          # /tmp is a RAM-backed tmpfs on these runners, too small for the
+          # VM disks and built artifacts.
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 2h ./e2e
+      - name: Upload phonehome logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phonehome-logs
+          path: e2e/logs/phonehome
+          if-no-files-found: ignore
+          retention-days: 7
