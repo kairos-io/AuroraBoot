@@ -69,6 +69,22 @@ describe("RecentBatches", () => {
     expect(screen.queryByText("No batches yet.")).not.toBeInTheDocument();
   });
 
+  it("drops an earlier error once a later fetch succeeds", async () => {
+    listBatches.mockRejectedValueOnce(new Error("connection refused"));
+    const { rerender } = renderCard({ groupID: "g1" });
+    expect(await screen.findByText("Failed to load batches: connection refused")).toBeInTheDocument();
+
+    listBatches.mockResolvedValue({ total: 1, batches: [batch({ selection: "group core" })] });
+    rerender(
+      <MemoryRouter>
+        <RecentBatches groupID="g2" />
+      </MemoryRouter>,
+    );
+
+    expect(await screen.findByText("group core")).toBeInTheDocument();
+    expect(screen.queryByText(/Failed to load batches/)).not.toBeInTheDocument();
+  });
+
   it("asks for the node's batches when given a node", async () => {
     listBatches.mockResolvedValue({ total: 0, batches: [] });
     renderCard({ nodeID: "n1" });
