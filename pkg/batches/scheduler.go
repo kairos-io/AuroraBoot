@@ -50,9 +50,9 @@ type Scheduler struct {
 	store   store.BatchStore
 	deliver Deliver
 
-	// startMu serializes the busy check and the batch creation in Start so two
-	// requests naming the same node cannot both pass the check. One AuroraBoot
-	// process owns the database, so a process-level lock is enough.
+	// startMu serializes the busy check and the creation in Start and WhenIdle
+	// so two requests naming the same node cannot both pass the check. One
+	// AuroraBoot process owns the database, so a process-level lock is enough.
 	startMu sync.Mutex
 
 	mu  sync.RWMutex
@@ -100,14 +100,9 @@ func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.Command
 	}
 
 	s.startMu.Lock()
-	busy, err := s.store.BusyNodes(ctx, ids)
-	if err != nil {
+	if err := s.checkIdle(ctx, ids); err != nil {
 		s.startMu.Unlock()
-		return nil, fmt.Errorf("checking busy nodes: %w", err)
-	}
-	if len(busy) > 0 {
-		s.startMu.Unlock()
-		return nil, &ErrNodesBusy{NodeIDs: busy}
+		return nil, err
 	}
 
 	b := &store.CommandBatch{
@@ -120,7 +115,7 @@ func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.Command
 		StopOnFailure:        req.StopOnFailure,
 		RebootTimeoutSeconds: req.RebootTimeoutSeconds,
 	}
-	err = s.store.Create(ctx, b, rows)
+	err := s.store.Create(ctx, b, rows)
 	s.startMu.Unlock()
 	if err != nil {
 		return nil, fmt.Errorf("creating batch: %w", err)
@@ -130,11 +125,32 @@ func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.Command
 	return s.store.Get(ctx, b.ID)
 }
 
-// BusyNodes returns the IDs among nodeIDs that have a row that is not final in
+// WhenIdle calls create when none of nodeIDs has a row that is not final in
 // any batch, stopped batches included: a stopped batch still settles the nodes
-// it started.
-func (s *Scheduler) BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error) {
-	return s.store.BusyNodes(ctx, nodeIDs)
+// it started. It returns *ErrNodesBusy without calling create otherwise.
+//
+// The check and create run under startMu, so no batch can start for one of
+// nodeIDs between them.
+func (s *Scheduler) WhenIdle(ctx context.Context, nodeIDs []string, create func() error) error {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	if err := s.checkIdle(ctx, nodeIDs); err != nil {
+		return err
+	}
+	return create()
+}
+
+// checkIdle returns *ErrNodesBusy when one of nodeIDs is in a batch that has
+// not finished with it. Callers hold startMu.
+func (s *Scheduler) checkIdle(ctx context.Context, nodeIDs []string) error {
+	busy, err := s.store.BusyNodes(ctx, nodeIDs)
+	if err != nil {
+		return fmt.Errorf("checking busy nodes: %w", err)
+	}
+	if len(busy) > 0 {
+		return &ErrNodesBusy{NodeIDs: busy}
+	}
+	return nil
 }
 
 // Advance advances one batch and delivers the commands it created. Errors are logged.
