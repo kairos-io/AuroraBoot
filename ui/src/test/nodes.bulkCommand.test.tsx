@@ -27,7 +27,12 @@ const nodes = [
   makeNode("id-lab", "lab-01"),
 ];
 
-type Sent = { selector: { groupID?: string; labels?: Record<string, string>; nodeIDs?: string[] }; command: string };
+type Sent = {
+  selector: { groupID?: string; labels?: Record<string, string>; nodeIDs?: string[] };
+  command: string;
+  rebootTimeoutSeconds?: number;
+  stopOnFailure?: boolean;
+};
 
 function mockFetch(opts: { failCommand?: boolean } = {}) {
   const sent: Sent[] = [];
@@ -95,6 +100,31 @@ describe("Nodes bulk command", () => {
     expect(m.sent[0].selector.nodeIDs).toEqual(["id-milan", "id-rome"]);
     expect(m.sent[0].selector.groupID).toBeUndefined();
     expect(screen.queryByText("Send to all nodes")).not.toBeInTheDocument();
+  });
+
+  it("sends the reboot timeout for a single node", async () => {
+    const m = mockFetch();
+    vi.stubGlobal("fetch", m.fn);
+    renderNodes();
+
+    expect(await screen.findByText("lab-01")).toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("Search by hostname..."), {
+      target: { value: "lab" },
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Send Command to 1 node" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: /Reboot/ }));
+    fireEvent.change(within(dialog).getByLabelText("Wait for a node to come back"), {
+      target: { value: "30" },
+    });
+    await act(async () => {
+      fireEvent.click(within(dialog).getByRole("button", { name: "Send reboot" }));
+    });
+
+    await waitFor(() => expect(m.sent).toHaveLength(1));
+    expect(m.sent[0].selector.nodeIDs).toEqual(["id-lab"]);
+    expect(m.sent[0].rebootTimeoutSeconds).toBe(1800);
+    expect(m.sent[0].stopOnFailure).toBe(true);
   });
 
   it("asks for confirmation when no filter is set and then sends every node", async () => {

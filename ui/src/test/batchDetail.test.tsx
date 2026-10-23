@@ -159,8 +159,29 @@ describe("BatchDetail", () => {
       { nodeIDs: ["n2"] },
       "upgrade",
       { source: "oci:quay.io/kairos/kairos:v4" },
-      undefined,
+      { stopOnFailure: true, rebootTimeoutSeconds: 600 },
     );
+  });
+
+  it("carries the batch's reboot timeout over to the one remaining node", async () => {
+    getBatch.mockResolvedValue(
+      makeBatch({
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        rebootTimeoutSeconds: 1200,
+        counts: { failed: 1, done: 1 },
+        nodes: [row("n1", "failed"), row("n2", "done")],
+      }),
+    );
+    sendBulkCommand.mockResolvedValue(makeBatch({ id: "b2" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 1 remaining node" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("Wait for a node to come back")).toHaveValue(20);
+    fireEvent.click(within(dialog).getByRole("button", { name: "Send upgrade" }));
+    await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+    expect(sendBulkCommand.mock.calls[0][3]).toEqual({ stopOnFailure: true, rebootTimeoutSeconds: 1200 });
   });
 
   it("keeps an unticked extension when the batch refreshes with the dialog open", async () => {

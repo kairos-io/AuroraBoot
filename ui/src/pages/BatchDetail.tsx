@@ -175,7 +175,7 @@ function BatchView({ id }: { id: string | undefined }) {
         )}
         {finished && remaining.length > 0 && (
           <Button onClick={() => setNewBatchOpen(true)}>
-            {`Start a new batch for the ${remaining.length} remaining nodes`}
+            {`Start a new batch for the ${remaining.length} remaining ${remaining.length === 1 ? "node" : "nodes"}`}
           </Button>
         )}
       </PageHeader>
