@@ -226,6 +226,9 @@ export function CommandDialog({
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
   const showRollout = isRollout || (startsBatch && reboots);
+  // The server reads a missing concurrency as all nodes at once, so a value
+  // that is not a whole number must block the submit instead of being dropped.
+  const concurrencyValid = !isRollout || /^\d*$/.test(concurrencyArg.trim());
   // The resolve effect reads the defaults through these strings, so a parent
   // that passes a new defaultArgs object with the same content (a polled
   // batch) does not resolve again and reset the operator's picks.
@@ -337,7 +340,7 @@ export function CommandDialog({
       : [];
 
   function handleSubmit() {
-    if (!command) return;
+    if (!command || !concurrencyValid) return;
     const args: Record<string, unknown> = {};
 
     if (isUpgrade) {
@@ -393,6 +396,7 @@ export function CommandDialog({
   const canSubmit = (() => {
     if (!command) return false;
     if (checkedIDs && checkedIDs.length === 0) return false;
+    if (!concurrencyValid) return false;
     if (command === "exec") return shellCmd.trim().length > 0;
     if (command === "upgrade" || command === "upgrade-recovery") {
       if (upgradeSourceMode === "image") return imageArg.trim().length > 0;
@@ -702,15 +706,23 @@ export function CommandDialog({
                       <Input
                         id={`${rolloutIds}-concurrency`}
                         type="number"
-                        min={1}
+                        min={0}
                         placeholder="All at once"
                         value={concurrencyArg}
+                        aria-invalid={!concurrencyValid}
+                        aria-describedby={`${rolloutIds}-concurrency-help`}
                         onChange={(e) => setConcurrencyArg(e.target.value)}
                       />
-                      <p className="text-xs text-muted-foreground">
-                        The next node starts when one finishes. Leave empty to run on
-                        all nodes at once.
-                      </p>
+                      {concurrencyValid ? (
+                        <p id={`${rolloutIds}-concurrency-help`} className="text-xs text-muted-foreground">
+                          The next node starts when one finishes. Leave empty to run on
+                          all nodes at once.
+                        </p>
+                      ) : (
+                        <p id={`${rolloutIds}-concurrency-help`} className="text-xs text-danger-foreground">
+                          Enter a whole number, or leave it empty to run on all nodes at once.
+                        </p>
+                      )}
                     </div>
                     <div className="grid gap-1">
                       <label className="flex items-center gap-2 text-sm">
