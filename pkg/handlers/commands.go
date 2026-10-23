@@ -107,6 +107,7 @@ type groupCommandRequest struct {
 //	@Param		nodeID	path		string					true	"Node ID"
 //	@Param		body	body		APICreateCommandRequest	true	"Command payload"
 //	@Success	201		{object}	store.NodeCommand
+//	@Failure	409		{object}	APIError	"The node is in a running batch"
 //	@Failure	413		{object}	APIError
 //	@Router		/api/v1/nodes/{nodeID}/commands [post]
 func (h *CommandHandler) Create(c echo.Context) error {
@@ -166,6 +167,20 @@ type bulkCommandRequest struct {
 }
 
 // CreateBulk handles POST /api/v1/nodes/commands.
+//
+//	@Summary	Run a command on the nodes matching a selector
+//	@Description	Starts a rolling batch and returns its record. Nodes that are already in a running batch are rejected with 409 and listed in nodeIDs.
+//	@Tags		Commands
+//	@Accept		json
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		body	body		APIBulkCommandRequest	true	"Selector, command and rollout options"
+//	@Success	201		{object}	store.CommandBatch
+//	@Failure	400		{object}	APIError
+//	@Failure	409		{object}	APIError
+//	@Failure	413		{object}	APIError
+//	@Failure	503		{object}	APIError
+//	@Router		/api/v1/nodes/commands [post]
 func (h *CommandHandler) CreateBulk(c echo.Context) error {
 	var req bulkCommandRequest
 	if err := c.Bind(&req); err != nil {
@@ -186,10 +201,31 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to find nodes"})
 	}
 
-	return h.startBatch(c, req.Command, req.Args, req.rolloutOptions, nodes, selectorText(req.Selector, nodes), nil)
+	// A selector that names a group records it even when other fields narrow
+	// the selection, so the group's page lists the batch.
+	var groupID *string
+	if req.Selector.GroupID != "" {
+		groupID = &req.Selector.GroupID
+	}
+	return h.startBatch(c, req.Command, req.Args, req.rolloutOptions, nodes, selectorText(req.Selector, nodes), groupID)
 }
 
 // CreateForGroup handles POST /api/v1/groups/:id/commands.
+//
+//	@Summary	Run a command on every node of a group
+//	@Description	Starts a rolling batch and returns its record. Nodes that are already in a running batch are rejected with 409 and listed in nodeIDs.
+//	@Tags		Commands
+//	@Accept		json
+//	@Produce	json
+//	@Security	AdminBearer
+//	@Param		id		path		string					true	"Group ID"
+//	@Param		body	body		APIGroupCommandRequest	true	"Command and rollout options"
+//	@Success	201		{object}	store.CommandBatch
+//	@Failure	400		{object}	APIError
+//	@Failure	409		{object}	APIError
+//	@Failure	413		{object}	APIError
+//	@Failure	503		{object}	APIError
+//	@Router		/api/v1/groups/{id}/commands [post]
 func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 	groupID := c.Param("id")
 	var req groupCommandRequest

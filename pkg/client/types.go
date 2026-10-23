@@ -113,27 +113,70 @@ type NodeCommand struct {
 	DeliveredAt   *time.Time        `json:"deliveredAt,omitempty"`
 	CompletedAt   *time.Time        `json:"completedAt,omitempty"`
 	CreatedAt     time.Time         `json:"createdAt"`
-	// BatchID names the fan-out this command came from. It is empty on a
+	// BatchID names the batch this command came from. It is empty on a
 	// command addressed to one node.
-	BatchID  string `json:"batchID,omitempty"`
-	FailFast bool   `json:"failFast,omitempty"`
+	BatchID string `json:"batchID,omitempty"`
 }
 
-// BatchOutcome is the state of one fan-out of commands, derived from the
-// per-node commands it created.
-type BatchOutcome struct {
-	BatchID   string        `json:"batchID"`
-	Command   string        `json:"command"`
-	FailFast  bool          `json:"failFast"`
-	Phase     CommandPhase  `json:"phase"`
-	Total     int           `json:"total"`
-	Pending   int           `json:"pending"`
-	Running   int           `json:"running"`
-	Completed int           `json:"completed"`
-	Failed    int           `json:"failed"`
-	Canceled  int           `json:"canceled"`
-	Expired   int           `json:"expired"`
-	Commands  []NodeCommand `json:"commands"`
+// RolloutOptions are the settings of the batch a group or bulk command starts.
+type RolloutOptions struct {
+	// Concurrency caps how many nodes run at once. 0 runs every node at once.
+	Concurrency int `json:"concurrency,omitempty"`
+	// StopOnFailure stops the batch when a node fails. nil means true.
+	StopOnFailure *bool `json:"stopOnFailure,omitempty"`
+	// RebootTimeoutSeconds is how long a node that reboots may take to come
+	// back. 0 uses the server default.
+	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
+}
+
+// BatchNode is one node's row in a Batch.
+type BatchNode struct {
+	BatchID        string     `json:"batchID"`
+	NodeID         string     `json:"nodeID"`
+	Position       int        `json:"position"`
+	Hostname       string     `json:"hostname"`
+	CommandID      *string    `json:"commandID"`
+	State          string     `json:"state"`
+	Message        string     `json:"message"`
+	StartedAt      *time.Time `json:"startedAt"`
+	RebootingSince *time.Time `json:"rebootingSince"`
+	Deadline       *time.Time `json:"deadline"`
+	FinishedAt     *time.Time `json:"finishedAt"`
+}
+
+// Batch is a command rolled out over several nodes a few at a time. Nodes is
+// filled by Get, Stop and the calls that start a batch, not by List.
+type Batch struct {
+	ID                   string            `json:"id"`
+	Command              string            `json:"command"`
+	Args                 map[string]string `json:"args"`
+	Selection            string            `json:"selection"`
+	GroupID              *string           `json:"groupID"`
+	Concurrency          int               `json:"concurrency"`
+	StopOnFailure        bool              `json:"stopOnFailure"`
+	RebootTimeoutSeconds int               `json:"rebootTimeoutSeconds"`
+	Phase                string            `json:"phase"`
+	CreatedAt            time.Time         `json:"createdAt"`
+	FinishedAt           *time.Time        `json:"finishedAt"`
+	StoppedAt            *time.Time        `json:"stoppedAt"`
+	StopReason           string            `json:"stopReason"`
+	StoppedByNodeID      *string           `json:"stoppedByNodeID"`
+	Counts               map[string]int    `json:"counts"`
+	Nodes                []BatchNode       `json:"nodes,omitempty"`
+}
+
+// BatchList is one page of batches and the total number that match.
+type BatchList struct {
+	Batches []Batch `json:"batches"`
+	Total   int     `json:"total"`
+}
+
+// BatchListOptions filters and pages Batches.List. Empty fields are not sent.
+type BatchListOptions struct {
+	GroupID string
+	NodeID  string
+	Limit   int
+	Offset  int
 }
 
 // CreateCommandRequest is the body of POST /api/v1/nodes/:nodeID/commands.
@@ -147,10 +190,7 @@ type CreateCommandRequest struct {
 type GroupCommandRequest struct {
 	Command string            `json:"command"`
 	Args    map[string]string `json:"args,omitempty"`
-	// FailFast cancels the commands of this fan-out that are still Pending
-	// once any node of it reports Failed. A node that was online when the
-	// fan-out ran already holds its command and is not stopped.
-	FailFast bool `json:"failFast,omitempty"`
+	RolloutOptions
 }
 
 // CommandSelector targets nodes for a bulk command operation.
@@ -166,10 +206,7 @@ type BulkCommandRequest struct {
 	Selector CommandSelector   `json:"selector"`
 	Command  string            `json:"command"`
 	Args     map[string]string `json:"args,omitempty"`
-	// FailFast cancels the commands of this fan-out that are still Pending
-	// once any node of it reports Failed. A node that was online when the
-	// fan-out ran already holds its command and is not stopped.
-	FailFast bool `json:"failFast,omitempty"`
+	RolloutOptions
 }
 
 // UpdateCommandStatusRequest is the body used by agents to report
