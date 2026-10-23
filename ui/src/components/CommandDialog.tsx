@@ -40,7 +40,7 @@ export type CommandKey =
   | "upgrade"
   | "upgrade-recovery"
   | "reset"
-  | "apply-config"
+  | "apply-cloud-config"
   | "reboot"
   | "exec";
 
@@ -75,7 +75,7 @@ const COMMANDS: CommandDef[] = [
     tone: "blue",
   },
   {
-    key: "apply-config",
+    key: "apply-cloud-config",
     label: "Apply config",
     verb: "Send config",
     description:
@@ -365,7 +365,7 @@ export function CommandDialog({
       }
     }
 
-    if (command === "apply-config") {
+    if (command === "apply-cloud-config") {
       if (configArg.trim()) args.config = configArg.trim();
     }
 
@@ -626,7 +626,7 @@ export function CommandDialog({
               </div>
             )}
 
-            {command === "apply-config" && (
+            {command === "apply-cloud-config" && (
               <div className="grid gap-2">
                 <Label>Cloud configuration (YAML)</Label>
                 <Textarea
