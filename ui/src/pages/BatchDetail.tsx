@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { AlertTriangle } from "lucide-react";
 import { getBatch, stopBatch, type Batch, type BatchNodeState } from "@/api/batches";
-import { getNode, sendBulkCommand } from "@/api/nodes";
+import { getNode, listNodes, sendBulkCommand } from "@/api/nodes";
 import { CommandDialog, type CommandKey } from "@/components/CommandDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { PageHeader } from "@/components/PageHeader";
@@ -78,6 +78,9 @@ function BatchView({ id }: { id: string | undefined }) {
   const [cameBack, setCameBack] = useState<string | null>(null);
   const [confirmStop, setConfirmStop] = useState(false);
   const [newBatchOpen, setNewBatchOpen] = useState(false);
+  // The IDs of the nodes that exist now, or null until they are known or when
+  // the list could not be fetched.
+  const [existingIDs, setExistingIDs] = useState<Set<string> | null>(null);
 
   const load = useCallback(() => {
     if (!id) return;
@@ -92,6 +95,19 @@ function BatchView({ id }: { id: string | undefined }) {
   useEffect(() => {
     load();
   }, [load]);
+
+  const loadExisting = useCallback(() => {
+    listNodes()
+      .then((nodes) => setExistingIDs(new Set(nodes.map((n) => n.id))))
+      .catch(() => {});
+  }, []);
+
+  // A node deleted after its row became final keeps the row, so the new
+  // batch's choices are checked against the nodes that exist now.
+  const finishedPhase = batch ? batch.phase !== "running" : false;
+  useEffect(() => {
+    if (finishedPhase) loadExisting();
+  }, [finishedPhase, loadExisting]);
 
   const active = batch ? isBatchActive(batch) : false;
   useEffect(() => {
@@ -135,8 +151,7 @@ function BatchView({ id }: { id: string | undefined }) {
   }
 
   const rows = batch.nodes ?? [];
-  const remaining = remainingNodes(batch);
-  const finished = batch.phase !== "running";
+  const remaining = remainingNodes(batch, existingIDs);
 
   async function handleStop() {
     try {
@@ -173,8 +188,13 @@ function BatchView({ id }: { id: string | undefined }) {
             Stop batch
           </Button>
         )}
-        {finished && remaining.length > 0 && (
-          <Button onClick={() => setNewBatchOpen(true)}>
+        {finishedPhase && remaining.length > 0 && (
+          <Button
+            onClick={() => {
+              loadExisting();
+              setNewBatchOpen(true);
+            }}
+          >
             {`Start a new batch for the ${remaining.length} remaining ${remaining.length === 1 ? "node" : "nodes"}`}
           </Button>
         )}

@@ -9,6 +9,7 @@ const getBatch = vi.fn();
 const stopBatch = vi.fn();
 const getNode = vi.fn();
 const sendBulkCommand = vi.fn();
+const listNodes = vi.fn();
 
 vi.mock("@/api/batches", () => ({
   getBatch: (...a: unknown[]) => getBatch(...a),
@@ -18,6 +19,7 @@ vi.mock("@/api/batches", () => ({
 vi.mock("@/api/nodes", () => ({
   getNode: (...a: unknown[]) => getNode(...a),
   sendBulkCommand: (...a: unknown[]) => sendBulkCommand(...a),
+  listNodes: (...a: unknown[]) => listNodes(...a),
 }));
 const resolveBundle = vi.fn();
 vi.mock("@/api/artifacts", () => ({
@@ -87,6 +89,9 @@ async function tick(ms: number) {
 beforeEach(() => {
   vi.clearAllMocks();
   resolveBundle.mockResolvedValue([]);
+  listNodes.mockResolvedValue(
+    ["n1", "n2", "n3", "n4", "n9"].map((id) => ({ id, hostname: `host-${id}` })),
+  );
 });
 
 afterEach(() => {
@@ -161,6 +166,44 @@ describe("BatchDetail", () => {
       { source: "oci:quay.io/kairos/kairos:v4" },
       { stopOnFailure: true, rebootTimeoutSeconds: 600 },
     );
+  });
+
+  it("leaves nodes deleted after the batch finished out of the new batch", async () => {
+    getBatch.mockResolvedValue(
+      makeBatch({
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 1, canceled: 1 },
+        nodes: [row("n1", "failed"), row("n2", "canceled")],
+      }),
+    );
+    listNodes.mockResolvedValue([{ id: "n1", hostname: "host-n1" }]);
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 1 remaining node" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByLabelText("host-n1")).toBeChecked();
+    expect(within(dialog).queryByLabelText("host-n2")).not.toBeInTheDocument();
+    // The batch keeps its row for the deleted node.
+    expect(screen.getAllByText("host-n2").length).toBeGreaterThan(0);
+  });
+
+  it("offers no new batch when every remaining node was deleted", async () => {
+    getBatch.mockResolvedValue(
+      makeBatch({
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 1, done: 1 },
+        nodes: [row("n1", "failed"), row("n2", "done")],
+      }),
+    );
+    listNodes.mockResolvedValue([{ id: "n2", hostname: "host-n2" }]);
+    renderPage();
+    await screen.findByRole("alert");
+    await waitFor(() => expect(listNodes).toHaveBeenCalled());
+    await act(async () => {});
+    expect(screen.queryByRole("button", { name: /Start a new batch/ })).not.toBeInTheDocument();
   });
 
   it("carries the batch's reboot timeout over to the one remaining node", async () => {

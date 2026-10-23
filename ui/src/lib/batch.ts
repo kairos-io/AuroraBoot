@@ -46,9 +46,16 @@ export const stateLabels: Record<BatchNodeState, string> = {
 
 export const nodeDeletedMessage = "node deleted";
 
-export function remainingNodes(batch: Batch): BatchNode[] {
+// remainingNodes lists the nodes that did not finish the batch's command. A
+// row keeps its node after the batch is final, so a node deleted since then
+// is only left out when existing, the IDs of the nodes that exist now, is
+// given.
+export function remainingNodes(batch: Batch, existing?: ReadonlySet<string> | null): BatchNode[] {
   return (batch.nodes ?? []).filter(
-    (n) => remainingStates.includes(n.state) && n.message !== nodeDeletedMessage,
+    (n) =>
+      remainingStates.includes(n.state) &&
+      n.message !== nodeDeletedMessage &&
+      (!existing || existing.has(n.nodeID)),
   );
 }
 
