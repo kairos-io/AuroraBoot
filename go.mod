@@ -23,7 +23,7 @@ require (
 	github.com/kairos-io/kairos/v4 v4.3.1-0.20261021063548-f0264f568a54
 	github.com/kairos-io/netboot v0.0.0-20261012151809-39e4036684f6
 	github.com/klauspost/compress v1.20.3
-	github.com/labstack/echo/v4 v4.16.0
+	github.com/labstack/echo/v4 v4.16.1
 	github.com/mudler/go-processmanager v0.1.2
 	github.com/mudler/yip v1.26.4
 	github.com/onsi/ginkgo/v2 v2.33.1

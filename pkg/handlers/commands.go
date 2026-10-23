@@ -6,6 +6,7 @@ import (
 	"errors"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
@@ -21,6 +22,9 @@ type CommandHandler struct {
 	hub            *ws.Hub
 	nodeExtensions store.NodeExtensionStore
 	extensions     store.ExtensionStore
+	// resetTimeout also bounds delivery: an offline node must not execute a
+	// reset after its node-level lifecycle has already timed out.
+	resetTimeout time.Duration
 }
 
 // NewCommandHandler creates a new CommandHandler.
@@ -31,7 +35,26 @@ func NewCommandHandler(commands store.CommandStore, nodes store.NodeStore, hub *
 		hub:            hub,
 		nodeExtensions: nodeExtensions,
 		extensions:     extensions,
+		resetTimeout:   DefaultResetTimeout,
 	}
+}
+
+// WithResetTimeout configures reset command delivery expiry. Zero keeps the
+// default; a negative duration disables expiry.
+func (h *CommandHandler) WithResetTimeout(timeout time.Duration) *CommandHandler {
+	if timeout == 0 {
+		timeout = DefaultResetTimeout
+	}
+	h.resetTimeout = timeout
+	return h
+}
+
+func (h *CommandHandler) setResetExpiry(cmd *store.NodeCommand) {
+	if cmd.Command != store.CmdReset || h.resetTimeout < 0 {
+		return
+	}
+	expires := time.Now().Add(h.resetTimeout)
+	cmd.ExpiresAt = &expires
 }
 
 // createCommandRequest is the expected body for creating a command.
@@ -82,6 +105,7 @@ func (h *CommandHandler) Create(c echo.Context) error {
 		Args:          req.Args,
 		Phase:         store.CommandPending,
 	}
+	h.setResetExpiry(cmd)
 
 	// CreateBatch also marks a reset or upgrade target pending, in the same
 	// write, without taking over a reset or upgrade that is already pending.
@@ -202,6 +226,7 @@ func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode,
 			BatchID:       batchID,
 			FailFast:      failFast,
 		}
+		h.setResetExpiry(cmd)
 		created = append(created, cmd)
 	}
 	if err := h.commands.CreateBatch(ctx, created); err != nil {
@@ -231,6 +256,7 @@ func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand
 		// claimed it and will deliver it; don't push a duplicate.
 		return
 	}
+	store.MarkResetDelivered(ctx, h.nodes, cmd)
 	payload := struct {
 		ID      string            `json:"id"`
 		Command string            `json:"command"`

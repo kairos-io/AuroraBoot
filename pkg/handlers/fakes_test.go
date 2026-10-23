@@ -12,8 +12,17 @@ import (
 
 // fakeNodeStore implements store.NodeStore for testing.
 type fakeNodeStore struct {
-	mu    sync.Mutex
-	nodes []*store.ManagedNode
+	mu                 sync.Mutex
+	nodes              []*store.ManagedNode
+	failResetBeforeErr error
+	// failResetBeforeCalls counts FailResetBefore calls so a spec can assert the
+	// handler never even attempted the transition, independently of whether the
+	// fake's own CAS would have refused it.
+	failResetBeforeCalls int
+	// stampResetProgressCalls counts StampResetProgress calls, for the same
+	// reason: a delivery path that forgets to re-anchor must be visible even
+	// when the node's state would make the stamp a no-op.
+	stampResetProgressCalls int
 }
 
 func (f *fakeNodeStore) Register(_ context.Context, n *store.ManagedNode) error {
@@ -230,6 +239,9 @@ func (f *fakeNodeStore) markResetPending(nodeID string) error {
 			now := time.Now()
 			n.ResetState = store.ResetStatePending
 			n.ResetRequestedAt = &now
+			// Mirrors the real store: a new reset never inherits the previous
+			// one's progress stamp.
+			n.ResetProgressAt = nil
 			return nil
 		}
 	}
@@ -249,10 +261,58 @@ func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromState
 					now := time.Now()
 					n.LastReset = &now
 				}
+				// Mirrors the real store: reaching in-progress means the node
+				// re-registered, which re-anchors the expiry budget.
+				if to == store.ResetStateInProgress {
+					now := time.Now()
+					n.ResetProgressAt = &now
+				}
 				return true, nil
 			}
 		}
 		return false, nil
+	}
+	return false, nil
+}
+func (f *fakeNodeStore) StampResetProgress(_ context.Context, nodeID string) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.stampResetProgressCalls++
+	for _, n := range f.nodes {
+		if n.ID != nodeID {
+			continue
+		}
+		// Mirrors the real store's CAS: only an in-flight reset is re-anchored,
+		// so a delivery arriving after the lifecycle resolved changes nothing.
+		if n.ResetState != store.ResetStatePending && n.ResetState != store.ResetStateInProgress {
+			return false, nil
+		}
+		now := time.Now()
+		n.ResetProgressAt = &now
+		return true, nil
+	}
+	return false, nil
+}
+func (f *fakeNodeStore) FailResetBefore(_ context.Context, nodeID string, deadline time.Time) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.failResetBeforeCalls++
+	if f.failResetBeforeErr != nil {
+		return false, f.failResetBeforeErr
+	}
+	for _, n := range f.nodes {
+		if n.ID != nodeID || n.ResetRequestedAt == nil || n.ResetRequestedAt.After(deadline) {
+			continue
+		}
+		// Mirrors the real store's second CAS predicate: a node that re-registered
+		// after the deadline has a fresh budget and must not be failed.
+		if n.ResetProgressAt != nil && n.ResetProgressAt.After(deadline) {
+			continue
+		}
+		if n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress {
+			n.ResetState = store.ResetStateFailed
+			return true, nil
+		}
 	}
 	return false, nil
 }
@@ -275,6 +335,10 @@ func (f *fakeNodeStore) markUpgradePending(nodeID string) error {
 	}
 	return fmt.Errorf("not found")
 }
+func (f *fakeNodeStore) SettleAfterReboot(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+
 func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -368,7 +432,6 @@ func (f *fakeCommandStore) GetByID(_ context.Context, id string) (*store.NodeCom
 func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*store.NodeCommand, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	now := time.Now()
 	var result []*store.NodeCommand
 	for _, cmd := range f.cmds {
 		if cmd.ManagedNodeID != nodeID || cmd.Phase != store.CommandPending {
@@ -378,7 +441,7 @@ func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*stor
 		// back commands the gorm store would never deliver, and any handler
 		// that relies on an overdue command staying undelivered passes here
 		// while failing in production.
-		if cmd.ExpiresAt != nil && !cmd.ExpiresAt.After(now) {
+		if commandExpired(cmd) {
 			continue
 		}
 		// Return a copy, not the stored pointer: real gorm GetPending
@@ -388,6 +451,14 @@ func (f *fakeCommandStore) GetPending(_ context.Context, nodeID string) ([]*stor
 		result = append(result, &cp)
 	}
 	return result, nil
+}
+
+// commandExpired mirrors the `expires_at IS NULL OR expires_at > now` predicate
+// the real store applies in both GetPending and ClaimForDelivery. Without it the
+// fakes would hand out an expired reset command and any handler-level test of
+// the expiry gate would pass whether or not the gate works.
+func commandExpired(cmd *store.NodeCommand) bool {
+	return cmd.ExpiresAt != nil && !cmd.ExpiresAt.After(time.Now())
 }
 
 func (f *fakeCommandStore) MarkDelivered(_ context.Context, ids []string) error {
@@ -410,7 +481,7 @@ func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool,
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, cmd := range f.cmds {
-		if cmd.ID == id && cmd.Phase == store.CommandPending {
+		if cmd.ID == id && cmd.Phase == store.CommandPending && !commandExpired(cmd) {
 			cmd.Phase = store.CommandDelivered
 			// The real store stamps delivered_at in the same UPDATE; keep that
 			// here so a spec can tell a released claim from a claimed one.

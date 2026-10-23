@@ -287,9 +287,25 @@ definitions:
           active | passive | recovery | autoreset (unknown values pass through).
         example: active
         type: string
+      group:
+        description: |-
+          Group is the name of the group a new node joins (optional). The holder
+          of the registration token chooses it for a new node, so the
+          registration token decides group placement. An unknown name leaves the
+          node ungrouped. Ignored when the node registers again.
+        example: edge-sites
+        type: string
       hostname:
         example: kairos-node-01
         type: string
+      labels:
+        additionalProperties:
+          type: string
+        description: |-
+          Labels are a new node's initial labels (optional). The holder of the
+          registration token chooses them for a new node. Ignored when the node
+          registers again.
+        type: object
       machineID:
         example: a1b2c3d4e5f6
         type: string
@@ -765,6 +781,17 @@ definitions:
           does not report it, and it survives even when an agent sends no addresses at
           all (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP
           changes because every heartbeat re-observes and overwrites it.
+        type: string
+      resetProgressAt:
+        description: |-
+          ResetProgressAt is when the reset last made observable progress. Two
+          events stamp it: the node claiming the reset command for delivery, and
+          the node re-registering reporting bootState=autoreset (the lifecycle
+          moving from pending to in-progress). The reset timeout is measured from
+          this timestamp when it is set, so a node that picks the command up late
+          still gets a full window to reboot, wipe and come back instead of sharing
+          the one that started at ResetRequestedAt. Nil until the reset reaches the
+          node, and cleared when a new reset is requested.
         type: string
       resetRequestedAt:
         description: |-
