@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
+	"github.com/kairos-io/AuroraBoot/pkg/batches"
 	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
@@ -60,6 +61,9 @@ type NodeHandler struct {
 	// evaluated lazily when nodes are read, which matches the UI and controller
 	// polling paths without adding a process-wide background worker.
 	resetTimeout time.Duration
+	// batches settles batch rows of nodes that come back from a reboot and
+	// advances batches after a node is deleted. nil skips both.
+	batches *batches.Scheduler
 }
 
 // NewNodeHandler creates a new NodeHandler.
@@ -89,6 +93,13 @@ func (h *NodeHandler) WithResetTimeout(timeout time.Duration) *NodeHandler {
 		timeout = DefaultResetTimeout
 	}
 	h.resetTimeout = timeout
+	return h
+}
+
+// WithBatches wires the scheduler that registrations, heartbeats and node
+// deletions feed. Returns the handler for chaining.
+func (h *NodeHandler) WithBatches(s *batches.Scheduler) *NodeHandler {
+	h.batches = s
 	return h
 }
 
@@ -203,6 +214,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// reset or upgrade from the boot state it reports (kairos-io/kairos#4255).
 		store.ResolveReset(c.Request().Context(), h.nodes, existing, req.BootState)
 		store.ResolveUpgrade(c.Request().Context(), h.nodes, existing, req.BootState)
+		// The same boot settles a batch row waiting on the node's reboot.
+		if h.batches != nil {
+			h.batches.NodeBooted(c.Request().Context(), existing.ID, req.BootState, nil)
+		}
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,
@@ -346,6 +361,10 @@ func (h *NodeHandler) Delete(c echo.Context) error {
 	}
 	if h.metrics != nil {
 		h.metrics.Forget(nodeID)
+	}
+	// The deleted node's batch rows settle as canceled and free their slots.
+	if h.batches != nil {
+		h.batches.Tick(c.Request().Context())
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -651,6 +670,9 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	if bootedAt, ok := store.BootedAt(time.Now(), req.Metrics); ok {
 		if err := h.nodes.SettleAfterReboot(c.Request().Context(), nodeID, req.BootState, bootedAt); err != nil {
 			c.Logger().Warnf("settling node %s after its reboot: %v", nodeID, err)
+		}
+		if h.batches != nil {
+			h.batches.NodeBooted(c.Request().Context(), nodeID, req.BootState, &bootedAt)
 		}
 	}
 	// Heartbeat is the universal "OS is up" signal (and the fallback when a node

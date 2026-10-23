@@ -15,6 +15,7 @@ import (
 	netbootpkg "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/internal/ui"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
+	"github.com/kairos-io/AuroraBoot/pkg/batches"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
@@ -32,6 +33,12 @@ type Config struct {
 	GroupStore            store.GroupStore
 	ArtifactStore         store.ArtifactStore
 	SecureBootKeySetStore store.SecureBootKeySetStore
+
+	// BatchStore persists rolling batches.
+	BatchStore store.BatchStore
+	// Batches starts and advances rolling batches. nil answers the group and
+	// bulk command endpoints with 503.
+	Batches *batches.Scheduler
 
 	ExtensionStore               store.ExtensionStore
 	ArtifactExtensionBundleStore store.ArtifactExtensionBundleStore
@@ -222,7 +229,9 @@ func New(cfg Config) *echo.Echo {
 	}
 	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore).
-		WithResetTimeout(cfg.ResetTimeout)
+		WithResetTimeout(cfg.ResetTimeout).
+		WithBatches(cfg.Batches)
+	nodeHandler.WithBatches(cfg.Batches)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL).WithLinkSigner(linkSigner)
 	var extensionHandler *handlers.ExtensionHandler
 	if cfg.ExtensionBuilder != nil {
@@ -247,6 +256,13 @@ func New(cfg Config) *echo.Echo {
 		// PUT /commands/:id/status path that CommandHandler.UpdateStatus owns).
 		OnCommandStatus: cmdHandler.ApplyExtensionTracking,
 		Metrics:         metricsBuf,
+	}
+	// pkg/ws cannot import the scheduler, so the agent socket reaches it
+	// through these hooks: a status report advances the command's batch and a
+	// heartbeat from a new boot settles the node's rebooting rows.
+	if cfg.Batches != nil {
+		agentWSHandler.OnCommandPhase = cmdHandler.AdvanceBatchOf
+		agentWSHandler.OnNodeBooted = cfg.Batches.NodeBooted
 	}
 	// A WS heartbeat is an "OS is up" signal like the REST one, so it triggers the
 	// same auto eject-on-phone-home hook — a node that reports liveness only over
@@ -346,7 +362,6 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.DELETE("/nodes/:nodeID/commands/:commandID", cmdHandler.Delete)
 	adminGroup.DELETE("/nodes/:nodeID/commands", cmdHandler.ClearHistory)
 	adminGroup.POST("/nodes/commands", cmdHandler.CreateBulk)
-	adminGroup.GET("/commands/batches/:batchID", cmdHandler.BatchStatus)
 
 	// Group management
 	adminGroup.POST("/groups", groupHandler.Create)

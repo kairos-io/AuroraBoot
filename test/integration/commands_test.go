@@ -79,7 +79,16 @@ var _ = Describe("Commands", func() {
 		Expect(cmd["phase"]).To(Equal("Pending"))
 	})
 
-	It("should send command to all nodes in a group", func() {
+	// batchNodeIDs returns the IDs of the nodes a batch record lists.
+	batchNodeIDs := func(batch map[string]interface{}) []string {
+		var ids []string
+		for _, n := range batch["nodes"].([]interface{}) {
+			ids = append(ids, n.(map[string]interface{})["nodeID"].(string))
+		}
+		return ids
+	}
+
+	It("should start a batch over all nodes in a group", func() {
 		cmdBody := map[string]interface{}{
 			"command": "upgrade",
 			"args":    map[string]string{"version": "1.0.0"},
@@ -87,21 +96,16 @@ var _ = Describe("Commands", func() {
 		resp := adminPost(testServerURL, "/api/v1/groups/"+groupID+"/commands", testAdminPassword, cmdBody)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
-		var cmds []map[string]interface{}
-		decodeJSON(resp, &cmds)
+		var batch map[string]interface{}
+		decodeJSON(resp, &batch)
 
-		// Nodes 1 and 2 are in the group, so we should get 2 commands.
-		Expect(cmds).To(HaveLen(2))
-
-		nodeIDs := []string{}
-		for _, c := range cmds {
-			nodeIDs = append(nodeIDs, c["managedNodeID"].(string))
-			Expect(c["command"]).To(Equal("upgrade"))
-		}
-		Expect(nodeIDs).To(ContainElements(node1ID, node2ID))
+		// Nodes 1 and 2 are in the group.
+		Expect(batch["command"]).To(Equal("upgrade"))
+		Expect(batch["groupID"]).To(Equal(groupID))
+		Expect(batchNodeIDs(batch)).To(ConsistOf(node1ID, node2ID))
 	})
 
-	It("should send command by label selector", func() {
+	It("should start a batch by label selector", func() {
 		cmdBody := map[string]interface{}{
 			"selector": map[string]interface{}{
 				"labels": map[string]string{"role": "worker"},
@@ -112,20 +116,15 @@ var _ = Describe("Commands", func() {
 		resp := adminPost(testServerURL, "/api/v1/nodes/commands", testAdminPassword, cmdBody)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
-		var cmds []map[string]interface{}
-		decodeJSON(resp, &cmds)
+		var batch map[string]interface{}
+		decodeJSON(resp, &batch)
 
-		// Nodes 1 and 3 have role=worker.
-		Expect(len(cmds)).To(BeNumerically(">=", 2))
-
-		nodeIDs := []string{}
-		for _, c := range cmds {
-			nodeIDs = append(nodeIDs, c["managedNodeID"].(string))
-		}
-		Expect(nodeIDs).To(ContainElements(node1ID, node3ID))
+		// Nodes 1 and 3 have role=worker; earlier specs left more.
+		Expect(batch["selection"]).To(Equal("label role=worker"))
+		Expect(batchNodeIDs(batch)).To(ContainElements(node1ID, node3ID))
 	})
 
-	It("should send command by group + label (AND)", func() {
+	It("should start a batch by group + label (AND)", func() {
 		cmdBody := map[string]interface{}{
 			"selector": map[string]interface{}{
 				"groupID": groupID,
@@ -137,12 +136,29 @@ var _ = Describe("Commands", func() {
 		resp := adminPost(testServerURL, "/api/v1/nodes/commands", testAdminPassword, cmdBody)
 		Expect(resp.StatusCode).To(Equal(http.StatusCreated))
 
-		var cmds []map[string]interface{}
-		decodeJSON(resp, &cmds)
+		var batch map[string]interface{}
+		decodeJSON(resp, &batch)
 
 		// Only node1 is in group AND has role=worker.
-		Expect(cmds).To(HaveLen(1))
-		Expect(cmds[0]["managedNodeID"]).To(Equal(node1ID))
+		Expect(batchNodeIDs(batch)).To(ConsistOf(node1ID))
+		Expect(batch["groupID"]).To(BeNil())
+		Expect(batch["selection"]).To(MatchRegexp(`^group cmd-test-group-\d+, label role=worker$`))
+	})
+
+	It("describes picked nodes by their count", func() {
+		for text, ids := range map[string][]string{
+			"1 selected node":  {node1ID},
+			"2 selected nodes": {node2ID, node3ID},
+		} {
+			resp := adminPost(testServerURL, "/api/v1/nodes/commands", testAdminPassword, map[string]interface{}{
+				"selector": map[string]interface{}{"nodeIDs": ids},
+				"command":  "exec",
+			})
+			Expect(resp.StatusCode).To(Equal(http.StatusCreated))
+			var batch map[string]interface{}
+			decodeJSON(resp, &batch)
+			Expect(batch["selection"]).To(Equal(text))
+		}
 	})
 
 	It("should reject command without command field", func() {

@@ -109,6 +109,17 @@ var _ = Describe("Scheduler", func() {
 		Expect(list).To(HaveLen(1))
 	})
 
+	It("reports a node as busy while its row in a stopped batch is still running", func() {
+		nodes := onlineNodes(2)
+		b, err := sched.Start(ctx, request(store.CmdExec, 1, nodes[0], nodes[1]))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(sched.Stop(ctx, b.ID)).To(Succeed())
+
+		busy, err := sched.BusyNodes(ctx, []string{nodes[0].ID, nodes[1].ID})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(busy).To(Equal([]string{nodes[0].ID}))
+	})
+
 	It("returns ErrNoNodes for an empty node list", func() {
 		_, err := sched.Start(ctx, request(store.CmdExec, 1))
 		Expect(err).To(MatchError(batches.ErrNoNodes))
