@@ -1179,7 +1179,7 @@ const docTemplate = `{
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/handlers.APIError"
+                            "$ref": "#/definitions/handlers.APIBusyNodesError"
                         }
                     },
                     "413": {
@@ -1349,7 +1349,7 @@ const docTemplate = `{
                     "409": {
                         "description": "Conflict",
                         "schema": {
-                            "$ref": "#/definitions/handlers.APIError"
+                            "$ref": "#/definitions/handlers.APIBusyNodesError"
                         }
                     },
                     "413": {
@@ -1540,7 +1540,7 @@ const docTemplate = `{
                     "409": {
                         "description": "The node is in a running batch",
                         "schema": {
-                            "$ref": "#/definitions/handlers.APIError"
+                            "$ref": "#/definitions/handlers.APIBusyNodesError"
                         }
                     },
                     "413": {
@@ -2488,6 +2488,20 @@ const docTemplate = `{
                 "stopOnFailure": {
                     "description": "StopOnFailure stops the batch when a node fails. Defaults to true.",
                     "type": "boolean"
+                }
+            }
+        },
+        "handlers.APIBusyNodesError": {
+            "type": "object",
+            "properties": {
+                "error": {
+                    "type": "string"
+                },
+                "nodeIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

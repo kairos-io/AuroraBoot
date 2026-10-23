@@ -577,7 +577,11 @@ func stopOnFailure(tx *gorm.DB, b *store.CommandBatch, failed []*store.BatchNode
 		}
 	}
 	nodeID := first.NodeID
-	return stopBatch(tx, b, first.Hostname+": "+first.Message, &nodeID, now)
+	message := first.Message
+	if message == "" {
+		message = "command failed"
+	}
+	return stopBatch(tx, b, first.Hostname+": "+message, &nodeID, now)
 }
 
 // stopBatch moves b to stopped and cancels its waiting rows. Rows that are

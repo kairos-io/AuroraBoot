@@ -107,7 +107,7 @@ type groupCommandRequest struct {
 //	@Param		nodeID	path		string					true	"Node ID"
 //	@Param		body	body		APICreateCommandRequest	true	"Command payload"
 //	@Success	201		{object}	store.NodeCommand
-//	@Failure	409		{object}	APIError	"The node is in a running batch"
+//	@Failure	409		{object}	APIBusyNodesError	"The node is in a running batch"
 //	@Failure	413		{object}	APIError
 //	@Router		/api/v1/nodes/{nodeID}/commands [post]
 func (h *CommandHandler) Create(c echo.Context) error {
@@ -181,7 +181,7 @@ type bulkCommandRequest struct {
 //	@Param		body	body		APIBulkCommandRequest	true	"Selector, command and rollout options"
 //	@Success	201		{object}	store.CommandBatch
 //	@Failure	400		{object}	APIError
-//	@Failure	409		{object}	APIError
+//	@Failure	409		{object}	APIBusyNodesError
 //	@Failure	413		{object}	APIError
 //	@Failure	503		{object}	APIError
 //	@Router		/api/v1/nodes/commands [post]
@@ -226,7 +226,7 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 //	@Param		body	body		APIGroupCommandRequest	true	"Command and rollout options"
 //	@Success	201		{object}	store.CommandBatch
 //	@Failure	400		{object}	APIError
-//	@Failure	409		{object}	APIError
+//	@Failure	409		{object}	APIBusyNodesError
 //	@Failure	413		{object}	APIError
 //	@Failure	503		{object}	APIError
 //	@Router		/api/v1/groups/{id}/commands [post]
