@@ -130,6 +130,9 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 		baseImage := envOr("PHONEHOME_BASE_IMAGE", phonehomeDefaultBaseImage)
 		kairosInitImage := envOr("PHONEHOME_KAIROS_INIT_IMAGE", phonehomeDefaultKairosInitImage)
 
+		// NewAuroraboot builds auroraboot:test from this checkout, so the
+		// tier runs the code under test and never a stale local image.
+		NewAuroraboot()
 		ws, cleanup = startWebServer("auroraboot:test")
 		groupID = ws.createGroup("e2e-phonehome")
 
