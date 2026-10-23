@@ -571,6 +571,12 @@ func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []
 // booted at bootedAt. It locks the node row, so the check against the recorded
 // reboot and the transition see the same operation: an upgrade or reset
 // requested in between clears the recorded reboot and waits for the next one.
+//
+// A failed upgrade or reset still settles while its reboot is recorded: a
+// batch timeout fails it without knowing the outcome, and the node may come
+// back later. A failure the node itself showed is final, so settling as
+// failed clears the recorded reboot. A command that reported Failed recorded
+// no reboot in the first place.
 func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string, bootedAt time.Time) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockNodes(tx, []string{nodeID}); err != nil {
@@ -585,20 +591,28 @@ func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string,
 		}
 		now := time.Now()
 		updates := map[string]any{}
-		if n.UpgradeState == store.UpgradeStatePending && rebootedAfter(n.UpgradeRebootAt, bootedAt) {
+		upgradeOpen := n.UpgradeState == store.UpgradeStatePending || n.UpgradeState == store.UpgradeStateFailed
+		if upgradeOpen && rebootedAfter(n.UpgradeRebootAt, bootedAt) {
 			if to, ok := store.UpgradeOutcome(bootState); ok {
 				updates["upgrade_state"] = to
-				if to == store.UpgradeStateDone {
+				switch to {
+				case store.UpgradeStateDone:
 					updates["last_upgrade"] = &now
+				case store.UpgradeStateFailed:
+					updates["upgrade_reboot_at"] = nil
 				}
 			}
 		}
-		resetPending := n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress
-		if resetPending && rebootedAfter(n.ResetRebootAt, bootedAt) {
+		resetOpen := n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress ||
+			n.ResetState == store.ResetStateFailed
+		if resetOpen && rebootedAfter(n.ResetRebootAt, bootedAt) {
 			if to, ok := store.ResetOutcome(n.ResetState, bootState); ok {
 				updates["reset_state"] = to
-				if to == store.ResetStateDone {
+				switch to {
+				case store.ResetStateDone:
 					updates["last_reset"] = &now
+				case store.ResetStateFailed:
+					updates["reset_reboot_at"] = nil
 				}
 				// Re-anchor the reset timeout, as AdvanceReset does for a
 				// re-register (kairos-io/kairos#4287).

@@ -144,9 +144,10 @@ func (s *Store) BatchBusyNodes(ctx context.Context, nodeIDs []string) ([]string,
 // BatchAdvance brings one batch up to date at now, in one transaction: it
 // settles node rows from their nodes and commands, times out rebooting nodes
 // past their deadline, stops the batch on a failure when it asks for that,
-// starts waiting online nodes in free slots, skips the waiting nodes once only offline ones are left, and
-// finishes the batch when every row is final. It returns the commands it
-// created, for the caller to push once the transaction has committed.
+// starts waiting online nodes in free slots, skips the waiting nodes once
+// only offline ones are left, and finishes the batch when every row is final.
+// It returns the commands it created, for the caller to push once the
+// transaction has committed.
 //
 // lockBatch runs first, so two advances of the same batch run one after the
 // other and the second sees the slots the first one filled.
@@ -373,9 +374,9 @@ func rebootTimeout(seconds int) time.Duration {
 }
 
 // timeOut settles each rebooting row past its deadline as timed_out and marks
-// the upgrade or reset of its node failed, since the node is not coming back
-// to settle it. A node that comes back later can still settle its own
-// lifecycle; its batch row stays timed_out.
+// the upgrade or reset of its node failed. It leaves the node's recorded
+// reboot in place, so SettleAfterReboot can still move that state to done or
+// failed when the node comes back later; the batch row stays timed_out.
 func (a *batchAdvance) timeOut(tx *gorm.DB) error {
 	timeout := a.rebootTimeout()
 	minutes := int((timeout + time.Minute - 1) / time.Minute)

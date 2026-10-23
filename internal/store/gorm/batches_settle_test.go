@@ -138,6 +138,59 @@ var _ = Describe("Gorm batch settling", func() {
 		Expect(get(b.ID).Nodes[0].Message).To(Equal("did not come back within 2 minutes"))
 	})
 
+	// The node records its reboot when its command completes, a moment
+	// before the spec reads the clock, so a boot a minute from now is after it.
+	It("lets a node that timed out settle its own upgrade when it comes back", func() {
+		nodes := register(1)
+		id, since := rebooting(nodes, store.CmdUpgrade, 1, false)
+		advanceAt(id, since.Add(11*time.Minute))
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+
+		bootedAt := time.Now().Add(time.Minute)
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStateActive, bootedAt)).To(Succeed())
+		Expect(booted(nodes[0].ID, store.BootStateActive, &bootedAt)).To(BeEmpty())
+
+		n := nodeByID(nodes[0].ID)
+		Expect(n.UpgradeState).To(Equal(store.UpgradeStateDone))
+		Expect(n.LastUpgrade).NotTo(BeNil())
+		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeTimedOut))
+	})
+
+	It("lets a node that timed out settle its own reset when it comes back", func() {
+		nodes := register(1)
+		id, since := rebooting(nodes, store.CmdReset, 1, false)
+		advanceAt(id, since.Add(11*time.Minute))
+		Expect(nodeByID(nodes[0].ID).ResetState).To(Equal(store.ResetStateFailed))
+
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStateActive, time.Now().Add(time.Minute))).To(Succeed())
+
+		Expect(nodeByID(nodes[0].ID).ResetState).To(Equal(store.ResetStateDone))
+		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeTimedOut))
+	})
+
+	It("keeps an upgrade its command failed as failed on a later boot", func() {
+		nodes := register(1)
+		id := newBatch(nodes, store.CmdUpgrade, 1, false)
+		cmds := advance(id)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandFailed, "exit status 1")).To(Succeed())
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStateActive, time.Now().Add(time.Minute))).To(Succeed())
+
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+	})
+
+	It("keeps an upgrade that fell back as failed on a later boot", func() {
+		nodes := register(1)
+		rebooting(nodes, store.CmdUpgrade, 1, false)
+
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStatePassive, time.Now().Add(time.Minute))).To(Succeed())
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStateActive, time.Now().Add(time.Hour))).To(Succeed())
+
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+	})
+
 	It("leaves a rebooting node alone before its deadline", func() {
 		nodes := register(1)
 		id, since := rebooting(nodes, store.CmdUpgrade, 1, false)
