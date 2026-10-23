@@ -133,6 +133,9 @@ func (a *BatchStoreAdapter) List(ctx context.Context, f store.BatchFilter) ([]*s
 func (a *BatchStoreAdapter) BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error) {
 	return a.S.BatchBusyNodes(ctx, nodeIDs)
 }
+func (a *BatchStoreAdapter) Advance(ctx context.Context, batchID string, now time.Time) ([]*store.NodeCommand, error) {
+	return a.S.BatchAdvance(ctx, batchID, now)
+}
 
 // ArtifactStoreAdapter adapts Store to the store.ArtifactStore interface.
 type ArtifactStoreAdapter struct{ S *Store }

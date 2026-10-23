@@ -118,6 +118,9 @@ type BatchStore interface {
 	List(ctx context.Context, f BatchFilter) ([]*CommandBatch, int, error)
 	// BusyNodes returns the IDs among nodeIDs that have a row in a non-final state.
 	BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error)
+	// Advance brings one batch up to date at now and returns the commands it
+	// created, for the caller to push after the transaction committed.
+	Advance(ctx context.Context, batchID string, now time.Time) ([]*NodeCommand, error)
 }
 
 // BatchOutcome is the state of one fan-out, derived from the commands it

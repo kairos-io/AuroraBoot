@@ -669,56 +669,62 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 		return nil
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var resetNodes, upgradeNodes []string
-		for _, cmd := range cmds {
-			if cmd.ID == "" {
-				cmd.ID = uuid.New().String()
-			}
-			if cmd.Phase == "" {
-				cmd.Phase = store.CommandPending
-			}
-			if err := tx.Create(cmd).Error; err != nil {
-				return err
-			}
-			switch cmd.Command {
-			case store.CmdReset:
-				resetNodes = append(resetNodes, cmd.ManagedNodeID)
-			case store.CmdUpgrade:
-				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
-			}
+		return createCommands(tx, cmds)
+	})
+}
+
+// createCommands is the body of CreateBatch, for callers that create commands
+// inside a transaction of their own.
+func createCommands(tx *gorm.DB, cmds []*store.NodeCommand) error {
+	var resetNodes, upgradeNodes []string
+	for _, cmd := range cmds {
+		if cmd.ID == "" {
+			cmd.ID = uuid.New().String()
 		}
-		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		if cmd.Phase == "" {
+			cmd.Phase = store.CommandPending
+		}
+		if err := tx.Create(cmd).Error; err != nil {
 			return err
 		}
-		now := time.Now()
-		if len(resetNodes) > 0 {
-			if err := tx.Model(&store.ManagedNode{}).
-				Where("id IN ?", resetNodes).
-				Where("reset_state IS NULL OR reset_state NOT IN ?",
-					[]string{store.ResetStatePending, store.ResetStateInProgress}).
-				Updates(map[string]any{
-					"reset_state":        store.ResetStatePending,
-					"reset_requested_at": &now,
-					"reset_progress_at":  nil,
-					"reset_reboot_at":    nil,
-				}).Error; err != nil {
-				return err
-			}
+		switch cmd.Command {
+		case store.CmdReset:
+			resetNodes = append(resetNodes, cmd.ManagedNodeID)
+		case store.CmdUpgrade:
+			upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
 		}
-		if len(upgradeNodes) > 0 {
-			if err := tx.Model(&store.ManagedNode{}).
-				Where("id IN ?", upgradeNodes).
-				Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
-				Updates(map[string]any{
-					"upgrade_state":        store.UpgradeStatePending,
-					"upgrade_requested_at": &now,
-					"upgrade_reboot_at":    nil,
-				}).Error; err != nil {
-				return err
-			}
+	}
+	if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		return err
+	}
+	now := time.Now()
+	if len(resetNodes) > 0 {
+		if err := tx.Model(&store.ManagedNode{}).
+			Where("id IN ?", resetNodes).
+			Where("reset_state IS NULL OR reset_state NOT IN ?",
+				[]string{store.ResetStatePending, store.ResetStateInProgress}).
+			Updates(map[string]any{
+				"reset_state":        store.ResetStatePending,
+				"reset_requested_at": &now,
+				"reset_progress_at":  nil,
+				"reset_reboot_at":    nil,
+			}).Error; err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+	if len(upgradeNodes) > 0 {
+		if err := tx.Model(&store.ManagedNode{}).
+			Where("id IN ?", upgradeNodes).
+			Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
+			Updates(map[string]any{
+				"upgrade_state":        store.UpgradeStatePending,
+				"upgrade_requested_at": &now,
+				"upgrade_reboot_at":    nil,
+			}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CommandGetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
