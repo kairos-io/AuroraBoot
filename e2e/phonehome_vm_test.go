@@ -1,0 +1,339 @@
+package e2e_test
+
+import (
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
+	"sync"
+
+	"github.com/gofrs/uuid"
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
+	"github.com/onsi/gomega/format"
+)
+
+// This tier runs AuroraBoot in a container and two QEMU VMs installed from an
+// ISO AuroraBoot built, and drives batch upgrades of the VMs through the admin
+// API. Containers cannot reboot and do not run an agent built by AuroraBoot's
+// kairos-init step, so this is the only tier that sees the agent download an
+// artifact image, upgrade, reboot and report back.
+//
+// Inputs, all optional:
+//   - PHONEHOME_BASE_IMAGE: the Kairos image both artifacts are built from. Its
+//     agent must find the persistent partition on a running system, because
+//     the upgrade target is built from it without kairos-init and the nodes
+//     run its agent after the upgrade.
+//   - PHONEHOME_KAIROS_INIT_IMAGE: the kairos-init image of the installed
+//     artifact. AuroraBoot's default kairos-init ships an agent that cannot
+//     download artifact images.
+//   - PHONEHOME_LOG_DIR: where a failed run leaves AuroraBoot's log and each
+//     VM's logs.
+//   - KVM, FIRMWARE, MEMORY and CPUS, as for the other VM tiers. MEMORY and
+//     CPUS default lower here because two VMs run at once.
+
+const (
+	phonehomeDefaultBaseImage       = "quay.io/kairos/hadron:v0.5.3-core-amd64-generic-v4.4.0-rc2"
+	phonehomeDefaultKairosInitImage = "quay.io/kairos/kairos-init:v4.4.0-rc2"
+	// phonehomeKairosVersion is the version kairos-init stamps on the
+	// installed artifact. The API falls back to "latest" without one, which
+	// kairos-init v4.4.0 refuses as not a semantic version; the UI always sends
+	// a version.
+	phonehomeKairosVersion = "v4.4.0-rc2"
+	phonehomeMarkerPath    = "/etc/auroraboot-e2e-marker"
+	// phonehomeUnknownArtifact is an artifact ID AuroraBoot does not know, so
+	// an upgrade from it fails on AuroraBoot's own image download, before the
+	// node reboots.
+	phonehomeUnknownArtifact = "00000000-0000-0000-0000-000000000000"
+)
+
+func envOr(name, fallback string) string {
+	if v := os.Getenv(name); v != "" {
+		return v
+	}
+	return fallback
+}
+
+// sshRun runs cmd on the VM as the SSH user. It returns an error, never a
+// panic, while the VM is rebooting.
+func sshRun(vm testVM, cmd string) (string, error) {
+	out, err := vm.machine.Command(cmd)
+	return strings.TrimSpace(out), err
+}
+
+// bootID identifies the VM's current boot. It changes on every reboot, which
+// is how the tier tells a node that rebooted from one that stayed up.
+func bootID(vm testVM) (string, error) {
+	return sshRun(vm, "cat /proc/sys/kernel/random/boot_id")
+}
+
+var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, func() {
+	var (
+		ws       *webServer
+		cleanup  func()
+		groupID  string
+		upgradeB string
+		token    string
+		vms      []testVM
+		nodeIDs  []string
+		bootIDs  []string
+		failed   bool
+		setUp    bool
+		artifact []string
+	)
+
+	BeforeAll(func() {
+		format.MaxLength = 0
+		baseImage := envOr("PHONEHOME_BASE_IMAGE", phonehomeDefaultBaseImage)
+		kairosInitImage := envOr("PHONEHOME_KAIROS_INIT_IMAGE", phonehomeDefaultKairosInitImage)
+
+		ws, cleanup = startWebServer("auroraboot:test")
+		groupID = ws.createGroup("e2e-phonehome")
+
+		uid, err := uuid.NewV4()
+		Expect(err).ToNot(HaveOccurred())
+		token = uid.String()
+
+		By("building the installed artifact and the upgrade target")
+		bodyA := map[string]any{
+			"name":            "e2e-phonehome-a",
+			"baseImage":       baseImage,
+			"arch":            "amd64",
+			"kairosInitImage": kairosInitImage,
+			"kairosVersion":   phonehomeKairosVersion,
+			"outputs":         map[string]any{"iso": true},
+			"provisioning": map[string]any{
+				"autoInstall":        true,
+				"registerAuroraBoot": true,
+			},
+		}
+		// The builder records the container image of every Ready artifact,
+		// whatever outputs were asked for, so B needs no output to be served
+		// by /image. Its Dockerfile builds a Kairos image, so AuroraBoot skips
+		// kairos-init for it and the nodes run the base image's agent after
+		// the upgrade.
+		bodyB := map[string]any{
+			"name":       "e2e-phonehome-b",
+			"arch":       "amd64",
+			"dockerfile": fmt.Sprintf("FROM %s\nRUN echo %s > %s\n", baseImage, token, phonehomeMarkerPath),
+		}
+		var installA string
+		var wg sync.WaitGroup
+		wg.Add(2)
+		go func() {
+			defer GinkgoRecover()
+			defer wg.Done()
+			installA = ws.buildArtifact(bodyA)
+		}()
+		go func() {
+			defer GinkgoRecover()
+			defer wg.Done()
+			upgradeB = ws.buildArtifact(bodyB)
+		}()
+		wg.Wait()
+		for _, id := range []string{installA, upgradeB} {
+			if id != "" {
+				artifact = append(artifact, id)
+			}
+		}
+		Expect(installA).ToNot(BeEmpty(), "the installed artifact did not build")
+		Expect(upgradeB).ToNot(BeEmpty(), "the upgrade target did not build")
+
+		iso := ws.downloadISO(installA, GinkgoT().TempDir())
+
+		By("installing two VMs from the ISO")
+		spec := vmSpec{ISO: iso, Memory: envOr("MEMORY", "4000"), CPUs: envOr("CPUS", "2")}
+		for range 2 {
+			vm, err := startVMWith(spec)
+			Expect(err).ToNot(HaveOccurred())
+			vms = append(vms, vm)
+		}
+		for _, vm := range vms {
+			vm.EventuallyConnects(1200)
+		}
+
+		By("waiting for both nodes to register from disk")
+		// A VM can phone home from the live ISO before it installs, so only
+		// nodes that booted the installed system count.
+		var active []map[string]any
+		Eventually(func() []map[string]any {
+			active = nil
+			for _, n := range ws.nodes() {
+				if n["bootState"] == "active" && n["phase"] == "Online" {
+					active = append(active, n)
+				}
+			}
+			return active
+		}, "15m", "10s").Should(HaveLen(2), "two nodes registered with boot state active and online")
+
+		for _, vm := range vms {
+			var hostname string
+			Eventually(func() error {
+				var err error
+				hostname, err = sshRun(vm, "hostname")
+				return err
+			}, "5m", "5s").Should(Succeed(), "reading the hostname of VM %s", vm.machine.Config().ID)
+			var id string
+			for _, n := range active {
+				if n["hostname"] == hostname {
+					id, _ = n["id"].(string)
+				}
+			}
+			Expect(id).ToNot(BeEmpty(), "no active node has the hostname %q of VM %s: %v", hostname, vm.machine.Config().ID, active)
+			nodeIDs = append(nodeIDs, id)
+
+			boot, err := bootID(vm)
+			Expect(err).ToNot(HaveOccurred(), boot)
+			bootIDs = append(bootIDs, boot)
+		}
+		Expect(nodeIDs[0]).ToNot(Equal(nodeIDs[1]), "both VMs map to the same node")
+
+		By("putting both nodes in the tier's group")
+		for _, id := range nodeIDs {
+			ws.setNodeGroup(id, groupID)
+		}
+		var grouped []string
+		for _, n := range ws.groupNodes(groupID) {
+			id, _ := n["id"].(string)
+			grouped = append(grouped, id)
+		}
+		Expect(grouped).To(ConsistOf(nodeIDs), "nodes in group %s", groupID)
+		setUp = true
+	})
+
+	AfterEach(func() {
+		if CurrentSpecReport().Failed() {
+			failed = true
+		}
+	})
+
+	AfterAll(func() {
+		if failed || !setUp {
+			logDir := os.Getenv("PHONEHOME_LOG_DIR")
+			if logDir == "" {
+				logDir = "logs/phonehome"
+			}
+			logDir, err := filepath.Abs(logDir)
+			Expect(err).ToNot(HaveOccurred())
+			Expect(os.MkdirAll(logDir, 0o755)).To(Succeed())
+			fmt.Printf("Writing the logs of the phonehome tier to %s\n", logDir)
+
+			logs, _ := exec.Command("docker", "logs", webContainerName).CombinedOutput()
+			if err := os.WriteFile(filepath.Join(logDir, "auroraboot.log"), logs, 0o644); err != nil {
+				fmt.Printf("Could not write the AuroraBoot log: %s\n", err)
+			}
+
+			previous, had := os.LookupEnv("VM_LOG_DIR")
+			Expect(os.Setenv("VM_LOG_DIR", logDir)).To(Succeed())
+			defer func() {
+				if had {
+					os.Setenv("VM_LOG_DIR", previous)
+				} else {
+					os.Unsetenv("VM_LOG_DIR")
+				}
+			}()
+			for _, vm := range vms {
+				saveSerialLog(vm)
+				runForLog(vmLogSink(vm), "journalctl -u kairos-agent-phonehome --no-pager > /run/kairos-agent-phonehome.log")
+				gatherLog(vmLogSink(vm), vmLogDir(vm), "/run/kairos-agent-phonehome.log")
+				gatherLogs(vm)
+			}
+		}
+
+		if ws != nil {
+			for _, id := range artifact {
+				ws.deleteArtifact(id)
+			}
+		}
+		if cleanup != nil {
+			cleanup()
+		}
+		for _, vm := range vms {
+			stopTPM(vm.StateDir)
+			if err := vm.Destroy(nil); err != nil {
+				fmt.Printf("Could not destroy VM %s: %s\n", vm.machine.Config().ID, err)
+			}
+		}
+	})
+
+	It("reports an upgrade that fails before the reboot and leaves the nodes usable", func() {
+		ids := ws.sendGroupCommand(groupID, "upgrade", map[string]string{"source": "artifact:" + phonehomeUnknownArtifact})
+
+		for i, nodeID := range nodeIDs {
+			cmdID := ws.commandFor(nodeID, ids)
+			Eventually(func() string { return ws.commandPhase(nodeID, cmdID) }, "10m", "5s").
+				Should(BeElementOf("Completed", "Failed", "Expired", "Canceled"), "upgrade command %s of node %s finishing", cmdID, nodeID)
+			cmd := ws.command(nodeID, cmdID)
+			Expect(cmd.Phase).To(Equal("Failed"), "upgrade command of node %s: %s", nodeID, cmd.Result)
+
+			Eventually(func() any { return ws.node(nodeID)["upgradeState"] }, "2m", "5s").
+				Should(Equal("failed"), "upgrade state of node %s", nodeID)
+			n := ws.node(nodeID)
+			Expect(n["phase"]).To(Equal("Online"), "node %s: %v", nodeID, n)
+			Expect(n["bootState"]).To(Equal("active"), "node %s: %v", nodeID, n)
+
+			out, err := sshRun(vms[i], "true")
+			Expect(err).ToNot(HaveOccurred(), "VM of node %s does not answer over SSH: %s", nodeID, out)
+			boot, err := bootID(vms[i])
+			Expect(err).ToNot(HaveOccurred(), boot)
+			Expect(boot).To(Equal(bootIDs[i]), "node %s rebooted after a failed upgrade", nodeID)
+		}
+	})
+
+	It("upgrades both nodes to the new artifact", func() {
+		ids := ws.sendGroupCommand(groupID, "upgrade", map[string]string{"source": "artifact:" + upgradeB})
+
+		for i, nodeID := range nodeIDs {
+			cmdID := ws.commandFor(nodeID, ids)
+			Eventually(func() string { return ws.commandPhase(nodeID, cmdID) }, "15m", "5s").
+				Should(BeElementOf("Completed", "Failed", "Expired", "Canceled"), "upgrade command %s of node %s finishing", cmdID, nodeID)
+			cmd := ws.command(nodeID, cmdID)
+			Expect(cmd.Phase).To(Equal("Completed"), "upgrade command of node %s: %s", nodeID, cmd.Result)
+
+			// A node that never rebooted stays online and active, so only a
+			// new boot ID shows that it came back.
+			Eventually(func() string {
+				boot, err := bootID(vms[i])
+				if err != nil {
+					return bootIDs[i]
+				}
+				return boot
+			}, "15m", "10s").ShouldNot(Equal(bootIDs[i]), "VM of node %s rebooting after the upgrade", nodeID)
+		}
+
+		for i, nodeID := range nodeIDs {
+			Eventually(func() map[string]any { return ws.node(nodeID) }, "15m", "10s").Should(And(
+				HaveKeyWithValue("upgradeState", "done"),
+				HaveKeyWithValue("bootState", "active"),
+				HaveKeyWithValue("phase", "Online"),
+			), "node %s registering again after the upgrade", nodeID)
+
+			marker, err := sshRun(vms[i], "cat "+phonehomeMarkerPath)
+			Expect(err).ToNot(HaveOccurred(), marker)
+			Expect(marker).To(Equal(token), "node %s does not run the upgrade target", nodeID)
+		}
+
+		logs, err := exec.Command("docker", "logs", webContainerName).CombinedOutput()
+		Expect(err).ToNot(HaveOccurred(), string(logs))
+		prefix := "image export for artifact " + upgradeB + ":"
+		var exports []string
+		for _, line := range strings.Split(string(logs), "\n") {
+			if strings.Contains(line, prefix) {
+				exports = append(exports, line)
+			}
+		}
+		built := 0
+		for _, line := range exports {
+			switch {
+			case strings.Contains(line, "built in"):
+				built++
+			case strings.Contains(line, "waited for the build of another request"),
+				strings.Contains(line, "served from the cache"):
+			default:
+				Fail("unexpected image export line: " + line)
+			}
+		}
+		Expect(built).To(Equal(1), "image exports of the upgrade target:\n%s", strings.Join(exports, "\n"))
+	})
+})

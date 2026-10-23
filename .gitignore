@@ -20,4 +20,5 @@ data/
 
 # Local e2e log dumps
 test/e2e/logs/
+e2e/logs/
 pkg/ops/assets/__pycache__/
