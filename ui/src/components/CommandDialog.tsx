@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { Rollout } from "@/api/batches";
 import { listArtifacts, resolveBundle, Artifact, type ResolvedBundleEntry } from "@/api/artifacts";
 import {
   ArrowUpCircle,
@@ -135,7 +136,14 @@ type UpgradeSourceMode = "image" | "artifact";
 interface CommandDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (command: string, args: Record<string, unknown>) => void;
+  onSubmit: (
+    command: string,
+    args: Record<string, unknown>,
+    rollout?: Rollout,
+  ) => void;
+  // How many nodes the command reaches. The Rollout section appears when it
+  // is more than one.
+  targetCount?: number;
   title?: string;
   // If set, opens the dialog straight on the configure step with this
   // command preselected. Used by GroupDetail/NodeDetail quick-action
@@ -149,7 +157,12 @@ export function CommandDialog({
   onSubmit,
   title = "Send command",
   defaultCommand,
+  targetCount,
 }: CommandDialogProps) {
+  const rolloutIds = useId();
+  const [concurrencyArg, setConcurrencyArg] = useState("");
+  const [stopOnFailure, setStopOnFailure] = useState(true);
+  const [timeoutMinutes, setTimeoutMinutes] = useState("10");
   const [command, setCommand] = useState<CommandKey | "">("");
   const [imageArg, setImageArg] = useState("");
   const [configArg, setConfigArg] = useState("");
@@ -168,6 +181,9 @@ export function CommandDialog({
   }>({ artifactId: "", rows: [] });
   const [bundlePicks, setBundlePicks] = useState<Record<string, boolean>>({});
 
+  const isRollout = (targetCount ?? 0) > 1;
+  const reboots =
+    command === "upgrade" || command === "reset" || command === "reboot";
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
 
@@ -190,6 +206,9 @@ export function CommandDialog({
       setShellCmd("");
       setUpgradeSourceMode("image");
       setSelectedArtifactId("");
+      setConcurrencyArg("");
+      setStopOnFailure(true);
+      setTimeoutMinutes("10");
     }
   } else if (open && defaultCommand !== prevDefaultCommand) {
     setPrevDefaultCommand(defaultCommand);
@@ -270,7 +289,21 @@ export function CommandDialog({
 
     if (shellCmd) args.command = shellCmd;
 
-    onSubmit(command, args);
+    if (isRollout) {
+      const concurrency = Number.parseInt(concurrencyArg, 10);
+      const minutes = Number.parseFloat(timeoutMinutes);
+      const rollout: Rollout = {
+        stopOnFailure,
+        rebootTimeoutSeconds:
+          Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 600,
+      };
+      if (Number.isFinite(concurrency) && concurrency > 0) {
+        rollout.concurrency = concurrency;
+      }
+      onSubmit(command, args, rollout);
+    } else {
+      onSubmit(command, args);
+    }
     onOpenChange(false);
   }
 
@@ -544,6 +577,66 @@ export function CommandDialog({
                 </p>
               </div>
             )}
+
+            {isRollout && (
+              <div className="grid gap-3 border-t pt-4">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-sm font-semibold">Rollout</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {targetCount} nodes
+                  </span>
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor={`${rolloutIds}-concurrency`}>Nodes at a time</Label>
+                  <Input
+                    id={`${rolloutIds}-concurrency`}
+                    type="number"
+                    min={1}
+                    placeholder="All at once"
+                    value={concurrencyArg}
+                    onChange={(e) => setConcurrencyArg(e.target.value)}
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The next node starts when one finishes. Leave empty to run on
+                    all nodes at once.
+                  </p>
+                </div>
+                <div className="grid gap-1">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={stopOnFailure}
+                      onChange={(e) => setStopOnFailure(e.target.checked)}
+                    />
+                    Stop on the first failure
+                  </label>
+                  <p className="text-xs text-muted-foreground">
+                    Nodes that have not started are canceled. Nodes already
+                    running finish.
+                  </p>
+                </div>
+                {reboots && (
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${rolloutIds}-timeout`}>
+                      Wait for a node to come back
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`${rolloutIds}-timeout`}
+                        type="number"
+                        min={1}
+                        value={timeoutMinutes}
+                        onChange={(e) => setTimeoutMinutes(e.target.value)}
+                      />
+                      <span className="text-sm text-muted-foreground">minutes</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      A node that has not come back by then counts as failed.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -556,7 +649,9 @@ export function CommandDialog({
               onClick={handleSubmit}
               disabled={!canSubmit}
             >
-              {activeCommand?.verb ?? "Send"}
+              {isRollout
+                ? `${activeCommand?.label ?? "Send"} ${targetCount} nodes`
+                : (activeCommand?.verb ?? "Send")}
             </Button>
           )}
         </DialogFooter>

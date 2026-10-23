@@ -71,7 +71,7 @@ async function chooseRebootAndSubmit() {
   const dialog = await screen.findByRole("dialog");
   fireEvent.click(within(dialog).getByRole("button", { name: /Reboot/ }));
   await act(async () => {
-    fireEvent.click(within(dialog).getByRole("button", { name: "Send reboot" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Reboot \d+ nodes$/ }));
   });
 }
 

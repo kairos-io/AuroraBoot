@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { getGroup, deleteGroup, sendGroupCommand, updateGroup, type Group } from "@/api/groups";
+import type { Rollout } from "@/api/batches";
 import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -124,12 +125,16 @@ export function GroupDetail() {
     }
   }
 
-  async function handleCommand(command: string, args: Record<string, unknown>) {
+  async function handleCommand(
+    command: string,
+    args: Record<string, unknown>,
+    rollout?: Rollout,
+  ) {
     if (!id) return;
     if (cmdTarget === "selection") {
-      await sendBulkCommand({ nodeIDs: selectedIDs }, command, args);
+      await sendBulkCommand({ nodeIDs: selectedIDs }, command, args, rollout);
     } else {
-      await sendGroupCommand(id, command, args);
+      await sendGroupCommand(id, command, args, rollout);
     }
     setCmdTarget(null);
   }
@@ -273,6 +278,11 @@ export function GroupDetail() {
           if (!open) setCmdTarget(null);
         }}
         onSubmit={handleCommand}
+        targetCount={
+          cmdTarget === "selection"
+            ? selectedIDs.length
+            : groupNodeCount(group, nodes, nodesLoaded)
+        }
         title={
           cmdTarget === "selection"
             ? `Send command · ${selectedIDs.length} selected`

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router";
+import type { Rollout } from "@/api/batches";
 import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { listGroups, type Group } from "@/api/groups";
 import { NodeTable } from "@/components/NodeTable";
@@ -227,10 +228,14 @@ export function Nodes() {
     load();
   }
 
-  function handleBulkSubmit(command: string, args: Record<string, unknown>) {
+  function handleBulkSubmit(
+    command: string,
+    args: Record<string, unknown>,
+    rollout?: Rollout,
+  ) {
     const nodeIDs = targetNodes.map((n) => n.id);
     const send = () => {
-      sendBulkCommand({ nodeIDs }, command, args).catch((err) => {
+      sendBulkCommand({ nodeIDs }, command, args, rollout).catch((err) => {
         toast(`Failed to send command: ${(err as Error).message}`, "error");
       });
       setBulkCmdOpen(false);
@@ -381,6 +386,7 @@ export function Nodes() {
         open={bulkCmdOpen}
         onOpenChange={setBulkCmdOpen}
         onSubmit={handleBulkSubmit}
+        targetCount={targetCount}
         title={`Send Command to ${targetCount} node${targetCount !== 1 ? "s" : ""}`}
       />
 
