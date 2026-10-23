@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gofrs/uuid"
 	. "github.com/onsi/ginkgo/v2"
@@ -68,6 +69,47 @@ func bootID(vm testVM) (string, error) {
 	return sshRun(vm, "cat /proc/sys/kernel/random/boot_id")
 }
 
+// writePhonehomeLogs writes AuroraBoot's log and each VM's logs into
+// PHONEHOME_LOG_DIR, by default logs/phonehome under the e2e directory. It
+// returns an error only when the log directory cannot be prepared; a log that
+// cannot be fetched is printed and skipped.
+func writePhonehomeLogs(vms []testVM) error {
+	logDir := envOr("PHONEHOME_LOG_DIR", "logs/phonehome")
+	logDir, err := filepath.Abs(logDir)
+	if err != nil {
+		return fmt.Errorf("resolving the log directory: %w", err)
+	}
+	if err := os.MkdirAll(logDir, 0o755); err != nil {
+		return fmt.Errorf("creating the log directory: %w", err)
+	}
+	fmt.Fprintf(GinkgoWriter, "Writing the logs of the phonehome tier to %s\n", logDir)
+
+	logs, _ := exec.Command("docker", "logs", webContainerName).CombinedOutput()
+	if err := os.WriteFile(filepath.Join(logDir, "auroraboot.log"), logs, 0o644); err != nil {
+		fmt.Fprintf(GinkgoWriter, "Could not write the AuroraBoot log: %s\n", err)
+	}
+
+	// vmLogDir reads VM_LOG_DIR, so it points there for the VM logs only.
+	previous, had := os.LookupEnv("VM_LOG_DIR")
+	if err := os.Setenv("VM_LOG_DIR", logDir); err != nil {
+		return fmt.Errorf("setting VM_LOG_DIR: %w", err)
+	}
+	defer func() {
+		if had {
+			_ = os.Setenv("VM_LOG_DIR", previous)
+		} else {
+			_ = os.Unsetenv("VM_LOG_DIR")
+		}
+	}()
+	for _, vm := range vms {
+		saveSerialLog(vm)
+		runForLog(vmLogSink(vm), "journalctl -u kairos-agent-phonehome --no-pager > /run/kairos-agent-phonehome.log")
+		gatherLog(vmLogSink(vm), vmLogDir(vm), "/run/kairos-agent-phonehome.log")
+		gatherLogs(vm)
+	}
+	return nil
+}
+
 var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, func() {
 	var (
 		ws       *webServer
@@ -106,6 +148,7 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 			"provisioning": map[string]any{
 				"autoInstall":        true,
 				"registerAuroraBoot": true,
+				"targetGroupId":      groupID,
 			},
 		}
 		// The builder records the container image of every Ready artifact,
@@ -149,23 +192,33 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 			Expect(err).ToNot(HaveOccurred())
 			vms = append(vms, vm)
 		}
+		// Booting the live ISO, installing, rebooting from disk and
+		// registering share one 15-minute budget.
+		installDeadline := time.Now().Add(15 * time.Minute)
 		for _, vm := range vms {
-			vm.EventuallyConnects(1200)
+			Eventually(func() error {
+				_, err := sshRun(vm, "true")
+				return err
+			}, time.Until(installDeadline), 10*time.Second).Should(Succeed(),
+				"VM %s accepting SSH after booting the ISO", vm.machine.Config().ID)
 		}
 
-		By("waiting for both nodes to register from disk")
-		// A VM can phone home from the live ISO before it installs, so only
-		// nodes that booted the installed system count.
+		By("waiting for both nodes to register from disk in the group")
+		// A VM can phone home from the live ISO before it installs. The group
+		// has to hold exactly the two installed nodes, and they have to be
+		// online on the installed system.
 		var active []map[string]any
-		Eventually(func() []map[string]any {
-			active = nil
-			for _, n := range ws.nodes() {
-				if n["bootState"] == "active" && n["phase"] == "Online" {
-					active = append(active, n)
-				}
+		Eventually(func(g Gomega) {
+			active = ws.groupNodes(groupID)
+			g.Expect(active).To(HaveLen(2))
+			for _, n := range active {
+				g.Expect(n).To(And(
+					HaveKeyWithValue("bootState", "active"),
+					HaveKeyWithValue("phase", "Online"),
+				))
 			}
-			return active
-		}, "15m", "10s").Should(HaveLen(2), "two nodes registered with boot state active and online")
+		}, time.Until(installDeadline), 10*time.Second).Should(Succeed(),
+			"exactly two nodes in group %s, registered with boot state active and online", groupID)
 
 		for _, vm := range vms {
 			var hostname string
@@ -188,17 +241,6 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 			bootIDs = append(bootIDs, boot)
 		}
 		Expect(nodeIDs[0]).ToNot(Equal(nodeIDs[1]), "both VMs map to the same node")
-
-		By("putting both nodes in the tier's group")
-		for _, id := range nodeIDs {
-			ws.setNodeGroup(id, groupID)
-		}
-		var grouped []string
-		for _, n := range ws.groupNodes(groupID) {
-			id, _ := n["id"].(string)
-			grouped = append(grouped, id)
-		}
-		Expect(grouped).To(ConsistOf(nodeIDs), "nodes in group %s", groupID)
 		setUp = true
 	})
 
@@ -209,35 +251,11 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 	})
 
 	AfterAll(func() {
+		// Log writing is best effort: a problem with the log directory is
+		// reported and skips the logs, never the teardown below it.
 		if failed || !setUp {
-			logDir := os.Getenv("PHONEHOME_LOG_DIR")
-			if logDir == "" {
-				logDir = "logs/phonehome"
-			}
-			logDir, err := filepath.Abs(logDir)
-			Expect(err).ToNot(HaveOccurred())
-			Expect(os.MkdirAll(logDir, 0o755)).To(Succeed())
-			fmt.Printf("Writing the logs of the phonehome tier to %s\n", logDir)
-
-			logs, _ := exec.Command("docker", "logs", webContainerName).CombinedOutput()
-			if err := os.WriteFile(filepath.Join(logDir, "auroraboot.log"), logs, 0o644); err != nil {
-				fmt.Printf("Could not write the AuroraBoot log: %s\n", err)
-			}
-
-			previous, had := os.LookupEnv("VM_LOG_DIR")
-			Expect(os.Setenv("VM_LOG_DIR", logDir)).To(Succeed())
-			defer func() {
-				if had {
-					os.Setenv("VM_LOG_DIR", previous)
-				} else {
-					os.Unsetenv("VM_LOG_DIR")
-				}
-			}()
-			for _, vm := range vms {
-				saveSerialLog(vm)
-				runForLog(vmLogSink(vm), "journalctl -u kairos-agent-phonehome --no-pager > /run/kairos-agent-phonehome.log")
-				gatherLog(vmLogSink(vm), vmLogDir(vm), "/run/kairos-agent-phonehome.log")
-				gatherLogs(vm)
+			if err := writePhonehomeLogs(vms); err != nil {
+				fmt.Fprintf(GinkgoWriter, "Not writing the logs of the phonehome tier: %s\n", err)
 			}
 		}
 
@@ -248,6 +266,10 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 		}
 		if cleanup != nil {
 			cleanup()
+		} else {
+			// startWebServer hands out its cleanup only once the server is
+			// healthy, so a container that never got there is removed here.
+			_ = exec.Command("docker", "rm", "-f", webContainerName).Run()
 		}
 		for _, vm := range vms {
 			stopTPM(vm.StateDir)

@@ -110,21 +110,6 @@ func (w *webServer) groupNodes(groupID string) []map[string]any {
 	return nodes
 }
 
-// nodes lists every registered node.
-func (w *webServer) nodes() []map[string]any {
-	resp, data := w.do(http.MethodGet, "/api/v1/nodes", nil)
-	ExpectWithOffset(1, resp.StatusCode).To(Equal(http.StatusOK), string(data))
-	var nodes []map[string]any
-	ExpectWithOffset(1, json.Unmarshal(data, &nodes)).To(Succeed(), string(data))
-	return nodes
-}
-
-// setNodeGroup moves a node into a group.
-func (w *webServer) setNodeGroup(nodeID, groupID string) {
-	resp, data := w.do(http.MethodPut, "/api/v1/nodes/"+nodeID+"/group", map[string]any{"groupID": groupID})
-	ExpectWithOffset(1, resp.StatusCode).To(Equal(http.StatusOK), string(data))
-}
-
 // sendGroupCommand queues a command for every node in the group and returns
 // the IDs of the commands it created.
 func (w *webServer) sendGroupCommand(groupID, command string, args map[string]string) []string {
