@@ -13,6 +13,7 @@ const RECENT_LIMIT = 5;
 // carry no node rows, so a node's entries show the batch phase.
 export function RecentBatches({ groupID, nodeID }: { groupID?: string; nodeID?: string }) {
   const [batches, setBatches] = useState<Batch[] | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -20,8 +21,8 @@ export function RecentBatches({ groupID, nodeID }: { groupID?: string; nodeID?: 
       .then((res) => {
         if (live) setBatches(res.batches);
       })
-      .catch(() => {
-        if (live) setBatches([]);
+      .catch((err) => {
+        if (live) setError((err as Error).message);
       });
     return () => {
       live = false;
@@ -40,7 +41,9 @@ export function RecentBatches({ groupID, nodeID }: { groupID?: string; nodeID?: 
         </Link>
       </CardHeader>
       <CardContent>
-        {batches === null ? null : batches.length === 0 ? (
+        {error ? (
+          <p className="text-sm text-danger-foreground">Failed to load batches: {error}</p>
+        ) : batches === null ? null : batches.length === 0 ? (
           <p className="text-sm text-muted-foreground">No batches yet.</p>
         ) : (
           <ul className="divide-y">

@@ -39,7 +39,11 @@ function renderCard(props: { groupID?: string; nodeID?: string }) {
 }
 
 describe("RecentBatches", () => {
-  beforeEach(() => listBatches.mockReset());
+  // A beforeEach that returns a function has it run as teardown, so the
+  // reset must not be the arrow's return value.
+  beforeEach(() => {
+    listBatches.mockReset();
+  });
 
   it("lists a group's newest batches and links to them", async () => {
     listBatches.mockResolvedValue({ total: 1, batches: [batch()] });
@@ -56,6 +60,13 @@ describe("RecentBatches", () => {
     listBatches.mockResolvedValue({ total: 0, batches: [] });
     renderCard({ groupID: "g1" });
     expect(await screen.findByText("No batches yet.")).toBeInTheDocument();
+  });
+
+  it("shows a failed fetch as an error instead of the empty state", async () => {
+    listBatches.mockRejectedValue(new Error("connection refused"));
+    renderCard({ groupID: "g1" });
+    expect(await screen.findByText("Failed to load batches: connection refused")).toBeInTheDocument();
+    expect(screen.queryByText("No batches yet.")).not.toBeInTheDocument();
   });
 
   it("asks for the node's batches when given a node", async () => {

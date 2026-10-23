@@ -24,6 +24,7 @@ export function Batches() {
   const [total, setTotal] = useState(0);
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let live = true;
@@ -32,8 +33,11 @@ export function Batches() {
         if (!live) return;
         setBatches(res.batches);
         setTotal(res.total);
+        setError(null);
       })
-      .catch(() => {})
+      .catch((err) => {
+        if (live) setError((err as Error).message);
+      })
       .finally(() => {
         if (live) setLoading(false);
       });
@@ -53,6 +57,10 @@ export function Batches() {
           {loading ? (
             <div className="flex items-center justify-center py-16 text-muted-foreground">
               Loading...
+            </div>
+          ) : error ? (
+            <div className="py-16 text-center text-sm text-danger-foreground">
+              Failed to load batches: {error}
             </div>
           ) : batches.length === 0 ? (
             <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
