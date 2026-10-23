@@ -309,8 +309,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// while its socket is still open must not get samples back after Forget.
 	if heartbeatErr == nil {
 		h.recordMetrics(nodeID, hb.Metrics)
-		if bootedAt, ok := store.BootedAt(time.Now(), hb.Metrics); ok && h.Commands != nil {
-			store.SettleFromHeartbeat(ctx, h.Nodes, h.Commands, nodeID, hb.BootState, bootedAt)
+		if bootedAt, ok := store.BootedAt(time.Now(), hb.Metrics); ok {
+			if err := h.Nodes.SettleAfterReboot(ctx, nodeID, hb.BootState, bootedAt); err != nil {
+				log.Printf("ws: failed to settle node %s after its reboot: %v", nodeID, err)
+			}
 		}
 	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:

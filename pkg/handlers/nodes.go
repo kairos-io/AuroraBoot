@@ -590,7 +590,9 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	}
 	h.recordMetrics(c, nodeID, req.Metrics)
 	if bootedAt, ok := store.BootedAt(time.Now(), req.Metrics); ok {
-		store.SettleFromHeartbeat(c.Request().Context(), h.nodes, h.commands, nodeID, req.BootState, bootedAt)
+		if err := h.nodes.SettleAfterReboot(c.Request().Context(), nodeID, req.BootState, bootedAt); err != nil {
+			c.Logger().Warnf("settling node %s after its reboot: %v", nodeID, err)
+		}
 	}
 	// Heartbeat is the universal "OS is up" signal (and the fallback when a node
 	// never re-registers): attempt the auto eject-on-phone-home off-request. The

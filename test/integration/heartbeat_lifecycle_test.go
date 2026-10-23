@@ -108,6 +108,28 @@ var _ = Describe("Lifecycle settled from heartbeats", func() {
 		Eventually(field("lastUpgrade"), 5*time.Second, 100*time.Millisecond).ShouldNot(BeNil())
 	})
 
+	It("settles an upgrade whose command was cleared from the history while the node rebooted", func() {
+		complete(issue("upgrade"))
+		resp := adminDelete(testServerURL, "/api/v1/nodes/"+nodeID+"/commands", testAdminPassword)
+		Expect(resp.StatusCode).To(Equal(http.StatusNoContent))
+		resp.Body.Close()
+
+		wsHeartbeat("active", 0)
+
+		Eventually(field("upgradeState"), 5*time.Second, 100*time.Millisecond).Should(Equal("done"))
+	})
+
+	It("does not settle a later upgrade with the reboot of an earlier one", func() {
+		complete(issue("upgrade"))
+		wsHeartbeat("active", 0)
+		Eventually(field("upgradeState"), 5*time.Second, 100*time.Millisecond).Should(Equal("done"))
+
+		issue("upgrade")
+		wsHeartbeat("active", 0)
+
+		Consistently(field("upgradeState"), time.Second, 100*time.Millisecond).Should(Equal("pending"))
+	})
+
 	It("leaves the upgrade pending for a heartbeat from a boot before the command completed", func() {
 		complete(issue("upgrade"))
 
