@@ -194,7 +194,13 @@ describe("BatchDetail", () => {
     // poll returns a new args object.
     getBatch.mockImplementation(async () =>
       makeBatch({
-        args: { source: "artifact:art1" },
+        args: {
+          source: "artifact:art1",
+          extensions: JSON.stringify([
+            { name: "a", type: "sysext", version: "1", source: "s" },
+            { name: "b", type: "sysext", version: "1", source: "s" },
+          ]),
+        },
         phase: "stopped",
         stoppedAt: "2026-10-23T10:30:00Z",
         stopReason: "x",
@@ -324,6 +330,34 @@ describe("BatchDetail", () => {
     await waitFor(() => expect(resolveBundle).toHaveBeenCalledWith("art1"));
     await waitFor(() => expect(within(dialog).queryByLabelText("include b")).not.toBeNull());
     expect(within(dialog).getByLabelText("include a")).toBeChecked();
+    expect(within(dialog).getByLabelText("include b")).not.toBeChecked();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade 2 nodes" }));
+    await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+    expect(sendBulkCommand.mock.calls[0][2]).toEqual(args);
+  });
+
+  it("leaves every extension unticked when the artifact upgrade sent none", async () => {
+    const args = { source: "artifact:art1" };
+    resolveBundle.mockResolvedValue([
+      { name: "a", type: "sysext", version: "1", source: "s" },
+      { name: "b", type: "sysext", version: "1", source: "s" },
+    ]);
+    getBatch.mockResolvedValue(
+      makeBatch({
+        args,
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 2 },
+        nodes: [row("n1", "failed"), row("n2", "failed")],
+      }),
+    );
+    sendBulkCommand.mockResolvedValue(makeBatch({ id: "b2" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 2 remaining nodes" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).queryByLabelText("include b")).not.toBeNull());
+    expect(within(dialog).getByLabelText("include a")).not.toBeChecked();
     expect(within(dialog).getByLabelText("include b")).not.toBeChecked();
     fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade 2 nodes" }));
     await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());

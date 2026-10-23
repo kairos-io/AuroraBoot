@@ -132,13 +132,16 @@ const TONE_CLASSES: Record<CommandDef["tone"], { chip: string; hover: string }> 
 };
 
 // originalExtensions returns the type/name keys of the extensions a repeated
-// batch sent with the given artifact, or null when it sent none.
+// batch sent with the given artifact, or null when the batch used another
+// source. An upgrade with every bundled extension unticked sends no
+// extensions argument, so a missing argument is an empty selection.
 function originalExtensions(
   extensions: string | undefined,
   source: string | undefined,
   artifactId: string,
 ): Set<string> | null {
-  if (!extensions || source !== "artifact:" + artifactId) return null;
+  if (source !== "artifact:" + artifactId) return null;
+  if (!extensions) return new Set();
   try {
     const rows = JSON.parse(extensions) as { type: string; name: string }[];
     return new Set(rows.map((r) => `${r.type}/${r.name}`));
