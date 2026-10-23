@@ -94,12 +94,12 @@ test-operator-e2e: ## Run the kind-based operator builder e2e suite
 
 # Run the phonehome tier: AuroraBoot in a container and two QEMU VMs it
 # installs and upgrades. Needs docker, qemu, swtpm, OVMF and KVM; FIRMWARE
-# overrides the OVMF code image. The image build matches the one the e2e suite
-# runs in newAurorabootImage.
+# overrides the OVMF code image: the default is Arch's path, Debian and Ubuntu
+# use /usr/share/OVMF/OVMF_CODE_4M.fd. The e2e suite builds the auroraboot:test
+# image itself.
 .PHONY: test-e2e-phonehome
 test-e2e-phonehome: ## Run the phonehome e2e tier on two VMs
-	docker build --network host --target default -t auroraboot:test -f Dockerfile .
-	KVM=true FIRMWARE=$${FIRMWARE:-/usr/share/edk2/x64/OVMF_CODE.4m.fd} go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 2h ./e2e
+	KVM=true FIRMWARE=$${FIRMWARE:-/usr/share/edk2/x64/OVMF_CODE.4m.fd} go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 100m --grace-period 10m ./e2e
 
 # Install development dependencies
 install-deps: ## Install development dependencies

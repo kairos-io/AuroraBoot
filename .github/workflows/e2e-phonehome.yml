@@ -4,6 +4,8 @@ on:
     paths:
       - 'pkg/handlers/**'
       - 'pkg/ws/**'
+      - 'pkg/store/**'
+      - 'pkg/server/**'
       - 'internal/store/**'
       - 'internal/builder/**'
       - 'e2e/phonehome*'
@@ -44,24 +46,6 @@ jobs:
           go-version-file: go.mod
       - name: Prefer IPv4
         uses: ./.github/actions/prefer-ipv4
-      - name: Set up Docker Buildx
-        id: buildx
-        uses: docker/setup-buildx-action@v4
-        with:
-          driver-opts: network=host
-      # The spec builds its own artifacts through the host docker socket, from
-      # the auroraboot:test image, so the image must be loaded into the local
-      # docker daemon.
-      - name: Build local image
-        uses: docker/build-push-action@v7
-        with:
-          push: false
-          load: true
-          context: .
-          file: ./Dockerfile
-          target: default
-          platforms: linux/amd64
-          tags: auroraboot:test
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
@@ -75,9 +59,9 @@ jobs:
           # VM disks and built artifacts.
           TMPDIR: ${{ runner.temp }}
         run: |
-          go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 2h ./e2e
+          go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 100m --grace-period 10m ./e2e
       - name: Upload phonehome logs
-        if: failure()
+        if: failure() || cancelled()
         uses: actions/upload-artifact@v7
         with:
           name: phonehome-logs
