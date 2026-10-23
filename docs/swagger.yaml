@@ -287,9 +287,22 @@ definitions:
           active | passive | recovery | autoreset (unknown values pass through).
         example: active
         type: string
+      group:
+        description: |-
+          Group is the name of the group a new node joins (optional). An unknown
+          name leaves the node ungrouped. Ignored when the node registers again.
+        example: edge-sites
+        type: string
       hostname:
         example: kairos-node-01
         type: string
+      labels:
+        additionalProperties:
+          type: string
+        description: |-
+          Labels are a new node's initial labels (optional). Ignored when the
+          node registers again.
+        type: object
       machineID:
         example: a1b2c3d4e5f6
         type: string

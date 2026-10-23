@@ -106,6 +106,12 @@ type registerRequest struct {
 	AgentVersion      string              `json:"agentVersion"`
 	Addresses         []store.NodeAddress `json:"addresses,omitempty"`
 	BootState         string              `json:"bootState,omitempty"`
+	// Group names the group a new node joins, as written into the phonehome
+	// config by an artifact built with a target group. An unknown name
+	// leaves the node ungrouped.
+	Group string `json:"group,omitempty"`
+	// Labels are a new node's initial labels.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Register handles POST /api/v1/nodes/register.
@@ -158,6 +164,7 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		Phase:        store.PhaseRegistered,
 		APIKey:       uuid.New().String(),
 		Labels:       make(map[string]string),
+		GroupID:      h.groupIDByName(c.Request().Context(), req.Group),
 		// Optional; empty when an older agent does not report them. Stored exactly
 		// as received — interface filtering is the agent's responsibility.
 		Addresses: req.Addresses,
@@ -165,6 +172,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// RemoteIP is server-observed, not agent-reported: the request the agent
 		// just made to register is itself the observation.
 		RemoteIP: c.RealIP(),
+	}
+
+	for k, v := range req.Labels {
+		node.Labels[k] = v
 	}
 
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
@@ -179,6 +190,20 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		"id":     node.ID,
 		"apiKey": node.APIKey,
 	})
+}
+
+// groupIDByName returns the ID of the group called name, or nil when name is
+// empty or no such group exists. Registration goes ahead either way: the
+// group only places the node, and an admin can place it later.
+func (h *NodeHandler) groupIDByName(ctx context.Context, name string) *string {
+	if name == "" || h.groups == nil {
+		return nil
+	}
+	g, err := h.groups.GetByName(ctx, name)
+	if err != nil || g == nil {
+		return nil
+	}
+	return &g.ID
 }
 
 // List handles GET /api/v1/nodes.

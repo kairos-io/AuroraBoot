@@ -2459,9 +2459,21 @@ const docTemplate = `{
                     "type": "string",
                     "example": "active"
                 },
+                "group": {
+                    "description": "Group is the name of the group a new node joins (optional). An unknown\nname leaves the node ungrouped. Ignored when the node registers again.",
+                    "type": "string",
+                    "example": "edge-sites"
+                },
                 "hostname": {
                     "type": "string",
                     "example": "kairos-node-01"
+                },
+                "labels": {
+                    "description": "Labels are a new node's initial labels (optional). Ignored when the\nnode registers again.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
                 },
                 "machineID": {
                     "type": "string",
