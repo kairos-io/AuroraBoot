@@ -230,7 +230,9 @@ which covers a crash between settling a node and starting the next one.
 - `POST /api/v1/nodes/:nodeID/commands` (one node) keeps working as today and
   creates no batch. It rejects `upgrade`, `reset` and `reboot` with 409 while
   the node is in a running batch, so a single-node command cannot settle a
-  batch row through the shared lifecycle state.
+  batch row through the shared lifecycle state. The check and the command
+  insert run under the same lock as a batch start's check and creation.
+- Both 409 bodies for busy nodes are `{"error", "nodeIDs"}`.
 - Starting a batch whose nodes are already in a running batch is rejected with
   409 that names them.
 - `GET /api/v1/commands/batches/:batchID` is removed.
@@ -247,6 +249,12 @@ several nodes picked on the Nodes page), the dialog shows a "Rollout" section:
 - "Stop on the first failure", checked by default.
 - "Wait for a node to come back", 10 minutes, shown only for upgrade, reset
   and reboot.
+
+When a batch endpoint reaches one node (a one-node group, one node picked on
+the Nodes page, or one remaining node of a batch), the section shows only
+"Wait for a node to come back", for upgrade, reset and reboot. The dialog sends
+the rollout settings to the batch endpoints for any number of nodes, so a
+repeated batch keeps its timeout.
 
 After starting, the UI navigates to the new batch.
 
