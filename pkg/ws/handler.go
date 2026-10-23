@@ -22,21 +22,20 @@ type wsMessage struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-// heartbeatData is sent by the agent.
-//
-// It intentionally declares only the fields this handler applies. The agent puts
-// more on the wire than this (addresses, boot state); those ride the REST
-// register/heartbeat contract and are deliberately not read here, see
-// handleHeartbeat.
+// heartbeatData is sent by the agent. It declares the fields handleHeartbeat
+// applies.
 type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
-	// Hostname is the node's current hostname (optional). Unlike addresses and
-	// boot state it has to be read here: the agent heartbeats over this socket and
-	// stops sending registration payloads once its credentials are on disk, so
-	// this is the only path a hostname change can arrive on
-	// (kairos-io/kairos#4196).
+	// Addresses and BootState are optional. The agent heartbeats over this
+	// socket and stops sending registration payloads once its credentials are
+	// on disk, so this is the path its current addresses and the boot entry it
+	// runs from arrive on after a reboot.
+	Addresses []store.NodeAddress `json:"addresses,omitempty"`
+	BootState string              `json:"bootState,omitempty"`
+	// Hostname is the node's current hostname (optional), read here for the
+	// same reason (kairos-io/kairos#4196).
 	Hostname string `json:"hostname,omitempty"`
 	// Metrics is an optional resource sample (store.NodeMetrics). It is kept raw
 	// and decoded separately so a malformed sample never drops the heartbeat.
@@ -296,14 +295,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// context.Background() is correct here: handleHeartbeat is called from the
 	// WS read loop which outlives the original HTTP request context.
 	ctx := context.Background()
-	// The WebSocket heartbeat does not carry network addresses or boot state
-	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
-	// preserves whatever the node reported there. The hostname is passed through:
-	// an agent that reports one is reporting its current one, and an agent that
-	// does not send "" and leaves the stored value alone. remoteIP, unlike those,
-	// is always known here — it is the live connection's address, not something
-	// the agent reports.
-	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP)
+	// An agent that omits addresses, boot state or hostname sends nil or "",
+	// which leaves the stored value alone. remoteIP is always known here: it is
+	// the live connection's address, not something the agent reports.
+	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, hb.Addresses, hb.BootState, hb.Hostname, remoteIP)
 	if heartbeatErr != nil {
 		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, heartbeatErr)
 	}
@@ -314,6 +309,9 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// while its socket is still open must not get samples back after Forget.
 	if heartbeatErr == nil {
 		h.recordMetrics(nodeID, hb.Metrics)
+		if bootedAt, ok := store.BootedAt(time.Now(), hb.Metrics); ok && h.Commands != nil {
+			store.SettleFromHeartbeat(ctx, h.Nodes, h.Commands, nodeID, hb.BootState, bootedAt)
+		}
 	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
 	// attempt the auto eject-on-phone-home (nil-safe, off this goroutine).
