@@ -1,6 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
-import { MemoryRouter, Route, Routes } from "react-router";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { Link, MemoryRouter, Route, Routes } from "react-router";
 
 import { BatchDetail } from "@/pages/BatchDetail";
 import type { Batch, BatchNode } from "@/api/batches";
@@ -66,6 +66,7 @@ function makeBatch(extra: Partial<Batch> = {}): Batch {
 function renderPage() {
   return render(
     <MemoryRouter initialEntries={["/batches/b1"]}>
+      <Link to="/batches/b2">to b2</Link>
       <Routes>
         <Route path="/batches/:id" element={<BatchDetail />} />
         <Route path="/batches/:id/other" element={<div />} />
@@ -74,9 +75,22 @@ function renderPage() {
   );
 }
 
+// advanceTimersByTime fires the poll; the getBatch promise settles on the
+// microtask queue, so act waits for it before the assertions run.
+async function tick(ms: number) {
+  await act(async () => {
+    vi.advanceTimersByTime(ms);
+    await Promise.resolve();
+  });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   resolveBundle.mockResolvedValue([]);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 describe("BatchDetail", () => {
@@ -147,6 +161,83 @@ describe("BatchDetail", () => {
       { source: "oci:quay.io/kairos/kairos:v4" },
       undefined,
     );
+  });
+
+  it("keeps an unticked extension when the batch refreshes with the dialog open", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    resolveBundle.mockResolvedValue([
+      { name: "a", type: "sysext", version: "1", source: "s" },
+      { name: "b", type: "sysext", version: "1", source: "s" },
+    ]);
+    // A stopped batch with a node still rebooting keeps polling, and every
+    // poll returns a new args object.
+    getBatch.mockImplementation(async () =>
+      makeBatch({
+        args: { source: "artifact:art1" },
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 2, rebooting: 1 },
+        nodes: [row("n1", "failed"), row("n2", "failed"), row("n3", "rebooting")],
+      }),
+    );
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 2 remaining nodes" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(within(dialog).queryByLabelText("include a")).not.toBeNull());
+    fireEvent.click(within(dialog).getByLabelText("include a"));
+    expect(within(dialog).getByLabelText("include a")).not.toBeChecked();
+
+    const polls = getBatch.mock.calls.length;
+    await tick(5000);
+    await waitFor(() => expect(getBatch.mock.calls.length).toBeGreaterThan(polls));
+    await tick(0);
+
+    expect(within(dialog).getByLabelText("include a")).not.toBeChecked();
+    expect(within(dialog).getByLabelText("include b")).toBeChecked();
+  });
+
+  it("says when a refresh failed while showing the last batch it loaded", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    getBatch
+      .mockResolvedValueOnce(makeBatch({ counts: { running: 1 }, nodes: [row("n1", "running")] }))
+      .mockRejectedValue(new Error("connection refused"));
+    renderPage();
+    await screen.findByRole("button", { name: "Stop batch" });
+    expect(screen.queryByText(/Last refresh failed/)).not.toBeInTheDocument();
+
+    await tick(5000);
+
+    expect(await screen.findByText("Last refresh failed: connection refused")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stop batch" })).toBeInTheDocument();
+  });
+
+  it("drops the previous batch's state when it shows another batch", async () => {
+    const stoppedBy = (id: string, nodeID: string) =>
+      makeBatch({
+        id,
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: `${id} stopped`,
+        stoppedByNodeID: nodeID,
+        counts: { timed_out: 1 },
+        nodes: [row(nodeID, "timed_out", { deadline: "2026-10-23T10:20:00Z" })],
+      });
+    getBatch.mockImplementation(async (id: string) => stoppedBy(id, id === "b1" ? "n1" : "n9"));
+    getNode.mockImplementation(async (id: string) => ({
+      id,
+      hostname: `host-${id}`,
+      // n1 came back after its deadline; n9 has not been heard from since.
+      lastHeartbeat: id === "n1" ? "2026-10-23T10:45:00Z" : "2026-10-23T10:00:00Z",
+    }));
+    renderPage();
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent(/host-n1 came back at/));
+
+    fireEvent.click(screen.getByRole("link", { name: "to b2" }));
+
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("b2 stopped"));
+    await waitFor(() => expect(getNode).toHaveBeenCalledWith("n9"));
+    expect(screen.getByRole("alert")).not.toHaveTextContent(/came back at/);
   });
 
   it("stops a running batch after confirmation", async () => {
