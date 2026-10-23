@@ -147,9 +147,9 @@ var _ = Describe("Scheduler", func() {
 		Expect([]string{cmds[2].BatchID, cmds[3].BatchID}).To(ConsistOf(a.ID, c.ID))
 	})
 
-	rebootingBatch := func() (*store.CommandBatch, *store.ManagedNode) {
-		nodes := onlineNodes(1)
-		b, err := sched.Start(ctx, request(store.CmdUpgrade, 1, nodes[0]))
+	rebootingBatchOf := func(n int) (*store.CommandBatch, []*store.ManagedNode) {
+		nodes := onlineNodes(n)
+		b, err := sched.Start(ctx, request(store.CmdUpgrade, 1, nodes...))
 		Expect(err).NotTo(HaveOccurred())
 		cmds := deliveredCmds()
 		Expect(cmds).To(HaveLen(1))
@@ -158,7 +158,12 @@ var _ = Describe("Scheduler", func() {
 		got, err := bs.Get(ctx, b.ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got.Nodes[0].State).To(Equal(store.BatchNodeRebooting))
-		return got, nodes[0]
+		return got, nodes
+	}
+
+	rebootingBatch := func() (*store.CommandBatch, *store.ManagedNode) {
+		b, nodes := rebootingBatchOf(1)
+		return b, nodes[0]
 	}
 
 	It("times out a rebooting node on a tick after its deadline", func() {
@@ -195,5 +200,99 @@ var _ = Describe("Scheduler", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got.Nodes[0].State).To(Equal(store.BatchNodeRebooting))
 		Expect(got.Nodes[0].Deadline).To(HaveValue(BeTemporally("==", after.Add(600*time.Second))))
+	})
+
+	Describe("NodeBooted", func() {
+		It("settles a rebooting node that booted after its reboot and delivers the next command", func() {
+			b, nodes := rebootingBatchOf(2)
+			bootedAt := b.Nodes[0].RebootingSince.Add(time.Minute)
+
+			sched.NodeBooted(ctx, nodes[0].ID, store.BootStateActive, &bootedAt)
+
+			got, err := bs.Get(ctx, b.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Nodes[0].State).To(Equal(store.BatchNodeDone))
+			cmds := deliveredCmds()
+			Expect(cmds).To(HaveLen(2))
+			Expect(cmds[1].ManagedNodeID).To(Equal(nodes[1].ID))
+		})
+
+		It("settles a rebooting node on a registration", func() {
+			b, nodes := rebootingBatchOf(2)
+
+			sched.NodeBooted(ctx, nodes[0].ID, store.BootStateActive, nil)
+
+			got, err := bs.Get(ctx, b.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Nodes[0].State).To(Equal(store.BatchNodeDone))
+			cmds := deliveredCmds()
+			Expect(cmds).To(HaveLen(2))
+			Expect(cmds[1].ManagedNodeID).To(Equal(nodes[1].ID))
+		})
+
+		It("leaves a node alone when its boot is from before the reboot", func() {
+			b, nodes := rebootingBatchOf(2)
+			bootedAt := b.Nodes[0].RebootingSince.Add(-time.Minute)
+
+			sched.NodeBooted(ctx, nodes[0].ID, store.BootStateActive, &bootedAt)
+
+			got, err := bs.Get(ctx, b.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Nodes[0].State).To(Equal(store.BatchNodeRebooting))
+			Expect(deliveredCmds()).To(HaveLen(1))
+		})
+	})
+
+	Describe("Stop", func() {
+		It("stops a running batch and cancels its waiting rows", func() {
+			nodes := onlineNodes(2)
+			b, err := sched.Start(ctx, request(store.CmdExec, 1, nodes...))
+			Expect(err).NotTo(HaveOccurred())
+
+			Expect(sched.Stop(ctx, b.ID)).To(Succeed())
+
+			got, err := bs.Get(ctx, b.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(got.Phase).To(Equal(store.BatchStopped))
+			Expect(got.StopReason).To(Equal("stopped by the user"))
+			Expect(got.Nodes[0].State).To(Equal(store.BatchNodeRunning))
+			Expect(got.Nodes[1].State).To(Equal(store.BatchNodeCanceled))
+
+			Expect(sched.Stop(ctx, b.ID)).To(MatchError(store.ErrBatchNotRunning))
+		})
+
+		It("returns ErrBatchNotFound for an unknown batch", func() {
+			Expect(sched.Stop(ctx, uuid.NewString())).To(MatchError(store.ErrBatchNotFound))
+		})
+	})
+
+	It("lets exactly one of two concurrent starts for the same node succeed", func() {
+		for i := 0; i < 10; i++ {
+			nodes := onlineNodes(1)
+			gate := make(chan struct{})
+			errs := make([]error, 2)
+			var wg sync.WaitGroup
+			for j := range errs {
+				wg.Add(1)
+				go func() {
+					defer wg.Done()
+					<-gate
+					_, errs[j] = sched.Start(ctx, request(store.CmdExec, 1, nodes[0]))
+				}()
+			}
+			close(gate)
+			wg.Wait()
+
+			succeeded := 0
+			for _, err := range errs {
+				if err == nil {
+					succeeded++
+					continue
+				}
+				var busy *batches.ErrNodesBusy
+				Expect(errors.As(err, &busy)).To(BeTrue(), "unexpected error: %v", err)
+			}
+			Expect(succeeded).To(Equal(1))
+		}
 	})
 })

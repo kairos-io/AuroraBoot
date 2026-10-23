@@ -50,6 +50,11 @@ type Scheduler struct {
 	store   store.BatchStore
 	deliver Deliver
 
+	// startMu serializes the busy check and the batch creation in Start so two
+	// requests naming the same node cannot both pass the check. One AuroraBoot
+	// process owns the database, so a process-level lock is enough.
+	startMu sync.Mutex
+
 	mu  sync.RWMutex
 	now func() time.Time
 }
@@ -94,11 +99,14 @@ func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.Command
 		return nil, ErrNoNodes
 	}
 
+	s.startMu.Lock()
 	busy, err := s.store.BusyNodes(ctx, ids)
 	if err != nil {
+		s.startMu.Unlock()
 		return nil, fmt.Errorf("checking busy nodes: %w", err)
 	}
 	if len(busy) > 0 {
+		s.startMu.Unlock()
 		return nil, &ErrNodesBusy{NodeIDs: busy}
 	}
 
@@ -112,7 +120,9 @@ func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.Command
 		StopOnFailure:        req.StopOnFailure,
 		RebootTimeoutSeconds: req.RebootTimeoutSeconds,
 	}
-	if err := s.store.Create(ctx, b, rows); err != nil {
+	err = s.store.Create(ctx, b, rows)
+	s.startMu.Unlock()
+	if err != nil {
 		return nil, fmt.Errorf("creating batch: %w", err)
 	}
 
