@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -98,6 +99,31 @@ func emulateTPM(stateDir string) {
 
 	err = os.WriteFile(path.Join(t, "pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0744)
 	Expect(err).ToNot(HaveOccurred())
+
+	// qemu exits at once when the socket is not there yet, and a VM started
+	// right after this returns can beat swtpm to it.
+	Eventually(func() error {
+		_, err := os.Stat(path.Join(t, "swtpm-sock"))
+		return err
+	}, "30s", "100ms").Should(Succeed(), "swtpm creating its socket in %s", t)
+}
+
+// stopTPM ends the swtpm process emulateTPM started for stateDir. swtpm keeps
+// running when qemu is killed or never connects, so a VM's teardown has to
+// stop it, and before the state directory holding its pid file is removed.
+func stopTPM(stateDir string) {
+	pid, err := os.ReadFile(path.Join(stateDir, "tpm", "pid"))
+	if err != nil {
+		return
+	}
+	p, err := strconv.Atoi(strings.TrimSpace(string(pid)))
+	if err != nil {
+		return
+	}
+	if proc, err := os.FindProcess(p); err == nil {
+		_ = proc.Kill()
+		_, _ = proc.Wait()
+	}
 }
 
 // vmSpec names what a VM boots from and how big it is. Empty fields fall
