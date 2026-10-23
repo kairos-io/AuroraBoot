@@ -435,6 +435,44 @@ describe("BatchDetail", () => {
     expect(sendBulkCommand.mock.calls[0][2]).toEqual(args);
   });
 
+  it("repeats a batch whose command has no form with its arguments unchanged", async () => {
+    const args = { name: "k3s", type: "sysext", source: "oci:quay.io/ext/k3s:v1" };
+    getBatch.mockResolvedValue(
+      makeBatch({
+        command: "extension",
+        args,
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 2, done: 1 },
+        nodes: [row("n1", "failed"), row("n2", "failed"), row("n4", "done")],
+      }),
+    );
+    sendBulkCommand.mockResolvedValue(makeBatch({ id: "b2" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 2 remaining nodes" }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByRole("heading", { name: "Repeat Install extension" })).toBeInTheDocument();
+    expect(within(dialog).getByText("2 at a time, stop on failure")).toBeInTheDocument();
+    expect(within(dialog).getByLabelText("host-n1")).toBeChecked();
+    expect(within(dialog).getByLabelText("host-n2")).toBeChecked();
+    expect(within(dialog).queryByLabelText("host-n4")).not.toBeInTheDocument();
+
+    fireEvent.click(within(dialog).getByLabelText("host-n1"));
+    fireEvent.click(within(dialog).getByLabelText("host-n2"));
+    expect(within(dialog).getByRole("button", { name: "Start batch" })).toBeDisabled();
+    fireEvent.click(within(dialog).getByLabelText("host-n2"));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Start batch" }));
+
+    await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+    expect(sendBulkCommand).toHaveBeenCalledWith(
+      { nodeIDs: ["n2"] },
+      "extension",
+      args,
+      { concurrency: 2, stopOnFailure: true, rebootTimeoutSeconds: 600 },
+    );
+  });
+
   it("shows a stopped batch with a danger badge", async () => {
     getBatch.mockResolvedValue(
       makeBatch({ phase: "stopped", stoppedAt: "2026-10-23T10:30:00Z", stopReason: "x", nodes: [] }),

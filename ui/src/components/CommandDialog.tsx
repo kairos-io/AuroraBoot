@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import type { Rollout } from "@/api/batches";
+import type { CommandKey } from "@/lib/commandKeys";
 import { listArtifacts, resolveBundle, Artifact, type ResolvedBundleEntry } from "@/api/artifacts";
 import {
   ArrowUpCircle,
@@ -36,13 +37,7 @@ import {
 // for that specific action. When opened from a quick-action menu the
 // parent passes defaultCommand and we skip straight to step 2.
 
-export type CommandKey =
-  | "upgrade"
-  | "upgrade-recovery"
-  | "reset"
-  | "apply-cloud-config"
-  | "reboot"
-  | "exec";
+export type { CommandKey };
 
 interface CommandDef {
   key: CommandKey;
