@@ -104,8 +104,8 @@ Environment variables, with defaults so a local run needs none:
    `kairos`/`kairos` for SSH. The phonehome URL and registration token come
    from AuroraBoot, as for any artifact it builds.
 3. Build artifact B, the upgrade target: a Dockerfile build `FROM
-   PHONEHOME_BASE_IMAGE` that adds `/etc/auroraboot-e2e-marker` containing B's
-   artifact ID. The marker proves the node runs B after the upgrade.
+   PHONEHOME_BASE_IMAGE` that adds `/etc/auroraboot-e2e-marker` containing a token
+   the tier generates (B's ID is not known before the build). The marker proves the node runs B after the upgrade.
 4. Download A's ISO and boot two VMs from it in parallel. Wait until both
    nodes are registered and online with boot state `active`, which means they
    installed, rebooted from disk and phoned home.
@@ -122,7 +122,7 @@ Specs, in order:
 2. **A batch upgrade.** Batch upgrade of the group to `artifact:<B>`. Both
    commands end `Completed`; both nodes register again with boot state
    `active` and upgrade state `done`; over SSH, `/etc/auroraboot-e2e-marker`
-   holds B's ID on both. AuroraBoot's log has exactly one
+   holds that token on both. AuroraBoot's log has exactly one
    `image export for artifact <B>: built` line, and every other
    `image export for artifact <B>:` line says it waited for that build or was
    served from the cache. The number of downloads is not checked: the agent
