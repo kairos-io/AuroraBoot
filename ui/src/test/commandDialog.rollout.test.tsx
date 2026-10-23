@@ -124,3 +124,27 @@ describe("the Rollout section", () => {
     expect(screen.getByRole("button", { name: "Reboot 3 nodes" })).toBeInTheDocument();
   });
 });
+
+describe("the Nodes at a time setting", () => {
+  it.each(["-1", "1.5"])("blocks the submit and explains why for %s", (value) => {
+    const onSubmit = vi.fn();
+    openForm(onSubmit, "Reboot", 3);
+    const input = screen.getByLabelText("Nodes at a time");
+    fireEvent.change(input, { target: { value } });
+    expect(screen.getByText("Enter a whole number, or leave it empty to run on all nodes at once.")).toBeInTheDocument();
+    expect(input).toHaveAttribute("aria-invalid", "true");
+    const submit = screen.getByRole("button", { name: "Reboot 3 nodes" });
+    expect(submit).toBeDisabled();
+    fireEvent.click(submit);
+    expect(onSubmit).not.toHaveBeenCalled();
+  });
+
+  it("treats 0 as all nodes at once", () => {
+    const onSubmit = vi.fn();
+    openForm(onSubmit, "Reboot", 3);
+    fireEvent.change(screen.getByLabelText("Nodes at a time"), { target: { value: "0" } });
+    expect(screen.queryByText(/Enter a whole number/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Reboot 3 nodes" }));
+    expect(onSubmit.mock.calls[0][2]).toEqual({ stopOnFailure: true, rebootTimeoutSeconds: 600 });
+  });
+});
