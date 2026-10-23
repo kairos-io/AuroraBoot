@@ -134,12 +134,13 @@ const TONE_CLASSES: Record<CommandDef["tone"], { chip: string; hover: string }> 
 // originalExtensions returns the type/name keys of the extensions a repeated
 // batch sent with the given artifact, or null when it sent none.
 function originalExtensions(
-  args: Record<string, string> | undefined,
+  extensions: string | undefined,
+  source: string | undefined,
   artifactId: string,
 ): Set<string> | null {
-  if (!args?.extensions || args.source !== "artifact:" + artifactId) return null;
+  if (!extensions || source !== "artifact:" + artifactId) return null;
   try {
-    const rows = JSON.parse(args.extensions) as { type: string; name: string }[];
+    const rows = JSON.parse(extensions) as { type: string; name: string }[];
     return new Set(rows.map((r) => `${r.type}/${r.name}`));
   } catch {
     return null;
@@ -221,6 +222,11 @@ export function CommandDialog({
     command === "upgrade" || command === "reset" || command === "reboot";
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
+  // The resolve effect reads the defaults through these strings, so a parent
+  // that passes a new defaultArgs object with the same content (a polled
+  // batch) does not resolve again and reset the operator's picks.
+  const defaultExtensions = defaultArgs?.extensions;
+  const defaultSource = defaultArgs?.source;
 
   function seedFromDefaults() {
     if (defaultRollout) {
@@ -299,7 +305,7 @@ export function CommandDialog({
         setBundleState({ artifactId: selectedArtifactId, rows });
         // When repeating a batch from the same artifact, only the extensions
         // the original sent start ticked.
-        const original = originalExtensions(defaultArgs, selectedArtifactId);
+        const original = originalExtensions(defaultExtensions, defaultSource, selectedArtifactId);
         setBundlePicks(
           Object.fromEntries(
             rows.map((r) => {
@@ -317,7 +323,7 @@ export function CommandDialog({
     return () => {
       cancelled = true;
     };
-  }, [isUpgrade, upgradeSourceMode, selectedArtifactId, defaultArgs]);
+  }, [isUpgrade, upgradeSourceMode, selectedArtifactId, defaultExtensions, defaultSource]);
 
   const bundle =
     isUpgrade &&

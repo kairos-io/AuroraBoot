@@ -64,8 +64,14 @@ function settingsText(batch: Batch): string {
   return parts.join(", ");
 }
 
+// BatchDetail keys the view by batch id, so moving to another batch starts
+// from empty state instead of showing the previous batch's banner or error.
 export function BatchDetail() {
   const { id } = useParams();
+  return <BatchView key={id} id={id} />;
+}
+
+function BatchView({ id }: { id: string | undefined }) {
   const navigate = useNavigate();
   const [batch, setBatch] = useState<Batch | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -76,7 +82,10 @@ export function BatchDetail() {
   const load = useCallback(() => {
     if (!id) return;
     getBatch(id)
-      .then(setBatch)
+      .then((b) => {
+        setBatch(b);
+        setError(null);
+      })
       .catch((err) => setError((err as Error).message));
   }, [id]);
 
@@ -170,6 +179,10 @@ export function BatchDetail() {
           </Button>
         )}
       </PageHeader>
+
+      {error && (
+        <p className="mb-4 text-sm text-danger-foreground">Last refresh failed: {error}</p>
+      )}
 
       {batch.phase === "stopped" && (
         <div
