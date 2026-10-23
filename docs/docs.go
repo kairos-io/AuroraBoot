@@ -3568,7 +3568,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "resetProgressAt": {
-                    "description": "ResetProgressAt is when the reset last made observable progress. Two\nevents stamp it: the node claiming the reset command for delivery, and\nthe node re-registering reporting bootState=autoreset (the lifecycle\nmoving from pending to in-progress). The reset timeout is measured from\nthis timestamp when it is set, so a node that picks the command up late\nstill gets a full window to reboot, wipe and come back instead of sharing\nthe one that started at ResetRequestedAt. Nil until the reset reaches the\nnode, and cleared when a new reset is requested.",
+                    "description": "ResetProgressAt is when the reset last made observable progress. Two\nevents stamp it: the node claiming the reset command for delivery, and\nthe node coming back reporting bootState=autoreset, by re-registering or\nby a heartbeat after the reset reboot (the lifecycle moving from pending\nto in-progress). The reset timeout is measured from\nthis timestamp when it is set, so a node that picks the command up late\nstill gets a full window to reboot, wipe and come back instead of sharing\nthe one that started at ResetRequestedAt. Nil until the reset reaches the\nnode, and cleared when a new reset is requested.",
                     "type": "string"
                 },
                 "resetRequestedAt": {

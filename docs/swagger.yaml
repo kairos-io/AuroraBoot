@@ -903,8 +903,9 @@ definitions:
         description: |-
           ResetProgressAt is when the reset last made observable progress. Two
           events stamp it: the node claiming the reset command for delivery, and
-          the node re-registering reporting bootState=autoreset (the lifecycle
-          moving from pending to in-progress). The reset timeout is measured from
+          the node coming back reporting bootState=autoreset, by re-registering or
+          by a heartbeat after the reset reboot (the lifecycle moving from pending
+          to in-progress). The reset timeout is measured from
           this timestamp when it is set, so a node that picks the command up late
           still gets a full window to reboot, wipe and come back instead of sharing
           the one that started at ResetRequestedAt. Nil until the reset reaches the
