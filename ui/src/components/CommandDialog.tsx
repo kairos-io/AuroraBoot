@@ -158,8 +158,10 @@ interface CommandDialogProps {
     rollout?: Rollout,
     nodeIDs?: string[],
   ) => void;
-  // How many nodes the command reaches. The Rollout section appears when it
-  // is more than one.
+  // How many nodes the command reaches. Setting it, or nodeChoices, means the
+  // command starts a batch, so onSubmit always receives a rollout. The Rollout
+  // section shows every setting for more than one node and only the reboot
+  // timeout, for commands that reboot, for one node.
   targetCount?: number;
   title?: string;
   // If set, opens the dialog straight on the configure step with this
@@ -217,11 +219,13 @@ export function CommandDialog({
     ?.filter((n) => !unchecked.has(n.id))
     .map((n) => n.id);
   const targetCount = checkedIDs ? checkedIDs.length : targetCountProp;
-  const isRollout = (targetCount ?? 0) > 1;
+  const startsBatch = targetCountProp !== undefined || nodeChoices !== undefined;
+  const isRollout = startsBatch && (targetCount ?? 0) > 1;
   const reboots =
     command === "upgrade" || command === "reset" || command === "reboot";
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
+  const showRollout = isRollout || (startsBatch && reboots);
   // The resolve effect reads the defaults through these strings, so a parent
   // that passes a new defaultArgs object with the same content (a polled
   // batch) does not resolve again and reset the operator's picks.
@@ -367,7 +371,7 @@ export function CommandDialog({
 
     if (shellCmd) args.command = shellCmd;
 
-    if (isRollout) {
+    if (startsBatch) {
       const concurrency = Number.parseInt(concurrencyArg, 10);
       const minutes = Number.parseFloat(timeoutMinutes);
       const rollout: Rollout = {
@@ -375,7 +379,7 @@ export function CommandDialog({
         rebootTimeoutSeconds:
           Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 600,
       };
-      if (Number.isFinite(concurrency) && concurrency > 0) {
+      if (isRollout && Number.isFinite(concurrency) && concurrency > 0) {
         rollout.concurrency = concurrency;
       }
       onSubmit(command, args, rollout, checkedIDs);
@@ -683,43 +687,47 @@ export function CommandDialog({
               </div>
             )}
 
-            {isRollout && (
+            {showRollout && (
               <div className="grid gap-3 border-t pt-4">
                 <div className="flex items-baseline gap-2">
                   <h3 className="text-sm font-semibold">Rollout</h3>
                   <span className="text-xs text-muted-foreground">
-                    {targetCount} nodes
+                    {targetCount} {targetCount === 1 ? "node" : "nodes"}
                   </span>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor={`${rolloutIds}-concurrency`}>Nodes at a time</Label>
-                  <Input
-                    id={`${rolloutIds}-concurrency`}
-                    type="number"
-                    min={1}
-                    placeholder="All at once"
-                    value={concurrencyArg}
-                    onChange={(e) => setConcurrencyArg(e.target.value)}
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    The next node starts when one finishes. Leave empty to run on
-                    all nodes at once.
-                  </p>
-                </div>
-                <div className="grid gap-1">
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={stopOnFailure}
-                      onChange={(e) => setStopOnFailure(e.target.checked)}
-                    />
-                    Stop on the first failure
-                  </label>
-                  <p className="text-xs text-muted-foreground">
-                    Nodes that have not started are canceled. Nodes already
-                    running finish.
-                  </p>
-                </div>
+                {isRollout && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label htmlFor={`${rolloutIds}-concurrency`}>Nodes at a time</Label>
+                      <Input
+                        id={`${rolloutIds}-concurrency`}
+                        type="number"
+                        min={1}
+                        placeholder="All at once"
+                        value={concurrencyArg}
+                        onChange={(e) => setConcurrencyArg(e.target.value)}
+                      />
+                      <p className="text-xs text-muted-foreground">
+                        The next node starts when one finishes. Leave empty to run on
+                        all nodes at once.
+                      </p>
+                    </div>
+                    <div className="grid gap-1">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={stopOnFailure}
+                          onChange={(e) => setStopOnFailure(e.target.checked)}
+                        />
+                        Stop on the first failure
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        Nodes that have not started are canceled. Nodes already
+                        running finish.
+                      </p>
+                    </div>
+                  </>
+                )}
                 {reboots && (
                   <div className="grid gap-2">
                     <Label htmlFor={`${rolloutIds}-timeout`}>

@@ -26,11 +26,54 @@ function openForm(
 }
 
 describe("the Rollout section", () => {
-  it("hides the Rollout section for a single node", () => {
-    openForm(vi.fn(), "Reboot", 1);
-    expect(screen.queryByText("Rollout")).not.toBeInTheDocument();
+  it("shows only the reboot timeout for a single node and sends it", () => {
+    const onSubmit = vi.fn();
+    openForm(onSubmit, "Reboot", 1);
+    expect(screen.getByText("1 node")).toBeInTheDocument();
     expect(screen.queryByLabelText("Nodes at a time")).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Send reboot" })).toBeInTheDocument();
+    expect(screen.queryByLabelText("Stop on the first failure")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("Wait for a node to come back"), {
+      target: { value: "15" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Send reboot" }));
+    expect(onSubmit.mock.calls[0][2]).toEqual({ stopOnFailure: true, rebootTimeoutSeconds: 900 });
+  });
+
+  it("sends a rollout for a single node whose command does not reboot", () => {
+    const onSubmit = vi.fn();
+    openForm(onSubmit, "Run command", 1);
+    expect(screen.queryByText("Rollout")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByPlaceholderText("e.g. uname -a"), { target: { value: "true" } });
+    fireEvent.click(screen.getByRole("button", { name: "Run command" }));
+    expect(onSubmit.mock.calls[0][2]).toEqual({ stopOnFailure: true, rebootTimeoutSeconds: 600 });
+  });
+
+  it("carries a repeated batch's timeout over to a single node", () => {
+    const onSubmit = vi.fn();
+    const dialog = (open: boolean) => (
+      <CommandDialog
+        open={open}
+        onOpenChange={() => {}}
+        onSubmit={onSubmit}
+        defaultCommand="reboot"
+        defaultRollout={{ concurrency: 2, stopOnFailure: false, rebootTimeoutSeconds: 1200 }}
+        nodeChoices={[{ id: "n1", label: "host-n1" }]}
+      />
+    );
+    // The dialog seeds its defaults when it opens.
+    const { rerender } = render(dialog(false));
+    rerender(dialog(true));
+    expect(screen.getByLabelText("Wait for a node to come back")).toHaveValue(20);
+    fireEvent.click(screen.getByRole("button", { name: "Send reboot" }));
+    expect(onSubmit.mock.calls[0][2]).toEqual({ stopOnFailure: false, rebootTimeoutSeconds: 1200 });
+  });
+
+  it("sends no rollout when the command does not start a batch", () => {
+    const onSubmit = vi.fn();
+    openForm(onSubmit, "Reboot");
+    expect(screen.queryByLabelText("Wait for a node to come back")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Send reboot" }));
+    expect(onSubmit.mock.calls[0][2]).toBeUndefined();
   });
 
   it("sends the defaults when the user changes nothing", () => {
