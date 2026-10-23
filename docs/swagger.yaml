@@ -108,6 +108,15 @@ definitions:
           true.
         type: boolean
     type: object
+  handlers.APIBusyNodesError:
+    properties:
+      error:
+        type: string
+      nodeIDs:
+        items:
+          type: string
+        type: array
+    type: object
   handlers.APIClaimRequest:
     properties:
       claimKey:
@@ -1804,7 +1813,7 @@ paths:
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/handlers.APIError'
+            $ref: '#/definitions/handlers.APIBusyNodesError'
         "413":
           description: Request Entity Too Large
           schema:
@@ -1956,7 +1965,7 @@ paths:
         "409":
           description: The node is in a running batch
           schema:
-            $ref: '#/definitions/handlers.APIError'
+            $ref: '#/definitions/handlers.APIBusyNodesError'
         "413":
           description: Request Entity Too Large
           schema:
@@ -2206,7 +2215,7 @@ paths:
         "409":
           description: Conflict
           schema:
-            $ref: '#/definitions/handlers.APIError'
+            $ref: '#/definitions/handlers.APIBusyNodesError'
         "413":
           description: Request Entity Too Large
           schema:

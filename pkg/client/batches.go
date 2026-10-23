@@ -13,7 +13,7 @@ type BatchesService struct{ c *Client }
 // Get fetches a batch with its per-node rows.
 func (s *BatchesService) Get(ctx context.Context, id string) (*Batch, error) {
 	var out Batch
-	if err := s.c.do(ctx, http.MethodGet, "/api/v1/batches/"+id, nil, nil, &out); err != nil {
+	if err := s.c.do(ctx, http.MethodGet, "/api/v1/batches/"+url.PathEscape(id), nil, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil
@@ -45,7 +45,7 @@ func (s *BatchesService) List(ctx context.Context, opts BatchListOptions) (*Batc
 // satisfies IsConflict when the batch is not running.
 func (s *BatchesService) Stop(ctx context.Context, id string) (*Batch, error) {
 	var out Batch
-	if err := s.c.do(ctx, http.MethodPost, "/api/v1/batches/"+id+"/stop", nil, nil, &out); err != nil {
+	if err := s.c.do(ctx, http.MethodPost, "/api/v1/batches/"+url.PathEscape(id)+"/stop", nil, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

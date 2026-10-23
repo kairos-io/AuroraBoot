@@ -28,6 +28,13 @@ type APIError struct {
 	Code   string `json:"code,omitempty"`
 }
 
+// APIBusyNodesError is the 409 body returned when a command or batch names
+// nodes that are in a batch that has not finished with them.
+type APIBusyNodesError struct {
+	Error   string   `json:"error"`
+	NodeIDs []string `json:"nodeIDs"`
+}
+
 // --- Node claim (kairos-io/kairos#4252) ---
 
 // APIClaimRequest is the JSON body of POST /api/v1/groups/:id/claim. ClaimKey is

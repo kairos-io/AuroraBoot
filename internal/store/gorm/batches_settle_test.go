@@ -225,6 +225,17 @@ var _ = Describe("Gorm batch settling", func() {
 		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStatePending))
 	})
 
+	It("names the failure generically when the failed command reported no result", func() {
+		nodes := register(2)
+		id := newBatch(nodes, store.CmdExec, 1, true)
+
+		cmds := advance(id)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandFailed, "")).To(Succeed())
+		advance(id)
+
+		Expect(get(id).StopReason).To(Equal("host-0: command failed"))
+	})
+
 	It("stops the batch at the first failure and cancels the waiting nodes", func() {
 		nodes := register(3)
 		id := newBatch(nodes, store.CmdExec, 1, true)

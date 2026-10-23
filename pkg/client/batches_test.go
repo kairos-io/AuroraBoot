@@ -25,6 +25,7 @@ var _ = Describe("BatchesService", func() {
 		server    *httptest.Server
 		gotMethod string
 		gotPath   string
+		gotRaw    string
 		gotQuery  string
 		gotBody   map[string]any
 		status    int
@@ -35,7 +36,7 @@ var _ = Describe("BatchesService", func() {
 	BeforeEach(func() {
 		gotBody, status, reply = nil, http.StatusOK, batchJSON
 		server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			gotMethod, gotPath, gotQuery = r.Method, r.URL.Path, r.URL.RawQuery
+			gotMethod, gotPath, gotRaw, gotQuery = r.Method, r.URL.Path, r.URL.EscapedPath(), r.URL.RawQuery
 			raw, _ := io.ReadAll(r.Body)
 			_ = json.Unmarshal(raw, &gotBody)
 			w.Header().Set("Content-Type", "application/json")
@@ -59,6 +60,12 @@ var _ = Describe("BatchesService", func() {
 			Expect(b.Nodes).To(HaveLen(2))
 			Expect(b.Nodes[0].State).To(Equal("failed"))
 			Expect(b.Nodes[1].State).To(Equal("canceled"))
+		})
+
+		It("escapes the id in the path", func() {
+			_, err := cli.Batches.Get(context.Background(), "a/b c")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gotRaw).To(Equal("/api/v1/batches/a%2Fb%20c"))
 		})
 
 		It("returns a not-found error for an unknown batch", func() {
@@ -94,6 +101,12 @@ var _ = Describe("BatchesService", func() {
 			Expect(gotMethod).To(Equal(http.MethodPost))
 			Expect(gotPath).To(Equal("/api/v1/batches/b1/stop"))
 			Expect(b.ID).To(Equal("b1"))
+		})
+
+		It("escapes the id in the path", func() {
+			_, err := cli.Batches.Stop(context.Background(), "a/b c")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(gotRaw).To(Equal("/api/v1/batches/a%2Fb%20c/stop"))
 		})
 
 		It("returns an APIError on 409 when the batch is not running", func() {
