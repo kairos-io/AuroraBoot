@@ -191,6 +191,28 @@ var _ = Describe("Gorm batch settling", func() {
 		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
 	})
 
+	It("keeps an upgrade that fell back at registration as failed on a later boot", func() {
+		nodes := register(1)
+		rebooting(nodes, store.CmdUpgrade, 1, false)
+
+		store.ResolveUpgrade(ctx, &gormstore.NodeStoreAdapter{S: s}, nodeByID(nodes[0].ID), store.BootStatePassive)
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStateActive, time.Now().Add(time.Hour))).To(Succeed())
+
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStateFailed))
+	})
+
+	It("keeps a reset that fell back at registration as failed on a later boot", func() {
+		nodes := register(1)
+		rebooting(nodes, store.CmdReset, 1, false)
+
+		store.ResolveReset(ctx, &gormstore.NodeStoreAdapter{S: s}, nodeByID(nodes[0].ID), store.BootStateRecovery)
+		Expect(nodeByID(nodes[0].ID).ResetState).To(Equal(store.ResetStateFailed))
+		Expect(s.SettleAfterReboot(ctx, nodes[0].ID, store.BootStateActive, time.Now().Add(time.Hour))).To(Succeed())
+
+		Expect(nodeByID(nodes[0].ID).ResetState).To(Equal(store.ResetStateFailed))
+	})
+
 	It("leaves a rebooting node alone before its deadline", func() {
 		nodes := register(1)
 		id, since := rebooting(nodes, store.CmdUpgrade, 1, false)
