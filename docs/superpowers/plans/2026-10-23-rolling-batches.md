@@ -18,6 +18,7 @@
 - Batch phases, exactly: `running`, `completed`, `failed`, `stopped`.
 - Messages, exactly: `fell back to passive`, `fell back to recovery`, `did not come back within <N> minutes` (N = timeout in minutes, rounded up), `offline when the batch reached it`, `batch stopped`, `stopped by the user` (batch stop reason), `node deleted`, `command deleted`, `command expired`, `command canceled`. A failed command's message is its result text.
 - Table names: `command_batches`, `command_batch_nodes`.
+- A node comes back when a heartbeat's boot time (now minus `metrics.uptimeSeconds`, via `store.BootedAt`) is after the row's `RebootingSince` plus `5 * time.Second`, or when it registers. Heartbeats without an uptime settle nothing.
 - Go tests use Ginkgo v2 + Gomega, matching the surrounding suite. No `func TestXxx` with `t.Fatalf`.
 - Code comments say why the current code is what it is. No history ("used to", "no longer", "replaces").
 - No compatibility code for batches created before this change. `NodeCommand.FailFast`, `store.CancelBatchAfterFailure`, `CancelPendingInBatch`, `SummarizeBatch`, `BatchOutcome`, `ListByBatch` and `GET /api/v1/commands/batches/:batchID` are removed.
@@ -28,7 +29,7 @@
 
 ## Review Focus
 
-1. **AuroraBoot restarts while nodes are rebooting.** A node cannot register while the server is down, so a deadline that passed during the downtime must not time the node out before it had a chance to re-register. Expected: on scheduler start, every `rebooting` deadline that has passed is moved to now plus that batch's timeout. Test in Task 4.
+1. **AuroraBoot restarts while nodes are rebooting.** A node cannot report back while the server is down, so a deadline that passed during the downtime must not time the node out before it had a chance to re-register. Expected: on scheduler start, every `rebooting` deadline that has passed is moved to now plus that batch's timeout. Test in Task 4.
 2. **A selection that matches no nodes.** Expected: `400` with `{"error": "no nodes match the selection"}`, and no batch is created. Test in Task 5.
 3. **The same node listed twice in `nodeIDs`.** Expected: one node row, one command. Test in Task 4.
 4. **Command history cleared while a node is `rebooting`.** `ClearHistory` deletes Completed commands, including the one a `rebooting` row points to. Expected: the row still settles from the node's registration or its deadline, and is not canceled as "command deleted". Test in Task 3.
@@ -119,6 +120,9 @@ type BatchNode struct {
     State      string     `json:"state" gorm:"index"`
     Message    string     `json:"message"`
     StartedAt  *time.Time `json:"startedAt"`
+    // RebootingSince is when the reboot the node is waiting on was
+    // scheduled: its command's completion, then its autoreset boot.
+    RebootingSince *time.Time `json:"rebootingSince"`
     Deadline   *time.Time `json:"deadline"`
     FinishedAt *time.Time `json:"finishedAt"`
 }
@@ -145,7 +149,7 @@ type BatchStore interface {
     List(ctx context.Context, f BatchFilter) ([]*CommandBatch, int, error)
     // BusyNodes returns the IDs among nodeIDs that have a row in a non-final state.
     BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error)
-    // Advance, Stop, NodeRegistered, ActiveIDs, PostponeExpiredDeadlines: Tasks 2-3.
+    // Advance, Stop, NodeBooted, ActiveIDs, PostponeExpiredDeadlines: Tasks 2-3.
 }
 ```
 
@@ -190,7 +194,7 @@ Advance(ctx context.Context, batchID string, now time.Time) ([]*NodeCommand, err
    - command missing → `canceled`, `command deleted`
    - `Failed` → `failed`, message = command result
    - `Expired` → `canceled`, `command expired`; `Canceled` → `canceled`, `command canceled`
-   - `Completed` and `store.RebootsNode(cmd)` → `rebooting`, `Deadline = command.CompletedAt + timeout`
+   - `Completed` and `store.RebootsNode(cmd)` → `rebooting`, `RebootingSince = command.CompletedAt`, `Deadline = command.CompletedAt + timeout`
    - `Completed` otherwise → `done`
    - anything else → unchanged
    `rebooting` rows are not reconciled against their command here.
@@ -205,7 +209,7 @@ Every row that becomes final gets `FinishedAt = now`.
   - `It("starts as many online nodes as the concurrency allows, in order")`: 3 online nodes, concurrency 2 → `Advance` returns 2 commands for positions 0 and 1; their rows are `running` with `CommandID` set; the third is `waiting`; `GetPending` for node 0 returns its command.
   - `It("starts every node when the concurrency is 0")`.
   - `It("starts the next node when a running node's command completes")`: concurrency 1, `exec`; complete the first command with `UpdateStatus(..., Completed, "")`; `Advance` → first row `done`, second `running`.
-  - `It("moves a node whose upgrade completed to rebooting with its deadline")`: completed at T, timeout 600 → row `rebooting`, `Deadline` = T + 10 min, and no new node is started while it reboots (concurrency 1).
+  - `It("moves a node whose upgrade completed to rebooting with its deadline")`: completed at T, timeout 600 → row `rebooting`, `RebootingSince` = T, `Deadline` = T + 10 min, and no new node is started while it reboots (concurrency 1).
   - `It("marks a node failed with its command's result")`: result `"exit status 1"` → `failed`, message `exit status 1`.
   - `It("cancels a running node whose command was deleted")` → `canceled`, `command deleted`.
   - `It("cancels the rows of a node that was deleted")` → `canceled`, `node deleted`.
@@ -235,9 +239,10 @@ Every row that becomes final gets `FinishedAt = now`.
 // reason, StoppedByNodeID nil, and every waiting row canceled with
 // "batch stopped". ErrBatchNotRunning when the phase is not running.
 Stop(ctx context.Context, batchID, reason string, now time.Time) error
-// NodeRegistered settles the node's rebooting rows from the boot state it
-// registered with and returns the IDs of the batches it touched.
-NodeRegistered(ctx context.Context, nodeID, bootState string, now time.Time) ([]string, error)
+// NodeBooted settles the node's rebooting rows when it came back: bootedAt
+// is the boot time a heartbeat reports, or nil for a registration, which
+// always follows a boot. It returns the IDs of the batches it touched.
+NodeBooted(ctx context.Context, nodeID, bootState string, bootedAt *time.Time, now time.Time) ([]string, error)
 // ActiveIDs returns the batches that are running or still have a running or
 // rebooting row.
 ActiveIDs(ctx context.Context) ([]string, error)
@@ -246,25 +251,25 @@ ActiveIDs(ctx context.Context) ([]string, error)
 PostponeExpiredDeadlines(ctx context.Context, now time.Time) error
 ```
 
-On `*Store` these are `BatchStop`, `BatchNodeRegistered`, `BatchActiveIDs` and `BatchPostponeExpiredDeadlines`, with adapter methods named as in the interface.
+On `*Store` these are `BatchStop`, `BatchNodeBooted`, `BatchActiveIDs` and `BatchPostponeExpiredDeadlines`, with adapter methods named as in the interface.
 
 Additions to `Advance`, at step 4 of Task 2:
 
 - Each `rebooting` row with `Deadline < now` → `timed_out`, message `did not come back within <N> minutes`. In the same transaction the node's lifecycle is marked failed: upgrade `upgrade_state = 'failed'` where it is `pending`; reset `reset_state = 'failed'` where it is `pending` or `in-progress`. `reboot` has no lifecycle.
 - If any row became `failed` or `timed_out` in this call (from step 3 or the timeout), the batch is `running` and `StopOnFailure` is true: phase `stopped`, `StoppedAt = now`, `StoppedByNodeID` = the first such row's node (lowest `Position`), `StopReason` = `<hostname>: <message>`, and every `waiting` row → `canceled`, `batch stopped`.
 
-`NodeRegistered` rules, applied to each `rebooting` row of the node, under the same batch row lock:
+`NodeBooted` rules, applied to each `rebooting` row of the node whose `RebootingSince` the boot is after (`bootedAt == nil`, or `bootedAt` after `RebootingSince + 5s`), under the same batch row lock. Other rows, and rows the boot is not after, are not touched. A call with no `rebooting` row for the node returns at once without a write, since every heartbeat makes one:
 
 | command | boot state | result |
 |---|---|---|
 | upgrade | `active` | `done` |
 | upgrade, reset | `passive` / `recovery` | `failed`, `fell back to passive` / `fell back to recovery` |
-| reset | `autoreset` | stays `rebooting`, `Deadline = now + timeout` |
+| reset | `autoreset` | stays `rebooting`, `RebootingSince = bootedAt` (or `now` for a registration), `Deadline = now + timeout` |
 | reset | `active` | `done` |
 | reboot | any | `done` |
 | upgrade, reset | any other | unchanged |
 
-Rows in `waiting` or `running` are not touched. A row that `NodeRegistered` fails triggers stop-on-failure inside `NodeRegistered` itself, with the same rule as `Advance`: both call one helper, `stopOnFailure(tx *gorm.DB, b *store.CommandBatch, failed []*store.BatchNode, now time.Time) error`.
+Rows in `waiting` or `running` are not touched. A row that `NodeBooted` fails triggers stop-on-failure inside `NodeBooted` itself, with the same rule as `Advance`: both call one helper, `stopOnFailure(tx *gorm.DB, b *store.CommandBatch, failed []*store.BatchNode, now time.Time) error`.
 
 - [ ] **Step 1: Write the failing specs** in `batches_settle_test.go`:
   - `It("times out a rebooting node past its deadline and fails its upgrade")`: deadline passed → `timed_out`, `did not come back within 10 minutes`, node `UpgradeState` `failed`.
@@ -274,11 +279,14 @@ Rows in `waiting` or `running` are not touched. A row that `NodeRegistered` fail
   - `It("lets running nodes finish after the batch stopped")`: concurrency 2, node 0 fails while node 1 runs → batch `stopped`; then node 1 completes and `Advance` sets it `done`; phase stays `stopped`, `FinishedAt` set.
   - `It("stops a running batch by hand")`: `Stop(..., "stopped by the user", now)` → phase `stopped`, `StoppedByNodeID` nil, waiting rows canceled.
   - `It("refuses to stop a batch that is not running")` → `ErrBatchNotRunning`.
-  - `DescribeTable("settles a rebooting node from the boot state it registers with", ...)` with one `Entry` per row of the table above, asserting state and message.
-  - `It("does not settle a node that registers before its command completed")`: row `running` → `NodeRegistered(..., "active")` leaves it `running`.
-  - `It("restarts a resetting node's deadline when it registers in autoreset")`.
-  - `It("stops the batch when a registration reports a fallback")`.
-  - `It("still settles a rebooting node whose completed command was cleared from the history")` (Review Focus 4): row `rebooting`, then `CommandDeleteTerminal(node)`, then `Advance` → still `rebooting`; then `NodeRegistered(..., "active")` → `done`.
+  - `DescribeTable("settles a rebooting node from the boot state it comes back with", ...)` with one `Entry` per row of the table above, each called with a `bootedAt` one minute after `RebootingSince`, asserting state and message.
+  - `It("settles a rebooting node that registers again")`: `bootedAt` nil, `active` → `done`.
+  - `It("ignores a heartbeat from the boot before the reboot")`: `bootedAt` one hour before `RebootingSince` → still `rebooting`.
+  - `It("ignores the jitter of a whole-second uptime")`: `bootedAt` 2 seconds after `RebootingSince` → still `rebooting`.
+  - `It("does not settle a node that comes back before its command completed")`: row `running` → `NodeBooted(..., "active", <now>, ...)` leaves it `running`.
+  - `It("follows a reset through its autoreset boot")`: `autoreset` moves `RebootingSince` to that boot and restarts the deadline; a second heartbeat from the same boot changes nothing; a later `active` boot → `done`.
+  - `It("stops the batch when a node comes back on a fallback")`.
+  - `It("still settles a rebooting node whose completed command was cleared from the history")` (Review Focus 4): row `rebooting`, then `CommandDeleteTerminal(node)`, then `Advance` → still `rebooting`; then `NodeBooted(..., "active", <a minute after RebootingSince>, ...)` → `done`.
   - `It("postpones deadlines that passed while the server was down")`: deadline in the past, `PostponeExpiredDeadlines(now)` → deadline `now + 10 min`.
   - `It("lists running batches and stopped batches with nodes still running as active")`.
 - [ ] **Step 2: Run** `go run github.com/onsi/ginkgo/v2/ginkgo -r ./internal/store/gorm`. Expected: compile failure.
@@ -326,7 +334,7 @@ func New(bs store.BatchStore, deliver Deliver) *Scheduler
 func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.CommandBatch, error)
 // Advance advances one batch and delivers the commands it created. Errors are logged.
 func (s *Scheduler) Advance(ctx context.Context, batchID string)
-func (s *Scheduler) NodeRegistered(ctx context.Context, nodeID, bootState string)
+func (s *Scheduler) NodeBooted(ctx context.Context, nodeID, bootState string, bootedAt *time.Time)
 func (s *Scheduler) Stop(ctx context.Context, batchID string) error // reason "stopped by the user"
 // Tick advances every active batch.
 func (s *Scheduler) Tick(ctx context.Context)
@@ -380,7 +388,8 @@ RebootTimeoutSeconds int   `json:"rebootTimeoutSeconds,omitempty"` // 0 means 60
 
 Hooks:
 - After every successful command status write (agent REST, admin REST, WebSocket `command_status`), when the command has a `BatchID`: `Advance(ctx, cmd.BatchID)`. The WebSocket path calls `OnCommandPhase`, which the server wires to a function that reads the command and advances its batch.
-- `NodeHandler.Register` on an existing node calls `NodeRegistered(ctx, node.ID, req.BootState)` after `resolveReset`/`resolveUpgrade`.
+- `NodeHandler.Register` on an existing node calls `NodeBooted(ctx, node.ID, req.BootState, nil)` after `store.ResolveReset`/`store.ResolveUpgrade`.
+- The REST heartbeat (`NodeHandler.Heartbeat`) and the WebSocket heartbeat (`AgentHandler.handleHeartbeat`) call `NodeBooted(ctx, nodeID, bootState, &bootedAt)` when `store.BootedAt` finds an uptime, next to the existing `SettleAfterReboot` call. The WebSocket handler gets it through a field `OnNodeBooted func(ctx context.Context, nodeID, bootState string, bootedAt *time.Time)` wired in `server.go`.
 - `NodeHandler.Delete` and `CommandHandler.Delete` call `Tick` after the delete.
 - `CommandHandler.Create` (single node): for `upgrade`, `reset`, `reboot`, `BusyNodes([nodeID])` non-empty → 409 `{"error": "node is in a running batch"}`.
 - `internal/cmd/web.go`: build the scheduler with `&gormstore.BatchStoreAdapter{S: store}` and `cmdHandler.PushCommand`; start `go sched.Run(ctx, 30*time.Second)` with the server's lifecycle context. Thread the scheduler and the `BatchStore` through `server.Config` (`BatchStore store.BatchStore`, `Batches *batches.Scheduler`) so `server.New` wires the handlers; when the scheduler is nil the batch endpoints answer 503.
@@ -394,7 +403,9 @@ Removals in this task: `fanOut`, `cancelBatchOnFailure`, `BatchStatus` and its r
   - `It("rejects a selection that matches no nodes")` (Review Focus 2): `POST /nodes/commands` with `{"selector": {"labels": {"none": "x"}}, "command": "reboot"}` → 400, `no nodes match the selection`.
   - `It("rejects negative settings")` → 400.
   - `It("rejects a single-node upgrade for a node in a running batch")` → 409.
-  - `It("settles a rebooted node when it registers again")`: `reboot` batch, concurrency 1, two nodes; node 0 reports Completed, then `registerNode` again with the same machine ID; node 1's socket receives its command.
+  - `It("starts the next node when a rebooted node heartbeats from its new boot")`: `reboot` batch, concurrency 1, two nodes; node 0 reports Completed, then sends a WebSocket heartbeat with `bootState` `active` and `metrics.uptimeSeconds` 0; node 1's socket receives its command.
+  - `It("does not start the next node on a heartbeat from before the reboot")`: as above with `uptimeSeconds` 3600; node 1's socket receives nothing within 1 second.
+  - `It("starts the next node when a rebooted node registers again")`: as above, but node 0 registers again with its machine ID instead of heartbeating.
 - [ ] **Step 2: Run** `go run github.com/onsi/ginkgo/v2/ginkgo -r ./test/integration`. Expected: the new specs fail (the endpoints still return a list of commands).
 - [ ] **Step 3: Implement** the handler, hook, wiring and removal changes listed above.
 - [ ] **Step 4: Run** `go build ./... && go vet ./...`, then `go run github.com/onsi/ginkgo/v2/ginkgo -r ./pkg ./internal ./test/integration`. Expected: all pass.
@@ -471,7 +482,7 @@ Rollout section copy, exactly:
 - Heading `Rollout`, with `<targetCount> nodes` next to it.
 - `Nodes at a time`, number input, placeholder `All at once`, help `The next node starts when one finishes. Leave empty to run on all nodes at once.`
 - Checkbox `Stop on the first failure`, checked by default, help `Nodes that have not started are canceled. Nodes already running finish.`
-- `Wait for a node to come back`, number input in minutes, default `10`, help `A node that has not registered again by then counts as failed.`, rendered only for `upgrade`, `reset`, `reboot`.
+- `Wait for a node to come back`, number input in minutes, default `10`, help `A node that has not come back by then counts as failed.`, rendered only for `upgrade`, `reset`, `reboot`.
 - The submit button reads `<Label> <targetCount> nodes` (for example `Upgrade 12 nodes`) when `targetCount > 1`, and keeps today's label otherwise.
 
 - [ ] **Step 1: Write the failing tests** in `commandDialog.rollout.test.tsx` (mock `@/api/artifacts` as `commandDialog.resetArgs.test.tsx` does):
@@ -533,7 +544,22 @@ Rollout section copy, exactly:
 
 ---
 
-### Task 10: Whole-branch check
+### Task 10: Rolling batch on real VMs
+
+**Files:**
+- Modify: `e2e/phonehome_vm_test.go`, `e2e/phonehome_api_test.go`
+
+**Interfaces:**
+- Consumes: the group command endpoint with `concurrency` (Task 5) and `GET /api/v1/batches/:id` (Task 6).
+- Produces: `func (w *webServer) batch(id string) map[string]any` in `e2e/phonehome_api_test.go`; `sendGroupCommand` returns the batch ID (the endpoint now returns the batch record).
+
+- [ ] **Step 1: Add spec 3**, `It("upgrades the nodes one at a time")`, after spec 2. Build a third artifact the way the tier builds the upgrade target, with a new marker token. Start `upgrade` to it on the group with `"concurrency": 1`. Wait (15 minutes per node, named) until the batch phase is `completed`. Assert from `batch(id)`: both node rows `done`; the second row's `startedAt` is not before the first row's `finishedAt`; each VM's boot ID changed and its marker holds the new token; both nodes report `upgradeState` `done`. Adapt specs 1 and 2 to `sendGroupCommand` returning a batch ID (read the command IDs from the batch's node rows).
+- [ ] **Step 2: Run** `make test-e2e-phonehome`. Expected: 3 of 3 specs pass and nothing is left running (`docker ps -a --filter name=auroraboot-e2e-web` empty, no tier `qemu-system` or `swtpm` process). The main checkout's root-owned `auroraboot-data/` breaks the docker build context; run from a clean worktree at HEAD and remove it after.
+- [ ] **Step 3: Commit** `test(e2e): upgrade the phonehome tier's nodes one at a time`.
+
+---
+
+### Task 11: Whole-branch check
 
 - [ ] **Step 1:** `gofmt -l . | grep -v '^ui/'` prints nothing; `go vet ./...` passes.
 - [ ] **Step 2:** `go run github.com/onsi/ginkgo/v2/ginkgo -r -p --skip-package ./e2e ./...` passes; once more with `AURORABOOT_TEST_POSTGRES_DSN` set.

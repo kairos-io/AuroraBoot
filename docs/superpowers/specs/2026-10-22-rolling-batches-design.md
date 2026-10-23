@@ -29,8 +29,8 @@ fact. That is #4268.
   means all nodes at once.
 - With stop-on-failure on, the first failed node stops the batch: nodes that
   have not started are canceled, nodes already running finish.
-- A node that AuroraBoot rebooted and that does not register again within a
-  timeout counts as failed.
+- A node that AuroraBoot rebooted and that does not come back within a timeout
+  counts as failed.
 - Every batch keeps a record of its settings, its outcome, why it stopped and
   what happened to each node. That record does not change once the batch and its
   nodes have finished, whatever the nodes do later.
@@ -71,23 +71,37 @@ concurrency N never has more than N nodes holding a slot.
 
 | Command | Settled as done | Settled as failed |
 |---|---|---|
-| `upgrade` | registers again with boot state `active` | command reports `Failed`; registers again from `passive` or `recovery`; timeout |
-| `reset` | the node's reset lifecycle reaches done | command reports `Failed`; reset lifecycle reaches failed; timeout |
-| `reboot` | registers again after the command completed | command reports `Failed`; timeout |
+| `upgrade` | comes back on `active` | command reports `Failed`; comes back on `passive` or `recovery`; timeout |
+| `reset` | comes back on `active` after the reset | command reports `Failed`; comes back on `passive` or `recovery`; timeout |
+| `reboot` | comes back, on any boot entry | command reports `Failed`; timeout |
 | `exec`, `apply-cloud-config`, `extension`, `upgrade-recovery` | command reports `Completed` | command reports `Failed` |
 
 For `upgrade`, `reset` and `reboot` the timeout clock starts when the command
 reports `Completed`, which is when the agent has scheduled the reboot. The
 default is 10 minutes and the user can change it per batch.
 
-A node settles from a registration only while its batch row is `rebooting`,
-that is, after its own command reported `Completed`. A registration before that
-(an unrelated reboot, or a node that was already rebooting for another
-operation) does not settle it.
+**Comes back.** An agent that holds its credentials does not register again
+after a reboot; it reconnects and heartbeats (see `SettleAfterReboot` in
+`internal/store/gorm/store.go`, which settles the node's own upgrade and reset
+state the same way). A node comes back when either of these arrives while its
+batch row is `rebooting`:
+
+- a heartbeat whose boot time (now minus the uptime in its metrics) is after
+  the row's `rebooting_since` by more than a few seconds, so the jitter of a
+  whole-second uptime cannot make the boot before the reboot look like a new
+  one. The heartbeat's boot state gives the outcome;
+- a registration, which an agent only sends when it has no credentials, so it
+  follows a boot. Its boot state gives the outcome.
+
+Neither settles a row that is not `rebooting`, that is, before its own command
+reported `Completed`, so an unrelated reboot does not count. Heartbeats without
+an uptime (agents before v4.4.0-rc1) do not settle anything; such a node settles
+only by registering, or times out.
 
 A reset reboots twice: into `autoreset`, then into `active`. When the node
-registers in `autoreset`, its deadline starts again, so the timeout applies to
-each reboot and not to the whole reset.
+comes back on `autoreset`, its `rebooting_since` moves to that boot and its
+deadline starts again, so the timeout applies to each reboot and not to the
+whole reset.
 
 **Skipped.** A node that is offline when the batch reaches it is not started.
 When filling a slot, the scheduler takes the next waiting node that is online
@@ -137,8 +151,9 @@ command row today.
   `skipped`, `canceled`
 - `message`: e.g. "fell back to passive", "did not come back within 10
   minutes", "offline when the batch reached it", "batch stopped"
-- `started_at`, `deadline` (set when the node enters `rebooting`, and again
-  when a resetting node registers in `autoreset`), `finished_at`
+- `started_at`, `rebooting_since` and `deadline` (set when the node enters
+  `rebooting`, from the command's completion time, and again when a resetting
+  node comes back on `autoreset`), `finished_at`
 
 `done`, `failed`, `timed_out`, `skipped` and `canceled` are final. A final row
 never changes again.
@@ -173,13 +188,13 @@ Events that settle a node, then fill free slots or stop the batch:
   `command_status`). `Failed` settles the node as failed. `Completed` settles
   it as done for commands without a reboot; for `upgrade`, `reset` and
   `reboot` it moves the node to `rebooting` and sets its deadline.
-- A node registering again. The existing upgrade and reset resolvers settle the
-  node from the boot state. For `reboot`, any registration after the command
-  completed settles it as done.
+- A node coming back (a heartbeat from a boot after `rebooting_since`, or a
+  registration), which settles its `rebooting` rows from the boot state as in
+  the table above.
 - A periodic check (for example every 30 seconds) that settles every
   `rebooting` node past its deadline as `timed_out`. When it does, the node's
   upgrade or reset lifecycle state is marked failed as well, with the same
-  message. If the node registers later, its lifecycle state may become done,
+  message. If the node comes back later, its lifecycle state may become done,
   but its batch row stays `timed_out`.
 
 After a node settles:
@@ -259,6 +274,14 @@ selection, phase, counts per state and start time.
 batches the node was part of.
 
 The batch page refreshes while the batch is running.
+
+## Acceptance on real VMs
+
+The phonehome VM tier (`e2e/phonehome_vm_test.go`) gains a spec that runs a
+batch upgrade of its two nodes with concurrency 1 and checks, from the batch
+record, that the second node started only after the first came back `done`,
+and that both end `done` on the new artifact. It is the test that shows the
+reboot loop works end to end.
 
 ## Decided by the builder
 
