@@ -203,6 +203,13 @@ func runWeb(c *cli.Context) error {
 		return fmt.Errorf("open database: %w", err)
 	}
 	store.WithCipher(bmcCipher)
+	// The handlers read a zero --reset-timeout as the default, so the batch
+	// reset commands get the same window they give a single-node reset.
+	batchResetTimeout := resetTimeout
+	if batchResetTimeout == 0 {
+		batchResetTimeout = handlers.DefaultResetTimeout
+	}
+	store.WithResetTimeout(batchResetTimeout)
 
 	// Reconcile deployments left Active by a previous process: a restart orphans
 	// their in-flight goroutine, so they can never complete. Mark them Failed.
