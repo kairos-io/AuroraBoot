@@ -163,6 +163,7 @@ func (s *Store) BatchAdvance(ctx context.Context, batchID string, now time.Time)
 			return err
 		}
 		a := newBatchAdvance(b, rows, now)
+		a.resetTimeout = s.resetTimeout
 		if err := a.load(tx); err != nil {
 			return err
 		}
@@ -239,6 +240,9 @@ type batchAdvance struct {
 	batch *store.CommandBatch
 	rows  []*store.BatchNode
 	now   time.Time
+	// resetTimeout is the delivery expiry of the reset commands fillSlots
+	// creates; zero or negative creates them without one.
+	resetTimeout time.Duration
 	// nodePhase maps each existing node of the batch to its phase.
 	nodePhase map[string]string
 	// commands maps the command ID of each running row to its command.
@@ -508,6 +512,10 @@ func (a *batchAdvance) fillSlots() []*store.NodeCommand {
 			Args:          maps.Clone(a.batch.Args),
 			Phase:         store.CommandPending,
 			BatchID:       a.batch.ID,
+		}
+		if cmd.Command == store.CmdReset && a.resetTimeout > 0 {
+			expires := a.now.Add(a.resetTimeout)
+			cmd.ExpiresAt = &expires
 		}
 		cmds = append(cmds, cmd)
 		row.State = store.BatchNodeRunning

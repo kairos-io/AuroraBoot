@@ -28,6 +28,10 @@ type Store struct {
 	// password is stored as-is (used by tests and pre-encryption setups). The web
 	// server always wires one via WithCipher.
 	cipher *secrets.Cipher
+	// resetTimeout is the delivery expiry of a reset command a batch creates,
+	// the same window the reset command handler gives a single-node reset. A
+	// negative or zero value creates them without one.
+	resetTimeout time.Duration
 }
 
 // WithCipher attaches a DEK-backed cipher used to encrypt the BMCTarget password
@@ -35,6 +39,14 @@ type Store struct {
 // that leaves passwords stored as-is.
 func (s *Store) WithCipher(c *secrets.Cipher) *Store {
 	s.cipher = c
+	return s
+}
+
+// WithResetTimeout sets the delivery expiry of the reset commands batches
+// create, so an offline node does not run a reset after its reset lifecycle
+// has already timed out. Zero or a negative duration creates them without one.
+func (s *Store) WithResetTimeout(d time.Duration) *Store {
+	s.resetTimeout = d
 	return s
 }
 

@@ -271,6 +271,46 @@ var _ = Describe("Gorm batch advance", func() {
 		Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
 	})
 
+	It("expires a reset command it creates after the store's reset timeout", func() {
+		s.WithResetTimeout(30 * time.Minute)
+		nodes := register(1)
+		online(nodes...)
+		id := newBatch(nodes, store.CmdReset, 1)
+
+		cmds := advance(id)
+
+		Expect(cmds).To(HaveLen(1))
+		Expect(cmds[0].ExpiresAt).NotTo(BeNil())
+		Expect(*cmds[0].ExpiresAt).To(BeTemporally("~", time.Now().Add(30*time.Minute), time.Minute))
+		stored, err := s.CommandGetByID(ctx, cmds[0].ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(stored.ExpiresAt).NotTo(BeNil())
+	})
+
+	It("leaves reset commands without an expiry when the reset timeout is disabled", func() {
+		s.WithResetTimeout(-1)
+		nodes := register(1)
+		online(nodes...)
+		id := newBatch(nodes, store.CmdReset, 1)
+
+		cmds := advance(id)
+
+		Expect(cmds).To(HaveLen(1))
+		Expect(cmds[0].ExpiresAt).To(BeNil())
+	})
+
+	It("gives commands other than reset no expiry", func() {
+		s.WithResetTimeout(30 * time.Minute)
+		nodes := register(1)
+		online(nodes...)
+		id := newBatch(nodes, store.CmdUpgrade, 1)
+
+		cmds := advance(id)
+
+		Expect(cmds).To(HaveLen(1))
+		Expect(cmds[0].ExpiresAt).To(BeNil())
+	})
+
 	// Agents report status and heartbeats on their own connections while a
 	// batch advances. Under WAL a transaction that reads first works from a
 	// snapshot, and once another connection commits, its first write fails
