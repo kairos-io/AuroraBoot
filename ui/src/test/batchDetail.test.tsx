@@ -19,9 +19,10 @@ vi.mock("@/api/nodes", () => ({
   getNode: (...a: unknown[]) => getNode(...a),
   sendBulkCommand: (...a: unknown[]) => sendBulkCommand(...a),
 }));
+const resolveBundle = vi.fn();
 vi.mock("@/api/artifacts", () => ({
   listArtifacts: vi.fn().mockResolvedValue([]),
-  resolveBundle: vi.fn().mockResolvedValue([]),
+  resolveBundle: (...a: unknown[]) => resolveBundle(...a),
 }));
 
 function row(id: string, state: BatchNode["state"], extra: Partial<BatchNode> = {}): BatchNode {
@@ -75,6 +76,7 @@ function renderPage() {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  resolveBundle.mockResolvedValue([]);
 });
 
 describe("BatchDetail", () => {
@@ -158,5 +160,70 @@ describe("BatchDetail", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: "Stop batch" }));
     await waitFor(() => expect(stopBatch).toHaveBeenCalledWith("b1"));
+  });
+
+  it("carries the batch's rollout settings over when several nodes stay checked", async () => {
+    getBatch.mockResolvedValue(
+      makeBatch({
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 2 },
+        nodes: [row("n1", "failed"), row("n2", "failed")],
+      }),
+    );
+    sendBulkCommand.mockResolvedValue(makeBatch({ id: "b2" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 2 remaining nodes" }));
+    const dialog = await screen.findByRole("dialog");
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade 2 nodes" }));
+    await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+    expect(sendBulkCommand).toHaveBeenCalledWith(
+      { nodeIDs: ["n1", "n2"] },
+      "upgrade",
+      { source: "oci:quay.io/kairos/kairos:v4" },
+      { concurrency: 2, stopOnFailure: true, rebootTimeoutSeconds: 600 },
+    );
+  });
+
+  it("sends the original args of an artifact upgrade with the original extensions", async () => {
+    const extensions = JSON.stringify([
+      { name: "a", type: "sysext", version: "1", source: "s" },
+    ]);
+    const args = { source: "artifact:art1", extensions };
+    resolveBundle.mockResolvedValue([
+      { name: "a", type: "sysext", version: "1", source: "s" },
+      { name: "b", type: "sysext", version: "1", source: "s" },
+    ]);
+    getBatch.mockResolvedValue(
+      makeBatch({
+        args,
+        phase: "stopped",
+        stoppedAt: "2026-10-23T10:30:00Z",
+        stopReason: "x",
+        counts: { failed: 2 },
+        nodes: [row("n1", "failed"), row("n2", "failed")],
+      }),
+    );
+    sendBulkCommand.mockResolvedValue(makeBatch({ id: "b2" }));
+    renderPage();
+    fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 2 remaining nodes" }));
+    const dialog = await screen.findByRole("dialog");
+    await waitFor(() => expect(resolveBundle).toHaveBeenCalledWith("art1"));
+    await waitFor(() => expect(within(dialog).queryByLabelText("include b")).not.toBeNull());
+    expect(within(dialog).getByLabelText("include a")).toBeChecked();
+    expect(within(dialog).getByLabelText("include b")).not.toBeChecked();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade 2 nodes" }));
+    await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+    expect(sendBulkCommand.mock.calls[0][2]).toEqual(args);
+  });
+
+  it("shows a stopped batch with a danger badge", async () => {
+    getBatch.mockResolvedValue(
+      makeBatch({ phase: "stopped", stoppedAt: "2026-10-23T10:30:00Z", stopReason: "x", nodes: [] }),
+    );
+    renderPage();
+    const badge = await screen.findByText("stopped", { selector: "[data-slot=badge], div, span" });
+    expect(badge.className).toContain("danger");
   });
 });

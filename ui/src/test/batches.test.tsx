@@ -40,7 +40,7 @@ describe("Batches", () => {
     );
     expect(await screen.findByText("3 done, 1 failed")).toBeInTheDocument();
     expect(screen.getByText("group edge")).toBeInTheDocument();
-    expect(screen.getByText("stopped")).toBeInTheDocument();
+    expect(screen.getByText("stopped").className).toContain("danger");
     const link = screen.getByRole("link", { name: /Upgrade/ });
     expect(link).toHaveAttribute("href", "/batches/b1");
     expect(listBatches).toHaveBeenCalledWith({ limit: 50, offset: 0 });

@@ -23,6 +23,7 @@ import {
   isBatchActive,
   nodeDeletedMessage,
   nonZeroCounts,
+  phaseStatus,
   remainingNodes,
   stateLabels,
 } from "@/lib/batch";
@@ -58,7 +59,7 @@ function settingsText(batch: Batch): string {
     batch.stopOnFailure ? "stop on failure" : "keep going on failure",
   ];
   if (commandReboots(batch.command)) {
-    parts.push(`wait ${Math.round(batch.rebootTimeoutSeconds / 60)} min`);
+    parts.push(`wait ${Math.ceil(batch.rebootTimeoutSeconds / 60)} min`);
   }
   return parts.join(", ");
 }
@@ -155,7 +156,7 @@ export function BatchDetail() {
       <PageHeader
         title={`${commandLabel(batch.command)} · ${batch.selection}`}
         breadcrumb={[{ label: "Batches", to: "/batches" }, { label: commandLabel(batch.command) }]}
-        status={<StatusBadge status={batch.phase} />}
+        status={<StatusBadge status={phaseStatus(batch.phase)} label={batch.phase} />}
         meta={<span>{settingsText(batch)}</span>}
       >
         {batch.phase === "running" && (

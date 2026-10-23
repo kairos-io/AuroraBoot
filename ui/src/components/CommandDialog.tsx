@@ -131,6 +131,21 @@ const TONE_CLASSES: Record<CommandDef["tone"], { chip: string; hover: string }> 
   },
 };
 
+// originalExtensions returns the type/name keys of the extensions a repeated
+// batch sent with the given artifact, or null when it sent none.
+function originalExtensions(
+  args: Record<string, string> | undefined,
+  artifactId: string,
+): Set<string> | null {
+  if (!args?.extensions || args.source !== "artifact:" + artifactId) return null;
+  try {
+    const rows = JSON.parse(args.extensions) as { type: string; name: string }[];
+    return new Set(rows.map((r) => `${r.type}/${r.name}`));
+  } catch {
+    return null;
+  }
+}
+
 type UpgradeSourceMode = "image" | "artifact";
 
 interface CommandDialogProps {
@@ -192,6 +207,9 @@ export function CommandDialog({
     rows: ResolvedBundleEntry[];
   }>({ artifactId: "", rows: [] });
   const [bundlePicks, setBundlePicks] = useState<Record<string, boolean>>({});
+  // True once the user ticks or unticks a bundled extension, which makes the
+  // dialog's picks authoritative over defaultArgs.extensions.
+  const [picksTouched, setPicksTouched] = useState(false);
 
   const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
   const checkedIDs = nodeChoices
@@ -239,6 +257,7 @@ export function CommandDialog({
       seedFromDefaults();
     } else {
       setUnchecked(new Set());
+      setPicksTouched(false);
       setCommand("");
       setImageArg("");
       setConfigArg("");
@@ -278,8 +297,16 @@ export function CommandDialog({
       .then((rows) => {
         if (cancelled) return;
         setBundleState({ artifactId: selectedArtifactId, rows });
+        // When repeating a batch from the same artifact, only the extensions
+        // the original sent start ticked.
+        const original = originalExtensions(defaultArgs, selectedArtifactId);
         setBundlePicks(
-          Object.fromEntries(rows.map((r) => [`${r.type}/${r.name}`, true])),
+          Object.fromEntries(
+            rows.map((r) => {
+              const k = `${r.type}/${r.name}`;
+              return [k, original ? original.has(k) : true];
+            }),
+          ),
         );
       })
       .catch(() => {
@@ -290,7 +317,7 @@ export function CommandDialog({
     return () => {
       cancelled = true;
     };
-  }, [isUpgrade, upgradeSourceMode, selectedArtifactId]);
+  }, [isUpgrade, upgradeSourceMode, selectedArtifactId, defaultArgs]);
 
   const bundle =
     isUpgrade &&
@@ -311,7 +338,13 @@ export function CommandDialog({
         const picked = bundle.filter(
           (e) => bundlePicks[`${e.type}/${e.name}`],
         );
-        if (picked.length > 0) {
+        if (
+          !picksTouched &&
+          defaultArgs?.extensions &&
+          defaultArgs.source === args.source
+        ) {
+          args.extensions = defaultArgs.extensions;
+        } else if (picked.length > 0) {
           args.extensions = JSON.stringify(picked);
         }
       } else if (imageArg) {
@@ -545,12 +578,13 @@ export function CommandDialog({
                                   type="checkbox"
                                   aria-label={`include ${entry.name}`}
                                   checked={checked}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
+                                    setPicksTouched(true);
                                     setBundlePicks((prev) => ({
                                       ...prev,
                                       [k]: e.target.checked,
-                                    }))
-                                  }
+                                    }));
+                                  }}
                                 />
                                 <span className="font-medium">{entry.name}</span>
                                 <span className="text-xs text-muted-foreground">
