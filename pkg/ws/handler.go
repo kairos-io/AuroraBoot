@@ -407,7 +407,6 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 		if !claimed {
 			continue
 		}
-		store.MarkResetDelivered(ctx, h.Nodes, cmd)
 
 		cmdMsg := commandData{
 			ID:      cmd.ID,
@@ -440,6 +439,9 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 			// still Pending; the next reconnect replays all of them.
 			break
 		}
+		// Stamp after the write, not after the claim: a requeued command was
+		// never delivered, so it must not refresh the node's reset window.
+		store.MarkResetDelivered(ctx, h.Nodes, cmd)
 	}
 }
 

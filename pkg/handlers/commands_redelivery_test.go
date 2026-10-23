@@ -85,6 +85,27 @@ var _ = Describe("Command delivery when the WebSocket write fails", func() {
 		Expect(pending[0].DeliveredAt).To(BeNil())
 	})
 
+	It("does not re-anchor the reset window for a push that was never sent", func() {
+		deadConn(hub, "node-1")
+		handler := handlers.NewCommandHandler(cs, ns, hub, nil, nil)
+
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/node-1/commands",
+			strings.NewReader(`{"command":"reset"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetParamNames("nodeID")
+		c.SetParamValues("node-1")
+
+		Expect(handler.Create(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+
+		// The claim was released, so the node took delivery of nothing and its
+		// reset budget must not restart.
+		Expect(ns.stampResetProgressCalls).To(BeZero())
+		Expect(cs.cmds[0].Phase).To(Equal(store.CommandPending))
+	})
+
 	It("leaves an undelivered unregister command claimable by the next poll", func() {
 		deadConn(hub, "node-1")
 		handler := handlers.NewNodeHandler(ns, cs, &fakeGroupStore{}, hub, "", "")
