@@ -118,6 +118,22 @@ func (a *CommandStoreAdapter) DeleteTerminal(ctx context.Context, nodeID string)
 	return a.S.CommandDeleteTerminal(ctx, nodeID)
 }
 
+// BatchStoreAdapter adapts Store to the store.BatchStore interface.
+type BatchStoreAdapter struct{ S *Store }
+
+func (a *BatchStoreAdapter) Create(ctx context.Context, b *store.CommandBatch, nodes []*store.BatchNode) error {
+	return a.S.BatchCreate(ctx, b, nodes)
+}
+func (a *BatchStoreAdapter) Get(ctx context.Context, id string) (*store.CommandBatch, error) {
+	return a.S.BatchGet(ctx, id)
+}
+func (a *BatchStoreAdapter) List(ctx context.Context, f store.BatchFilter) ([]*store.CommandBatch, int, error) {
+	return a.S.BatchList(ctx, f)
+}
+func (a *BatchStoreAdapter) BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error) {
+	return a.S.BatchBusyNodes(ctx, nodeIDs)
+}
+
 // ArtifactStoreAdapter adapts Store to the store.ArtifactStore interface.
 type ArtifactStoreAdapter struct{ S *Store }
 
@@ -315,3 +331,5 @@ func (a *SettingsStoreAdapter) Set(ctx context.Context, key, value string) error
 func (a *SettingsStoreAdapter) GetAll(ctx context.Context) (map[string]string, error) {
 	return a.S.SettingGetAll(ctx)
 }
+
+var _ store.BatchStore = (*BatchStoreAdapter)(nil)
