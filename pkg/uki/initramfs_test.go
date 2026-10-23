@@ -132,7 +132,7 @@ var _ = Describe("createInitramfs", func() {
 		Expect(records).To(HaveKey("keep"))
 		for _, dir := range []string{"sys", "run", "dev", "tmp", "proc"} {
 			Expect(records).ToNot(HaveKey(dir))
-			Expect(records).ToNot(HaveKey(dir+"/marker"))
+			Expect(records).ToNot(HaveKey(dir + "/marker"))
 		}
 	})
 

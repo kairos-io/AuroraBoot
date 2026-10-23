@@ -16,6 +16,10 @@ import (
 // ContextKeyNodeID is the key used to store the authenticated node ID in the echo context.
 const ContextKeyNodeID = "nodeID"
 
+// maxRegistrationBodyBytes caps the unauthenticated registration body: it
+// carries a token and a little node metadata, a few KiB at most.
+const maxRegistrationBodyBytes = 64 * 1024
+
 // secureCompare reports whether a and b are equal using a constant-time
 // comparison, so a bearer-token / admin-password check does not leak, via
 // response timing, how many leading bytes of the secret matched. Plain string
@@ -53,20 +57,18 @@ func RequireNodeMatch(next echo.HandlerFunc) echo.HandlerFunc {
 	}
 }
 
-// AdminMiddleware returns an Echo middleware that checks the Authorization header
-// for a Bearer token matching the given admin password.
-func AdminMiddleware(password string) echo.MiddlewareFunc {
+// AdminMiddleware lets through a request that AdminAuth accepts: the admin
+// password as a Bearer header, or a live session cookie.
+func AdminMiddleware(a *AdminAuth) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			// Check Authorization header first, fall back to ?token= query param (for download links)
-			token := extractBearer(c.Request().Header.Get("Authorization"))
-			if token == "" {
-				token = c.QueryParam("token")
+			switch a.check(c) {
+			case isAdmin:
+				return next(c)
+			case foreignOrigin:
+				return forbidden(c)
 			}
-			if token == "" || !secureCompare(token, password) {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			}
-			return next(c)
+			return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		}
 	}
 }
@@ -90,11 +92,11 @@ func NodeAPIKeyMiddleware(nodeStore store.NodeStore) echo.MiddlewareFunc {
 	}
 }
 
-// AgentOrAdminMiddleware authenticates a request as EITHER an admin (bearer
-// token == admin password) OR a node (bearer token == a node API key). It is
-// used for the two routes that are legitimately shared between the agent and
-// the admin/UI: GET /nodes/:nodeID/commands and PUT
-// /nodes/:nodeID/commands/:commandID/status.
+// AgentOrAdminMiddleware authenticates a request as EITHER an admin (the
+// password as a Bearer header, or a live session cookie) OR a node (a Bearer
+// token that is a node API key). It is used for the two routes that are
+// legitimately shared between the agent and the admin/UI: GET
+// /nodes/:nodeID/commands and PUT /nodes/:nodeID/commands/:commandID/status.
 //
 // On a node match it sets ContextKeyNodeID so downstream handlers can tell the
 // caller is a node and enforce node-scoping (RequireNodeMatch / node-scoped
@@ -104,19 +106,20 @@ func NodeAPIKeyMiddleware(nodeStore store.NodeStore) echo.MiddlewareFunc {
 //
 // This middleware exists to avoid registering the same path twice (once per
 // auth group), which Echo resolves by silently shadowing the first
-// registration — previously routing agent command polls into the admin-only
-// handler and 401-ing every agent.
-func AgentOrAdminMiddleware(password string, nodeStore store.NodeStore) echo.MiddlewareFunc {
+// registration, routing agent command polls into the admin-only handler and
+// answering 401 to every agent.
+func AgentOrAdminMiddleware(a *AdminAuth, nodeStore store.NodeStore) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			token := extractBearer(c.Request().Header.Get("Authorization"))
+			switch a.check(c) {
+			case isAdmin:
+				return next(c)
+			case foreignOrigin:
+				return forbidden(c)
+			}
+			token := BearerToken(c)
 			if token == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			}
-			// Admin first — the admin password is never a valid node API key,
-			// so the order is unambiguous.
-			if secureCompare(token, password) {
-				return next(c)
 			}
 			node, err := nodeStore.GetByAPIKey(c.Request().Context(), token)
 			if err != nil || node == nil {
@@ -135,30 +138,26 @@ func AgentOrAdminMiddleware(password string, nodeStore store.NodeStore) echo.Mid
 // operator queues an upgrade / upgrade-recovery command whose source is
 // "artifact:<id>", the node polls it, and the agent pulls that artifact's image
 // with its node API key. So a node is authorized for exactly the artifacts some
-// command told it to install — never an arbitrary one. This stops a node (or a
+// command told it to install, never an arbitrary one. This stops a node (or a
 // leaked node API key) from pulling every image the fleet has ever built, which
 // may embed a cloud-config and secrets.
 //
-// Admin access is unchanged and still full, via the Authorization header or the
-// ?token= query param (the latter for the UI's browser download links; the CAPI
-// infra provider authenticates as admin over the header). A NODE API key, by
-// contrast, is accepted ONLY from the Authorization header, never from ?token= —
-// a node credential in a URL would leak through access logs, proxies, browser
-// history and Referer headers, and no node flow supplies its key that way.
-func ArtifactImageMiddleware(password string, nodeStore store.NodeStore, commandStore store.CommandStore) echo.MiddlewareFunc {
+// An admin is accepted by Bearer header or session cookie (see AdminAuth), never
+// by ?token=. A node API key is accepted only from the Authorization header: a
+// credential in a URL would leak through access logs, proxies, browser history
+// and Referer headers.
+func ArtifactImageMiddleware(a *AdminAuth, nodeStore store.NodeStore, commandStore store.CommandStore) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			headerToken := extractBearer(c.Request().Header.Get("Authorization"))
-			queryToken := c.QueryParam("token")
-			if headerToken == "" && queryToken == "" {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			}
-			// Admin: full access, from either the header or ?token=.
-			if secureCompare(headerToken, password) || secureCompare(queryToken, password) {
+			switch a.check(c) {
+			case isAdmin:
 				return next(c)
+			case foreignOrigin:
+				return forbidden(c)
 			}
-			// Otherwise the caller must be a node — authenticated ONLY via the
-			// Authorization header — and only for an artifact a command assigned it.
+			// Otherwise the caller must be a node, authenticated only via the
+			// Authorization header, and only for an artifact a command assigned it.
+			headerToken := BearerToken(c)
 			if headerToken == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
@@ -179,12 +178,10 @@ func ArtifactImageMiddleware(password string, nodeStore store.NodeStore, command
 // /api/v1/extensions/:id/download/:filename for an admin, for a caller holding
 // that extension's own download token, or for any authenticated node.
 //
-// Three credentials, deliberately unequal in scope:
+// Three credentials, with different scopes:
 //
-//   - The admin password, over the Authorization header or ?token=. The UI
-//     offers the .raw as a plain <a href download> anchor, which cannot set
-//     headers, so without the query branch that button always returned
-//     {"error":"unauthorized"}.
+//   - An admin, by Bearer header or session cookie (see AdminAuth). The UI
+//     downloads the .raw with the session cookie the browser sends on its own.
 //   - The extension's own DownloadToken, over ?token= only. This is what the
 //     install command's "source" URL carries. That URL is pushed to every node
 //     in the selector, kept in the commands table and shown in the UI's command
@@ -192,35 +189,32 @@ func ArtifactImageMiddleware(password string, nodeStore store.NodeStore, command
 //     extension's .raw and nothing else. An empty DownloadToken never
 //     authorizes, so a record written before the column existed fails closed
 //     rather than opening the route to an empty ?token=.
-//   - A node API key, from the Authorization header ONLY, for the reason spelled
-//     out on ArtifactImageMiddleware — a node credential in a URL leaks through
-//     access logs, proxies, browser history and Referer headers.
+//   - A node API key, from the Authorization header only, for the reason spelled
+//     out on ArtifactImageMiddleware.
 //
 // Per-command scoping analogous to nodeAssignedArtifact (a node may pull only
 // an extension some assigned command names) is a follow-up; today any
 // registered node may fetch any extension.
 //
 // extensionStore may be nil, which simply disables the per-extension branch.
-func ExtensionDownloadMiddleware(password string, nodeStore store.NodeStore, extensionStore store.ExtensionStore) echo.MiddlewareFunc {
+func ExtensionDownloadMiddleware(a *AdminAuth, nodeStore store.NodeStore, extensionStore store.ExtensionStore) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			headerToken := extractBearer(c.Request().Header.Get("Authorization"))
-			queryToken := c.QueryParam("token")
-			if headerToken == "" && queryToken == "" {
-				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
-			}
-			// Admin: full access, from either the header or ?token=.
-			if secureCompare(headerToken, password) || secureCompare(queryToken, password) {
+			switch a.check(c) {
+			case isAdmin:
 				return next(c)
+			case foreignOrigin:
+				return forbidden(c)
 			}
 			// This extension's own download token, from ?token=. Scoped to the
 			// :id in the path, so presenting one extension's token for another
 			// is rejected.
-			if extensionDownloadTokenMatches(c, extensionStore, queryToken) {
+			if extensionDownloadTokenMatches(c, extensionStore, c.QueryParam("token")) {
 				return next(c)
 			}
 			// Otherwise the caller must be a node, authenticated over the
 			// header only.
+			headerToken := BearerToken(c)
 			if headerToken == "" {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 			}
@@ -287,7 +281,9 @@ func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, 
 
 // RegistrationTokenAuth returns an Echo middleware that reads the JSON body,
 // checks for a "registrationToken" field matching the expected token, and
-// resets the body so downstream handlers can read it again.
+// resets the body so downstream handlers can read it again. The body is read
+// through a limit, so a client without a token can make it hold no more than
+// maxRegistrationBodyBytes; a larger body is refused with 413.
 //
 // The token is supplied as a pointer because SettingsHandler.RotateRegistrationToken
 // updates it in place; the middleware must read the current value on every
@@ -297,9 +293,15 @@ func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, 
 func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
-			bodyBytes, err := io.ReadAll(c.Request().Body)
+			if c.Request().ContentLength > maxRegistrationBodyBytes {
+				return registrationBodyTooLarge(c)
+			}
+			bodyBytes, err := io.ReadAll(io.LimitReader(c.Request().Body, maxRegistrationBodyBytes+1))
 			if err != nil {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": "cannot read body"})
+			}
+			if len(bodyBytes) > maxRegistrationBodyBytes {
+				return registrationBodyTooLarge(c)
 			}
 
 			var body struct {
@@ -323,6 +325,10 @@ func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
 			return next(c)
 		}
 	}
+}
+
+func registrationBodyTooLarge(c echo.Context) error {
+	return c.JSON(http.StatusRequestEntityTooLarge, map[string]string{"error": "request body too large"})
 }
 
 func extractBearer(header string) string {

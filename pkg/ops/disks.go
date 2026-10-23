@@ -11,39 +11,26 @@ import (
 	"github.com/kairos-io/kairos/v4/sdk/utils"
 )
 
-func GenEFIRawDisk(src, dst string, size uint64, stateSize, recoveryImageSize int64, noDefaultCloudConfig, separatePartitionsImages, maas bool, ext DiskExtensions) func(ctx context.Context) error {
-	return func(ctx context.Context) error {
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s' with final size %dMb", dst, src, size)
-		// TODO: We need to talk about how the config.yaml is magically here no? is done in a previous step but maybe we should have constant that we can check?
-		// Maybe on its own function that returns the tmpdir + config.yaml or something? we need a safe way of accessing it form any step in the DAG.
-		raw := NewEFIRawImage(src, dst, filepath.Join(dst, "config.yaml"), size, stateSize, recoveryImageSize, noDefaultCloudConfig)
-		raw.SeparatePartitionsImages = separatePartitionsImages
-		raw.maas = maas
+// rawDiskCloudConfigFile is the cloud config written to the raw disk output dir by a previous step.
+const rawDiskCloudConfigFile = "config.yaml"
 
-		images, cleanup, err := materializeDiskExtensions(ctx, ext.withArchFrom(src))
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("Resolving the extensions to bundle into the raw disk failed")
-			return err
-		}
-		defer cleanup()
-		raw.ExtensionFiles = images
-
-		err = raw.Build()
-		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
-		}
-		return err
-	}
+func GenEFIRawDisk(params RawImageParams) func(ctx context.Context) error {
+	return genRawDisk(params, NewEFIRawImage)
 }
 
-func GenBiosRawDisk(src, dst string, size uint64, stateSize, recoveryImageSize int64, noDefaultCloudConfig bool, ext DiskExtensions) func(ctx context.Context) error {
+func GenBiosRawDisk(params RawImageParams) func(ctx context.Context) error {
+	return genRawDisk(params, NewBiosRawImage)
+}
+
+func genRawDisk(params RawImageParams, newImage func(RawImageParams) *RawImage) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
-		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s' with final size %dMb", dst, src, size)
+		internal.Log.Logger.Info().Msgf("Generating raw disk '%s' from '%s' with final size %dMb", params.Output, params.Source, params.FinalSize)
 		// TODO: We need to talk about how the config.yaml is magically here no? is done in a previous step but maybe we should have constant that we can check?
 		// Maybe on its own function that returns the tmpdir + config.yaml or something? we need a safe way of accessing it form any step in the DAG.
-		raw := NewBiosRawImage(src, dst, filepath.Join(dst, "config.yaml"), size, stateSize, recoveryImageSize, noDefaultCloudConfig)
+		params.CloudConfig = filepath.Join(params.Output, rawDiskCloudConfigFile)
+		raw := newImage(params)
 
-		images, cleanup, err := materializeDiskExtensions(ctx, ext.withArchFrom(src))
+		images, cleanup, err := materializeDiskExtensions(ctx, params.Extensions.withArchFrom(params.Source))
 		if err != nil {
 			internal.Log.Logger.Error().Err(err).Msg("Resolving the extensions to bundle into the raw disk failed")
 			return err
@@ -53,7 +40,7 @@ func GenBiosRawDisk(src, dst string, size uint64, stateSize, recoveryImageSize i
 
 		err = raw.Build()
 		if err != nil {
-			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", dst, src, err.Error())
+			internal.Log.Logger.Error().Msgf("Generating raw disk '%s' from '%s' failed with error '%s'", params.Output, params.Source, err.Error())
 		}
 		return err
 	}

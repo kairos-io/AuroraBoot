@@ -14,6 +14,10 @@ export type BuildSummaryData = {
   kubernetes?: string;
   version: string;
   bundledExtensions: string[];
+  // Set when a clone could not read its source's bundle. The list is then
+  // empty for a reason the operator has to be told, because an empty list and
+  // an unreadable one are the same picture.
+  bundledExtensionsUnavailable?: boolean;
   catalogExtensions: string[];
   user: "default" | "custom" | "none";
   sshKeyCount: number;
@@ -24,6 +28,9 @@ export type BuildSummaryData = {
   trustedBoot: boolean;
   outputs: string[];
   overlayFiles: number;
+  // Set when an overlay is attached but its file names are not known, as for
+  // a stored artifact or a clone, which reference the overlay by ID only.
+  overlayAttached?: boolean;
   autoInstall: boolean;
   insecureRegistries: boolean;
 };
@@ -47,7 +54,8 @@ const USER_LABELS: Record<BuildSummaryData["user"], string> = {
 const OUTPUT_LABELS: [keyof Artifact, string][] = [
   ["iso", "ISO"],
   ["netboot", "Netboot"],
-  ["uki", "UKI"],
+  // The ISO of a Trusted Boot build, which the server builds as the UKI ISO.
+  ["uki", "UKI ISO"],
   ["rawDisk", "Raw Disk"],
   ["cloudImage", "Cloud Image"],
   ["gce", "Google Cloud"],
@@ -111,7 +119,15 @@ function sections(d: BuildSummaryData): Section[] {
       title: "Extensions",
       step: "extensions",
       rows: [
-        { label: "Install after boot", value: list(d.bundledExtensions) },
+        {
+          label: "Install after boot",
+          // "None" here is a claim about the source artifact. When the read
+          // failed we do not know, so the row says that instead.
+          value: d.bundledExtensionsUnavailable ? "Unknown" : list(d.bundledExtensions),
+          warning: d.bundledExtensionsUnavailable
+            ? "could not be read from the cloned artifact, nothing carried over"
+            : undefined,
+        },
         { label: "Bake into the image", value: list(d.catalogExtensions) },
       ],
     },
@@ -120,8 +136,15 @@ function sections(d: BuildSummaryData): Section[] {
       title: "Output",
       step: "output",
       rows: [
+        { label: "Boot mode", value: d.trustedBoot ? "Trusted Boot" : "Standard" },
         { label: "Formats", value: list(d.outputs) },
-        { label: "Overlay files", value: plural(d.overlayFiles, "file", "files") },
+        {
+          label: "Overlay files",
+          value:
+            d.overlayFiles === 0 && d.overlayAttached
+              ? "Attached"
+              : plural(d.overlayFiles, "file", "files"),
+        },
       ],
     },
     {
@@ -129,7 +152,6 @@ function sections(d: BuildSummaryData): Section[] {
       step: "access",
       rows: [
         { label: "FIPS", value: yesNo(d.fips) },
-        { label: "Trusted Boot", value: yesNo(d.trustedBoot) },
         {
           label: "Insecure registries",
           value: yesNo(d.insecureRegistries),
@@ -195,7 +217,7 @@ export function BuildSummary({ data, onEdit, variant }: BuildSummaryProps) {
 
 // summaryFromArtifact builds the summary from a stored artifact. The store
 // does not keep the user setup, SSH keys, allowed commands, bundled
-// extensions or overlay files, so those stay empty.
+// extensions or overlay file names, so those stay empty.
 // eslint-disable-next-line react-refresh/only-export-components -- used by the artifact page
 export function summaryFromArtifact(a: Artifact): BuildSummaryData {
   const kubernetes =
@@ -221,6 +243,7 @@ export function summaryFromArtifact(a: Artifact): BuildSummaryData {
     trustedBoot: !!a.trustedBoot,
     outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([, label]) => label),
     overlayFiles: 0,
+    overlayAttached: !!a.overlayId,
     autoInstall: !!a.autoInstall,
     insecureRegistries: !!a["allow-insecure-registries"],
   };

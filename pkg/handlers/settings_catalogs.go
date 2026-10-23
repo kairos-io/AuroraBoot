@@ -68,6 +68,7 @@ func (h *SettingsHandler) GetExtensionCatalogs(c echo.Context) error {
 //	@Produce		json
 //	@Security		AdminBearer
 //	@Success		200	{object}	extensionCatalogsResponse
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/settings/extension-catalogs [put]
 func (h *SettingsHandler) UpdateExtensionCatalogs(c echo.Context) error {
 	var req updateExtensionCatalogsRequest
@@ -135,9 +136,8 @@ func normalizeExtensionCatalogs(values []string) ([]string, error) {
 		if value == "" {
 			continue
 		}
-		parsed, err := url.Parse(value)
-		if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
-			return nil, fmt.Errorf("invalid extension catalog %q: use an http or https URL", value)
+		if err := validateCatalogURL(value); err != nil {
+			return nil, err
 		}
 		if _, dup := seen[value]; dup {
 			continue
@@ -149,4 +149,14 @@ func normalizeExtensionCatalogs(values []string) ([]string, error) {
 		return nil, fmt.Errorf("too many extension catalogs: %d, at most %d", len(out), maxSavedExtensionCatalogs)
 	}
 	return out, nil
+}
+
+// validateCatalogURL accepts only an absolute http(s) URL. The extension
+// catalog loader opens anything else as a file on this server.
+func validateCatalogURL(value string) error {
+	parsed, err := url.Parse(value)
+	if err != nil || (parsed.Scheme != "http" && parsed.Scheme != "https") || parsed.Host == "" {
+		return fmt.Errorf("invalid extension catalog %q: use an http or https URL", value)
+	}
+	return nil
 }

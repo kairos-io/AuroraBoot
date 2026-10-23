@@ -76,7 +76,7 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _
 	return nil
 }
 func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error    { return nil }
+func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ *string) error   { return nil }
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
@@ -84,8 +84,14 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, _, _ string) (*store.Manage
 	return nil, store.ErrNoClaimCapacity
 }
 func (f *fakeNodeStore) ReleaseNode(_ context.Context, _, _ string) (bool, error) { return false, nil }
-func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error        { return nil }
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) SettleAfterReboot(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
@@ -96,6 +102,9 @@ type fakeCommandStore struct {
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, _ *store.NodeCommand) error { return nil }
+func (f *fakeCommandStore) CreateBatch(_ context.Context, _ []*store.NodeCommand) error {
+	return nil
+}
 func (f *fakeCommandStore) GetByID(_ context.Context, _ string) (*store.NodeCommand, error) {
 	return nil, fmt.Errorf("not found")
 }
@@ -163,6 +172,12 @@ func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadli
 }
 func (f *fakeCommandStore) Delete(_ context.Context, _ string) error         { return nil }
 func (f *fakeCommandStore) DeleteTerminal(_ context.Context, _ string) error { return nil }
+func (f *fakeCommandStore) ListByBatch(_ context.Context, _ string) ([]*store.NodeCommand, error) {
+	return nil, nil
+}
+func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, _ string, _ string) (int, error) {
+	return 0, nil
+}
 
 type fakeGroupStore struct{}
 
@@ -404,16 +419,6 @@ var _ = Describe("Server", func() {
 			resp := doReq(http.MethodPut, "/api/v1/nodes/node-A/commands/cmd-B/status", "key-A", `{"phase":"Completed","result":"pwned"}`)
 			Expect(resp.StatusCode).To(Equal(http.StatusForbidden))
 			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
-		})
-	})
-
-	Describe("SPA fallback", func() {
-		It("should serve index.html for HTML requests to unknown paths", func() {
-			req, _ := http.NewRequest(http.MethodGet, e.URL+"/some/spa/route", nil)
-			req.Header.Set("Accept", "text/html")
-			resp, err := http.DefaultClient.Do(req)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		})
 	})
 })

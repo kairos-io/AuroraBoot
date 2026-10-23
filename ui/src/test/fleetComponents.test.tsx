@@ -16,7 +16,7 @@ function node(overrides: Partial<Node> = {}): Node {
     id: "n1",
     hostname: "edge-1",
     machineID: "m1",
-    groupID: "",
+    groupID: null,
     labels: {},
     phase: "Online",
     osRelease: null,

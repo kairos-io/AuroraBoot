@@ -116,8 +116,8 @@ var _ = Describe("NodeHandler", func() {
 	Describe("List", func() {
 		BeforeEach(func() {
 			ns.nodes = []*store.ManagedNode{
-				{ID: "node-1", GroupID: "grp-1", Labels: map[string]string{"env": "prod"}},
-				{ID: "node-2", GroupID: "grp-2", Labels: map[string]string{"env": "staging"}},
+				{ID: "node-1", GroupID: new("grp-1"), Labels: map[string]string{"env": "prod"}},
+				{ID: "node-2", GroupID: new("grp-2"), Labels: map[string]string{"env": "staging"}},
 			}
 		})
 
@@ -275,21 +275,46 @@ var _ = Describe("NodeHandler", func() {
 	})
 
 	Describe("SetGroup", func() {
-		It("should set a group on a node", func() {
-			ns.nodes = []*store.ManagedNode{
-				{ID: "node-1"},
-			}
-			body := `{"groupID":"grp-1"}`
+		setGroup := func(body string) *httptest.ResponseRecorder {
 			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/node-1/group", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
 			c.SetParamNames("nodeID")
 			c.SetParamValues("node-1")
+			Expect(handler.SetGroup(c)).To(Succeed())
+			return rec
+		}
 
-			err := handler.SetGroup(c)
-			Expect(err).NotTo(HaveOccurred())
+		It("should set a group on a node", func() {
+			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+
+			rec := setGroup(`{"groupID":"grp-1"}`)
+
 			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(ns.nodes[0].GroupID).To(HaveValue(Equal("grp-1")))
+		})
+
+		It("moves a node out of its group on a null group id", func() {
+			grp := "grp-1"
+			ns.nodes = []*store.ManagedNode{{ID: "node-1", GroupID: &grp}}
+
+			rec := setGroup(`{"groupID":null}`)
+
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(ns.nodes[0].GroupID).To(BeNil())
+		})
+
+		// An empty string names no group. Taking it for "no group" would
+		// give the API two spellings of the same request.
+		It("rejects an empty group id", func() {
+			grp := "grp-1"
+			ns.nodes = []*store.ManagedNode{{ID: "node-1", GroupID: &grp}}
+
+			rec := setGroup(`{"groupID":""}`)
+
+			Expect(rec.Code).To(Equal(http.StatusBadRequest))
+			Expect(ns.nodes[0].GroupID).To(HaveValue(Equal("grp-1")))
 		})
 	})
 
