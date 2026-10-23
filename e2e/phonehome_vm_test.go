@@ -35,14 +35,16 @@ import (
 //     CPUS default lower here because two VMs run at once.
 
 const (
-	phonehomeDefaultBaseImage       = "quay.io/kairos/hadron:v0.5.3-core-amd64-generic-v4.4.0-rc2"
-	phonehomeDefaultKairosInitImage = "quay.io/kairos/kairos-init:v4.4.0-rc2"
-	// phonehomeKairosVersion is the version kairos-init stamps on the
-	// installed artifact. The API falls back to "latest" without one, which
-	// kairos-init v4.4.0 refuses as not a semantic version; the UI always sends
-	// a version.
-	phonehomeKairosVersion = "v4.4.0-rc2"
-	phonehomeMarkerPath    = "/etc/auroraboot-e2e-marker"
+	// phonehomeKairosVersion is the Kairos release the tier runs. The base
+	// image, the kairos-init image and the version kairos-init stamps must all
+	// agree: a kairos-init from another release replaces the base image's agent
+	// with its own. It is also sent as the artifact's kairosVersion because the
+	// API falls back to "latest" without one, which kairos-init v4.4.0 refuses
+	// as not a semantic version; the UI always sends a version.
+	phonehomeKairosVersion          = "v4.4.0-rc2"
+	phonehomeDefaultBaseImage       = "quay.io/kairos/hadron:v0.5.3-core-amd64-generic-" + phonehomeKairosVersion
+	phonehomeDefaultKairosInitImage = "quay.io/kairos/kairos-init:" + phonehomeKairosVersion
+	phonehomeMarkerPath             = "/etc/auroraboot-e2e-marker"
 	// phonehomeUnknownArtifact is an artifact ID AuroraBoot does not know, so
 	// an upgrade from it fails on AuroraBoot's own image download, before the
 	// node reboots.
