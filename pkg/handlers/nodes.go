@@ -214,6 +214,13 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// reset or upgrade from the boot state it reports (kairos-io/kairos#4255).
 		store.ResolveReset(c.Request().Context(), h.nodes, existing, req.BootState)
 		store.ResolveUpgrade(c.Request().Context(), h.nodes, existing, req.BootState)
+		// A batch timeout fails the upgrade or reset with its reboot still
+		// recorded, and the resolvers above leave a failed state alone. A
+		// registration always follows a boot, so its time stands in for the
+		// boot time an agent without uptime in its heartbeats never reports.
+		if err := h.nodes.SettleAfterReboot(c.Request().Context(), existing.ID, req.BootState, time.Now()); err != nil {
+			c.Logger().Warnf("settling node %s after its reboot: %v", existing.ID, err)
+		}
 		// The same boot settles a batch row waiting on the node's reboot.
 		if h.batches != nil {
 			h.batches.NodeBooted(c.Request().Context(), existing.ID, req.BootState, nil)
