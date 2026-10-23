@@ -363,6 +363,12 @@ func New(cfg Config) *echo.Echo {
 	adminGroup.DELETE("/nodes/:nodeID/commands", cmdHandler.ClearHistory)
 	adminGroup.POST("/nodes/commands", cmdHandler.CreateBulk)
 
+	// Batches
+	batchHandler := handlers.NewBatchHandler(cfg.BatchStore, cfg.Batches)
+	adminGroup.GET("/batches", batchHandler.List)
+	adminGroup.GET("/batches/:id", batchHandler.Get)
+	adminGroup.POST("/batches/:id/stop", batchHandler.Stop)
+
 	// Group management
 	adminGroup.POST("/groups", groupHandler.Create)
 	adminGroup.GET("/groups", groupHandler.List)

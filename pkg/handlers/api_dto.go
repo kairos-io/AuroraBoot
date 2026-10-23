@@ -148,10 +148,28 @@ type APIUpdateGroupRequest struct {
 // --- Commands ---
 
 // APICreateCommandRequest is the JSON body of
-// POST /api/v1/nodes/:nodeID/commands and POST /api/v1/groups/:id/commands.
+// POST /api/v1/nodes/:nodeID/commands.
 type APICreateCommandRequest struct {
 	Command string            `json:"command" example:"upgrade" enums:"upgrade,upgrade-recovery,reset,apply-cloud-config,reboot,exec"`
 	Args    map[string]string `json:"args"`
+}
+
+// APIRolloutOptions are the batch settings of the group and bulk command bodies.
+type APIRolloutOptions struct {
+	// Concurrency caps how many nodes run at once. 0 runs every node at once.
+	Concurrency int `json:"concurrency,omitempty"`
+	// StopOnFailure stops the batch when a node fails. Defaults to true.
+	StopOnFailure *bool `json:"stopOnFailure,omitempty"`
+	// RebootTimeoutSeconds is how long a node that reboots may take to come
+	// back. Defaults to 600.
+	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
+}
+
+// APIGroupCommandRequest is the JSON body of POST /api/v1/groups/:id/commands.
+type APIGroupCommandRequest struct {
+	Command string            `json:"command" example:"upgrade"`
+	Args    map[string]string `json:"args"`
+	APIRolloutOptions
 }
 
 // APIBulkCommandRequest is the JSON body of POST /api/v1/nodes/commands.
@@ -159,6 +177,7 @@ type APIBulkCommandRequest struct {
 	Selector store.CommandSelector `json:"selector"`
 	Command  string                `json:"command" example:"upgrade"`
 	Args     map[string]string     `json:"args"`
+	APIRolloutOptions
 }
 
 // APIUpdateCommandStatusRequest is the JSON body of

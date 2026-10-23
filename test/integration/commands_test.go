@@ -141,7 +141,7 @@ var _ = Describe("Commands", func() {
 
 		// Only node1 is in group AND has role=worker.
 		Expect(batchNodeIDs(batch)).To(ConsistOf(node1ID))
-		Expect(batch["groupID"]).To(BeNil())
+		Expect(batch["groupID"]).To(Equal(groupID))
 		Expect(batch["selection"]).To(MatchRegexp(`^group cmd-test-group-\d+, label role=worker$`))
 	})
 

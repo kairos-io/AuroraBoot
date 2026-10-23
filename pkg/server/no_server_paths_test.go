@@ -12,6 +12,7 @@ import (
 
 	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/batches"
 	"github.com/kairos-io/AuroraBoot/pkg/server"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 )
@@ -39,7 +40,10 @@ var _ = Describe("Server paths in API responses", func() {
 		Expect(extensions.Create(ctx, &store.ExtensionRecord{ID: "ext-1", Name: "tools", Type: "sysext", Phase: "Ready",
 			SigningKeySetID: "ks-1", RawFilename: "tools.sysext.raw"})).To(Succeed())
 
+		batchStore := &gormstore.BatchStoreAdapter{S: db}
 		e := server.New(server.Config{
+			BatchStore:                   batchStore,
+			Batches:                      batches.New(batchStore, func(context.Context, *store.NodeCommand) {}),
 			NodeStore:                    &gormstore.NodeStoreAdapter{S: db},
 			CommandStore:                 &gormstore.CommandStoreAdapter{S: db},
 			GroupStore:                   &gormstore.GroupStoreAdapter{S: db},
@@ -62,7 +66,7 @@ var _ = Describe("Server paths in API responses", func() {
 		})
 
 		ids := map[string]string{"/artifacts/:id": "art-1", "/secureboot-keys/:id": "ks-1", "/extensions/:id": "ext-1"}
-		listRoutes := map[string]bool{"/api/v1/artifacts": true, "/api/v1/secureboot-keys": true, "/api/v1/extensions": true}
+		listRoutes := map[string]bool{"/api/v1/artifacts": true, "/api/v1/secureboot-keys": true, "/api/v1/extensions": true, "/api/v1/batches": true}
 		missingFileRoute := func(path string) bool {
 			return path == "/api/v1/secureboot-keys/ks-1/export" ||
 				path == "/api/v1/artifacts/art-1/image" ||

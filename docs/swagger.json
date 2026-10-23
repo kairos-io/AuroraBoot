@@ -611,7 +611,7 @@
                 }
             }
         },
-        "/api/v1/commands/batches/{batchID}": {
+        "/api/v1/batches": {
             "get": {
                 "security": [
                     {
@@ -622,14 +622,76 @@
                     "application/json"
                 ],
                 "tags": [
-                    "Commands"
+                    "Batches"
                 ],
-                "summary": "Report the state of one fan-out of commands",
+                "summary": "List batches, newest first",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Only batches started for this group",
+                        "name": "groupID",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "Only batches that include this node",
+                        "name": "nodeID",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Page size (default 50, at most 200)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "Number of batches to skip",
+                        "name": "offset",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.batchList"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/batches/{id}": {
+            "get": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Get a batch with its per-node state",
                 "parameters": [
                     {
                         "type": "string",
                         "description": "Batch ID",
-                        "name": "batchID",
+                        "name": "id",
                         "in": "path",
                         "required": true
                     }
@@ -638,7 +700,70 @@
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/store.BatchOutcome"
+                            "$ref": "#/definitions/store.CommandBatch"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/batches/{id}/stop": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Batches"
+                ],
+                "summary": "Stop a running batch",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Batch ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/store.CommandBatch"
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     }
                 }
@@ -995,6 +1120,76 @@
                 }
             }
         },
+        "/api/v1/groups/{id}/commands": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Starts a rolling batch and returns its record. Nodes that are already in a running batch are rejected with 409 and listed in nodeIDs.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Commands"
+                ],
+                "summary": "Run a command on every node of a group",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Group ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Command and rollout options",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIGroupCommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.CommandBatch"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
         "/api/v1/metrics/latest": {
             "get": {
                 "security": [
@@ -1095,6 +1290,69 @@
                     },
                     "401": {
                         "description": "Unauthorized",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/v1/nodes/commands": {
+            "post": {
+                "security": [
+                    {
+                        "AdminBearer": []
+                    }
+                ],
+                "description": "Starts a rolling batch and returns its record. Nodes that are already in a running batch are rejected with 409 and listed in nodeIDs.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Commands"
+                ],
+                "summary": "Run a command on the nodes matching a selector",
+                "parameters": [
+                    {
+                        "description": "Selector, command and rollout options",
+                        "name": "body",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIBulkCommandRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/store.CommandBatch"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "413": {
+                        "description": "Request Entity Too Large",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "503": {
+                        "description": "Service Unavailable",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -1270,6 +1528,12 @@
                         "description": "Created",
                         "schema": {
                             "$ref": "#/definitions/store.NodeCommand"
+                        }
+                    },
+                    "409": {
+                        "description": "The node is in a running batch",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
                         }
                     },
                     "413": {
@@ -2190,6 +2454,36 @@
                 }
             }
         },
+        "handlers.APIBulkCommandRequest": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "command": {
+                    "type": "string",
+                    "example": "upgrade"
+                },
+                "concurrency": {
+                    "description": "Concurrency caps how many nodes run at once. 0 runs every node at once.",
+                    "type": "integer"
+                },
+                "rebootTimeoutSeconds": {
+                    "description": "RebootTimeoutSeconds is how long a node that reboots may take to come\nback. Defaults to 600.",
+                    "type": "integer"
+                },
+                "selector": {
+                    "$ref": "#/definitions/store.CommandSelector"
+                },
+                "stopOnFailure": {
+                    "description": "StopOnFailure stops the batch when a node fails. Defaults to true.",
+                    "type": "boolean"
+                }
+            }
+        },
         "handlers.APIClaimRequest": {
             "type": "object",
             "properties": {
@@ -2370,6 +2664,33 @@
                         "if-safe",
                         "force"
                     ]
+                }
+            }
+        },
+        "handlers.APIGroupCommandRequest": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "command": {
+                    "type": "string",
+                    "example": "upgrade"
+                },
+                "concurrency": {
+                    "description": "Concurrency caps how many nodes run at once. 0 runs every node at once.",
+                    "type": "integer"
+                },
+                "rebootTimeoutSeconds": {
+                    "description": "RebootTimeoutSeconds is how long a node that reboots may take to come\nback. Defaults to 600.",
+                    "type": "integer"
+                },
+                "stopOnFailure": {
+                    "description": "StopOnFailure stops the batch when a node fails. Defaults to true.",
+                    "type": "boolean"
                 }
             }
         },
@@ -2658,6 +2979,20 @@
                     "description": "ID references the overlay in a build request's overlayId.",
                     "type": "string",
                     "format": "uuid"
+                }
+            }
+        },
+        "handlers.batchList": {
+            "type": "object",
+            "properties": {
+                "batches": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.CommandBatch"
+                    }
+                },
+                "total": {
+                    "type": "integer"
                 }
             }
         },
@@ -2969,49 +3304,43 @@
                 }
             }
         },
-        "store.BatchOutcome": {
+        "store.BatchNode": {
             "type": "object",
             "properties": {
                 "batchID": {
                     "type": "string"
                 },
-                "canceled": {
-                    "type": "integer"
+                "commandID": {
+                    "type": "string",
+                    "x-nullable": true
                 },
-                "command": {
+                "deadline": {
                     "type": "string"
                 },
-                "commands": {
-                    "description": "Commands are the per-node rows, kept so a failed batch can still say\nwhich node failed and with what result.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/store.NodeCommand"
-                    }
-                },
-                "completed": {
-                    "type": "integer"
-                },
-                "expired": {
-                    "type": "integer"
-                },
-                "failFast": {
-                    "type": "boolean"
-                },
-                "failed": {
-                    "type": "integer"
-                },
-                "pending": {
-                    "type": "integer"
-                },
-                "phase": {
-                    "description": "Phase is the batch as a whole: Pending while any node still has work\nahead of it, then Failed if any node failed, Canceled if the batch was\nstopped before every node ran, and Completed when every node succeeded.",
+                "finishedAt": {
                     "type": "string"
                 },
-                "running": {
+                "hostname": {
+                    "type": "string"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "nodeID": {
+                    "type": "string"
+                },
+                "position": {
                     "type": "integer"
                 },
-                "total": {
-                    "type": "integer"
+                "rebootingSince": {
+                    "description": "RebootingSince is when the reboot the node is waiting on was\nscheduled: its command's completion, then its autoreset boot.",
+                    "type": "string"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "state": {
+                    "type": "string"
                 }
             }
         },
@@ -3020,6 +3349,92 @@
             "properties": {
                 "usedPercent": {
                     "type": "number"
+                }
+            }
+        },
+        "store.CommandBatch": {
+            "type": "object",
+            "properties": {
+                "args": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "command": {
+                    "type": "string"
+                },
+                "concurrency": {
+                    "type": "integer"
+                },
+                "counts": {
+                    "description": "Counts maps each node state to how many nodes are in it.",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "integer"
+                    }
+                },
+                "createdAt": {
+                    "type": "string"
+                },
+                "finishedAt": {
+                    "type": "string"
+                },
+                "groupID": {
+                    "type": "string",
+                    "x-nullable": true
+                },
+                "id": {
+                    "type": "string"
+                },
+                "nodes": {
+                    "description": "Nodes is filled by BatchGet only.",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/store.BatchNode"
+                    }
+                },
+                "phase": {
+                    "type": "string"
+                },
+                "rebootTimeoutSeconds": {
+                    "type": "integer"
+                },
+                "selection": {
+                    "type": "string"
+                },
+                "stopOnFailure": {
+                    "type": "boolean"
+                },
+                "stopReason": {
+                    "type": "string"
+                },
+                "stoppedAt": {
+                    "type": "string"
+                },
+                "stoppedByNodeID": {
+                    "type": "string",
+                    "x-nullable": true
+                }
+            }
+        },
+        "store.CommandSelector": {
+            "type": "object",
+            "properties": {
+                "groupID": {
+                    "type": "string"
+                },
+                "labels": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
+                "nodeIDs": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
@@ -3188,7 +3603,7 @@
                     }
                 },
                 "batchID": {
-                    "description": "BatchID names the fan-out this command was created by, so the rows a\nsingle bulk or group request produced can be found again as one\noperation. It is empty on a command addressed to one node.",
+                    "description": "BatchID names the batch that created this command, so a command can be\ntraced to its batch. It is empty on a command addressed to one node.",
                     "type": "string"
                 },
                 "command": {
@@ -3205,10 +3620,6 @@
                 },
                 "expiresAt": {
                     "type": "string"
-                },
-                "failFast": {
-                    "description": "FailFast asks for the still-Pending rows of the batch to be canceled\nonce any node in it fails; a row already Delivered to its node is left\nto report its own result. It is carried on every row of the batch rather\nthan in a batch table so the rule travels with the command that has to\napply it.",
-                    "type": "boolean"
                 },
                 "id": {
                     "type": "string"

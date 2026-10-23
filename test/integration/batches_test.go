@@ -266,4 +266,82 @@ var _ = Describe("Rolling batches", func() {
 			Expect(nextCommand(agents[1], 5*time.Second)).NotTo(BeEmpty())
 		})
 	})
+
+	Describe("the batch endpoints", func() {
+		getBatch := func(id string) map[string]any {
+			resp := adminGet(testServerURL, "/api/v1/batches/"+id, testAdminPassword)
+			ExpectWithOffset(1, resp.StatusCode).To(Equal(http.StatusOK))
+			var b map[string]any
+			decodeJSON(resp, &b)
+			return b
+		}
+
+		It("reports why a batch stopped", func() {
+			online(2)
+			id := startGroup(map[string]any{"command": "exec", "args": map[string]string{"cmd": "false"}, "concurrency": 1})["id"].(string)
+			first := nextCommand(agents[0], 5*time.Second)
+			Expect(first).NotTo(BeEmpty())
+			report(agents[0], first, "Failed", "exit status 1")
+
+			Eventually(func() any { return getBatch(id)["phase"] }, 5*time.Second, 50*time.Millisecond).Should(Equal("stopped"))
+			b := getBatch(id)
+			Expect(b["stoppedByNodeID"]).To(Equal(agents[0].id))
+			Expect(b["stopReason"]).NotTo(BeEmpty())
+			nodes := b["nodes"].([]any)
+			Expect(nodes).To(HaveLen(2))
+			Expect(nodes[0].(map[string]any)["nodeID"]).To(Equal(agents[0].id))
+			Expect(nodes[0].(map[string]any)["state"]).To(Equal("failed"))
+			Expect(nodes[1].(map[string]any)["state"]).To(Equal("canceled"))
+		})
+
+		It("lists a group's batches", func() {
+			online(1)
+			id := startGroup(map[string]any{"command": "exec", "args": map[string]string{"cmd": "true"}})["id"].(string)
+
+			resp := adminGet(testServerURL, "/api/v1/batches?groupID="+groupID, testAdminPassword)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			var out struct {
+				Batches []map[string]any `json:"batches"`
+				Total   int              `json:"total"`
+			}
+			decodeJSON(resp, &out)
+			Expect(out.Total).To(Equal(1))
+			Expect(out.Batches).To(HaveLen(1))
+			Expect(out.Batches[0]["id"]).To(Equal(id))
+		})
+
+		It("stops a running batch", func() {
+			online(2)
+			id := startGroup(map[string]any{"command": "exec", "args": map[string]string{"cmd": "true"}, "concurrency": 1})["id"].(string)
+
+			resp := adminPost(testServerURL, "/api/v1/batches/"+id+"/stop", testAdminPassword, nil)
+			Expect(resp.StatusCode).To(Equal(http.StatusOK))
+			var b map[string]any
+			decodeJSON(resp, &b)
+			Expect(b["id"]).To(Equal(id))
+			Expect(b["phase"]).To(Equal("stopped"))
+			Expect(b["stoppedAt"]).NotTo(BeNil())
+		})
+
+		It("refuses to stop a batch that is not running", func() {
+			online(1)
+			id := startGroup(map[string]any{"command": "exec", "args": map[string]string{"cmd": "true"}})["id"].(string)
+			Expect(adminPost(testServerURL, "/api/v1/batches/"+id+"/stop", testAdminPassword, nil).StatusCode).To(Equal(http.StatusOK))
+
+			resp := adminPost(testServerURL, "/api/v1/batches/"+id+"/stop", testAdminPassword, nil)
+			Expect(resp.StatusCode).To(Equal(http.StatusConflict))
+			var body map[string]any
+			decodeJSON(resp, &body)
+			Expect(body["error"]).To(Equal("batch is not running"))
+		})
+
+		It("answers 404 for an unknown batch", func() {
+			resp := adminGet(testServerURL, "/api/v1/batches/nope", testAdminPassword)
+			Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+			var body map[string]any
+			decodeJSON(resp, &body)
+			Expect(body["error"]).To(Equal("batch not found"))
+			Expect(adminPost(testServerURL, "/api/v1/batches/nope/stop", testAdminPassword, nil).StatusCode).To(Equal(http.StatusNotFound))
+		})
+	})
 })
