@@ -5,8 +5,6 @@ const commandLabels: Record<string, string> = {
   "upgrade-recovery": "Upgrade recovery",
   reset: "Reset",
   "apply-cloud-config": "Apply config",
-  // The command dialog sends apply-config for "Apply config".
-  "apply-config": "Apply config",
   extension: "Install extension",
   reboot: "Reboot",
   exec: "Run command",
