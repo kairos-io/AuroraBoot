@@ -121,6 +121,20 @@ type BatchStore interface {
 	// Advance brings one batch up to date at now and returns the commands it
 	// created, for the caller to push after the transaction committed.
 	Advance(ctx context.Context, batchID string, now time.Time) ([]*NodeCommand, error)
+	// Stop stops a running batch: phase stopped, StoppedAt now, StopReason
+	// reason, StoppedByNodeID nil, and every waiting row canceled with
+	// "batch stopped". ErrBatchNotRunning when the phase is not running.
+	Stop(ctx context.Context, batchID, reason string, now time.Time) error
+	// NodeBooted settles the node's rebooting rows when it came back: bootedAt
+	// is the boot time a heartbeat reports, or nil for a registration, which
+	// always follows a boot. It returns the IDs of the batches it touched.
+	NodeBooted(ctx context.Context, nodeID, bootState string, bootedAt *time.Time, now time.Time) ([]string, error)
+	// ActiveIDs returns the batches that are running or still have a running or
+	// rebooting row.
+	ActiveIDs(ctx context.Context) ([]string, error)
+	// PostponeExpiredDeadlines moves every rebooting deadline before now to now
+	// plus its batch's timeout.
+	PostponeExpiredDeadlines(ctx context.Context, now time.Time) error
 }
 
 // BatchOutcome is the state of one fan-out, derived from the commands it
