@@ -3,8 +3,9 @@ import { Link, useNavigate, useParams } from "react-router";
 import { AlertTriangle } from "lucide-react";
 import { getBatch, stopBatch, type Batch, type BatchNodeState } from "@/api/batches";
 import { getNode, listNodes, sendBulkCommand } from "@/api/nodes";
-import { CommandDialog, type CommandKey } from "@/components/CommandDialog";
+import { CommandDialog } from "@/components/CommandDialog";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { RepeatBatchDialog } from "@/components/RepeatBatchDialog";
 import { PageHeader } from "@/components/PageHeader";
 import { StatusBadge } from "@/components/StatusBadge";
 import { Button } from "@/components/ui/button";
@@ -28,6 +29,7 @@ import {
   stateLabels,
 } from "@/lib/batch";
 import { toast } from "@/hooks/useToast";
+import { isCommandKey } from "@/lib/commandKeys";
 
 const POLL_MS = 5000;
 
@@ -159,6 +161,12 @@ function BatchView({ id }: { id: string | undefined }) {
 
   const rows = batch.nodes ?? [];
   const remaining = remainingNodes(batch, existingIDs);
+  const nodeChoices = remaining.map((n) => ({ id: n.nodeID, label: n.hostname }));
+  const rollout = {
+    concurrency: batch.concurrency > 0 ? batch.concurrency : undefined,
+    stopOnFailure: batch.stopOnFailure,
+    rebootTimeoutSeconds: batch.rebootTimeoutSeconds,
+  };
 
   async function handleStop() {
     try {
@@ -289,20 +297,27 @@ function BatchView({ id }: { id: string | undefined }) {
         onConfirm={handleStop}
       />
 
-      <CommandDialog
-        open={newBatchOpen}
-        onOpenChange={setNewBatchOpen}
-        onSubmit={handleNewBatch}
-        title="Start a new batch"
-        defaultCommand={batch.command as CommandKey}
-        defaultArgs={batch.args}
-        defaultRollout={{
-          concurrency: batch.concurrency > 0 ? batch.concurrency : undefined,
-          stopOnFailure: batch.stopOnFailure,
-          rebootTimeoutSeconds: batch.rebootTimeoutSeconds,
-        }}
-        nodeChoices={remaining.map((n) => ({ id: n.nodeID, label: n.hostname }))}
-      />
+      {isCommandKey(batch.command) ? (
+        <CommandDialog
+          open={newBatchOpen}
+          onOpenChange={setNewBatchOpen}
+          onSubmit={handleNewBatch}
+          title="Start a new batch"
+          defaultCommand={batch.command}
+          defaultArgs={batch.args}
+          defaultRollout={rollout}
+          nodeChoices={nodeChoices}
+        />
+      ) : (
+        <RepeatBatchDialog
+          open={newBatchOpen}
+          onOpenChange={setNewBatchOpen}
+          commandLabel={commandLabel(batch.command)}
+          settings={settingsText(batch)}
+          nodeChoices={nodeChoices}
+          onSubmit={(nodeIDs) => handleNewBatch(batch.command, batch.args, rollout, nodeIDs)}
+        />
+      )}
     </div>
   );
 }
