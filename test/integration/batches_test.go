@@ -189,6 +189,7 @@ var _ = Describe("Rolling batches", func() {
 		var body map[string]any
 		decodeJSON(resp, &body)
 		Expect(body["error"]).To(Equal("node is in a running batch"))
+		Expect(body["nodeIDs"]).To(ConsistOf(agents[1].id))
 	})
 
 	It("rejects a batch whose nodes are already in a running batch", func() {

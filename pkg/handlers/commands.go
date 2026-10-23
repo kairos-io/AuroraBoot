@@ -121,19 +121,6 @@ func (h *CommandHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
 	}
 
-	// A batch settles a node that reboots from the node's lifecycle state,
-	// which a single-node upgrade, reset or reboot shares. A node whose batch
-	// row is not final, in a stopped batch too, is still settled by it.
-	if store.RebootsNode(req.Command) && h.batches != nil {
-		busy, err := h.batches.BusyNodes(c.Request().Context(), []string{nodeID})
-		if err != nil {
-			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to check the node's batches"})
-		}
-		if len(busy) > 0 {
-			return c.JSON(http.StatusConflict, map[string]string{"error": "node is in a running batch"})
-		}
-	}
-
 	cmd := &store.NodeCommand{
 		ID:            uuid.New().String(),
 		ManagedNodeID: nodeID,
@@ -148,7 +135,24 @@ func (h *CommandHandler) Create(c echo.Context) error {
 	// Both reboot the node, so the agent's ack only means the reboot is
 	// scheduled, and the re-register resolver reports the real outcome
 	// (kairos-io/kairos#4255).
-	if err := h.commands.CreateBatch(c.Request().Context(), []*store.NodeCommand{cmd}); err != nil {
+	ctx := c.Request().Context()
+	create := func() error { return h.commands.CreateBatch(ctx, []*store.NodeCommand{cmd}) }
+
+	// A batch settles a node that reboots from the node's lifecycle state,
+	// which a single-node upgrade, reset or reboot shares. A node whose batch
+	// row is not final, in a stopped batch too, is still settled by it.
+	// WhenIdle checks and creates with no batch start in between.
+	var err error
+	if store.RebootsNode(req.Command) && h.batches != nil {
+		err = h.batches.WhenIdle(ctx, []string{nodeID}, create)
+	} else {
+		err = create()
+	}
+	var busy *batches.ErrNodesBusy
+	if errors.As(err, &busy) {
+		return c.JSON(http.StatusConflict, map[string]any{"error": "node is in a running batch", "nodeIDs": busy.NodeIDs})
+	}
+	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
 	}
 

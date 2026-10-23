@@ -115,9 +115,87 @@ var _ = Describe("Scheduler", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(sched.Stop(ctx, b.ID)).To(Succeed())
 
-		busy, err := sched.BusyNodes(ctx, []string{nodes[0].ID, nodes[1].ID})
+		called := false
+		err = sched.WhenIdle(ctx, []string{nodes[0].ID, nodes[1].ID}, func() error { called = true; return nil })
+		var busy *batches.ErrNodesBusy
+		Expect(errors.As(err, &busy)).To(BeTrue())
+		Expect(busy.NodeIDs).To(Equal([]string{nodes[0].ID}))
+		Expect(called).To(BeFalse())
+	})
+
+	It("runs create for nodes that are in no batch", func() {
+		nodes := onlineNodes(1)
+		called := false
+		Expect(sched.WhenIdle(ctx, []string{nodes[0].ID}, func() error { called = true; return nil })).To(Succeed())
+		Expect(called).To(BeTrue())
+	})
+
+	It("returns the error create returns", func() {
+		nodes := onlineNodes(1)
+		boom := errors.New("boom")
+		Expect(sched.WhenIdle(ctx, []string{nodes[0].ID}, func() error { return boom })).To(MatchError(boom))
+	})
+
+	It("holds back a batch start for the same node until create has returned", func() {
+		nodes := onlineNodes(1)
+		var b *store.CommandBatch
+		var startErr error
+		started := make(chan struct{})
+		err := sched.WhenIdle(ctx, []string{nodes[0].ID}, func() error {
+			go func() {
+				defer GinkgoRecover()
+				defer close(started)
+				b, startErr = sched.Start(ctx, request(store.CmdUpgrade, 1, nodes[0]))
+			}()
+			Consistently(started, 200*time.Millisecond).ShouldNot(BeClosed())
+			return nil
+		})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(busy).To(Equal([]string{nodes[0].ID}))
+		Eventually(started).Should(BeClosed())
+		Expect(startErr).NotTo(HaveOccurred())
+		Expect(b.Nodes).To(HaveLen(1))
+	})
+
+	It("lets exactly one of a concurrent batch start and create act on a node first", func() {
+		for range 20 {
+			nodes := onlineNodes(1)
+			before, _, err := bs.List(ctx, store.BatchFilter{NodeID: nodes[0].ID})
+			Expect(err).NotTo(HaveOccurred())
+			Expect(before).To(BeEmpty())
+
+			release := make(chan struct{})
+			var wg sync.WaitGroup
+			var idleErr error
+			var createdBeside bool
+			wg.Add(2)
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+				<-release
+				_, err := sched.Start(ctx, request(store.CmdUpgrade, 1, nodes[0]))
+				Expect(err).NotTo(HaveOccurred())
+			}()
+			go func() {
+				defer GinkgoRecover()
+				defer wg.Done()
+				<-release
+				idleErr = sched.WhenIdle(ctx, []string{nodes[0].ID}, func() error {
+					time.Sleep(5 * time.Millisecond)
+					list, _, err := bs.List(ctx, store.BatchFilter{NodeID: nodes[0].ID})
+					Expect(err).NotTo(HaveOccurred())
+					createdBeside = len(list) > 0
+					return nil
+				})
+			}()
+			close(release)
+			wg.Wait()
+
+			var busy *batches.ErrNodesBusy
+			if idleErr != nil {
+				Expect(errors.As(idleErr, &busy)).To(BeTrue())
+			}
+			Expect(createdBeside).To(BeFalse(), "a batch started for the node between the busy check and create")
+		}
 	})
 
 	It("returns ErrNoNodes for an empty node list", func() {
