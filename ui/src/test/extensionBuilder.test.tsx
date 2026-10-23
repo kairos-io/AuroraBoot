@@ -3,11 +3,10 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { MemoryRouter } from "react-router";
 
 import { ExtensionBuilder } from "@/pages/ExtensionBuilder";
-import { setToken } from "@/api/client";
 
 const keySets = [
-  { id: "ks-1", name: "prod-keys", keysDir: "/k/1", tpmPcrKeyPath: "", secureBootEnroll: "", createdAt: "" },
-  { id: "ks-2", name: "lab-keys", keysDir: "/k/2", tpmPcrKeyPath: "", secureBootEnroll: "", createdAt: "" },
+  { id: "ks-1", name: "prod-keys", hasTpmPcrKey: false, secureBootEnroll: "", createdAt: "" },
+  { id: "ks-2", name: "lab-keys", hasTpmPcrKey: false, secureBootEnroll: "", createdAt: "" },
 ];
 
 const json = (body: unknown, status = 200) =>
@@ -44,7 +43,6 @@ function primary() {
 
 describe("ExtensionBuilder wizard", () => {
   beforeEach(() => {
-    setToken("t");
     posted = [];
     vi.stubGlobal("fetch", mockFetch());
   });

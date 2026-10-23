@@ -13,7 +13,7 @@ import (
 var _ = Describe("Commands", func() {
 	var (
 		node1ID, node2ID, node3ID string
-		groupID                    string
+		groupID                   string
 	)
 
 	BeforeEach(func() {

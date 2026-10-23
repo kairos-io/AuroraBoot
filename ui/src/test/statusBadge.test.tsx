@@ -38,4 +38,16 @@ describe("StatusBadge", () => {
     expect(container.firstElementChild?.className).toContain("text-info-foreground");
     expect(container.firstElementChild?.className).toContain("border-info/25");
   });
+
+  // Canceled is the phase a fail-fast batch leaves on the nodes it stopped
+  // before delivering to them. Like Expired it is terminal, and like Expired
+  // it is not a failure the node reported, so it must not read in the danger
+  // tone: an operator scanning a stopped rollout would count every untouched
+  // node as broken.
+  it("styles Canceled with the neutral tone", () => {
+    const { container } = render(<StatusBadge status="Canceled" />);
+    expect(container.firstElementChild?.className).toContain("bg-neutral/15");
+    expect(container.firstElementChild?.className).toContain("text-neutral-foreground");
+    expect(screen.getByText("Canceled")).toBeInTheDocument();
+  });
 });

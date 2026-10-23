@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"strings"
@@ -76,6 +77,14 @@ func New(dsn string) (*Store, error) {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 
+	// An ungrouped node has a NULL group_id, which the foreign key to
+	// node_groups accepts. SQLite does not enforce that key, so a database
+	// can hold ungrouped nodes with an empty group_id instead.
+	if err := db.Model(&store.ManagedNode{}).Where("group_id = ''").
+		Update("group_id", nil).Error; err != nil {
+		return nil, fmt.Errorf("clearing empty group ids: %w", err)
+	}
+
 	return &Store{db: db}, nil
 }
 
@@ -132,7 +141,7 @@ func (s *Store) GroupNodeCounts(ctx context.Context) (map[string]int, error) {
 	}
 	if err := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Select("group_id, COUNT(*) AS count").
-		Where("group_id <> ''").
+		Where("group_id IS NOT NULL").
 		Group("group_id").
 		Scan(&rows).Error; err != nil {
 		return nil, err
@@ -157,7 +166,7 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Model(&store.ManagedNode{}).
 			Where("group_id = ?", id).
-			Update("group_id", "").Error; err != nil {
+			Update("group_id", nil).Error; err != nil {
 			return err
 		}
 		return tx.Delete(&store.NodeGroup{}, "id = ?", id).Error
@@ -280,15 +289,14 @@ func (s *Store) ListBySelector(ctx context.Context, sel store.CommandSelector) (
 }
 
 func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion string, osRelease map[string]string, addresses []store.NodeAddress, bootState string, hostname string, remoteIP string) error {
-	var n store.ManagedNode
-	if err := s.db.WithContext(ctx).First(&n, "id = ?", id).Error; err != nil {
-		return err
-	}
 	now := time.Now()
-	n.LastHeartbeat = &now
-	n.AgentVersion = agentVersion
-	n.OSRelease = osRelease
-	n.Phase = store.PhaseOnline
+	n := store.ManagedNode{
+		LastHeartbeat: &now,
+		AgentVersion:  agentVersion,
+		OSRelease:     osRelease,
+		Phase:         store.PhaseOnline,
+	}
+	columns := []string{"last_heartbeat", "agent_version", "os_release", "phase"}
 	// Addresses and boot state are only updated when the heartbeat actually
 	// carries them: an older agent (or the WebSocket heartbeat path, which does
 	// not collect them) omits the fields, and must not clobber values a node
@@ -296,9 +304,11 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	// change — sends the full current list, which replaces the stored one.
 	if addresses != nil {
 		n.Addresses = addresses
+		columns = append(columns, "addresses")
 	}
 	if bootState != "" {
 		n.BootState = bootState
+		columns = append(columns, "boot_state")
 	}
 	// The hostname a node registered with is the one it had at registration time,
 	// which for a templated hostname (hostname: kairos-{{ trunc 4 .MachineID }})
@@ -309,31 +319,49 @@ func (s *Store) UpdateHeartbeat(ctx context.Context, id string, agentVersion str
 	// not report a hostname must not blank the one already on record.
 	if hostname != "" {
 		n.Hostname = hostname
+		columns = append(columns, "hostname")
 	}
 	// Same non-empty guard: a caller that cannot resolve a remote IP (a unit test,
 	// or a future transport that does not expose one) must not blank a value a
 	// prior heartbeat recorded.
 	if remoteIP != "" {
 		n.RemoteIP = remoteIP
+		columns = append(columns, "remote_ip")
 	}
-	return s.db.WithContext(ctx).Save(&n).Error
+	return s.updateNodeColumns(ctx, id, &n, columns...)
+}
+
+// updateNodeColumns writes only the given columns of node id, taking their
+// values from n. Writing the whole row back would also write every column the
+// caller did not mean to change, as it was when the caller read it, over a
+// lifecycle transition or group change another request committed meanwhile.
+// The update goes through the model so the JSON serializers of OSRelease,
+// Labels and Addresses apply. A node that does not exist is reported as
+// gorm.ErrRecordNotFound.
+func (s *Store) updateNodeColumns(ctx context.Context, id string, n *store.ManagedNode, columns ...string) error {
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ?", id).
+		Select(columns).
+		Updates(n)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
+	}
+	return nil
 }
 
 func (s *Store) UpdatePhase(ctx context.Context, id string, phase string) error {
 	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).Where("id = ?", id).Update("phase", phase).Error
 }
 
-func (s *Store) SetGroup(ctx context.Context, nodeID string, groupID string) error {
+func (s *Store) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
 	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).Where("id = ?", nodeID).Update("group_id", groupID).Error
 }
 
 func (s *Store) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {
-	var n store.ManagedNode
-	if err := s.db.WithContext(ctx).First(&n, "id = ?", nodeID).Error; err != nil {
-		return err
-	}
-	n.Labels = labels
-	return s.db.WithContext(ctx).Save(&n).Error
+	return s.updateNodeColumns(ctx, nodeID, &store.ManagedNode{Labels: labels}, "labels")
 }
 
 func (s *Store) NodeDelete(ctx context.Context, id string) error {
@@ -456,17 +484,6 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 	return res.RowsAffected == 1, nil
 }
 
-// SetResetPending marks a node as awaiting an automatic reset.
-func (s *Store) SetResetPending(ctx context.Context, nodeID string) error {
-	now := time.Now()
-	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).
-		Where("id = ?", nodeID).
-		Updates(map[string]any{
-			"reset_state":        store.ResetStatePending,
-			"reset_requested_at": &now,
-		}).Error
-}
-
 // AdvanceReset compare-and-sets a node's ResetState. The conditional UPDATE
 // (... WHERE id = ? AND reset_state IN fromStates) means exactly one of several
 // concurrent re-register resolvers performs any given transition; the losers see
@@ -488,12 +505,169 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 	return res.RowsAffected == 1, nil
 }
 
+// AdvanceUpgrade compare-and-sets a node's UpgradeState with the same
+// conditional UPDATE as AdvanceReset (... WHERE id = ? AND upgrade_state IN
+// fromStates), so exactly one of several concurrent re-register resolvers
+// performs any given transition. When stampLastUpgrade is set, last_upgrade is
+// written in the same statement as the transition to done.
+func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
+	updates := map[string]any{"upgrade_state": to}
+	if stampLastUpgrade {
+		now := time.Now()
+		updates["last_upgrade"] = &now
+	}
+	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
+		Where("id = ? AND upgrade_state IN ?", nodeID, fromStates).
+		Updates(updates)
+	if res.Error != nil {
+		return false, res.Error
+	}
+	return res.RowsAffected == 1, nil
+}
+
+// SettleAfterReboot resolves a node's pending upgrade or reset from a node that
+// booted at bootedAt. It locks the node row, so the check against the recorded
+// reboot and the transition see the same operation: an upgrade or reset
+// requested in between clears the recorded reboot and waits for the next one.
+func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string, bootedAt time.Time) error {
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := lockNodes(tx, []string{nodeID}); err != nil {
+			return err
+		}
+		var n store.ManagedNode
+		if err := tx.Where("id = ?", nodeID).First(&n).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return nil
+			}
+			return err
+		}
+		now := time.Now()
+		updates := map[string]any{}
+		if n.UpgradeState == store.UpgradeStatePending && rebootedAfter(n.UpgradeRebootAt, bootedAt) {
+			if to, ok := store.UpgradeOutcome(bootState); ok {
+				updates["upgrade_state"] = to
+				if to == store.UpgradeStateDone {
+					updates["last_upgrade"] = &now
+				}
+			}
+		}
+		resetPending := n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress
+		if resetPending && rebootedAfter(n.ResetRebootAt, bootedAt) {
+			if to, ok := store.ResetOutcome(n.ResetState, bootState); ok {
+				updates["reset_state"] = to
+				if to == store.ResetStateDone {
+					updates["last_reset"] = &now
+				}
+			}
+		}
+		if len(updates) == 0 {
+			return nil
+		}
+		return tx.Model(&store.ManagedNode{}).Where("id = ?", nodeID).Updates(updates).Error
+	})
+}
+
+// rebootedAfter reports whether a node that booted at bootedAt went through
+// the reboot scheduled at rebootAt.
+func rebootedAfter(rebootAt *time.Time, bootedAt time.Time) bool {
+	return rebootAt != nil && bootedAt.After(*rebootAt)
+}
+
+// recordReboot stamps the reboot an upgrade or reset command scheduled when it
+// completed, on nodes still waiting for that operation's outcome.
+func recordReboot(tx *gorm.DB, completed []store.NodeCommand) error {
+	resetNodes, upgradeNodes := lifecycleNodes(completed)
+	if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		return err
+	}
+	now := time.Now()
+	if len(resetNodes) > 0 {
+		if err := tx.Model(&store.ManagedNode{}).
+			Where("id IN ? AND reset_state IN ?", resetNodes,
+				[]string{store.ResetStatePending, store.ResetStateInProgress}).
+			Update("reset_reboot_at", &now).Error; err != nil {
+			return err
+		}
+	}
+	if len(upgradeNodes) > 0 {
+		return tx.Model(&store.ManagedNode{}).
+			Where("id IN ? AND upgrade_state = ?", upgradeNodes, store.UpgradeStatePending).
+			Update("upgrade_reboot_at", &now).Error
+	}
+	return nil
+}
+
 // --- CommandStore ---
 
 func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error {
 	cmd.ID = uuid.New().String()
 	cmd.Phase = store.CommandPending
 	return s.db.WithContext(ctx).Create(cmd).Error
+}
+
+// CreateBatch inserts the commands of one fan-out and marks their nodes'
+// reset or upgrade lifecycle pending in one transaction. The rows are inserted
+// one at a time inside it so each gets its own created_at and ListByBatch keeps
+// returning them in the order the caller built them.
+//
+// A node whose upgrade is already pending, or whose reset is pending or
+// in-progress, is left as it is. That state and its request time belong to an
+// operation still waiting for the node to reboot and re-register, and the
+// resolver needs the request time of that operation.
+func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	if len(cmds) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var resetNodes, upgradeNodes []string
+		for _, cmd := range cmds {
+			if cmd.ID == "" {
+				cmd.ID = uuid.New().String()
+			}
+			if cmd.Phase == "" {
+				cmd.Phase = store.CommandPending
+			}
+			if err := tx.Create(cmd).Error; err != nil {
+				return err
+			}
+			switch cmd.Command {
+			case store.CmdReset:
+				resetNodes = append(resetNodes, cmd.ManagedNodeID)
+			case store.CmdUpgrade:
+				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+			}
+		}
+		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+			return err
+		}
+		now := time.Now()
+		if len(resetNodes) > 0 {
+			if err := tx.Model(&store.ManagedNode{}).
+				Where("id IN ?", resetNodes).
+				Where("reset_state IS NULL OR reset_state NOT IN ?",
+					[]string{store.ResetStatePending, store.ResetStateInProgress}).
+				Updates(map[string]any{
+					"reset_state":        store.ResetStatePending,
+					"reset_requested_at": &now,
+					"reset_reboot_at":    nil,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		if len(upgradeNodes) > 0 {
+			if err := tx.Model(&store.ManagedNode{}).
+				Where("id IN ?", upgradeNodes).
+				Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
+				Updates(map[string]any{
+					"upgrade_state":        store.UpgradeStatePending,
+					"upgrade_requested_at": &now,
+					"upgrade_reboot_at":    nil,
+				}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
 }
 
 func (s *Store) CommandGetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
@@ -543,24 +717,39 @@ func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	return res.RowsAffected == 1, nil
 }
 
+// UpdateStatus records a command's phase and result.
 func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
-	updates := map[string]any{
-		"phase":  phase,
-		"result": result,
-	}
-	if phase == store.CommandCompleted || phase == store.CommandFailed {
-		now := time.Now()
-		updates["completed_at"] = &now
-	}
-	return s.db.WithContext(ctx).Model(&store.NodeCommand{}).Where("id = ?", id).Updates(updates).Error
+	_, err := s.updateStatus(ctx, phase, result, "id = ?", id)
+	return err
 }
 
 // UpdateStatusForNode updates a command's status scoped to its owning node.
 // The WHERE clause matches both the command id and managed_node_id, so a node
 // can only update commands addressed to it. GORM's Updates returns a nil error
-// even when the WHERE matches zero rows, so we inspect RowsAffected and surface
-// a miss as store.ErrCommandNotFound — never a silent success.
+// even when the WHERE matches zero rows, so a miss surfaces as
+// store.ErrCommandNotFound, never a silent success.
 func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error {
+	n, err := s.updateStatus(ctx, phase, result, "id = ? AND managed_node_id = ?", id, nodeID)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return store.ErrCommandNotFound
+	}
+	return nil
+}
+
+// updateStatus writes phase and result to the commands matching where and
+// returns how many it wrote.
+//
+// A reset or upgrade that fails before the reboot leaves the pending state
+// CreateBatch set for it with nothing to settle it: the node never comes back
+// with a new boot state for the re-register resolvers to read. A Failed report
+// therefore marks that state failed, in the same transaction as the command
+// row, unless another command still owns it. The UPDATE runs first so the
+// transaction never holds a read snapshot when it writes (see
+// CancelPendingInBatch).
+func (s *Store) updateStatus(ctx context.Context, phase, result, where string, args ...any) (int, error) {
 	updates := map[string]any{
 		"phase":  phase,
 		"result": result,
@@ -569,16 +758,39 @@ func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID strin
 		now := time.Now()
 		updates["completed_at"] = &now
 	}
-	res := s.db.WithContext(ctx).Model(&store.NodeCommand{}).
-		Where("id = ? AND managed_node_id = ?", id, nodeID).
-		Updates(updates)
-	if res.Error != nil {
-		return res.Error
+	var updated []store.NodeCommand
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&updated).
+			Clauses(clause.Returning{Columns: []clause.Column{
+				{Name: "managed_node_id"}, {Name: "command"},
+			}}).
+			Where(where, args...).
+			Updates(updates).Error; err != nil {
+			return err
+		}
+		if phase == store.CommandCompleted {
+			return recordReboot(tx, updated)
+		}
+		if phase != store.CommandFailed {
+			return nil
+		}
+		resetNodes, upgradeNodes := lifecycleNodes(updated)
+		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+			return err
+		}
+		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
+			"reset_state", store.ResetStatePending, "reset_requested_at",
+			map[string]any{"reset_state": store.ResetStateFailed}); err != nil {
+			return err
+		}
+		return settleOrphanedLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at",
+			map[string]any{"upgrade_state": store.UpgradeStateFailed})
+	})
+	if err != nil {
+		return 0, err
 	}
-	if res.RowsAffected == 0 {
-		return store.ErrCommandNotFound
-	}
-	return nil
+	return len(updated), nil
 }
 
 func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCommand, error) {
@@ -587,6 +799,173 @@ func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCom
 		return nil, err
 	}
 	return cmds, nil
+}
+
+// ListByBatch returns the commands one fan-out created, oldest first, so the
+// batch reads back in the order the nodes were dispatched in.
+//
+// An empty batch id matches nothing, for the same reason CancelPendingInBatch
+// refuses one: a single-node command carries no batch id, so an equality match
+// on the empty string would select every unbatched command in the table and
+// report them as one fan-out.
+func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
+	if batchID == "" {
+		return nil, nil
+	}
+	var cmds []*store.NodeCommand
+	if err := s.db.WithContext(ctx).
+		Where("batch_id = ?", batchID).
+		Order("created_at asc").
+		Find(&cmds).Error; err != nil {
+		return nil, err
+	}
+	return cmds, nil
+}
+
+// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled
+// and clears the lifecycle state those commands left pending on their nodes.
+//
+// The cancel UPDATE carries `phase = Pending` for the same reason
+// ClaimForDelivery does: a command another goroutine is claiming for delivery
+// right now must be won by exactly one of the two. A claim that lands first
+// leaves no Pending row for this UPDATE to match, so the command is delivered
+// and will report its own result; a cancel that lands first leaves no Pending
+// row for the claim's compare-and-set, so it is never pushed.
+//
+// The UPDATE is the first statement of the transaction and returns the rows it
+// changed. Under SQLite WAL a transaction that reads first holds a snapshot,
+// and if an agent commits a claim or a status report on another connection
+// before the transaction writes, the write fails at once with "database is
+// locked" (SQLITE_BUSY_SNAPSHOT) and busy_timeout does not retry it. Writing
+// first takes the write lock up front, so a concurrent writer only makes the
+// statement wait.
+//
+// A canceled reset or upgrade never runs, so nothing would ever resolve the
+// pending state CreateBatch set for it, and the node's next unrelated active
+// boot would report the operation done. settleOrphanedLifecycle clears that
+// state for the nodes of the canceled rows unless something else still owns
+// it. Everything runs in one transaction so the rows and the node state never
+// disagree.
+func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
+	if batchID == "" {
+		return 0, nil
+	}
+	var canceled []store.NodeCommand
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		now := time.Now()
+		if err := tx.Model(&canceled).
+			Clauses(clause.Returning{Columns: []clause.Column{
+				{Name: "id"}, {Name: "managed_node_id"}, {Name: "command"},
+			}}).
+			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
+			Updates(map[string]any{
+				"phase":        store.CommandCanceled,
+				"result":       reason,
+				"completed_at": &now,
+			}).Error; err != nil {
+			return err
+		}
+
+		resetNodes, upgradeNodes := lifecycleNodes(canceled)
+		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+			return err
+		}
+		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
+			"reset_state", store.ResetStatePending, "reset_requested_at",
+			map[string]any{"reset_state": "", "reset_requested_at": nil}); err != nil {
+			return err
+		}
+		return settleOrphanedLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at",
+			map[string]any{"upgrade_state": "", "upgrade_requested_at": nil})
+	})
+	if err != nil {
+		return 0, err
+	}
+	return len(canceled), nil
+}
+
+// lockNodes takes the row locks of the given nodes, in id order, before a
+// transaction reads which commands own their lifecycle state.
+//
+// The ownership check in settleOrphanedLifecycle and the guard in CreateBatch
+// are UPDATEs whose WHERE can match no row, and an UPDATE that matches no row
+// locks nothing. On PostgreSQL, two transactions that each wrote a command row
+// of the same node would then each read the other's command as it was before
+// that write, and both could skip the node: two upgrades failing at once
+// would leave it pending. Holding the node row makes the second transaction
+// wait for the first to commit, and its next statement sees the first one's
+// command. CreateBatch, updateStatus and CancelPendingInBatch all write their
+// command rows first and lock node rows after, in id order, so they cannot
+// deadlock one another.
+//
+// SQLite has no row locks, so the statement is skipped there: the write each
+// caller makes first already holds the database's single write lock.
+func lockNodes(tx *gorm.DB, groups ...[]string) error {
+	if tx.Dialector.Name() == "sqlite" {
+		return nil
+	}
+	var ids []string
+	for _, g := range groups {
+		ids = append(ids, g...)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	slices.Sort(ids)
+	ids = slices.Compact(ids)
+	var locked []string
+	return tx.Model(&store.ManagedNode{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).
+		Order("id").
+		Pluck("id", &locked).Error
+}
+
+// lifecycleNodes splits the nodes of cmds by the lifecycle their command
+// drives: resets and upgrades. Other commands do not reboot the node and drive
+// none.
+func lifecycleNodes(cmds []store.NodeCommand) (resetNodes, upgradeNodes []string) {
+	for _, cmd := range cmds {
+		switch cmd.Command {
+		case store.CmdReset:
+			resetNodes = append(resetNodes, cmd.ManagedNodeID)
+		case store.CmdUpgrade:
+			upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
+		}
+	}
+	return resetNodes, upgradeNodes
+}
+
+// settleOrphanedLifecycle applies updates to the nodes in nodeIDs whose
+// stateColumn is still pendingState and that no command of the given kind
+// owns. A command in Pending, Delivered or Running owns the state, and so does
+// a Completed one that finished at or after requestedColumn: the agent
+// completes an upgrade or reset once it has scheduled the reboot, and the
+// state stays pending until the node re-registers and the resolver settles it.
+// A Completed command that finished before the request belongs to an earlier
+// operation and owns nothing.
+//
+// On SQLite both columns hold the text the driver writes for a time.Time, with
+// trailing fractional zeros trimmed and the zone offset of time.Now. Text
+// comparison orders such values by time as long as the offsets match, which
+// holds for timestamps the same server wrote.
+func settleOrphanedLifecycle(tx *gorm.DB, command string, nodeIDs []string, stateColumn, pendingState, requestedColumn string, updates map[string]any) error {
+	if len(nodeIDs) == 0 {
+		return nil
+	}
+	owner := tx.Model(&store.NodeCommand{}).Select("1").
+		Where("node_commands.managed_node_id = managed_nodes.id AND node_commands.command = ?"+
+			" AND (node_commands.phase IN ?"+
+			" OR (node_commands.phase = ? AND node_commands.completed_at >= managed_nodes."+requestedColumn+"))",
+			command,
+			[]string{store.CommandPending, store.CommandDelivered, store.CommandRunning},
+			store.CommandCompleted)
+	return tx.Model(&store.ManagedNode{}).
+		Where("id IN ?", nodeIDs).
+		Where(stateColumn+" = ?", pendingState).
+		Where("NOT EXISTS (?)", owner).
+		Updates(updates).Error
 }
 
 func (s *Store) CommandDelete(ctx context.Context, id string) error {
@@ -598,9 +977,12 @@ func (s *Store) CommandDelete(ctx context.Context, id string) error {
 }
 
 func (s *Store) CommandDeleteTerminal(ctx context.Context, nodeID string) error {
+	// Canceled and Expired are history exactly like Completed and Failed: the
+	// node will never run the command, so a row left behind would sit in the
+	// node's list forever after the operator asked for it to be cleared.
 	return s.db.WithContext(ctx).Where(
 		"managed_node_id = ? AND phase IN ?",
-		nodeID, []string{store.CommandCompleted, store.CommandFailed, store.CommandExpired},
+		nodeID, []string{store.CommandCompleted, store.CommandFailed, store.CommandExpired, store.CommandCanceled},
 	).Delete(&store.NodeCommand{}).Error
 }
 
@@ -706,7 +1088,7 @@ func (s *Store) ArtifactDeleteByPhase(ctx context.Context, phase string) error {
 
 func (s *Store) ArtifactAppendLog(ctx context.Context, id string, text string) error {
 	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
-		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", text)).Error
+		Update("logs", cappedLogAppend(text)).Error
 }
 
 // --- SecureBootKeySetStore ---
@@ -966,7 +1348,7 @@ func (s *Store) ExtensionAppendLog(ctx context.Context, id, chunk string) error 
 	return s.db.WithContext(ctx).
 		Model(&store.ExtensionRecord{}).
 		Where("id = ?", id).
-		Update("logs", gorm.Expr("COALESCE(logs, '') || ?", chunk)).Error
+		Update("logs", cappedLogAppend(chunk)).Error
 }
 
 // --- ArtifactExtensionBundleStore ---

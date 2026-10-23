@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
@@ -35,6 +36,13 @@ type DeployerFunc func(ctx context.Context, config schema.Config, artifact schem
 // UKIBuildFunc abstracts the AuroraBoot pkg/uki.Build call so tests can
 // capture the options we pass without running a real build.
 type UKIBuildFunc func(opts uki.Options) error
+
+// KairosifyFunc abstracts the kairos-init derivation step so tests can run the
+// build goroutine end to end without a container runtime. ensureKairosified
+// short-circuits when the Builder has no store, but a test that asserts on the
+// persisted artifact record must pass one, so that short circuit is not
+// available to it and the step would shell out to `docker build` for real.
+type KairosifyFunc func(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logSink io.Writer) (string, error)
 
 // DefaultDeployerFunc runs AuroraBoot for real. When logSink is non-nil the
 // per-Deployer logger is wired to tee stdout + logSink so the UI's live-log
@@ -77,6 +85,7 @@ type Builder struct {
 	baseDir        string
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
+	kairosifyFn    KairosifyFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
 	netbootManager *netbootmgr.Manager
@@ -173,6 +182,15 @@ func (b *Builder) WithKairosInitImage(ref string) (*Builder, error) {
 // Tests use this to capture the uki.Options we pass through.
 func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 	b.ukiBuildFn = fn
+	return b
+}
+
+// WithKairosifyFunc swaps the kairos-init derivation step. Tests that need a
+// store use this to keep the build goroutine off `docker build`, which would
+// otherwise pull the base and kairos-init images and run for minutes on a
+// machine that has a container runtime.
+func (b *Builder) WithKairosifyFunc(fn KairosifyFunc) *Builder {
+	b.kairosifyFn = fn
 	return b
 }
 
@@ -390,8 +408,13 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 			fmt.Fprintf(logWriter, "Output: Netboot\n")
 		}
 		fmt.Fprintf(logWriter, "Output dir: %s\n", outputDir)
+		// The cloud-config carries the registration token, node passwords
+		// and whatever the operator added, and this log is stored and
+		// streamed to every UI client. Only its size is logged: most of
+		// the document is a predictable template, so even a digest of it
+		// would let a log reader test guesses for the secrets inside.
 		if opts.CloudConfig != "" {
-			fmt.Fprintf(logWriter, "Cloud config:\n%s\n", opts.CloudConfig)
+			fmt.Fprintf(logWriter, "Cloud config: %d bytes\n", len(opts.CloudConfig))
 		}
 		fmt.Fprintf(logWriter, "\n")
 		logWriter.Flush()
@@ -450,7 +473,25 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		}
 	}
 
-	// Step 2.6: Build UKI (Unified Kernel Image) if requested.
+	// Step 2.6: Clean up ISO files when the caller didn't request ISO output.
+	// Netboot extraction needs a generated ISO as its source, so GenISO may
+	// still have run as scaffolding — but the user never asked for the ISO
+	// itself and we shouldn't keep multi-GB files around or list them as
+	// build outputs. The raw-disk paths don't produce ISOs at all, so the
+	// only files present here would be that scaffolding ISO. This runs
+	// before the UKI step, whose output is an ISO the user did ask for.
+	if !opts.Outputs.ISO {
+		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
+			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
+			for _, p := range matches {
+				if err := os.Remove(p); err != nil && logWriter != nil {
+					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
+				}
+			}
+		}
+	}
+
+	// Step 2.7: Build UKI (Unified Kernel Image) if requested.
 	if opts.Outputs.UKI {
 		if logWriter != nil {
 			fmt.Fprintf(logWriter, "\n=== Building UKI (Unified Kernel Image) ===\n")
@@ -467,23 +508,6 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 				_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
 			}
 			return
-		}
-	}
-
-	// Step 2.7: Clean up ISO files when the caller didn't request ISO output.
-	// Netboot extraction needs a generated ISO as its source, so GenISO may
-	// still have run as scaffolding — but the user never asked for the ISO
-	// itself and we shouldn't keep multi-GB files around or list them as
-	// build outputs. The raw-disk paths don't produce ISOs at all, so the
-	// only files present here would be that scaffolding ISO.
-	if !opts.Outputs.ISO {
-		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
-			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
-			for _, p := range matches {
-				if err := os.Remove(p); err != nil && logWriter != nil {
-					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
-				}
-			}
 		}
 	}
 
@@ -538,10 +562,18 @@ func (b *Builder) setPhase(bs *buildState, phase, message string) {
 	b.mu.Unlock()
 }
 
-// isKairosified checks if an image already contains /etc/kairos-release.
-func (b *Builder) isKairosified(ctx context.Context, image string) bool {
-	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--entrypoint", "cat", image, "/etc/kairos-release")
-	return cmd.Run() == nil
+// kairosRelease reads /etc/kairos-release from image. ok is false when the
+// image has none, which means it is not a Kairos image yet.
+func (b *Builder) kairosRelease(ctx context.Context, image string) (release map[string]string, ok bool) {
+	out, err := exec.CommandContext(ctx, "docker", "run", "--rm", "--entrypoint", "cat", image, "/etc/kairos-release").Output()
+	if err != nil {
+		return nil, false
+	}
+	release, err = godotenv.Unmarshal(string(out))
+	if err != nil {
+		return map[string]string{}, true
+	}
+	return release, true
 }
 
 // kairosInitValueRe is the allowlist for admin-supplied values that end up
@@ -602,8 +634,18 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 		// Test mode — skip kairosification (no Docker available)
 		return image, nil
 	}
-	if b.isKairosified(ctx, image) {
-		return image, nil
+	// The probe below is itself a `docker run`, so an injected derivation step
+	// has to take precedence over it, not only over the build it guards.
+	if b.kairosifyFn == nil {
+		if release, ok := b.kairosRelease(ctx, image); ok {
+			// kairos-init is skipped for this image, so its -t never runs. The
+			// UKI step would pack a GRUB image into a signed UKI that does not
+			// boot as Trusted Boot.
+			if (opts.TrustedBoot || opts.Outputs.TrustedBoot) && release["KAIROS_TRUSTED_BOOT"] != "true" {
+				return "", fmt.Errorf("the Dockerfile built a Kairos image without Trusted Boot (KAIROS_TRUSTED_BOOT is not true in /etc/kairos-release); build it with kairos-init -t true or turn Trusted Boot off")
+			}
+			return image, nil
+		}
 	}
 	return b.kairosify(ctx, image, opts, outputDir, logWriter)
 }
@@ -612,6 +654,15 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 func (b *Builder) kairosify(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
+	}
+	// Checked after validation so an injected step can never be handed options
+	// the real one would have refused.
+	if b.kairosifyFn != nil {
+		var sink io.Writer
+		if logWriter != nil {
+			sink = logWriter
+		}
+		return b.kairosifyFn(ctx, image, opts, outputDir, sink)
 	}
 	kairosInitImage := opts.KairosInitImage
 	if kairosInitImage == "" {

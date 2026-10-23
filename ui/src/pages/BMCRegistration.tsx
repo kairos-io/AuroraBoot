@@ -58,6 +58,7 @@ import {
 } from "@/api/settings";
 import { type QuirkProfile, listQuirkProfiles } from "@/api/redfish";
 import { toast } from "@/hooks/useToast";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 // Vendor options are no longer a hardcoded list: they come from the quirk profiles
 // the server actually loaded (built-in + operator-supplied via --redfish-quirks-dir),
@@ -119,7 +120,7 @@ function imageSourceBadge(
     return { label: "Global default", variant: "secondary" };
   }
   if (settings?.localServe.configured && settings.localServe.enabled) {
-    return { label: "AuroraBoot-served", variant: "outline" };
+    return { label: `${PRODUCT_NAME}-served`, variant: "outline" };
   }
   return { label: "Unset", variant: "outline" };
 }
@@ -522,7 +523,7 @@ export function BMCRegistration() {
                     checked={imgSource.localServe.enabled}
                     onChange={(e) => handleToggleLocalServe(e.target.checked)}
                   />
-                  AuroraBoot serves the built artifact ISO
+                  {PRODUCT_NAME} serves the built artifact ISO
                 </label>
                 <p className="text-xs text-muted-foreground">
                   When enabled, deploys with no operator-supplied URL serve the
@@ -546,7 +547,7 @@ export function BMCRegistration() {
 
             {imgSource && !imgSource.localServe.configured && (
               <p className="text-xs text-muted-foreground">
-                AuroraBoot-served ISOs are unavailable: no{" "}
+                {PRODUCT_NAME}-served ISOs are unavailable: no{" "}
                 <code className="font-mono">--redfish-serve-addr</code> was set
                 at launch. Use a default image URL or per-BMC override instead.
               </p>
@@ -976,7 +977,7 @@ export function BMCRegistration() {
                 Eject media after install
               </label>
               <p className="text-xs text-muted-foreground">
-                When the freshly-installed node phones home, AuroraBoot ejects the
+                When the freshly-installed node phones home, {PRODUCT_NAME} ejects the
                 virtual media and boots from disk — breaking the install loop on
                 BMCs that ignore the one-time boot override. Opt-in.
               </p>

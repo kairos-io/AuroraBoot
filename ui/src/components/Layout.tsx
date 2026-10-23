@@ -27,7 +27,9 @@ import { getSystemBuilder, type SystemBuilder } from "@/api/system";
 import { cn } from "@/lib/utils";
 import { KairosLogo } from "@/components/KairosLogo";
 import { Toaster } from "@/components/ui/toaster";
+import { toast } from "@/hooks/useToast";
 import { ThemeToggle } from "@/components/ThemeToggle";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 // NavItem is either a client-side route (the common case) or an
 // `external: true` link that renders as a plain <a target="_blank">
@@ -298,9 +300,12 @@ export function Layout() {
     };
   }, []);
 
-  function handleLogout() {
-    logout();
-    navigate("/login");
+  async function handleLogout() {
+    if (await logout()) {
+      navigate("/login");
+    } else {
+      toast("Sign-out failed, you are still signed in", "error");
+    }
   }
 
   function choose(v: SidebarPref) {
@@ -348,7 +353,7 @@ export function Layout() {
       <header className="flex h-14 shrink-0 items-center justify-between bg-sidebar-bg px-4 text-sidebar-fg md:hidden">
         <div className="flex items-center gap-2">
           <KairosLogo className="h-8 w-auto" />
-          <span className="font-bold text-base text-white">AuroraBoot</span>
+          <span className="font-bold text-base text-white">{PRODUCT_NAME}</span>
         </div>
         <DialogPrimitive.Root open={drawerOpen} onOpenChange={setDrawerOpen}>
           <DialogPrimitive.Trigger asChild>
@@ -371,7 +376,7 @@ export function Layout() {
                 <div className="flex items-center gap-2">
                   <KairosLogo className="h-8 w-auto" />
                   <DialogPrimitive.Title className="font-bold text-base text-white">
-                    AuroraBoot
+                    {PRODUCT_NAME}
                   </DialogPrimitive.Title>
                 </div>
                 <DialogPrimitive.Close asChild>
@@ -413,7 +418,7 @@ export function Layout() {
               )}
             />
             <div className={cn("text-center", fullOnly[mode])}>
-              <span className="font-bold text-base text-white block leading-tight">AuroraBoot</span>
+              <span className="font-bold text-base text-white block leading-tight">{PRODUCT_NAME}</span>
             </div>
             {mode === "full" && collapseButton("absolute right-2 top-2")}
             {mode === "rail" && expandButton()}

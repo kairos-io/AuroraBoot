@@ -9,6 +9,7 @@ import (
 	"path"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofrs/uuid"
@@ -98,6 +99,40 @@ func emulateTPM(stateDir string) {
 
 	err = os.WriteFile(path.Join(t, "pid"), []byte(strconv.Itoa(cmd.Process.Pid)), 0744)
 	Expect(err).ToNot(HaveOccurred())
+
+	// qemu exits at once when the socket is not there yet, and a VM started
+	// right after this returns can beat swtpm to it.
+	Eventually(func() error {
+		_, err := os.Stat(path.Join(t, "swtpm-sock"))
+		return err
+	}, "30s", "100ms").Should(Succeed(), "swtpm creating its socket in %s", t)
+}
+
+// stopTPM ends the swtpm process emulateTPM started for stateDir. swtpm keeps
+// running when qemu is killed or never connects, so a VM's teardown has to
+// stop it, and before the state directory holding its pid file is removed.
+func stopTPM(stateDir string) {
+	pid, err := os.ReadFile(path.Join(stateDir, "tpm", "pid"))
+	if err != nil {
+		return
+	}
+	p, err := strconv.Atoi(strings.TrimSpace(string(pid)))
+	if err != nil {
+		return
+	}
+	if proc, err := os.FindProcess(p); err == nil {
+		_ = proc.Kill()
+		_, _ = proc.Wait()
+	}
+}
+
+// vmSpec names what a VM boots from and how big it is. Empty fields fall
+// back to the MEMORY and CPUS variables and to their current defaults.
+type vmSpec struct {
+	ISO      string
+	RawImage string
+	Memory   string
+	CPUs     string
 }
 
 func startVM() (testVM, error) {
@@ -105,13 +140,31 @@ func startVM() (testVM, error) {
 	Expect(err).ToNot(HaveOccurred())
 	fmt.Printf("State dir: %s\n", stateDir)
 
-	opts := defaultVMOpts(stateDir)
+	return startVMIn(stateDir, defaultVMOpts(stateDir))
+}
 
+// startVMWith starts a VM booting spec, with a 25000 MB drive.
+func startVMWith(spec vmSpec) (testVM, error) {
+	stateDir, err := os.MkdirTemp("", "")
+	Expect(err).ToNot(HaveOccurred())
+	fmt.Printf("State dir: %s\n", stateDir)
+
+	return startVMIn(stateDir, append(vmOpts(stateDir, spec), types.WithDriveSize("25000")))
+}
+
+// startVMIn starts the swtpm the options point qemu at, then the VM. On a
+// failed start it stops the swtpm, which nothing else would, and still returns
+// the VM: the caller saves its serial log from the state directory and
+// destroys it like a VM that started.
+func startVMIn(stateDir string, opts []types.MachineOption) (testVM, error) {
 	m, err := machine.New(opts...)
 	Expect(err).ToNot(HaveOccurred())
 
+	emulateTPM(stateDir)
 	vm := NewVM(m, stateDir)
-	_, err = vm.Start(context.Background())
+	if _, err = vm.Start(context.Background()); err != nil {
+		stopTPM(stateDir)
+	}
 	return testVM{VM: vm, machine: m}, err
 }
 
@@ -120,29 +173,38 @@ func defaultVMOpts(stateDir string) []types.MachineOption {
 }
 
 func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
-	var err error
-
 	if os.Getenv("ISO") == "" && os.Getenv("RAW_IMAGE") == "" {
 		fmt.Println("ISO or RAW_IMAGE missing")
 		os.Exit(1)
 	}
+
+	return vmOpts(stateDir, vmSpec{ISO: os.Getenv("ISO"), RawImage: os.Getenv("RAW_IMAGE")})
+}
+
+// vmOpts builds the machine options for spec without reading ISO or RAW_IMAGE.
+func vmOpts(stateDir string, spec vmSpec) []types.MachineOption {
+	var err error
 
 	var sshPort, spicePort int
 
 	uid, _ := uuid.NewV4()
 	vmName := uid.String()
 
-	emulateTPM(stateDir)
-
 	sshPort, err = getFreePort()
 	Expect(err).ToNot(HaveOccurred())
 	fmt.Printf("Using ssh port: %d\n", sshPort)
 
-	memory := os.Getenv("MEMORY")
+	memory := spec.Memory
+	if memory == "" {
+		memory = os.Getenv("MEMORY")
+	}
 	if memory == "" {
 		memory = "6000"
 	}
-	cpus := os.Getenv("CPUS")
+	cpus := spec.CPUs
+	if cpus == "" {
+		cpus = os.Getenv("CPUS")
+	}
 	if cpus == "" {
 		cpus = "4"
 	}
@@ -245,11 +307,11 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 		},
 		types.WithDataSource(os.Getenv("DATASOURCE")),
 	}
-	if os.Getenv("ISO") != "" {
-		opts = append(opts, types.WithISO(os.Getenv("ISO")))
+	if spec.ISO != "" {
+		opts = append(opts, types.WithISO(spec.ISO))
 	}
-	if os.Getenv("RAW_IMAGE") != "" {
-		opts = append(opts, types.WithDrive(os.Getenv("RAW_IMAGE")))
+	if spec.RawImage != "" {
+		opts = append(opts, types.WithDrive(spec.RawImage))
 	}
 	if os.Getenv("KVM") != "" {
 		opts = append(opts, func(m *types.MachineConfig) error {
@@ -280,9 +342,11 @@ func defaultVMOptsNoDrives(stateDir string) []types.MachineOption {
 	return opts
 }
 
+// getFreePort returns a TCP port that is free on every interface, so it also
+// suits a server that listens on all of them.
 func getFreePort() (port int, err error) {
 	var a *net.TCPAddr
-	if a, err = net.ResolveTCPAddr("tcp", "localhost:0"); err == nil {
+	if a, err = net.ResolveTCPAddr("tcp", ":0"); err == nil {
 		var l *net.TCPListener
 		if l, err = net.ListenTCP("tcp", a); err == nil {
 			defer l.Close()
@@ -328,15 +392,27 @@ func getEfivarsFile(firmwarePath, assetsDir string, empty bool) (string, error) 
 	return varsFile, nil
 }
 
-// saveSerialLog copies the qemu serial console into logs/ and prints it.
+// vmLogDir is where saveSerialLog and gatherLogs write for vm:
+// <base>/<vm ID>, with <base> from VM_LOG_DIR or "logs". The ID keeps two VMs
+// of one spec from overwriting each other's files.
+func vmLogDir(vm testVM) string {
+	base := os.Getenv("VM_LOG_DIR")
+	if base == "" {
+		base = "logs"
+	}
+	return filepath.Join(base, vm.machine.Config().ID)
+}
+
+// saveSerialLog copies the qemu serial console into vmLogDir(vm) and prints it.
 //
 // qemu writes that file on the host, so it is readable even when the VM is
 // gone, and it is the only log that is. Everything else has to be fetched over
 // SSH, so this one comes first.
 func saveSerialLog(vm testVM) {
 	serial, _ := os.ReadFile(filepath.Join(vm.StateDir, "serial.log"))
-	_ = os.MkdirAll("logs", os.ModePerm|os.ModeDir)
-	_ = os.WriteFile(filepath.Join("logs", "serial.log"), serial, os.ModePerm)
+	dir := vmLogDir(vm)
+	_ = os.MkdirAll(dir, os.ModePerm|os.ModeDir)
+	_ = os.WriteFile(filepath.Join(dir, "serial.log"), serial, os.ModePerm)
 	fmt.Println(string(serial))
 }
 
@@ -365,7 +441,7 @@ func gatherLogs(vm testVM) {
 	// zip all files under /var/log/kairos
 	vm.RootCommand("tar -czf /run/kairos-agent-logs.tar.gz /var/log/kairos")
 
-	gatherAllLogs(vmLogSink(vm), "logs",
+	gatherAllLogs(vmLogSink(vm), vmLogDir(vm),
 		[]string{
 			"edgevpn@kairos",
 			"kairos-agent",

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"archive/tar"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/rand"
@@ -11,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"mime/multipart"
 	"net/http"
 	"net/url"
@@ -21,10 +23,12 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
+	"golang.org/x/sync/singleflight"
 	"gopkg.in/yaml.v3"
 )
 
@@ -68,6 +72,11 @@ type ArtifactHandler struct {
 	regToken       string
 	aurorabootURL  string
 	artifactsDir   string
+	linkSigner     *auth.LinkSigner
+	// exportImage writes the image tar that ExportImage caches and serves.
+	exportImage func(ctx context.Context, id, containerImage string, w io.Writer) error
+	// imageExports runs one export build per artifact ID at a time.
+	imageExports singleflight.Group
 }
 
 // NewArtifactHandler creates a new ArtifactHandler. The builder is wrapped so
@@ -93,21 +102,22 @@ func NewArtifactHandler(
 		regToken:       regToken,
 		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
+		exportImage:    dockerFlattenExport,
 	}
 }
 
 // createArtifactRequest is the expected body for creating an artifact build.
 type createArtifactRequest struct {
-	Name                    string `json:"name"`
-	BaseImage               string `json:"baseImage"`
-	KairosVersion           string `json:"kairosVersion"`
-	Model                   string `json:"model"`
-	Arch                    string `json:"arch"`
-	Variant                 string `json:"variant"`
-	KubernetesDistro        string `json:"kubernetesDistro"`
-	KubernetesVersion       string `json:"kubernetesVersion"`
-	KubernetesEnabled       *bool  `json:"kubernetesEnabled"`
-	AllowInsecureRegistries bool   `json:"allow-insecure-registries"`
+	Name                    string   `json:"name"`
+	BaseImage               string   `json:"baseImage"`
+	KairosVersion           string   `json:"kairosVersion"`
+	Model                   string   `json:"model"`
+	Arch                    string   `json:"arch"`
+	Variant                 string   `json:"variant"`
+	KubernetesDistro        string   `json:"kubernetesDistro"`
+	KubernetesVersion       string   `json:"kubernetesVersion"`
+	KubernetesEnabled       *bool    `json:"kubernetesEnabled"`
+	AllowInsecureRegistries bool     `json:"allow-insecure-registries"`
 	Dockerfile              string   `json:"dockerfile"`
 	HadronBase              string   `json:"hadronBase"`
 	HadronFirmware          []string `json:"hadronFirmware"`
@@ -200,11 +210,19 @@ var phonehomeSafeDefaults = []string{"upgrade", "upgrade-recovery", "reboot", "u
 //	@Param			body	body		APICreateArtifactRequest	true	"Build specification"
 //	@Success		201		{object}	store.ArtifactRecord
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/artifacts [post]
 func (h *ArtifactHandler) Create(c echo.Context) error {
 	var req createArtifactRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	// The installer ISO of a Trusted Boot image is the signed UKI ISO, so an
+	// ISO request on such a build is a UKI request. The outputs a Trusted Boot
+	// image cannot be built into are refused by the validating builder.
+	if req.Outputs.TrustedBoot && req.Outputs.ISO {
+		req.Outputs.ISO = false
+		req.Outputs.UKI = true
 	}
 
 	var overlayRootfs string
@@ -348,7 +366,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		ID:                uuid.New().String(),
 		Name:              req.Name,
 		UploadToken:       uploadToken,
-		LogRedactValues:   []string{h.regToken, req.Provisioning.Password},
+		LogRedactValues:   []string{h.regToken, req.Provisioning.Password, uploadToken},
 		BaseImage:         req.BaseImage,
 		KairosVersion:     req.KairosVersion,
 		Model:             req.Model,
@@ -569,7 +587,17 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusCreated, status)
+	if h.store == nil {
+		return c.JSON(http.StatusCreated, statusResponse(status))
+	}
+	rec, err := h.store.GetByID(ctx, status.ID)
+	if err != nil {
+		// The build has started and its row is persisted; answering an error
+		// would invite a duplicate build.
+		c.Logger().Errorf("read back stored build %s: %v", status.ID, err)
+		return c.JSON(http.StatusCreated, statusResponse(status))
+	}
+	return c.JSON(http.StatusCreated, artifactResponse(rec))
 }
 
 // List handles GET /api/v1/artifacts.
@@ -590,7 +618,11 @@ func (h *ArtifactHandler) List(c echo.Context) error {
 		if records == nil {
 			records = []*store.ArtifactRecord{}
 		}
-		return c.JSON(http.StatusOK, records)
+		out := make([]*store.ArtifactRecord, 0, len(records))
+		for _, r := range records {
+			out = append(out, artifactResponse(r))
+		}
+		return c.JSON(http.StatusOK, out)
 	}
 
 	// Fall back to builder if no store.
@@ -601,10 +633,11 @@ func (h *ArtifactHandler) List(c echo.Context) error {
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list artifacts"})
 	}
-	if statuses == nil {
-		statuses = []*builder.BuildStatus{}
+	out := make([]*builder.BuildStatus, 0, len(statuses))
+	for _, s := range statuses {
+		out = append(out, statusResponse(s))
 	}
-	return c.JSON(http.StatusOK, statuses)
+	return c.JSON(http.StatusOK, out)
 }
 
 // Get handles GET /api/v1/artifacts/:id.
@@ -626,7 +659,7 @@ func (h *ArtifactHandler) Get(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 		}
-		return c.JSON(http.StatusOK, rec)
+		return c.JSON(http.StatusOK, artifactResponse(rec))
 	}
 
 	// Fall back to builder if no store.
@@ -637,7 +670,7 @@ func (h *ArtifactHandler) Get(c echo.Context) error {
 		}
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
 	}
-	return c.JSON(http.StatusOK, status)
+	return c.JSON(http.StatusOK, statusResponse(status))
 }
 
 // GetLogs handles GET /api/v1/artifacts/:id/logs.
@@ -686,6 +719,9 @@ func (h *ArtifactHandler) GetLogs(c echo.Context) error {
 //	@Failure	413	{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/upload/{filename} [put]
 func (h *ArtifactHandler) Upload(c echo.Context) error {
+	if c.Request().ContentLength > maxUploadBytes {
+		return bodyTooLarge(c)
+	}
 	id := c.Param("id")
 	filename := c.Param("*")
 	ctx := c.Request().Context()
@@ -802,7 +838,101 @@ func safePathSegment(s string) error {
 	return nil
 }
 
-// Cancel handles POST /api/v1/artifacts/:id/cancel.
+// WithLinkSigner sets the signer used for download links.
+func (h *ArtifactHandler) WithLinkSigner(s *auth.LinkSigner) *ArtifactHandler {
+	h.linkSigner = s
+	return h
+}
+
+// DownloadLinkRequest is the body of POST /api/v1/artifacts/{id}/download-link.
+type DownloadLinkRequest struct {
+	Filename string `json:"filename"`
+}
+
+// DownloadLinkResponse is a signed download path and when it stops working.
+type DownloadLinkResponse struct {
+	Path      string    `json:"path"`
+	ExpiresAt time.Time `json:"expiresAt"`
+}
+
+// CreateDownloadLink handles POST /api/v1/artifacts/:id/download-link.
+//
+//	@Summary		Create a download link
+//	@Description	Returns a path that downloads one file of the artifact without other credentials for one hour.
+//	@Tags			Artifacts
+//	@Security		AdminBearer
+//	@Accept			json
+//	@Produce		json
+//	@Param			id		path	string				true	"Artifact ID"
+//	@Param			body	body	DownloadLinkRequest	true	"File name"
+//	@Success		200	{object}	DownloadLinkResponse
+//	@Failure		400	{object}	APIError
+//	@Failure		401	{object}	APIError
+//	@Failure		404	{object}	APIError
+//	@Failure		413	{object}	APIError
+//	@Router			/api/v1/artifacts/{id}/download-link [post]
+func (h *ArtifactHandler) CreateDownloadLink(c echo.Context) error {
+	id := c.Param("id")
+	var req DownloadLinkRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid request body"})
+	}
+	if safePathSegment(id) != nil || safePathSegment(req.Filename) != nil {
+		return c.JSON(http.StatusBadRequest, APIError{Error: "invalid artifact id or filename"})
+	}
+	if h.store == nil || h.linkSigner == nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "artifact not found"})
+	}
+	rec, err := h.store.GetByID(c.Request().Context(), id)
+	if err != nil || rec == nil {
+		return c.JSON(http.StatusNotFound, APIError{Error: "artifact not found"})
+	}
+	if !hasArtifactFile(rec.ArtifactFiles, req.Filename) {
+		return c.JSON(http.StatusNotFound, APIError{Error: "file not found"})
+	}
+	q, expires := h.linkSigner.Sign(id, req.Filename)
+	path := "/api/v1/artifacts/" + url.PathEscape(id) + "/download/" + url.PathEscape(req.Filename) + "?" + q.Encode()
+	return c.JSON(http.StatusOK, DownloadLinkResponse{Path: path, ExpiresAt: expires})
+}
+
+// hasArtifactFile reports whether one of files has the base name filename.
+func hasArtifactFile(files []string, filename string) bool {
+	for _, f := range files {
+		if filepath.Base(f) == filename {
+			return true
+		}
+	}
+	return false
+}
+
+// artifactResponse returns a copy of rec whose file list holds base names.
+// The store keeps each file's server path for deploy; the API names a file
+// by its base name, which is also how downloads address it.
+func artifactResponse(rec *store.ArtifactRecord) *store.ArtifactRecord {
+	out := *rec
+	out.ArtifactFiles = fileNames(rec.ArtifactFiles)
+	return &out
+}
+
+// statusResponse is artifactResponse for a builder status.
+func statusResponse(s *builder.BuildStatus) *builder.BuildStatus {
+	out := *s
+	out.Artifacts = fileNames(s.Artifacts)
+	return &out
+}
+
+// fileNames returns the base name of each path, keeping nil as nil.
+func fileNames(paths []string) []string {
+	if paths == nil {
+		return nil
+	}
+	out := make([]string, len(paths))
+	for i, p := range paths {
+		out[i] = filepath.Base(p)
+	}
+	return out
+}
+
 // Cancel handles POST /api/v1/artifacts/:id/cancel.
 //
 //	@Summary	Cancel a running build
@@ -810,6 +940,7 @@ func safePathSegment(s string) error {
 //	@Security	AdminBearer
 //	@Param		id	path	string	true	"Artifact ID"
 //	@Success	200
+//	@Failure	413	{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/cancel [post]
 func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	id := c.Param("id")
@@ -850,7 +981,24 @@ func (h *ArtifactHandler) Cancel(c echo.Context) error {
 	if cancelErr != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cancel failed"})
 	}
-	return c.JSON(http.StatusOK, rec)
+	return c.JSON(http.StatusOK, artifactResponse(rec))
+}
+
+// buildFiles returns the output files of build id from the store, or from
+// the builder when there is no store, and false when neither knows the build.
+func (h *ArtifactHandler) buildFiles(ctx context.Context, id string) ([]string, bool) {
+	if h.store != nil {
+		rec, err := h.store.GetByID(ctx, id)
+		if err != nil {
+			return nil, false
+		}
+		return rec.ArtifactFiles, true
+	}
+	status, err := h.builder.Status(ctx, id)
+	if err != nil {
+		return nil, false
+	}
+	return status.Artifacts, true
 }
 
 // Download handles GET /api/v1/artifacts/:id/download/*.
@@ -866,12 +1014,14 @@ func (h *ArtifactHandler) Download(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid filename"})
 	}
 
-	// Validate the artifact exists if store is available.
-	if h.store != nil {
-		_, err := h.store.GetByID(c.Request().Context(), id)
-		if err != nil {
-			return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
-		}
+	// The build folder also holds the deployer's working files, such as the
+	// cloud-config it wrote, so only the files the build lists are served.
+	files, ok := h.buildFiles(c.Request().Context(), id)
+	if !ok {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "artifact not found"})
+	}
+	if !hasArtifactFile(files, filename) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "file not found"})
 	}
 
 	filePath := filepath.Join(h.artifactsDir, id, filename)
@@ -952,25 +1102,27 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 		fmt.Fprintf(os.Stderr, "delete: builder.Cancel(%q) failed: %v\n", id, cancelErr)
 	}
 
-	// Remove build output directory.
-	outputDir := filepath.Join(h.artifactsDir, id)
-	os.RemoveAll(outputDir)
-
 	if records, err := h.store.List(ctx); err == nil {
 		h.removeOverlay(records, rec.OverlayID, func(r *store.ArtifactRecord) bool { return r.ID == id })
 	} else {
 		fmt.Fprintf(os.Stderr, "delete: keeping overlay %q, cannot list artifacts: %v\n", rec.OverlayID, err)
 	}
 
-	// Remove Docker image.
+	// Remove Docker images, including leftovers of a crashed image export.
 	if rec.ContainerImage != "" {
 		exec.Command("docker", "rmi", "-f", rec.ContainerImage).Run()
 	}
+	removeExportLeftovers(id)
 
 	// Delete DB record.
 	if err := h.store.Delete(ctx, id); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to delete"})
 	}
+
+	// Remove the build output directory after the record, so an image export
+	// still running for this artifact either finds the record gone before it
+	// publishes its tar or has the tar removed here.
+	os.RemoveAll(filepath.Join(h.artifactsDir, id))
 	return c.NoContent(http.StatusNoContent)
 }
 
@@ -985,6 +1137,7 @@ func (h *ArtifactHandler) Delete(c echo.Context) error {
 //	@Param		id		path		string						true	"Artifact ID"
 //	@Param		body	body		APIUpdateArtifactRequest	true	"Fields to update"
 //	@Success	200		{object}	store.ArtifactRecord
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/artifacts/{id} [patch]
 func (h *ArtifactHandler) Update(c echo.Context) error {
 	id := c.Param("id")
@@ -1011,7 +1164,7 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 	if err := h.store.Update(ctx, rec); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update"})
 	}
-	return c.JSON(http.StatusOK, rec)
+	return c.JSON(http.StatusOK, artifactResponse(rec))
 }
 
 // overlayDir returns the directory of the uploaded overlay with the given ID.
@@ -1068,11 +1221,18 @@ type UploadOverlayResponse struct {
 //	@Param			files	formData	file	true	"Overlay files or a .tar.gz archive"
 //	@Success		200		{object}	UploadOverlayResponse
 //	@Failure		400		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Failure		500		{object}	APIError
 //	@Router			/api/v1/artifacts/upload-overlay [post]
 func (h *ArtifactHandler) UploadOverlay(c echo.Context) error {
+	if ok, err := limitBody(c, maxOverlayRequestBytes); !ok {
+		return err
+	}
 	form, err := c.MultipartForm()
 	if err != nil {
+		if isBodyTooLarge(err) {
+			return bodyTooLarge(c)
+		}
 		return c.JSON(400, map[string]string{"error": "invalid multipart form"})
 	}
 	files := form.File["files"]
@@ -1225,8 +1385,9 @@ func extractOverlayTarGz(r io.Reader, destDir string) error {
 }
 
 // ExportImage handles GET /api/v1/artifacts/:id/image.
-// Flattens multi-layer images via docker export + import + save to avoid
-// symlink ordering issues across OCI layers (e.g. /boot/vmlinuz).
+// The flattened image tar is built once per artifact, cached under the
+// artifact's directory and served from there, so a fleet upgrading at once
+// shares one docker pipeline run.
 func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 	id := c.Param("id")
 	ctx := c.Request().Context()
@@ -1239,47 +1400,208 @@ func (h *ArtifactHandler) ExportImage(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "no container image"})
 	}
 
-	// Flatten the image to a single layer to avoid symlink ordering issues.
-	// Multi-layer OCI images can have conflicting symlinks across layers
-	// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer).
-	// Pipeline: docker create → docker export (flat tar) → docker import (single-layer image) → docker save (OCI tar)
-	flatImage := fmt.Sprintf("auroraboot-flat:%s", id)
-	cid := fmt.Sprintf("auroraboot-export-%s", id)
-
-	// Create container and export flat tar, pipe into docker import
-	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, rec.ContainerImage, "true")
-	if err := createCmd.Run(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("creating container for export: %v", err)})
+	path := filepath.Join(h.artifactsDir, id, "image-export", "image.tar")
+	if err := h.ensureImageExport(ctx, id, rec.ContainerImage, path); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("exporting artifact image: %v", err)})
 	}
-	defer exec.Command("docker", "rm", cid).Run()
 
-	// Export flat tar and import as single-layer image
-	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
-	importCmd := exec.CommandContext(ctx, "docker", "import", "-", flatImage)
-	importCmd.Stdin, err = exportCmd.StdoutPipe()
+	f, err := os.Open(path)
 	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "pipe setup failed"})
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("opening artifact image: %v", err)})
 	}
-
-	if err := importCmd.Start(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "docker import start failed"})
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("opening artifact image: %v", err)})
 	}
-	if err := exportCmd.Run(); err != nil {
-		importCmd.Process.Kill()
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker export failed: %v", err)})
-	}
-	if err := importCmd.Wait(); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("docker import failed: %v", err)})
-	}
-	defer exec.Command("docker", "rmi", flatImage).Run()
-
 	c.Response().Header().Set("Content-Type", "application/octet-stream")
 	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s.tar", id))
+	http.ServeContent(c.Response(), c.Request(), fi.Name(), fi.ModTime(), f)
+	return nil
+}
 
-	// Save the single-layer image as proper OCI tar
-	cmd := exec.CommandContext(ctx, "docker", "save", flatImage)
-	cmd.Stdout = c.Response().Writer
-	return cmd.Run()
+// imageExportTimeout bounds one export build. The build is detached from the
+// requests waiting on it, so without a bound a hung docker command would keep
+// every later request for the artifact waiting.
+const imageExportTimeout = time.Hour
+
+// ensureImageExport makes sure path holds the exported image tar of the
+// artifact. Concurrent callers for one artifact share a single build. The
+// build runs detached from the request so a client that hangs up does not
+// cancel it for everyone else waiting on it.
+func (h *ArtifactHandler) ensureImageExport(ctx context.Context, id, containerImage, path string) error {
+	if _, err := os.Stat(path); err == nil {
+		log.Printf("image export for artifact %s: served from the cache", id)
+		return nil
+	}
+	buildCtx := context.WithoutCancel(ctx)
+	// Only the request whose function singleflight runs sets the outcome; a
+	// request that joined a running build keeps the default.
+	outcome := "waited for the build of another request"
+	ch := h.imageExports.DoChan(id, func() (any, error) {
+		// A previous flight may have finished between the check above and here.
+		if _, err := os.Stat(path); err == nil {
+			outcome = "served from the cache"
+			return nil, nil
+		}
+		buildCtx, cancel := context.WithTimeout(buildCtx, imageExportTimeout)
+		defer cancel()
+		start := time.Now()
+		if err := h.buildImageExport(buildCtx, id, containerImage, path); err != nil {
+			return nil, err
+		}
+		outcome = fmt.Sprintf("built in %s", time.Since(start).Round(time.Millisecond))
+		return nil, nil
+	})
+	select {
+	case res := <-ch:
+		if res.Err == nil {
+			log.Printf("image export for artifact %s: %s", id, outcome)
+		}
+		return res.Err
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// buildImageExport writes the image tar to a temp file next to path and
+// renames it into place, so path only ever holds a complete tar. Recreating
+// the directory first clears temp files of a build that crashed.
+func (h *ArtifactHandler) buildImageExport(ctx context.Context, id, containerImage, path string) error {
+	dir := filepath.Dir(path)
+	if err := os.RemoveAll(dir); err != nil {
+		return fmt.Errorf("clearing export directory: %w", err)
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("creating export directory: %w", err)
+	}
+	tmp, err := os.CreateTemp(dir, "image-*.tar.tmp")
+	if err != nil {
+		return fmt.Errorf("creating temp file: %w", err)
+	}
+	defer os.Remove(tmp.Name())
+
+	if err := h.exportImage(ctx, id, containerImage, tmp); err != nil {
+		_ = tmp.Close()
+		return err
+	}
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+		return fmt.Errorf("syncing temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("closing temp file: %w", err)
+	}
+	if _, err := h.store.GetByID(ctx, id); err != nil {
+		// The artifact may have been deleted while the build ran, after Delete
+		// removed its directory and this build recreated it. Remove only what
+		// the build owns, and the artifact directory only once it is empty, so
+		// a transient store error cannot take the build outputs with it.
+		_ = os.RemoveAll(dir)
+		_ = os.Remove(filepath.Dir(dir))
+		return fmt.Errorf("looking up artifact before publishing its export: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), path); err != nil {
+		return fmt.Errorf("renaming temp file: %w", err)
+	}
+	return nil
+}
+
+// exportDockerNames returns the container and image names the export of an
+// artifact uses. They are fixed per artifact so a crashed export's leftovers
+// can be found and removed.
+func exportDockerNames(id string) (container, flatImage string) {
+	return "auroraboot-export-" + id, "auroraboot-flat:" + id
+}
+
+// dockerCleanupTimeout bounds each docker cleanup command, so a hung daemon
+// cannot hold an export build past its own deadline.
+var dockerCleanupTimeout = time.Minute
+
+// removeExportLeftovers removes, best effort, the container and image an
+// export of the artifact creates.
+func removeExportLeftovers(id string) {
+	cid, flatImage := exportDockerNames(id)
+	dockerCleanup("rm", "-f", cid)
+	dockerCleanup("rmi", "-f", flatImage)
+}
+
+// dockerCleanup runs a best-effort docker cleanup command. It takes no context
+// so cleanup still runs after a cancelled build, and is bounded on its own.
+func dockerCleanup(args ...string) {
+	ctx, cancel := context.WithTimeout(context.Background(), dockerCleanupTimeout)
+	defer cancel()
+	_ = exec.CommandContext(ctx, "docker", args...).Run()
+}
+
+// dockerFlattenExport writes containerImage to w as a docker save tar of a
+// single-layer image.
+// Multi-layer OCI images can have conflicting symlinks across layers
+// (e.g. /boot/vmlinuz pointing to wrong target in earlier layer), so the
+// image is flattened first.
+// Pipeline: docker create -> docker export (flat tar) -> docker import (single-layer image) -> docker save (OCI tar)
+func dockerFlattenExport(ctx context.Context, id, containerImage string, w io.Writer) error {
+	cid, flatImage := exportDockerNames(id)
+	removeExportLeftovers(id)
+
+	var createErr bytes.Buffer
+	createCmd := exec.CommandContext(ctx, "docker", "create", "--name", cid, containerImage, "true")
+	createCmd.Stderr = &createErr
+	if err := createCmd.Run(); err != nil {
+		return fmt.Errorf("docker create: %w%s", err, stderrTail(createErr.Bytes()))
+	}
+	defer dockerCleanup("rm", "-f", cid)
+
+	var exportErr, importErr bytes.Buffer
+	exportCmd := exec.CommandContext(ctx, "docker", "export", cid)
+	exportCmd.Stderr = &exportErr
+	importCmd := exec.CommandContext(ctx, "docker", "import", "-", flatImage)
+	importCmd.Stderr = &importErr
+	stdout, err := exportCmd.StdoutPipe()
+	if err != nil {
+		return fmt.Errorf("docker export pipe: %w", err)
+	}
+	importCmd.Stdin = stdout
+	if err := importCmd.Start(); err != nil {
+		return fmt.Errorf("docker import: %w", err)
+	}
+	if err := exportCmd.Run(); err != nil {
+		_ = importCmd.Process.Kill()
+		_ = importCmd.Wait()
+		return fmt.Errorf("docker export: %w%s", err, stderrTail(exportErr.Bytes()))
+	}
+	if err := importCmd.Wait(); err != nil {
+		return fmt.Errorf("docker import: %w%s", err, stderrTail(importErr.Bytes()))
+	}
+	defer dockerCleanup("rmi", "-f", flatImage)
+
+	var saveErr bytes.Buffer
+	saveCmd := exec.CommandContext(ctx, "docker", "save", flatImage)
+	saveCmd.Stdout = w
+	saveCmd.Stderr = &saveErr
+	if err := saveCmd.Run(); err != nil {
+		return fmt.Errorf("docker save: %w%s", err, stderrTail(saveErr.Bytes()))
+	}
+	return nil
+}
+
+// stderrTailBytes bounds how much docker stderr an export error carries.
+const stderrTailBytes = 512
+
+// stderrTail formats the end of a command's stderr for appending to its
+// error, so operators see docker's message and not only the exit status.
+func stderrTail(stderr []byte) string {
+	s := strings.TrimSpace(string(stderr))
+	if s == "" {
+		return ""
+	}
+	if len(s) > stderrTailBytes {
+		s = s[len(s)-stderrTailBytes:]
+	}
+	return ": " + s
 }
 
 // cloudConfigParams collects the inputs needed to assemble a node's cloud-config.
@@ -1291,14 +1613,14 @@ type cloudConfigParams struct {
 	groupName          string
 	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
 	// Callers substitute phonehomeSafeDefaults for nil input before calling.
-	allowedCommands []string
+	allowedCommands   []string
 	variant           string // "core" or "standard"
 	kubernetesDistro  string // "k3s" or "k0s" when variant=standard
 	kubernetesEnabled bool   // cloud-config k3s/k0s.enabled (standard variant only)
 	userMode          string // "default", "custom", "none"
-	username        string
-	password        string
-	sshKeys         string // newline-separated public keys
+	username          string
+	password          string
+	sshKeys           string // newline-separated public keys
 	// sysextHierarchies and confextHierarchies are the operator-supplied
 	// mount points (already validated and normalized; /usr and /etc stripped).
 	// When either is non-empty the emitted cloud-config includes a systemd
@@ -1307,7 +1629,7 @@ type cloudConfigParams struct {
 	// /usr and /etc.
 	sysextHierarchies  []string
 	confextHierarchies []string
-	extraYAML       string // optional: appended verbatim after the canonical block
+	extraYAML          string // optional: appended verbatim after the canonical block
 }
 
 // buildCloudConfig assembles a Kairos cloud-config YAML document from structured
@@ -1586,6 +1908,7 @@ type setBundleEntry struct {
 //	@Success	200		{array}	store.ArtifactExtensionBundle
 //	@Failure	400		{object}	APIError
 //	@Failure	404		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/artifacts/{id}/bundle-extensions [put]
 func (h *ArtifactHandler) SetBundleExtensions(c echo.Context) error {
 	if h.bundles == nil || h.extensions == nil || h.store == nil {
@@ -1667,6 +1990,7 @@ type ResolvedBundleEntry struct {
 //	@Success		200	{array}	ResolvedBundleEntry
 //	@Failure		400	{object}	APIError
 //	@Failure		404	{object}	APIError
+//	@Failure		413	{object}	APIError
 //	@Router			/api/v1/artifacts/{id}/bundle-resolve [post]
 func (h *ArtifactHandler) ResolveBundle(c echo.Context) error {
 	if h.bundles == nil || h.extensions == nil || h.store == nil {

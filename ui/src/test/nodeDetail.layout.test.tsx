@@ -1,10 +1,9 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach, onTestFinished } from "vitest";
 import { render, screen, waitFor, fireEvent, act, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
 import { Toaster } from "@/components/ui/toaster";
-import { setToken } from "@/api/client";
 
 const NODE_ID = "0f9c2f1e-5b4a-4c0e-9d3f-7a1b2c3d4e5f";
 
@@ -13,7 +12,7 @@ function makeNode(over: Record<string, unknown> = {}) {
     id: NODE_ID,
     hostname: "edge-01",
     machineID: "9f8e7d6c5b4a3f2e1d0c",
-    groupID: "",
+    groupID: null,
     labels: { role: "worker" },
     phase: "online",
     osRelease: { KAIROS_VERSION: "v1.1.0", CPU_COUNT: "4", MEM_TOTAL: "8024512 kB" },
@@ -57,7 +56,6 @@ function mockFetch(opts: { node?: unknown; commands?: unknown[] } = {}) {
 }
 
 beforeEach(() => {
-  setToken("t");
   vi.stubGlobal(
     "WebSocket",
     class {
@@ -67,6 +65,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.useRealTimers();
   vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
@@ -102,6 +101,68 @@ describe("NodeDetail layout", () => {
 
     const strip = screen.getByRole("region", { name: "Health" });
     expect(within(strip).getByText("Active")).toHaveClass("text-success");
+  });
+
+  it("shows when the node last upgraded and the state of its upgrade", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-08-28T12:00:00Z"));
+    vi.stubGlobal(
+      "fetch",
+      mockFetch({ node: makeNode({ lastUpgrade: "2026-08-28T10:00:00Z", upgradeState: "pending" }) }).fn,
+    );
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    const strip = screen.getByRole("region", { name: "Health" });
+    const tile = within(strip).getByText("Upgrade").closest("div[class*='border']") as HTMLElement;
+    expect(within(tile).getByText("2h ago")).toBeInTheDocument();
+    expect(within(tile).getByText("Pending")).toBeInTheDocument();
+  });
+
+  it("says when a node was never upgraded", async () => {
+    vi.stubGlobal("fetch", mockFetch().fn);
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    const strip = screen.getByRole("region", { name: "Health" });
+    const tile = within(strip).getByText("Upgrade").closest("div[class*='border']") as HTMLElement;
+    expect(within(tile).getByText("Never")).toBeInTheDocument();
+    expect(within(tile).getByText("No upgrade pending")).toBeInTheDocument();
+  });
+
+  it.each([
+    ["upgrade", { upgradeState: "failed" }],
+    ["reset", { resetState: "failed" }],
+  ])("shows a failed %s in the danger tone", async (_kind, over) => {
+    vi.stubGlobal("fetch", mockFetch({ node: makeNode(over) }).fn);
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    const strip = screen.getByRole("region", { name: "Health" });
+    expect(within(strip).getByText("Failed")).toHaveClass("text-danger");
+  });
+
+  it("sends a null group when the group is set to None", async () => {
+    // jsdom has no scrollIntoView, which the open Select calls on its items.
+    Element.prototype.scrollIntoView = vi.fn();
+    onTestFinished(() => {
+      delete (Element.prototype as Partial<Element>).scrollIntoView;
+    });
+    const f = mockFetch({ node: makeNode({ groupID: "g1" }) });
+    vi.stubGlobal("fetch", f.fn);
+    renderPage();
+    await screen.findByRole("heading", { name: "edge-01" });
+
+    fireEvent.keyDown(screen.getByRole("combobox", { name: "Group" }), { key: "Enter" });
+    fireEvent.keyDown(await screen.findByRole("option", { name: "None" }), { key: "Enter" });
+
+    await waitFor(() =>
+      expect(f.calls).toContainEqual({
+        method: "PUT",
+        url: `/api/v1/nodes/${NODE_ID}/group`,
+        body: JSON.stringify({ groupID: null }),
+      }),
+    );
   });
 
   it("puts Decommission and Clear command history in the more-actions menu", async () => {

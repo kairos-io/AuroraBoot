@@ -65,6 +65,27 @@ func NewSecureBootHandler(s store.SecureBootKeySetStore, keysDir string) *Secure
 	return &SecureBootHandler{store: s, keysDir: keysDir}
 }
 
+// SecureBootKeySetResponse is a key set as the API returns it: the stored
+// record, whose server paths do not serialize, and whether the set holds a
+// TPM PCR signing key.
+type SecureBootKeySetResponse struct {
+	store.SecureBootKeySet
+	HasTPMPCRKey bool `json:"hasTpmPcrKey"`
+}
+
+// keySetResponse builds the API view of ks. An imported set may lack the
+// TPM PCR key, or carry a directory at its path, so the key counts only when
+// a regular file is there.
+func keySetResponse(ks *store.SecureBootKeySet) SecureBootKeySetResponse {
+	has := false
+	if ks.TPMPCRKeyPath != "" {
+		if info, err := os.Stat(ks.TPMPCRKeyPath); err == nil && info.Mode().IsRegular() {
+			has = true
+		}
+	}
+	return SecureBootKeySetResponse{SecureBootKeySet: *ks, HasTPMPCRKey: has}
+}
+
 type generateKeysRequest struct {
 	Name string `json:"name"`
 }
@@ -78,7 +99,8 @@ type generateKeysRequest struct {
 //	@Produce	json
 //	@Security	AdminBearer
 //	@Param		body	body		APIGenerateKeySetRequest	true	"Key set name + enroll mode"
-//	@Success	201		{object}	store.SecureBootKeySet
+//	@Success	201		{object}	handlers.SecureBootKeySetResponse
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/secureboot-keys/generate [post]
 func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 	var req generateKeysRequest
@@ -100,10 +122,8 @@ func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 		Name:      req.Name,
 		OutputDir: outputDir,
 	}); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{
-			"error":  "failed to generate keys",
-			"detail": err.Error(),
-		})
+		c.Logger().Errorf("generating key set %q: %v", req.Name, err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to generate keys"})
 	}
 
 	ks := &store.SecureBootKeySet{
@@ -115,7 +135,7 @@ func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save key set record"})
 	}
 
-	return c.JSON(http.StatusCreated, ks)
+	return c.JSON(http.StatusCreated, keySetResponse(ks))
 }
 
 // ListKeys handles GET /api/v1/secureboot-keys.
@@ -124,14 +144,18 @@ func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 //	@Tags		SecureBoot
 //	@Produce	json
 //	@Security	AdminBearer
-//	@Success	200	{array}	store.SecureBootKeySet
+//	@Success	200	{array}	handlers.SecureBootKeySetResponse
 //	@Router		/api/v1/secureboot-keys [get]
 func (h *SecureBootHandler) ListKeys(c echo.Context) error {
 	keys, err := h.store.List(c.Request().Context())
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list key sets"})
 	}
-	return c.JSON(http.StatusOK, keys)
+	out := make([]SecureBootKeySetResponse, 0, len(keys))
+	for _, ks := range keys {
+		out = append(out, keySetResponse(ks))
+	}
+	return c.JSON(http.StatusOK, out)
 }
 
 // DeleteKeys handles DELETE /api/v1/secureboot-keys/:id.
@@ -262,14 +286,21 @@ func (h *SecureBootHandler) ExportKeys(c echo.Context) error {
 //	@Security	AdminBearer
 //	@Param		name	query		string	false	"Override the manifest name to avoid a collision"
 //	@Param		file	formData	file	true	"tar.gz produced by the export endpoint"
-//	@Success	201		{object}	store.SecureBootKeySet
+//	@Success	201		{object}	handlers.SecureBootKeySetResponse
 //	@Failure	409		{object}	APIError
+//	@Failure	413		{object}	APIError
 //	@Router		/api/v1/secureboot-keys/import [post]
 func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	ctx := c.Request().Context()
 
+	if ok, err := limitBody(c, maxImportRequestBytes); !ok {
+		return err
+	}
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
+		if isBodyTooLarge(err) {
+			return bodyTooLarge(c)
+		}
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "missing file field"})
 	}
 	src, err := fileHeader.Open()
@@ -300,7 +331,8 @@ func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 			break
 		}
 		if err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": "corrupt tar stream", "detail": err.Error()})
+			c.Logger().Errorf("reading key set archive: %v", err)
+			return c.JSON(http.StatusBadRequest, map[string]string{"error": "corrupt tar stream"})
 		}
 		// Reject anything but regular files — no symlinks, no dir entries.
 		if hdr.Typeflag != tar.TypeReg && hdr.Typeflag != tar.TypeRegA {
@@ -325,7 +357,8 @@ func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 		if cleaned == keySetManifestName {
 			var m keySetManifest
 			if err := json.Unmarshal(buf, &m); err != nil {
-				return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid manifest", "detail": err.Error()})
+				c.Logger().Errorf("parsing key set manifest: %v", err)
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid manifest"})
 			}
 			if m.Kind != keySetManifestKind {
 				return c.JSON(http.StatusBadRequest, map[string]string{"error": "manifest kind mismatch", "kind": m.Kind})
@@ -377,10 +410,11 @@ func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	// Create an empty target dir. If the import fails halfway we clean up.
 	targetDir := filepath.Join(h.keysDir, name)
 	if _, err := os.Stat(targetDir); err == nil {
-		return c.JSON(http.StatusConflict, map[string]string{"error": fmt.Sprintf("directory %s already exists on disk", targetDir)})
+		return c.JSON(http.StatusConflict, map[string]string{"error": fmt.Sprintf("a key set directory named %q already exists", name)})
 	}
 	if err := os.MkdirAll(targetDir, 0o700); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cannot create key set directory", "detail": err.Error()})
+		c.Logger().Errorf("creating directory for key set %q: %v", name, err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "cannot create key set directory"})
 	}
 
 	// Write files.
@@ -402,7 +436,8 @@ func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	}()
 	if writeErr != nil {
 		_ = os.RemoveAll(targetDir)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed writing key files", "detail": writeErr.Error()})
+		c.Logger().Errorf("writing files for key set %q: %v", name, writeErr)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed writing key files"})
 	}
 
 	ks := &store.SecureBootKeySet{
@@ -413,10 +448,11 @@ func (h *SecureBootHandler) ImportKeys(c echo.Context) error {
 	}
 	if err := h.store.Create(ctx, ks); err != nil {
 		_ = os.RemoveAll(targetDir)
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save key set record", "detail": err.Error()})
+		c.Logger().Errorf("saving record for key set %q: %v", name, err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save key set record"})
 	}
 
-	return c.JSON(http.StatusCreated, ks)
+	return c.JSON(http.StatusCreated, keySetResponse(ks))
 }
 
 // sanitizeFilename produces a tame filename fragment from a user-chosen name.

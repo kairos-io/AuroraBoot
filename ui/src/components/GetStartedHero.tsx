@@ -8,6 +8,7 @@ import {
   Download,
   Check,
 } from "lucide-react";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 // GetStartedHero is the first-run experience on the Dashboard. It only
 // appears when the user has no artifacts AND no nodes, i.e. a brand new
@@ -39,7 +40,7 @@ export function GetStartedHero() {
       n: 1,
       title: "Build your first artifact",
       description:
-        "Pick a base OS, choose a target architecture and outputs (ISO, UKI, raw disk...), and let AuroraBoot produce a bootable image. Templates for Ubuntu, Fedora and more are one click away.",
+        `Pick a base OS, choose a target architecture and outputs (ISO, UKI, raw disk...), and let ${PRODUCT_NAME} produce a bootable image. Templates for Ubuntu, Fedora and more are one click away.`,
       icon: Package,
       cta: { label: "Start a build", to: "/artifacts/new" },
       active: true,
@@ -48,7 +49,7 @@ export function GetStartedHero() {
       n: 2,
       title: "Deploy it to a node",
       description:
-        "Flash the ISO to a USB stick, point a Redfish BMC at the image, or serve it over the built-in netboot server. Nodes auto-register with AuroraBoot on first boot.",
+        `Flash the ISO to a USB stick, point a Redfish BMC at the image, or serve it over the built-in netboot server. Nodes auto-register with ${PRODUCT_NAME} on first boot.`,
       icon: Rocket,
     },
     {
@@ -79,7 +80,7 @@ export function GetStartedHero() {
           />
         </div>
         <h1 className="text-3xl font-bold tracking-tight mb-2">
-          Welcome to AuroraBoot
+          Welcome to {PRODUCT_NAME}
         </h1>
         <p className="text-muted-foreground max-w-xl mx-auto">
           Build Kairos OS images, deploy them to bare metal or virtual machines, and

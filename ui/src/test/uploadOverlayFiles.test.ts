@@ -1,13 +1,9 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 
 import { uploadOverlayFiles } from "@/api/artifacts";
 import { ApiError } from "@/api/client";
 
 const OVERLAY_ID = "6f1c2a0e-3b7d-4c1e-9a52-0d8e4f7b1c3a";
-
-beforeEach(() => {
-  localStorage.setItem("auroraboot_token", "tok");
-});
 
 describe("uploadOverlayFiles", () => {
   it("posts the files and returns the overlay ID", async () => {
@@ -23,6 +19,7 @@ describe("uploadOverlayFiles", () => {
     expect(url).toBe("/api/v1/artifacts/upload-overlay");
     expect(init.method).toBe("POST");
     expect((init.body as FormData).getAll("files")).toHaveLength(1);
+    expect(new Headers(init.headers).has("Authorization")).toBe(false);
   });
 
   it("throws the server's error message", async () => {

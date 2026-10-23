@@ -67,7 +67,7 @@ func (f *fakeNodeStore) ListByGroup(_ context.Context, groupID string) ([]*store
 	defer f.mu.Unlock()
 	var result []*store.ManagedNode
 	for _, n := range f.nodes {
-		if n.GroupID == groupID {
+		if inGroup(n, groupID) {
 			result = append(result, n)
 		}
 	}
@@ -110,7 +110,7 @@ func (f *fakeNodeStore) ListBySelector(_ context.Context, sel store.CommandSelec
 	if sel.GroupID != "" {
 		var result []*store.ManagedNode
 		for _, n := range f.nodes {
-			if n.GroupID == sel.GroupID {
+			if inGroup(n, sel.GroupID) {
 				result = append(result, n)
 			}
 		}
@@ -157,7 +157,7 @@ func (f *fakeNodeStore) UpdatePhase(_ context.Context, id string, phase string) 
 	return fmt.Errorf("not found")
 }
 
-func (f *fakeNodeStore) SetGroup(_ context.Context, nodeID string, groupID string) error {
+func (f *fakeNodeStore) SetGroup(_ context.Context, nodeID string, groupID *string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
@@ -186,13 +186,13 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, groupID, claimKey string) (
 	defer f.mu.Unlock()
 	// Idempotent replay: this key already owns a node in the group.
 	for _, n := range f.nodes {
-		if n.GroupID == groupID && n.ClaimKey != nil && *n.ClaimKey == claimKey {
+		if inGroup(n, groupID) && n.ClaimKey != nil && *n.ClaimKey == claimKey {
 			return n, nil
 		}
 	}
 	// Claim the first unclaimed node in the group.
 	for _, n := range f.nodes {
-		if n.GroupID == groupID && n.ClaimKey == nil {
+		if inGroup(n, groupID) && n.ClaimKey == nil {
 			key := claimKey
 			now := time.Now()
 			n.ClaimKey = &key
@@ -216,11 +216,17 @@ func (f *fakeNodeStore) ReleaseNode(_ context.Context, nodeID, claimKey string) 
 	return false, nil
 }
 
-func (f *fakeNodeStore) SetResetPending(_ context.Context, nodeID string) error {
+// markResetPending is the reset half of what the gorm CreateBatch does to a
+// target node: a reset that is already pending or in progress keeps its state
+// and request time.
+func (f *fakeNodeStore) markResetPending(nodeID string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, n := range f.nodes {
 		if n.ID == nodeID {
+			if n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress {
+				return nil
+			}
 			now := time.Now()
 			n.ResetState = store.ResetStatePending
 			n.ResetRequestedAt = &now
@@ -250,6 +256,50 @@ func (f *fakeNodeStore) AdvanceReset(_ context.Context, nodeID string, fromState
 	}
 	return false, nil
 }
+
+// markUpgradePending is the upgrade half of what the gorm CreateBatch does to a
+// target node: an upgrade that is already pending keeps its request time.
+func (f *fakeNodeStore) markUpgradePending(nodeID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID == nodeID {
+			if n.UpgradeState == store.UpgradeStatePending {
+				return nil
+			}
+			now := time.Now()
+			n.UpgradeState = store.UpgradeStatePending
+			n.UpgradeRequestedAt = &now
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+func (f *fakeNodeStore) SettleAfterReboot(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, n := range f.nodes {
+		if n.ID != nodeID {
+			continue
+		}
+		for _, from := range fromStates {
+			if n.UpgradeState == from {
+				n.UpgradeState = to
+				if stampLastUpgrade {
+					now := time.Now()
+					n.LastUpgrade = &now
+				}
+				return true, nil
+			}
+		}
+		return false, nil
+	}
+	return false, nil
+}
 func (f *fakeNodeStore) Delete(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -266,12 +316,45 @@ func (f *fakeNodeStore) Delete(_ context.Context, id string) error {
 type fakeCommandStore struct {
 	mu   sync.Mutex
 	cmds []*store.NodeCommand
+	// onClaim, when set, runs just before a command is claimed for delivery
+	// and stands in for the node reacting to the push: the agent can report a
+	// phase back while the caller is still inside pushCommand. It runs outside
+	// f.mu so the hook may call back into the store.
+	onClaim func(id string)
+	// creates counts single-row Create calls and batches records every
+	// CreateBatch call, so a spec can tell how a fan-out was written.
+	creates int
+	batches [][]*store.NodeCommand
+	// nodes, when set, receives the lifecycle marking CreateBatch does in the
+	// gorm store's transaction. Left nil, the fake shows whether the handler
+	// marks the lifecycle on its own.
+	nodes *fakeNodeStore
 }
 
 func (f *fakeCommandStore) Create(_ context.Context, cmd *store.NodeCommand) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.creates++
 	f.cmds = append(f.cmds, cmd)
+	return nil
+}
+
+func (f *fakeCommandStore) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) error {
+	f.mu.Lock()
+	f.batches = append(f.batches, cmds)
+	f.cmds = append(f.cmds, cmds...)
+	f.mu.Unlock()
+	if f.nodes == nil {
+		return nil
+	}
+	for _, cmd := range cmds {
+		switch cmd.Command {
+		case store.CmdReset:
+			_ = f.nodes.markResetPending(cmd.ManagedNodeID)
+		case store.CmdUpgrade:
+			_ = f.nodes.markUpgradePending(cmd.ManagedNodeID)
+		}
+	}
 	return nil
 }
 
@@ -325,6 +408,9 @@ func (f *fakeCommandStore) MarkDelivered(_ context.Context, ids []string) error 
 }
 
 func (f *fakeCommandStore) ClaimForDelivery(_ context.Context, id string) (bool, error) {
+	if f.onClaim != nil {
+		f.onClaim(id)
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	for _, cmd := range f.cmds {
@@ -389,6 +475,41 @@ func (f *fakeCommandStore) ExpireBefore(_ context.Context, nodeID string, deadli
 		}
 	}
 	return nil
+}
+
+func (f *fakeCommandStore) ListByBatch(_ context.Context, batchID string) ([]*store.NodeCommand, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []*store.NodeCommand
+	for _, cmd := range f.cmds {
+		if batchID != "" && cmd.BatchID == batchID {
+			result = append(result, cmd)
+		}
+	}
+	return result, nil
+}
+
+// CancelPendingInBatch mirrors the gorm store: only the rows still Pending are
+// moved, so a command another path already claimed for delivery is left to
+// report its own result. A fake that moved every row regardless of phase would
+// pass a handler that cancels a running upgrade.
+func (f *fakeCommandStore) CancelPendingInBatch(_ context.Context, batchID string, reason string) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if batchID == "" {
+		return 0, nil
+	}
+	now := time.Now()
+	n := 0
+	for _, cmd := range f.cmds {
+		if cmd.BatchID == batchID && cmd.Phase == store.CommandPending {
+			cmd.Phase = store.CommandCanceled
+			cmd.Result = reason
+			cmd.CompletedAt = &now
+			n++
+		}
+	}
+	return n, nil
 }
 
 func (f *fakeCommandStore) Delete(_ context.Context, id string) error {
@@ -1027,4 +1148,9 @@ func (f *fakeBundleStore) removeNameMapLocked(name, artifactID string) {
 		}
 	}
 	f.byName[name] = out
+}
+
+// inGroup reports whether n belongs to the group with the given id.
+func inGroup(n *store.ManagedNode, groupID string) bool {
+	return n.GroupID != nil && *n.GroupID == groupID
 }

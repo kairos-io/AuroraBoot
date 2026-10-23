@@ -13,6 +13,7 @@ import { decommissionNode, deleteNode, type Node } from "@/api/nodes";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
 import { ansiToHtml } from "@/lib/ansi";
 import { Copy, Check } from "lucide-react";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 interface DecommissionDialogProps {
   open: boolean;
@@ -163,7 +164,7 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
           <DialogTitle>Decommission {node.hostname || node.id.slice(0, 8)}</DialogTitle>
           <DialogDescription>
             Runs the phone-home teardown on the node, then removes its record
-            from AuroraBoot.
+            from {PRODUCT_NAME}.
           </DialogDescription>
         </DialogHeader>
 
@@ -172,8 +173,8 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
             <p>
               The node will receive an <code className="font-mono">unregister</code>{" "}
               command: its phone-home service will stop and be removed, along
-              with the saved credentials and cloud-config files. The AuroraBoot
-              record is deleted as soon as the teardown completes.
+              with the saved credentials and cloud-config files.
+              The {PRODUCT_NAME} record is deleted as soon as the teardown completes.
             </p>
             <p className="text-xs text-muted-foreground">
               If the node is offline you'll see instructions to finish the
@@ -231,7 +232,7 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
             <div className="rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
               <p>
                 The node is offline, so we can't run the teardown remotely.
-                The AuroraBoot record will be removed, but the node itself
+                The {PRODUCT_NAME} record will be removed, but the node itself
                 still has the phone-home service running. SSH into the node
                 and run:
               </p>
@@ -255,7 +256,7 @@ export function DecommissionDialog({ open, onOpenChange, node, onDeleted }: Deco
               {error || "Teardown failed on the node."}
             </div>
             <div className="rounded-md border border-amber-400/60 bg-amber-50 px-3 py-2 text-xs text-amber-900 dark:border-amber-400/40 dark:bg-amber-950/60 dark:text-amber-100">
-              Force-deleting now removes the record from AuroraBoot. You
+              Force-deleting now removes the record from {PRODUCT_NAME}. You
               should also SSH into the node and run{" "}
               <code className="font-mono">{UNINSTALL_CMD}</code> to finish
               cleanup.
