@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gorm.io/gorm"
 
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -15,13 +16,15 @@ import (
 
 var _ = Describe("Gorm batch advance", func() {
 	var (
-		s   *gormstore.Store
-		ctx context.Context
+		s      *gormstore.Store
+		ctx    context.Context
+		dbPath string
 	)
 
 	BeforeEach(func() {
 		var err error
-		s, err = gormstore.New(filepath.Join(GinkgoT().TempDir(), "advance.db"))
+		dbPath = filepath.Join(GinkgoT().TempDir(), "advance.db")
+		s, err = gormstore.New(dbPath)
 		Expect(err).NotTo(HaveOccurred())
 		ctx = context.Background()
 	})
@@ -266,6 +269,57 @@ var _ = Describe("Gorm batch advance", func() {
 		got, err := s.NodeGetByID(ctx, nodes[0].ID)
 		Expect(err).NotTo(HaveOccurred())
 		Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+	})
+
+	// Agents report status and heartbeats on their own connections while a
+	// batch advances. Under WAL a transaction that reads first works from a
+	// snapshot, and once another connection commits, its first write fails
+	// with SQLITE_BUSY_SNAPSHOT without waiting on busy_timeout. The spec
+	// commits such a write from a second store on the same file as soon as
+	// the advance runs any query against the database; the advance has to
+	// succeed and start its node.
+	It("advances the batch while another connection commits a write", func() {
+		nodes := register(3)
+		online(nodes...)
+		id := newBatch(nodes[:2], store.CmdExec, 1)
+
+		agent, err := gormstore.New(dbPath)
+		Expect(err).NotTo(HaveOccurred())
+		defer func() { Expect(agent.Close()).To(Succeed()) }()
+
+		// The agent write runs on its own goroutine and gets a moment to
+		// commit. While the advance holds the write lock the agent waits on
+		// busy_timeout instead, and commits once the advance is done.
+		armed := false
+		agentDone := make(chan error, 1)
+		Expect(s.UnsafeDB().Callback().Query().After("gorm:query").
+			Register("test:concurrent_agent_write", func(db *gorm.DB) {
+				// A DryRun query only renders a subquery and never
+				// reaches the database.
+				if !armed || db.DryRun {
+					return
+				}
+				armed = false
+				committed := make(chan struct{})
+				go func() {
+					defer GinkgoRecover()
+					err := agent.UpdatePhase(ctx, nodes[2].ID, store.PhaseOffline)
+					close(committed)
+					agentDone <- err
+				}()
+				select {
+				case <-committed:
+				case <-time.After(300 * time.Millisecond):
+				}
+			})).To(Succeed())
+
+		armed = true
+		cmds, err := s.BatchAdvance(ctx, id, time.Now())
+		armed = false
+		Eventually(agentDone).Within(10 * time.Second).Should(Receive(BeNil()))
+		Expect(err).NotTo(HaveOccurred())
+		Expect(cmds).To(HaveLen(1))
+		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeRunning))
 	})
 
 	It("returns ErrBatchNotFound for an unknown batch", func() {

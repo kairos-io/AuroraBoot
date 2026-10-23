@@ -146,8 +146,8 @@ func (s *Store) BatchBusyNodes(ctx context.Context, nodeIDs []string) ([]string,
 // finishes the batch when every row is final. It returns the commands it
 // created, for the caller to push once the transaction has committed.
 //
-// The batch row is locked first, so two advances of the same batch run one
-// after the other and the second sees the slots the first one filled.
+// lockBatch runs first, so two advances of the same batch run one after the
+// other and the second sees the slots the first one filled.
 func (s *Store) BatchAdvance(ctx context.Context, batchID string, now time.Time) ([]*store.NodeCommand, error) {
 	var created []*store.NodeCommand
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -189,11 +189,27 @@ func (s *Store) BatchAdvance(ctx context.Context, batchID string, now time.Time)
 	return created, nil
 }
 
-// lockBatch reads the batch row under a row lock. SQLite has no row locks;
-// the transaction's first write takes the database's single write lock there.
+// lockBatch takes the lock that serializes advances of one batch and returns
+// the batch row.
+//
+// On PostgreSQL it reads the row with a row lock. On SQLite its first
+// statement is a no-op UPDATE of the row, which takes the database write lock
+// before the transaction reads anything. Under WAL a transaction that reads
+// first holds a snapshot, and if another connection commits (a status report,
+// a heartbeat, another advance) before the transaction writes, the write fails
+// at once with "database is locked" (SQLITE_BUSY_SNAPSHOT) and busy_timeout
+// does not retry it. Writing first makes a concurrent writer only wait.
 func lockBatch(tx *gorm.DB, id string) (*store.CommandBatch, error) {
 	q := tx
-	if tx.Dialector.Name() != "sqlite" {
+	if tx.Dialector.Name() == "sqlite" {
+		res := tx.Exec("UPDATE command_batches SET id = id WHERE id = ?", id)
+		if res.Error != nil {
+			return nil, res.Error
+		}
+		if res.RowsAffected == 0 {
+			return nil, store.ErrBatchNotFound
+		}
+	} else {
 		q = q.Clauses(clause.Locking{Strength: "UPDATE"})
 	}
 	var b store.CommandBatch
