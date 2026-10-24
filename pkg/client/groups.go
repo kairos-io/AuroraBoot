@@ -52,13 +52,13 @@ func (s *GroupsService) Delete(ctx context.Context, groupID string) error {
 	return s.c.do(ctx, http.MethodDelete, "/api/v1/groups/"+groupID, nil, nil, nil)
 }
 
-// SendCommand queues a command for every member of a group.
-func (s *GroupsService) SendCommand(ctx context.Context, groupID string, req GroupCommandRequest) ([]NodeCommand, error) {
-	var out []NodeCommand
+// SendCommand starts a batch that runs a command on every member of a group.
+func (s *GroupsService) SendCommand(ctx context.Context, groupID string, req GroupCommandRequest) (*Batch, error) {
+	var out Batch
 	if err := s.c.do(ctx, http.MethodPost, "/api/v1/groups/"+groupID+"/commands", nil, req, &out); err != nil {
 		return nil, err
 	}
-	return out, nil
+	return &out, nil
 }
 
 // Claim atomically assigns one unclaimed node in the group to claimKey and

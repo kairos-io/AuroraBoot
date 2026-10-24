@@ -2,7 +2,6 @@ package gorm_test
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -126,29 +125,5 @@ var _ = Describe("Gorm Store lifecycle on PostgreSQL", func() {
 		)
 
 		Expect(upgradeState(n.ID)).To(Equal(store.UpgradeStatePending))
-	})
-
-	It("settles the node when a batch is canceled while another upgrade of the node fails", func() {
-		n, other := register(), register()
-		a := issueCommand(ctx, s, n.ID, store.CmdUpgrade)
-		Expect(s.UpdateStatus(ctx, a, store.CommandRunning, "")).To(Succeed())
-		batch := []*store.NodeCommand{
-			{ManagedNodeID: other.ID, Command: store.CmdUpgrade, BatchID: "batch-a", FailFast: true},
-			{ManagedNodeID: n.ID, Command: store.CmdUpgrade, BatchID: "batch-a", FailFast: true},
-		}
-		Expect(s.CreateBatch(ctx, batch)).To(Succeed())
-
-		together(
-			func() error { return s.UpdateStatusForNode(ctx, a, n.ID, store.CommandFailed, "boom") },
-			func() error {
-				_, err := s.CancelPendingInBatch(ctx, "batch-a", fmt.Sprintf("stopped by %s", other.ID))
-				return err
-			},
-		)
-
-		// Both of the node's upgrades ended without running, so nothing is
-		// left to resolve the pending state: the failure marks it failed
-		// or the cancel clears it, depending on which commits last.
-		Expect(upgradeState(n.ID)).To(BeElementOf(store.UpgradeStateFailed, ""))
 	})
 })

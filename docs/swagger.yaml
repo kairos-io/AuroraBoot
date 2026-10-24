@@ -86,6 +86,40 @@ definitions:
         - force
         type: string
     type: object
+  handlers.APIBulkCommandRequest:
+    properties:
+      args:
+        additionalProperties:
+          type: string
+        type: object
+      command:
+        example: upgrade
+        type: string
+      concurrency:
+        description: Concurrency caps how many nodes run at once. 0 runs every node
+          at once.
+        type: integer
+      rebootTimeoutSeconds:
+        description: |-
+          RebootTimeoutSeconds is how long a node that reboots may take to come
+          back. Defaults to 600.
+        type: integer
+      selector:
+        $ref: '#/definitions/store.CommandSelector'
+      stopOnFailure:
+        description: StopOnFailure stops the batch when a node fails. Defaults to
+          true.
+        type: boolean
+    type: object
+  handlers.APIBusyNodesError:
+    properties:
+      error:
+        type: string
+      nodeIDs:
+        items:
+          type: string
+        type: array
+    type: object
   handlers.APIClaimRequest:
     properties:
       claimKey:
@@ -216,6 +250,29 @@ definitions:
         - if-safe
         - force
         type: string
+    type: object
+  handlers.APIGroupCommandRequest:
+    properties:
+      args:
+        additionalProperties:
+          type: string
+        type: object
+      command:
+        example: upgrade
+        type: string
+      concurrency:
+        description: Concurrency caps how many nodes run at once. 0 runs every node
+          at once.
+        type: integer
+      rebootTimeoutSeconds:
+        description: |-
+          RebootTimeoutSeconds is how long a node that reboots may take to come
+          back. Defaults to 600.
+        type: integer
+      stopOnFailure:
+        description: StopOnFailure stops the batch when a node fails. Defaults to
+          true.
+        type: boolean
     type: object
   handlers.APIHeartbeatRequest:
     properties:
@@ -435,6 +492,15 @@ definitions:
         format: uuid
         type: string
     type: object
+  handlers.batchList:
+    properties:
+      batches:
+        items:
+          $ref: '#/definitions/store.CommandBatch'
+        type: array
+      total:
+        type: integer
+    type: object
   handlers.createExtensionRequest:
     properties:
       arch:
@@ -647,46 +713,97 @@ definitions:
       vhd:
         type: boolean
     type: object
-  store.BatchOutcome:
+  store.BatchNode:
     properties:
       batchID:
         type: string
-      canceled:
-        type: integer
-      command:
+      commandID:
         type: string
-      commands:
-        description: |-
-          Commands are the per-node rows, kept so a failed batch can still say
-          which node failed and with what result.
-        items:
-          $ref: '#/definitions/store.NodeCommand'
-        type: array
-      completed:
-        type: integer
-      expired:
-        type: integer
-      failFast:
-        type: boolean
-      failed:
-        type: integer
-      pending:
-        type: integer
-      phase:
-        description: |-
-          Phase is the batch as a whole: Pending while any node still has work
-          ahead of it, then Failed if any node failed, Canceled if the batch was
-          stopped before every node ran, and Completed when every node succeeded.
+        x-nullable: true
+      deadline:
         type: string
-      running:
+      finishedAt:
+        type: string
+      hostname:
+        type: string
+      message:
+        type: string
+      nodeID:
+        type: string
+      position:
         type: integer
-      total:
-        type: integer
+      rebootingSince:
+        description: |-
+          RebootingSince is when the reboot the node is waiting on was
+          scheduled: its command's completion, then its autoreset boot.
+        type: string
+      startedAt:
+        type: string
+      state:
+        type: string
     type: object
   store.CPUMetrics:
     properties:
       usedPercent:
         type: number
+    type: object
+  store.CommandBatch:
+    properties:
+      args:
+        additionalProperties:
+          type: string
+        type: object
+      command:
+        type: string
+      concurrency:
+        type: integer
+      counts:
+        additionalProperties:
+          type: integer
+        description: Counts maps each node state to how many nodes are in it.
+        type: object
+      createdAt:
+        type: string
+      finishedAt:
+        type: string
+      groupID:
+        type: string
+        x-nullable: true
+      id:
+        type: string
+      nodes:
+        description: Nodes is filled by BatchGet only.
+        items:
+          $ref: '#/definitions/store.BatchNode'
+        type: array
+      phase:
+        type: string
+      rebootTimeoutSeconds:
+        type: integer
+      selection:
+        type: string
+      stopOnFailure:
+        type: boolean
+      stopReason:
+        type: string
+      stoppedAt:
+        type: string
+      stoppedByNodeID:
+        type: string
+        x-nullable: true
+    type: object
+  store.CommandSelector:
+    properties:
+      groupID:
+        type: string
+      labels:
+        additionalProperties:
+          type: string
+        type: object
+      nodeIDs:
+        items:
+          type: string
+        type: array
     type: object
   store.DiskMetrics:
     properties:
@@ -786,8 +903,9 @@ definitions:
         description: |-
           ResetProgressAt is when the reset last made observable progress. Two
           events stamp it: the node claiming the reset command for delivery, and
-          the node re-registering reporting bootState=autoreset (the lifecycle
-          moving from pending to in-progress). The reset timeout is measured from
+          the node coming back reporting bootState=autoreset, by re-registering or
+          by a heartbeat after the reset reboot (the lifecycle moving from pending
+          to in-progress). The reset timeout is measured from
           this timestamp when it is set, so a node that picks the command up late
           still gets a full window to reboot, wipe and come back instead of sharing
           the one that started at ResetRequestedAt. Nil until the reset reaches the
@@ -846,9 +964,8 @@ definitions:
         type: object
       batchID:
         description: |-
-          BatchID names the fan-out this command was created by, so the rows a
-          single bulk or group request produced can be found again as one
-          operation. It is empty on a command addressed to one node.
+          BatchID names the batch that created this command, so a command can be
+          traced to its batch. It is empty on a command addressed to one node.
         type: string
       command:
         type: string
@@ -860,14 +977,6 @@ definitions:
         type: string
       expiresAt:
         type: string
-      failFast:
-        description: |-
-          FailFast asks for the still-Pending rows of the batch to be canceled
-          once any node in it fails; a row already Delivered to its node is left
-          to report its own result. It is carried on every row of the batch rather
-          than in a batch table so the rule travels with the command that has to
-          apply it.
-        type: boolean
       id:
         type: string
       managedNodeID:
@@ -1346,12 +1455,51 @@ paths:
       summary: Upload a rootfs overlay
       tags:
       - Artifacts
-  /api/v1/commands/batches/{batchID}:
+  /api/v1/batches:
+    get:
+      parameters:
+      - description: Only batches started for this group
+        in: query
+        name: groupID
+        type: string
+      - description: Only batches that include this node
+        in: query
+        name: nodeID
+        type: string
+      - description: Page size (default 50, at most 200)
+        in: query
+        name: limit
+        type: integer
+      - description: Number of batches to skip
+        in: query
+        name: offset
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.batchList'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: List batches, newest first
+      tags:
+      - Batches
+  /api/v1/batches/{id}:
     get:
       parameters:
       - description: Batch ID
         in: path
-        name: batchID
+        name: id
         required: true
         type: string
       produces:
@@ -1360,12 +1508,52 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/store.BatchOutcome'
+            $ref: '#/definitions/store.CommandBatch'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
-      summary: Report the state of one fan-out of commands
+      summary: Get a batch with its per-node state
       tags:
-      - Commands
+      - Batches
+  /api/v1/batches/{id}/stop:
+    post:
+      parameters:
+      - description: Batch ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.CommandBatch'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Stop a running batch
+      tags:
+      - Batches
   /api/v1/extensions:
     post:
       consumes:
@@ -1587,6 +1775,52 @@ paths:
       summary: Claim a node from a group
       tags:
       - Groups
+  /api/v1/groups/{id}/commands:
+    post:
+      consumes:
+      - application/json
+      description: Starts a rolling batch and returns its record. Nodes that are already
+        in a running batch are rejected with 409 and listed in nodeIDs.
+      parameters:
+      - description: Group ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Command and rollout options
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIGroupCommandRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.CommandBatch'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIBusyNodesError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Run a command on every node of a group
+      tags:
+      - Commands
   /api/v1/metrics/latest:
     get:
       description: Returns the latest resource sample of every node that has one,
@@ -1722,6 +1956,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/store.NodeCommand'
+        "409":
+          description: The node is in a running batch
+          schema:
+            $ref: '#/definitions/handlers.APIBusyNodesError'
         "413":
           description: Request Entity Too Large
           schema:
@@ -1944,6 +2182,47 @@ paths:
       summary: Release a node's claim
       tags:
       - Nodes
+  /api/v1/nodes/commands:
+    post:
+      consumes:
+      - application/json
+      description: Starts a rolling batch and returns its record. Nodes that are already
+        in a running batch are rejected with 409 and listed in nodeIDs.
+      parameters:
+      - description: Selector, command and rollout options
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.APIBulkCommandRequest'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/store.CommandBatch'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIBusyNodesError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "503":
+          description: Service Unavailable
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Run a command on the nodes matching a selector
+      tags:
+      - Commands
   /api/v1/nodes/register:
     post:
       consumes:

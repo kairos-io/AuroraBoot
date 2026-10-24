@@ -685,6 +685,18 @@ var _ = Describe("Gorm Store", func() {
 			Expect(cmds2).To(HaveLen(1))
 		})
 
+		It("should delete Canceled commands too", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec}
+			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())
+			Expect(s.UpdateStatus(ctx, cmd.ID, store.CommandCanceled, "")).To(Succeed())
+
+			Expect(s.CommandDeleteTerminal(ctx, node.ID)).To(Succeed())
+
+			cmds, err := s.ListByNode(ctx, node.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(cmds).To(BeEmpty())
+		})
+
 		It("should delete Expired commands too", func() {
 			past := time.Now().Add(-time.Hour)
 			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec, ExpiresAt: &past}
@@ -696,6 +708,152 @@ var _ = Describe("Gorm Store", func() {
 			cmds, err := s.ListByNode(ctx, node.ID)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cmds).To(BeEmpty())
+		})
+	})
+
+	Describe("CreateBatch", func() {
+		register := func(machineID string) *store.ManagedNode {
+			n := &store.ManagedNode{MachineID: machineID}
+			Expect(s.Register(ctx, n)).To(Succeed())
+			return n
+		}
+
+		node := func(id string) *store.ManagedNode {
+			got, err := s.NodeGetByID(ctx, id)
+			Expect(err).NotTo(HaveOccurred())
+			return got
+		}
+
+		batchOf := func(command string, ids []string, nodes ...*store.ManagedNode) []*store.NodeCommand {
+			cmds := make([]*store.NodeCommand, 0, len(nodes))
+			for i, n := range nodes {
+				cmds = append(cmds, &store.NodeCommand{
+					ID:            ids[i],
+					ManagedNodeID: n.ID,
+					Command:       command,
+					Phase:         store.CommandPending,
+				})
+			}
+			return cmds
+		}
+
+		It("writes every row with the ids the caller gave it", func() {
+			n1, n2 := register("m1"), register("m2")
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			for _, id := range []string{"c1", "c2"} {
+				got, err := s.CommandGetByID(ctx, id)
+				Expect(err).NotTo(HaveOccurred())
+				Expect(got.Phase).To(Equal(store.CommandPending))
+			}
+			Expect(s.ListByNode(ctx, n1.ID)).To(ConsistOf(HaveField("ID", "c1")))
+			Expect(s.ListByNode(ctx, n2.ID)).To(ConsistOf(HaveField("ID", "c2")))
+		})
+
+		It("marks every upgrade target pending in the same write", func() {
+			n1, n2, other := register("m1"), register("m2"), register("m3")
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			for _, id := range []string{n1.ID, n2.ID} {
+				got := node(id)
+				Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+				Expect(got.UpgradeRequestedAt).NotTo(BeNil())
+				Expect(got.ResetState).To(BeEmpty())
+			}
+			Expect(node(other.ID).UpgradeState).To(BeEmpty())
+		})
+
+		It("marks every reset target pending in the same write", func() {
+			n1, n2 := register("m1"), register("m2")
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdReset, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			for _, id := range []string{n1.ID, n2.ID} {
+				got := node(id)
+				Expect(got.ResetState).To(Equal(store.ResetStatePending))
+				Expect(got.ResetRequestedAt).NotTo(BeNil())
+				Expect(got.UpgradeState).To(BeEmpty())
+			}
+		})
+
+		It("leaves the lifecycle alone for a command that does not reboot the node", func() {
+			n1 := register("m1")
+
+			Expect(s.CreateBatch(ctx, batchOf("reboot", []string{"c1"}, n1))).To(Succeed())
+
+			got := node(n1.ID)
+			Expect(got.UpgradeState).To(BeEmpty())
+			Expect(got.ResetState).To(BeEmpty())
+		})
+
+		// A node whose earlier upgrade or reset is still waiting for its
+		// reboot keeps the request time of that operation, so the resolver
+		// that runs when it re-registers judges the operation that is in
+		// flight.
+		It("leaves an upgrade that is already pending and its request time alone", func() {
+			n1, n2 := register("m1"), register("m2")
+			issueCommand(ctx, s, n1.ID, store.CmdUpgrade)
+			requested := *node(n1.ID).UpgradeRequestedAt
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+			got := node(n1.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(*got.UpgradeRequestedAt).To(BeTemporally("==", requested))
+			Expect(node(n2.ID).UpgradeState).To(Equal(store.UpgradeStatePending))
+		})
+
+		It("marks an upgrade target whose last upgrade finished", func() {
+			n1 := register("m1")
+			issueCommand(ctx, s, n1.ID, store.CmdUpgrade)
+			_, err := s.AdvanceUpgrade(ctx, n1.ID, []string{store.UpgradeStatePending}, store.UpgradeStateDone, true)
+			Expect(err).NotTo(HaveOccurred())
+			requested := *node(n1.ID).UpgradeRequestedAt
+
+			Expect(s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"c1"}, n1))).To(Succeed())
+
+			got := node(n1.ID)
+			Expect(got.UpgradeState).To(Equal(store.UpgradeStatePending))
+			Expect(*got.UpgradeRequestedAt).To(BeTemporally(">", requested))
+		})
+
+		DescribeTable("leaves a reset that is already in flight and its request time alone",
+			func(state string) {
+				n1, n2 := register("m1"), register("m2")
+				issueCommand(ctx, s, n1.ID, store.CmdReset)
+				if state != store.ResetStatePending {
+					_, err := s.AdvanceReset(ctx, n1.ID, []string{store.ResetStatePending}, state, false)
+					Expect(err).NotTo(HaveOccurred())
+				}
+				requested := *node(n1.ID).ResetRequestedAt
+
+				Expect(s.CreateBatch(ctx, batchOf(store.CmdReset, []string{"c1", "c2"}, n1, n2))).To(Succeed())
+
+				got := node(n1.ID)
+				Expect(got.ResetState).To(Equal(state))
+				Expect(*got.ResetRequestedAt).To(BeTemporally("==", requested))
+				Expect(node(n2.ID).ResetState).To(Equal(store.ResetStatePending))
+			},
+			Entry("pending", store.ResetStatePending),
+			Entry("in-progress", store.ResetStateInProgress),
+		)
+
+		// An agent may claim any committed Pending row, so a batch that is
+		// half written can be half delivered. A failure part way through has
+		// to leave nothing behind.
+		It("writes nothing when one row of the batch cannot be stored", func() {
+			n1, n2 := register("m1"), register("m2")
+
+			err := s.CreateBatch(ctx, batchOf(store.CmdUpgrade, []string{"dup", "dup"}, n1, n2))
+			Expect(err).To(HaveOccurred())
+
+			for _, id := range []string{n1.ID, n2.ID} {
+				Expect(s.ListByNode(ctx, id)).To(BeEmpty())
+				Expect(node(id).UpgradeState).To(BeEmpty())
+				Expect(node(id).UpgradeRequestedAt).To(BeNil())
+			}
 		})
 	})
 

@@ -114,22 +114,23 @@ func writePhonehomeLogs(vms []testVM) error {
 
 var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, func() {
 	var (
-		ws       *webServer
-		cleanup  func()
-		groupID  string
-		upgradeB string
-		token    string
-		vms      []testVM
-		nodeIDs  []string
-		bootIDs  []string
-		failed   bool
-		setUp    bool
-		artifact []string
+		ws        *webServer
+		cleanup   func()
+		baseImage string
+		groupID   string
+		upgradeB  string
+		token     string
+		vms       []testVM
+		nodeIDs   []string
+		bootIDs   []string
+		failed    bool
+		setUp     bool
+		artifact  []string
 	)
 
 	BeforeAll(func() {
 		format.MaxLength = 0
-		baseImage := envOr("PHONEHOME_BASE_IMAGE", phonehomeDefaultBaseImage)
+		baseImage = envOr("PHONEHOME_BASE_IMAGE", phonehomeDefaultBaseImage)
 		kairosInitImage := envOr("PHONEHOME_KAIROS_INIT_IMAGE", phonehomeDefaultKairosInitImage)
 
 		// NewAuroraboot builds auroraboot:test from this checkout, so the
@@ -291,7 +292,8 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 	})
 
 	It("reports an upgrade that fails before the reboot and leaves the nodes usable", func() {
-		ids := ws.sendGroupCommand(groupID, "upgrade", map[string]string{"source": "artifact:" + phonehomeUnknownArtifact})
+		ids := ws.batchCommandIDs(ws.sendGroupCommand(groupID, "upgrade",
+			map[string]string{"source": "artifact:" + phonehomeUnknownArtifact}, nil))
 
 		for i, nodeID := range nodeIDs {
 			cmdID := ws.commandFor(nodeID, ids)
@@ -315,7 +317,8 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 	})
 
 	It("upgrades both nodes to the new artifact", func() {
-		ids := ws.sendGroupCommand(groupID, "upgrade", map[string]string{"source": "artifact:" + upgradeB})
+		ids := ws.batchCommandIDs(ws.sendGroupCommand(groupID, "upgrade",
+			map[string]string{"source": "artifact:" + upgradeB}, nil))
 
 		for i, nodeID := range nodeIDs {
 			cmdID := ws.commandFor(nodeID, ids)
@@ -368,5 +371,66 @@ var _ = Describe("phonehome on VMs", Label("phonehome-vm"), Ordered, Serial, fun
 			}
 		}
 		Expect(built).To(Equal(1), "image exports of the upgrade target:\n%s", strings.Join(exports, "\n"))
+	})
+
+	It("upgrades the nodes one at a time", func() {
+		uid, err := uuid.NewV4()
+		Expect(err).ToNot(HaveOccurred())
+		tokenC := uid.String()
+		upgradeC := ws.buildArtifact(map[string]any{
+			"name":       "e2e-phonehome-c",
+			"arch":       "amd64",
+			"dockerfile": fmt.Sprintf("FROM %s\nRUN echo %s > %s\n", baseImage, tokenC, phonehomeMarkerPath),
+		})
+		artifact = append(artifact, upgradeC)
+
+		before := make([]string, len(vms))
+		for i, vm := range vms {
+			before[i], err = bootID(vm)
+			Expect(err).ToNot(HaveOccurred(), before[i])
+		}
+
+		batchID := ws.sendGroupCommand(groupID, "upgrade",
+			map[string]string{"source": "artifact:" + upgradeC}, map[string]any{"concurrency": 1})
+
+		// Each node downloads, upgrades, reboots and phones home before the
+		// next one starts, so the budget is per node.
+		var b map[string]any
+		Eventually(func() any {
+			b = ws.batch(batchID)
+			return b["phase"]
+		}, time.Duration(len(nodeIDs))*15*time.Minute, "10s").
+			Should(BeElementOf("completed", "failed", "stopped"), "batch %s finishing, 15 minutes per node", batchID)
+		AddReportEntry("batch "+batchID, b)
+		Expect(b["phase"]).To(Equal("completed"), "batch %s: %v", batchID, b)
+
+		rows := batchNodes(b)
+		Expect(rows).To(HaveLen(len(nodeIDs)), "batch %s: %v", batchID, b)
+		for _, row := range rows {
+			Expect(row["state"]).To(Equal("done"), "node row of batch %s: %v", batchID, row)
+		}
+		firstFinished, err := time.Parse(time.RFC3339Nano, fmt.Sprint(rows[0]["finishedAt"]))
+		Expect(err).ToNot(HaveOccurred(), "finishedAt of the first node of batch %s: %v", batchID, rows[0])
+		secondStarted, err := time.Parse(time.RFC3339Nano, fmt.Sprint(rows[1]["startedAt"]))
+		Expect(err).ToNot(HaveOccurred(), "startedAt of the second node of batch %s: %v", batchID, rows[1])
+		Expect(secondStarted.Before(firstFinished)).To(BeFalse(),
+			"the second node of batch %s started at %s, before the first finished at %s", batchID, secondStarted, firstFinished)
+
+		for i, nodeID := range nodeIDs {
+			Eventually(func() string {
+				boot, err := bootID(vms[i])
+				if err != nil {
+					return before[i]
+				}
+				return boot
+			}, "5m", "10s").ShouldNot(Equal(before[i]), "VM of node %s rebooting after the upgrade", nodeID)
+
+			marker, err := sshRun(vms[i], "cat "+phonehomeMarkerPath)
+			Expect(err).ToNot(HaveOccurred(), marker)
+			Expect(marker).To(Equal(tokenC), "node %s does not run the third artifact", nodeID)
+
+			Eventually(func() any { return ws.node(nodeID)["upgradeState"] }, "2m", "5s").
+				Should(Equal("done"), "upgrade state of node %s", nodeID)
+		}
 	})
 })

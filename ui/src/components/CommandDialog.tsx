@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useId } from "react";
 import {
   Dialog,
   DialogContent,
@@ -18,6 +18,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
+import type { Rollout } from "@/api/batches";
+import type { CommandKey } from "@/lib/commandKeys";
 import { listArtifacts, resolveBundle, Artifact, type ResolvedBundleEntry } from "@/api/artifacts";
 import {
   ArrowUpCircle,
@@ -35,13 +37,7 @@ import {
 // for that specific action. When opened from a quick-action menu the
 // parent passes defaultCommand and we skip straight to step 2.
 
-type CommandKey =
-  | "upgrade"
-  | "upgrade-recovery"
-  | "reset"
-  | "apply-config"
-  | "reboot"
-  | "exec";
+export type { CommandKey };
 
 interface CommandDef {
   key: CommandKey;
@@ -74,7 +70,7 @@ const COMMANDS: CommandDef[] = [
     tone: "blue",
   },
   {
-    key: "apply-config",
+    key: "apply-cloud-config",
     label: "Apply config",
     verb: "Send config",
     description:
@@ -130,17 +126,54 @@ const TONE_CLASSES: Record<CommandDef["tone"], { chip: string; hover: string }> 
   },
 };
 
+// originalExtensions returns the type/name keys of the extensions a repeated
+// batch sent with the given artifact, or null when the batch used another
+// source. An upgrade with every bundled extension unticked sends no
+// extensions argument, so a missing argument is an empty selection.
+function originalExtensions(
+  extensions: string | undefined,
+  source: string | undefined,
+  artifactId: string,
+): Set<string> | null {
+  if (source !== "artifact:" + artifactId) return null;
+  if (!extensions) return new Set();
+  try {
+    const rows = JSON.parse(extensions) as { type: string; name: string }[];
+    return new Set(rows.map((r) => `${r.type}/${r.name}`));
+  } catch {
+    return null;
+  }
+}
+
 type UpgradeSourceMode = "image" | "artifact";
 
 interface CommandDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSubmit: (command: string, args: Record<string, unknown>) => void;
+  onSubmit: (
+    command: string,
+    args: Record<string, unknown>,
+    rollout?: Rollout,
+    nodeIDs?: string[],
+  ) => void;
+  // How many nodes the command reaches. Setting it, or nodeChoices, means the
+  // command starts a batch, so onSubmit always receives a rollout. The Rollout
+  // section shows every setting for more than one node and only the reboot
+  // timeout, for commands that reboot, for one node.
+  targetCount?: number;
   title?: string;
   // If set, opens the dialog straight on the configure step with this
   // command preselected. Used by GroupDetail/NodeDetail quick-action
   // menus so the user doesn't re-pick something they just clicked.
   defaultCommand?: CommandKey | null;
+  // Prefill for the rollout settings and the command's arguments, used to
+  // repeat a batch.
+  defaultRollout?: Rollout;
+  defaultArgs?: Record<string, string>;
+  // When set, the dialog lists these nodes with a checkbox each (all checked)
+  // and passes the checked ids as the fourth argument of onSubmit. The target
+  // count is then the number checked.
+  nodeChoices?: { id: string; label: string }[];
 }
 
 export function CommandDialog({
@@ -149,7 +182,15 @@ export function CommandDialog({
   onSubmit,
   title = "Send command",
   defaultCommand,
+  targetCount: targetCountProp,
+  defaultRollout,
+  defaultArgs,
+  nodeChoices,
 }: CommandDialogProps) {
+  const rolloutIds = useId();
+  const [concurrencyArg, setConcurrencyArg] = useState("");
+  const [stopOnFailure, setStopOnFailure] = useState(true);
+  const [timeoutMinutes, setTimeoutMinutes] = useState("10");
   const [command, setCommand] = useState<CommandKey | "">("");
   const [imageArg, setImageArg] = useState("");
   const [configArg, setConfigArg] = useState("");
@@ -167,9 +208,50 @@ export function CommandDialog({
     rows: ResolvedBundleEntry[];
   }>({ artifactId: "", rows: [] });
   const [bundlePicks, setBundlePicks] = useState<Record<string, boolean>>({});
+  // True once the user ticks or unticks a bundled extension, which makes the
+  // dialog's picks authoritative over defaultArgs.extensions.
+  const [picksTouched, setPicksTouched] = useState(false);
 
+  const [unchecked, setUnchecked] = useState<Set<string>>(new Set());
+  const checkedIDs = nodeChoices
+    ?.filter((n) => !unchecked.has(n.id))
+    .map((n) => n.id);
+  const targetCount = checkedIDs ? checkedIDs.length : targetCountProp;
+  const startsBatch = targetCountProp !== undefined || nodeChoices !== undefined;
+  const isRollout = startsBatch && (targetCount ?? 0) > 1;
+  const reboots =
+    command === "upgrade" || command === "reset" || command === "reboot";
   const isUpgrade = command === "upgrade" || command === "upgrade-recovery";
   const activeCommand = COMMANDS.find((c) => c.key === command);
+  const showRollout = isRollout || (startsBatch && reboots);
+  // The server reads a missing concurrency as all nodes at once, so a value
+  // that is not a whole number must block the submit instead of being dropped.
+  const concurrencyValid = !isRollout || /^\d*$/.test(concurrencyArg.trim());
+  // The resolve effect reads the defaults through these strings, so a parent
+  // that passes a new defaultArgs object with the same content (a polled
+  // batch) does not resolve again and reset the operator's picks.
+  const defaultExtensions = defaultArgs?.extensions;
+  const defaultSource = defaultArgs?.source;
+
+  function seedFromDefaults() {
+    if (defaultRollout) {
+      setConcurrencyArg(
+        defaultRollout.concurrency ? String(defaultRollout.concurrency) : "",
+      );
+      setStopOnFailure(defaultRollout.stopOnFailure);
+      setTimeoutMinutes(String(defaultRollout.rebootTimeoutSeconds / 60));
+    }
+    const source = defaultArgs?.source ?? "";
+    if (source.startsWith("artifact:")) {
+      setUpgradeSourceMode("artifact");
+      setSelectedArtifactId(source.slice("artifact:".length));
+    } else if (source.startsWith("oci:")) {
+      setUpgradeSourceMode("image");
+      setImageArg(source.slice("oci:".length));
+    }
+    if (defaultArgs?.config) setConfigArg(defaultArgs.config);
+    if (defaultArgs?.command) setShellCmd(defaultArgs.command);
+  }
 
   // Prefill or reset state on open/defaultCommand change. On open transition
   // we seed `command` with `defaultCommand`; on close transition we wipe
@@ -183,13 +265,19 @@ export function CommandDialog({
     setPrevDefaultCommand(defaultCommand);
     if (open) {
       setCommand(defaultCommand ?? "");
+      seedFromDefaults();
     } else {
+      setUnchecked(new Set());
+      setPicksTouched(false);
       setCommand("");
       setImageArg("");
       setConfigArg("");
       setShellCmd("");
       setUpgradeSourceMode("image");
       setSelectedArtifactId("");
+      setConcurrencyArg("");
+      setStopOnFailure(true);
+      setTimeoutMinutes("10");
     }
   } else if (open && defaultCommand !== prevDefaultCommand) {
     setPrevDefaultCommand(defaultCommand);
@@ -220,8 +308,16 @@ export function CommandDialog({
       .then((rows) => {
         if (cancelled) return;
         setBundleState({ artifactId: selectedArtifactId, rows });
+        // When repeating a batch from the same artifact, only the extensions
+        // the original sent start ticked.
+        const original = originalExtensions(defaultExtensions, defaultSource, selectedArtifactId);
         setBundlePicks(
-          Object.fromEntries(rows.map((r) => [`${r.type}/${r.name}`, true])),
+          Object.fromEntries(
+            rows.map((r) => {
+              const k = `${r.type}/${r.name}`;
+              return [k, original ? original.has(k) : true];
+            }),
+          ),
         );
       })
       .catch(() => {
@@ -232,7 +328,7 @@ export function CommandDialog({
     return () => {
       cancelled = true;
     };
-  }, [isUpgrade, upgradeSourceMode, selectedArtifactId]);
+  }, [isUpgrade, upgradeSourceMode, selectedArtifactId, defaultExtensions, defaultSource]);
 
   const bundle =
     isUpgrade &&
@@ -242,7 +338,7 @@ export function CommandDialog({
       : [];
 
   function handleSubmit() {
-    if (!command) return;
+    if (!command || !concurrencyValid) return;
     const args: Record<string, unknown> = {};
 
     if (isUpgrade) {
@@ -253,7 +349,13 @@ export function CommandDialog({
         const picked = bundle.filter(
           (e) => bundlePicks[`${e.type}/${e.name}`],
         );
-        if (picked.length > 0) {
+        if (
+          !picksTouched &&
+          defaultArgs?.extensions &&
+          defaultArgs.source === args.source
+        ) {
+          args.extensions = defaultArgs.extensions;
+        } else if (picked.length > 0) {
           args.extensions = JSON.stringify(picked);
         }
       } else if (imageArg) {
@@ -264,19 +366,35 @@ export function CommandDialog({
       }
     }
 
-    if (command === "apply-config") {
+    if (command === "apply-cloud-config") {
       if (configArg.trim()) args.config = configArg.trim();
     }
 
     if (shellCmd) args.command = shellCmd;
 
-    onSubmit(command, args);
+    if (startsBatch) {
+      const concurrency = Number.parseInt(concurrencyArg, 10);
+      const minutes = Number.parseFloat(timeoutMinutes);
+      const rollout: Rollout = {
+        stopOnFailure,
+        rebootTimeoutSeconds:
+          Number.isFinite(minutes) && minutes > 0 ? Math.round(minutes * 60) : 600,
+      };
+      if (isRollout && Number.isFinite(concurrency) && concurrency > 0) {
+        rollout.concurrency = concurrency;
+      }
+      onSubmit(command, args, rollout, checkedIDs);
+    } else {
+      onSubmit(command, args, undefined, checkedIDs);
+    }
     onOpenChange(false);
   }
 
   // Whether the Send button should be enabled given the current args.
   const canSubmit = (() => {
     if (!command) return false;
+    if (checkedIDs && checkedIDs.length === 0) return false;
+    if (!concurrencyValid) return false;
     if (command === "exec") return shellCmd.trim().length > 0;
     if (command === "upgrade" || command === "upgrade-recovery") {
       if (upgradeSourceMode === "image") return imageArg.trim().length > 0;
@@ -472,12 +590,13 @@ export function CommandDialog({
                                   type="checkbox"
                                   aria-label={`include ${entry.name}`}
                                   checked={checked}
-                                  onChange={(e) =>
+                                  onChange={(e) => {
+                                    setPicksTouched(true);
                                     setBundlePicks((prev) => ({
                                       ...prev,
                                       [k]: e.target.checked,
-                                    }))
-                                  }
+                                    }));
+                                  }}
                                 />
                                 <span className="font-medium">{entry.name}</span>
                                 <span className="text-xs text-muted-foreground">
@@ -509,7 +628,7 @@ export function CommandDialog({
               </div>
             )}
 
-            {command === "apply-config" && (
+            {command === "apply-cloud-config" && (
               <div className="grid gap-2">
                 <Label>Cloud configuration (YAML)</Label>
                 <Textarea
@@ -544,6 +663,103 @@ export function CommandDialog({
                 </p>
               </div>
             )}
+
+            {nodeChoices && (
+              <div className="grid gap-2 border-t pt-4">
+                <h3 className="text-sm font-semibold">Nodes</h3>
+                <div className="grid max-h-48 gap-1 overflow-y-auto">
+                  {nodeChoices.map((n) => (
+                    <label key={n.id} className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={!unchecked.has(n.id)}
+                        onChange={(e) =>
+                          setUnchecked((prev) => {
+                            const next = new Set(prev);
+                            if (e.target.checked) next.delete(n.id);
+                            else next.add(n.id);
+                            return next;
+                          })
+                        }
+                      />
+                      {n.label}
+                    </label>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {showRollout && (
+              <div className="grid gap-3 border-t pt-4">
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-sm font-semibold">Rollout</h3>
+                  <span className="text-xs text-muted-foreground">
+                    {targetCount} {targetCount === 1 ? "node" : "nodes"}
+                  </span>
+                </div>
+                {isRollout && (
+                  <>
+                    <div className="grid gap-2">
+                      <Label htmlFor={`${rolloutIds}-concurrency`}>Nodes at a time</Label>
+                      <Input
+                        id={`${rolloutIds}-concurrency`}
+                        type="number"
+                        min={0}
+                        placeholder="All at once"
+                        value={concurrencyArg}
+                        aria-invalid={!concurrencyValid}
+                        aria-describedby={`${rolloutIds}-concurrency-help`}
+                        onChange={(e) => setConcurrencyArg(e.target.value)}
+                      />
+                      {concurrencyValid ? (
+                        <p id={`${rolloutIds}-concurrency-help`} className="text-xs text-muted-foreground">
+                          The next node starts when one finishes. Leave empty to run on
+                          all nodes at once.
+                        </p>
+                      ) : (
+                        <p id={`${rolloutIds}-concurrency-help`} className="text-xs text-danger-foreground">
+                          Enter a whole number, or leave it empty to run on all nodes at once.
+                        </p>
+                      )}
+                    </div>
+                    <div className="grid gap-1">
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={stopOnFailure}
+                          onChange={(e) => setStopOnFailure(e.target.checked)}
+                        />
+                        Stop on the first failure
+                      </label>
+                      <p className="text-xs text-muted-foreground">
+                        Nodes that have not started are canceled. Nodes already
+                        running finish.
+                      </p>
+                    </div>
+                  </>
+                )}
+                {reboots && (
+                  <div className="grid gap-2">
+                    <Label htmlFor={`${rolloutIds}-timeout`}>
+                      Wait for a node to come back
+                    </Label>
+                    <div className="flex items-center gap-2">
+                      <Input
+                        id={`${rolloutIds}-timeout`}
+                        type="number"
+                        min={1}
+                        value={timeoutMinutes}
+                        onChange={(e) => setTimeoutMinutes(e.target.value)}
+                      />
+                      <span className="text-sm text-muted-foreground">minutes</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      A node that has not come back by then counts as failed.
+                    </p>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         )}
 
@@ -556,7 +772,9 @@ export function CommandDialog({
               onClick={handleSubmit}
               disabled={!canSubmit}
             >
-              {activeCommand?.verb ?? "Send"}
+              {isRollout
+                ? `${activeCommand?.label ?? "Send"} ${targetCount} nodes`
+                : (activeCommand?.verb ?? "Send")}
             </Button>
           )}
         </DialogFooter>

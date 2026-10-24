@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useNavigate, Link } from "react-router";
 import { getGroup, deleteGroup, sendGroupCommand, updateGroup, type Group } from "@/api/groups";
+import type { Batch, Rollout } from "@/api/batches";
 import { listNodes, sendBulkCommand, type Node } from "@/api/nodes";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +29,7 @@ import {
 import { StatTile } from "@/components/fleet/StatTile";
 import { StackBar } from "@/components/fleet/StackBar";
 import { SelectionBar } from "@/components/fleet/SelectionBar";
+import { RecentBatches } from "@/components/fleet/RecentBatches";
 import { Activity, AlertTriangle, Cpu, Download, Layers, MoreHorizontal, ShieldAlert, Terminal } from "lucide-react";
 import { isOffline, isOnline } from "@/lib/phase";
 import { cpuCount, hasBootIssue, imageVersion, memGiB } from "@/lib/nodeInfo";
@@ -124,14 +126,20 @@ export function GroupDetail() {
     }
   }
 
-  async function handleCommand(command: string, args: Record<string, unknown>) {
+  async function handleCommand(
+    command: string,
+    args: Record<string, unknown>,
+    rollout?: Rollout,
+  ) {
     if (!id) return;
+    let batch: Batch;
     if (cmdTarget === "selection") {
-      await sendBulkCommand({ nodeIDs: selectedIDs }, command, args);
+      batch = await sendBulkCommand({ nodeIDs: selectedIDs }, command, args, rollout);
     } else {
-      await sendGroupCommand(id, command, args);
+      batch = await sendGroupCommand(id, command, args, rollout);
     }
     setCmdTarget(null);
+    navigate(`/batches/${batch.id}`);
   }
 
   if (!group) {
@@ -230,6 +238,10 @@ export function GroupDetail() {
       </SelectionBar>
       <NodeTable nodes={nodes} showGroupColumn={false} selectable selected={selected} onSelectedChange={setSelected} />
 
+      <div className="mt-6">
+        <RecentBatches groupID={group.id} />
+      </div>
+
       <ConfirmDialog
         open={confirmDelete}
         onOpenChange={setConfirmDelete}
@@ -273,6 +285,11 @@ export function GroupDetail() {
           if (!open) setCmdTarget(null);
         }}
         onSubmit={handleCommand}
+        targetCount={
+          cmdTarget === "selection"
+            ? selectedIDs.length
+            : groupNodeCount(group, nodes, nodesLoaded)
+        }
         title={
           cmdTarget === "selection"
             ? `Send command · ${selectedIDs.length} selected`

@@ -14,8 +14,10 @@ import (
 
 	"github.com/gorilla/websocket"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/batches"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/client"
+	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/server"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 
@@ -132,12 +134,16 @@ var _ = BeforeSuite(func() {
 	artifactStore := &gormstore.ArtifactStoreAdapter{S: store}
 
 	hub := ws.NewHub()
+	batchStore := &gormstore.BatchStoreAdapter{S: store}
+	sched := batches.New(batchStore, handlers.NewCommandHandler(commandStore, nodeStore, hub, nil, nil).PushCommand)
 	testArtifactsDir = GinkgoT().TempDir()
 	artifactBuilder = newMockArtifactBuilder()
 
 	cfg := server.Config{
 		NodeStore:     nodeStore,
 		CommandStore:  commandStore,
+		BatchStore:    batchStore,
+		Batches:       sched,
 		GroupStore:    groupStore,
 		ArtifactStore: artifactStore,
 		Builder:       artifactBuilder,

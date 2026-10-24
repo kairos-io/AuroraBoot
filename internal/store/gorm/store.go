@@ -28,6 +28,10 @@ type Store struct {
 	// password is stored as-is (used by tests and pre-encryption setups). The web
 	// server always wires one via WithCipher.
 	cipher *secrets.Cipher
+	// resetTimeout is the delivery expiry of a reset command a batch creates,
+	// the same window the reset command handler gives a single-node reset. A
+	// negative or zero value creates them without one.
+	resetTimeout time.Duration
 }
 
 // WithCipher attaches a DEK-backed cipher used to encrypt the BMCTarget password
@@ -35,6 +39,14 @@ type Store struct {
 // that leaves passwords stored as-is.
 func (s *Store) WithCipher(c *secrets.Cipher) *Store {
 	s.cipher = c
+	return s
+}
+
+// WithResetTimeout sets the delivery expiry of the reset commands batches
+// create, so an offline node does not run a reset after its reset lifecycle
+// has already timed out. Zero or a negative duration creates them without one.
+func (s *Store) WithResetTimeout(d time.Duration) *Store {
+	s.resetTimeout = d
 	return s
 }
 
@@ -73,7 +85,7 @@ func New(dsn string) (*Store, error) {
 		}
 	}
 
-	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.Setting{}, &store.ExtensionRecord{}, &store.ArtifactExtensionBundle{}, &store.NodeExtensionRow{}); err != nil {
+	if err := db.AutoMigrate(&store.NodeGroup{}, &store.ManagedNode{}, &store.NodeCommand{}, &store.ArtifactRecord{}, &store.SecureBootKeySet{}, &store.BMCTarget{}, &store.Deployment{}, &store.Setting{}, &store.ExtensionRecord{}, &store.ArtifactExtensionBundle{}, &store.NodeExtensionRow{}, &store.CommandBatch{}, &store.BatchNode{}); err != nil {
 		return nil, fmt.Errorf("auto-migrating: %w", err)
 	}
 
@@ -496,6 +508,10 @@ func (s *Store) ReleaseNode(ctx context.Context, nodeID, claimKey string) (bool,
 // the reset timeout on the last proof of liveness, which is what
 // kairos-io/kairos#4287 asks for: fail a reset only when the node has not come
 // back since.
+//
+// A transition to failed clears reset_reboot_at in the same statement: the node
+// itself showed the failure, so SettleAfterReboot must not turn it into done on
+// a later boot.
 func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []string, to string, stampLastReset bool) (bool, error) {
 	updates := map[string]any{"reset_state": to}
 	if stampLastReset {
@@ -505,6 +521,9 @@ func (s *Store) AdvanceReset(ctx context.Context, nodeID string, fromStates []st
 	if to == store.ResetStateInProgress {
 		now := time.Now()
 		updates["reset_progress_at"] = &now
+	}
+	if to == store.ResetStateFailed {
+		updates["reset_reboot_at"] = nil
 	}
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND reset_state IN ?", nodeID, fromStates).
@@ -551,12 +570,16 @@ func (s *Store) FailResetBefore(ctx context.Context, nodeID string, deadline tim
 // conditional UPDATE as AdvanceReset (... WHERE id = ? AND upgrade_state IN
 // fromStates), so exactly one of several concurrent re-register resolvers
 // performs any given transition. When stampLastUpgrade is set, last_upgrade is
-// written in the same statement as the transition to done.
+// written in the same statement as the transition to done. A transition to
+// failed clears upgrade_reboot_at for the same reason as in AdvanceReset.
 func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []string, to string, stampLastUpgrade bool) (bool, error) {
 	updates := map[string]any{"upgrade_state": to}
 	if stampLastUpgrade {
 		now := time.Now()
 		updates["last_upgrade"] = &now
+	}
+	if to == store.UpgradeStateFailed {
+		updates["upgrade_reboot_at"] = nil
 	}
 	res := s.db.WithContext(ctx).Model(&store.ManagedNode{}).
 		Where("id = ? AND upgrade_state IN ?", nodeID, fromStates).
@@ -571,6 +594,12 @@ func (s *Store) AdvanceUpgrade(ctx context.Context, nodeID string, fromStates []
 // booted at bootedAt. It locks the node row, so the check against the recorded
 // reboot and the transition see the same operation: an upgrade or reset
 // requested in between clears the recorded reboot and waits for the next one.
+//
+// A failed upgrade or reset still settles while its reboot is recorded: a
+// batch timeout fails it without knowing the outcome, and the node may come
+// back later. A failure the node itself showed is final, so settling as
+// failed clears the recorded reboot. A command that reported Failed recorded
+// no reboot in the first place.
 func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string, bootedAt time.Time) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := lockNodes(tx, []string{nodeID}); err != nil {
@@ -585,20 +614,28 @@ func (s *Store) SettleAfterReboot(ctx context.Context, nodeID, bootState string,
 		}
 		now := time.Now()
 		updates := map[string]any{}
-		if n.UpgradeState == store.UpgradeStatePending && rebootedAfter(n.UpgradeRebootAt, bootedAt) {
+		upgradeOpen := n.UpgradeState == store.UpgradeStatePending || n.UpgradeState == store.UpgradeStateFailed
+		if upgradeOpen && rebootedAfter(n.UpgradeRebootAt, bootedAt) {
 			if to, ok := store.UpgradeOutcome(bootState); ok {
 				updates["upgrade_state"] = to
-				if to == store.UpgradeStateDone {
+				switch to {
+				case store.UpgradeStateDone:
 					updates["last_upgrade"] = &now
+				case store.UpgradeStateFailed:
+					updates["upgrade_reboot_at"] = nil
 				}
 			}
 		}
-		resetPending := n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress
-		if resetPending && rebootedAfter(n.ResetRebootAt, bootedAt) {
+		resetOpen := n.ResetState == store.ResetStatePending || n.ResetState == store.ResetStateInProgress ||
+			n.ResetState == store.ResetStateFailed
+		if resetOpen && rebootedAfter(n.ResetRebootAt, bootedAt) {
 			if to, ok := store.ResetOutcome(n.ResetState, bootState); ok {
 				updates["reset_state"] = to
-				if to == store.ResetStateDone {
+				switch to {
+				case store.ResetStateDone:
 					updates["last_reset"] = &now
+				case store.ResetStateFailed:
+					updates["reset_reboot_at"] = nil
 				}
 				// Re-anchor the reset timeout, as AdvanceReset does for a
 				// re-register (kairos-io/kairos#4287).
@@ -652,10 +689,10 @@ func (s *Store) CommandCreate(ctx context.Context, cmd *store.NodeCommand) error
 	return s.db.WithContext(ctx).Create(cmd).Error
 }
 
-// CreateBatch inserts the commands of one fan-out and marks their nodes'
-// reset or upgrade lifecycle pending in one transaction. The rows are inserted
-// one at a time inside it so each gets its own created_at and ListByBatch keeps
-// returning them in the order the caller built them.
+// CreateBatch inserts commands and marks their nodes' reset or upgrade
+// lifecycle pending in one transaction. The rows are inserted one at a time
+// inside it so each gets its own created_at, in the order the caller built
+// them.
 //
 // reset_progress_at is cleared with it, so the new reset's timeout window is
 // measured from this request and never inherits the previous reset's stamp.
@@ -669,56 +706,62 @@ func (s *Store) CreateBatch(ctx context.Context, cmds []*store.NodeCommand) erro
 		return nil
 	}
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var resetNodes, upgradeNodes []string
-		for _, cmd := range cmds {
-			if cmd.ID == "" {
-				cmd.ID = uuid.New().String()
-			}
-			if cmd.Phase == "" {
-				cmd.Phase = store.CommandPending
-			}
-			if err := tx.Create(cmd).Error; err != nil {
-				return err
-			}
-			switch cmd.Command {
-			case store.CmdReset:
-				resetNodes = append(resetNodes, cmd.ManagedNodeID)
-			case store.CmdUpgrade:
-				upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
-			}
+		return createCommands(tx, cmds)
+	})
+}
+
+// createCommands is the body of CreateBatch, for callers that create commands
+// inside a transaction of their own.
+func createCommands(tx *gorm.DB, cmds []*store.NodeCommand) error {
+	var resetNodes, upgradeNodes []string
+	for _, cmd := range cmds {
+		if cmd.ID == "" {
+			cmd.ID = uuid.New().String()
 		}
-		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		if cmd.Phase == "" {
+			cmd.Phase = store.CommandPending
+		}
+		if err := tx.Create(cmd).Error; err != nil {
 			return err
 		}
-		now := time.Now()
-		if len(resetNodes) > 0 {
-			if err := tx.Model(&store.ManagedNode{}).
-				Where("id IN ?", resetNodes).
-				Where("reset_state IS NULL OR reset_state NOT IN ?",
-					[]string{store.ResetStatePending, store.ResetStateInProgress}).
-				Updates(map[string]any{
-					"reset_state":        store.ResetStatePending,
-					"reset_requested_at": &now,
-					"reset_progress_at":  nil,
-					"reset_reboot_at":    nil,
-				}).Error; err != nil {
-				return err
-			}
+		switch cmd.Command {
+		case store.CmdReset:
+			resetNodes = append(resetNodes, cmd.ManagedNodeID)
+		case store.CmdUpgrade:
+			upgradeNodes = append(upgradeNodes, cmd.ManagedNodeID)
 		}
-		if len(upgradeNodes) > 0 {
-			if err := tx.Model(&store.ManagedNode{}).
-				Where("id IN ?", upgradeNodes).
-				Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
-				Updates(map[string]any{
-					"upgrade_state":        store.UpgradeStatePending,
-					"upgrade_requested_at": &now,
-					"upgrade_reboot_at":    nil,
-				}).Error; err != nil {
-				return err
-			}
+	}
+	if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		return err
+	}
+	now := time.Now()
+	if len(resetNodes) > 0 {
+		if err := tx.Model(&store.ManagedNode{}).
+			Where("id IN ?", resetNodes).
+			Where("reset_state IS NULL OR reset_state NOT IN ?",
+				[]string{store.ResetStatePending, store.ResetStateInProgress}).
+			Updates(map[string]any{
+				"reset_state":        store.ResetStatePending,
+				"reset_requested_at": &now,
+				"reset_progress_at":  nil,
+				"reset_reboot_at":    nil,
+			}).Error; err != nil {
+			return err
 		}
-		return nil
-	})
+	}
+	if len(upgradeNodes) > 0 {
+		if err := tx.Model(&store.ManagedNode{}).
+			Where("id IN ?", upgradeNodes).
+			Where("upgrade_state IS NULL OR upgrade_state <> ?", store.UpgradeStatePending).
+			Updates(map[string]any{
+				"upgrade_state":        store.UpgradeStatePending,
+				"upgrade_requested_at": &now,
+				"upgrade_reboot_at":    nil,
+			}).Error; err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *Store) CommandGetByID(ctx context.Context, id string) (*store.NodeCommand, error) {
@@ -799,8 +842,10 @@ func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID strin
 // with a new boot state for the re-register resolvers to read. A Failed report
 // therefore marks that state failed, in the same transaction as the command
 // row, unless another command still owns it. The UPDATE runs first so the
-// transaction never holds a read snapshot when it writes (see
-// CancelPendingInBatch).
+// transaction never holds a read snapshot when it writes: under SQLite WAL a
+// transaction that read first fails its write with "database is locked"
+// (SQLITE_BUSY_SNAPSHOT) when another connection committed in between, and
+// busy_timeout does not retry it.
 func (s *Store) updateStatus(ctx context.Context, phase, result, where string, args ...any) (int, error) {
 	updates := map[string]any{
 		"phase":  phase,
@@ -853,90 +898,6 @@ func (s *Store) ListByNode(ctx context.Context, nodeID string) ([]*store.NodeCom
 	return cmds, nil
 }
 
-// ListByBatch returns the commands one fan-out created, oldest first, so the
-// batch reads back in the order the nodes were dispatched in.
-//
-// An empty batch id matches nothing, for the same reason CancelPendingInBatch
-// refuses one: a single-node command carries no batch id, so an equality match
-// on the empty string would select every unbatched command in the table and
-// report them as one fan-out.
-func (s *Store) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
-	if batchID == "" {
-		return nil, nil
-	}
-	var cmds []*store.NodeCommand
-	if err := s.db.WithContext(ctx).
-		Where("batch_id = ?", batchID).
-		Order("created_at asc").
-		Find(&cmds).Error; err != nil {
-		return nil, err
-	}
-	return cmds, nil
-}
-
-// CancelPendingInBatch moves the still-Pending commands of a batch to Canceled
-// and clears the lifecycle state those commands left pending on their nodes.
-//
-// The cancel UPDATE carries `phase = Pending` for the same reason
-// ClaimForDelivery does: a command another goroutine is claiming for delivery
-// right now must be won by exactly one of the two. A claim that lands first
-// leaves no Pending row for this UPDATE to match, so the command is delivered
-// and will report its own result; a cancel that lands first leaves no Pending
-// row for the claim's compare-and-set, so it is never pushed.
-//
-// The UPDATE is the first statement of the transaction and returns the rows it
-// changed. Under SQLite WAL a transaction that reads first holds a snapshot,
-// and if an agent commits a claim or a status report on another connection
-// before the transaction writes, the write fails at once with "database is
-// locked" (SQLITE_BUSY_SNAPSHOT) and busy_timeout does not retry it. Writing
-// first takes the write lock up front, so a concurrent writer only makes the
-// statement wait.
-//
-// A canceled reset or upgrade never runs, so nothing would ever resolve the
-// pending state CreateBatch set for it, and the node's next unrelated active
-// boot would report the operation done. settleOrphanedLifecycle clears that
-// state for the nodes of the canceled rows unless something else still owns
-// it. Everything runs in one transaction so the rows and the node state never
-// disagree.
-func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
-	if batchID == "" {
-		return 0, nil
-	}
-	var canceled []store.NodeCommand
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		now := time.Now()
-		if err := tx.Model(&canceled).
-			Clauses(clause.Returning{Columns: []clause.Column{
-				{Name: "id"}, {Name: "managed_node_id"}, {Name: "command"},
-			}}).
-			Where("batch_id = ? AND phase = ?", batchID, store.CommandPending).
-			Updates(map[string]any{
-				"phase":        store.CommandCanceled,
-				"result":       reason,
-				"completed_at": &now,
-			}).Error; err != nil {
-			return err
-		}
-
-		resetNodes, upgradeNodes := lifecycleNodes(canceled)
-		if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
-			return err
-		}
-		if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
-			"reset_state", store.ResetStatePending, "reset_requested_at",
-			map[string]any{"reset_state": "", "reset_requested_at": nil}); err != nil {
-			return err
-		}
-		return settleOrphanedLifecycle(tx, store.CmdUpgrade, upgradeNodes,
-			"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at",
-			map[string]any{"upgrade_state": "", "upgrade_requested_at": nil})
-	})
-	if err != nil {
-		return 0, err
-	}
-	return len(canceled), nil
-}
-
 // lockNodes takes the row locks of the given nodes, in id order, before a
 // transaction reads which commands own their lifecycle state.
 //
@@ -947,9 +908,8 @@ func (s *Store) CancelPendingInBatch(ctx context.Context, batchID string, reason
 // that write, and both could skip the node: two upgrades failing at once
 // would leave it pending. Holding the node row makes the second transaction
 // wait for the first to commit, and its next statement sees the first one's
-// command. CreateBatch, updateStatus and CancelPendingInBatch all write their
-// command rows first and lock node rows after, in id order, so they cannot
-// deadlock one another.
+// command. CreateBatch and updateStatus both write their command rows first
+// and lock node rows after, in id order, so they cannot deadlock one another.
 //
 // SQLite has no row locks, so the statement is skipped there: the write each
 // caller makes first already holds the database's single write lock.

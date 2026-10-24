@@ -17,21 +17,11 @@ func (s *CommandsService) Create(ctx context.Context, nodeID string, req CreateC
 	return &out, nil
 }
 
-// CreateBulk queues a command for every node matching a selector.
-// Either groupID, labels, or explicit nodeIDs can be used.
-func (s *CommandsService) CreateBulk(ctx context.Context, req BulkCommandRequest) ([]NodeCommand, error) {
-	var out []NodeCommand
+// CreateBulk starts a batch that runs a command on every node matching a
+// selector. Either groupID, labels, or explicit nodeIDs can be used.
+func (s *CommandsService) CreateBulk(ctx context.Context, req BulkCommandRequest) (*Batch, error) {
+	var out Batch
 	if err := s.c.do(ctx, http.MethodPost, "/api/v1/nodes/commands", nil, req, &out); err != nil {
-		return nil, err
-	}
-	return out, nil
-}
-
-// BatchStatus reports one fan-out as a single operation: its overall phase and
-// the per-node commands behind it.
-func (s *CommandsService) BatchStatus(ctx context.Context, batchID string) (*BatchOutcome, error) {
-	var out BatchOutcome
-	if err := s.c.do(ctx, http.MethodGet, "/api/v1/commands/batches/"+batchID, nil, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

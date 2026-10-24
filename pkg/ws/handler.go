@@ -129,6 +129,15 @@ type AgentHandler struct {
 	// that carry an extensions[] payload. nil-safe -- if unset, only the
 	// command-status row is updated. Wired in pkg/server/server.go.
 	OnCommandStatus func(ctx context.Context, nodeID string, cmd *store.NodeCommand)
+	// OnCommandPhase is invoked with the command's ID after every status
+	// report this handler applied, whatever the phase, so the batch the
+	// command belongs to can settle the node and fill its slot. pkg/ws cannot
+	// import the scheduler, so the server wires it. nil-safe.
+	OnCommandPhase func(ctx context.Context, commandID string)
+	// OnNodeBooted is invoked for a heartbeat that carries an uptime, with the
+	// boot time computed from it, so a batch waiting on the node's reboot can
+	// settle it. Wired in pkg/server/server.go. nil-safe.
+	OnNodeBooted func(ctx context.Context, nodeID, bootState string, bootedAt *time.Time)
 	// PingInterval and ReadTimeout override agentPingInterval and
 	// agentReadTimeout. Zero or negative means the default. Only tests set
 	// these; production wiring leaves them unset.
@@ -313,6 +322,9 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 			if err := h.Nodes.SettleAfterReboot(ctx, nodeID, hb.BootState, bootedAt); err != nil {
 				log.Printf("ws: failed to settle node %s after its reboot: %v", nodeID, err)
 			}
+			if h.OnNodeBooted != nil {
+				h.OnNodeBooted(ctx, nodeID, hb.BootState, &bootedAt)
+			}
 		}
 	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
@@ -363,20 +375,8 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 		}
 	}
 
-	// A fail-fast batch stops here: this is the path a real agent reports a
-	// failed upgrade on, so the rule has to be applied on it and not only on
-	// the REST status endpoint. The command is re-read so the batch identity
-	// and the fail-fast flag come from the server's own row rather than from
-	// the frame the node sent.
-	if status.Phase == store.CommandFailed {
-		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
-			cmd.Phase = status.Phase
-			if canceled, err := store.CancelBatchAfterFailure(ctx, h.Commands, cmd); err != nil {
-				log.Printf("ws: failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, status.ID, err)
-			} else if canceled > 0 {
-				log.Printf("ws: batch %s stopped after node %s failed; %d pending command(s) canceled", cmd.BatchID, nodeID, canceled)
-			}
-		}
+	if h.OnCommandPhase != nil {
+		h.OnCommandPhase(ctx, status.ID)
 	}
 
 	if h.Hub != nil && h.Hub.UI != nil {

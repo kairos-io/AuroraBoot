@@ -4,6 +4,7 @@ import { NavLink, Outlet, useNavigate } from "react-router";
 import {
   LayoutDashboard,
   FolderTree,
+  ListChecks,
   Server,
   Package,
   Puzzle,
@@ -54,6 +55,7 @@ const navSections: NavSection[] = [
     items: [
       { to: "/nodes", icon: Server, label: "Nodes" },
       { to: "/groups", icon: FolderTree, label: "Groups" },
+      { to: "/batches", icon: ListChecks, label: "Batches" },
     ],
   },
   {

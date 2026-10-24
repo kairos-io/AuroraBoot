@@ -47,6 +47,7 @@ function mockFetch(metrics: unknown | null) {
     if (url === `/api/v1/nodes/${NODE_ID}/metrics`) {
       return metrics === null ? json({ error: "not found" }, 404) : json(metrics);
     }
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
     return json([]);
   });
 }
