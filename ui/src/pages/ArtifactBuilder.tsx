@@ -115,13 +115,11 @@ const OUTPUT_TONE_CLASSES: Record<OutputTone, string> = {
 // installer ISO, which the server builds as the UKI ISO, and as a tarball.
 const TRUSTED_BOOT_OUTPUTS: OutputField[] = ["iso", "tar"];
 
-// withBootModeOutputs keeps the outputs the selected boot mode can build. The
-// UKI ISO is the ISO of Trusted Boot mode, so a stored or imported uki flag
-// turns into the ISO. Every path that sets outputs from outside the Output
-// step goes through it, so a clone or an import still sends a request the
-// server takes.
+// withBootModeOutputs keeps the outputs the selected boot mode can build.
+// Every path that sets outputs from outside the Output step goes through it,
+// so a clone or an import still sends a request the server takes.
 function withBootModeOutputs(outputs: CreateArtifactOutputs): CreateArtifactOutputs {
-  const next = { ...outputs, iso: outputs.iso || outputs.uki, uki: false };
+  const next = { ...outputs };
   if (!next.trustedBoot) return next;
   for (const group of OUTPUT_GROUPS) {
     for (const { field } of group.items) {
@@ -389,7 +387,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -401,7 +399,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -413,7 +411,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -425,7 +423,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -437,7 +435,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -449,7 +447,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -461,7 +459,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -481,7 +479,6 @@ const EMPTY_OUTPUTS = {
   gce: false,
   vhd: false,
   maas: false,
-  uki: false,
   fips: false,
   trustedBoot: false,
 };
@@ -1181,7 +1178,6 @@ export function ArtifactBuilder() {
               gce: a.gce ?? false,
               vhd: a.vhd ?? false,
               maas: a.maas ?? false,
-              uki: a.uki ?? false,
               fips: a.fips,
               trustedBoot: a.trustedBoot,
             }),
@@ -1237,7 +1233,6 @@ export function ArtifactBuilder() {
             gce: a.gce ?? false,
             vhd: a.vhd ?? false,
             maas: a.maas ?? false,
-            uki: a.uki ?? false,
             fips: a.fips,
             trustedBoot: a.trustedBoot,
           }),
@@ -1664,7 +1659,11 @@ export function ArtifactBuilder() {
     commands: form.provisioning.registerAuroraBoot ? (form.provisioning.allowedCommands ?? []) : [],
     fips: form.outputs.fips,
     trustedBoot: form.outputs.trustedBoot,
-    outputs: selectedOutputItems.map((i) => i.label),
+    // One ISO option, and the boot mode says which ISO it is. Name the one
+    // this build produces rather than leave it to the Trusted Boot row.
+    outputs: selectedOutputItems.map((i) =>
+      i.field === "iso" && form.outputs.trustedBoot ? "UKI ISO" : i.label,
+    ),
     overlayFiles: overlayFiles.length,
     overlayAttached: !!form.overlayId,
     autoInstall: form.provisioning.autoInstall,

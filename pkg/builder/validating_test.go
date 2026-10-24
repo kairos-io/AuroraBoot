@@ -95,9 +95,10 @@ var _ = Describe("ValidatingArtifactBuilder", func() {
 		Expect(inner.builds).To(ConsistOf(opts))
 	})
 
-	// A Trusted Boot image has no GRUB and no separate initrd. The plain ISO,
-	// netboot and every disk image are built around those, and the UKI ISO
-	// only boots an image kairos-init prepared for Trusted Boot.
+	// A Trusted Boot image has no GRUB and no separate initrd. Netboot and
+	// every disk image are built around those. The ISO is not on this list:
+	// in Trusted Boot mode it is the UKI ISO, which is how that mode is
+	// installed.
 	DescribeTable("refuses outputs that do not go with the boot mode",
 		func(opts builder.BuildOptions, field string) {
 			_, err := b.Build(ctx, opts)
@@ -105,8 +106,6 @@ var _ = Describe("ValidatingArtifactBuilder", func() {
 			Expect(err.Error()).To(ContainSubstring(field))
 			Expect(inner.builds).To(BeEmpty())
 		},
-		Entry("plain ISO with Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{TrustedBoot: true, ISO: true}}, "outputs.iso"),
-		Entry("plain ISO with Trusted Boot, flat fields", builder.BuildOptions{TrustedBoot: true, ISO: true}, "outputs.iso"),
 		Entry("netboot with Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{TrustedBoot: true, Netboot: true}}, "outputs.netboot"),
 		Entry("netboot with Trusted Boot, flat fields", builder.BuildOptions{TrustedBoot: true, Netboot: true}, "outputs.netboot"),
 		Entry("raw disk with Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{TrustedBoot: true, RawDisk: true}}, "outputs.rawDisk"),
@@ -114,7 +113,6 @@ var _ = Describe("ValidatingArtifactBuilder", func() {
 		Entry("GCE with Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{TrustedBoot: true, GCE: true}}, "outputs.gce"),
 		Entry("VHD with Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{TrustedBoot: true, VHD: true}}, "outputs.vhd"),
 		Entry("MAAS with Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{TrustedBoot: true, MAAS: true}}, "outputs.maas"),
-		Entry("UKI without Trusted Boot", builder.BuildOptions{Outputs: builder.OutputOptions{UKI: true}}, "outputs.uki"),
 	)
 
 	// The UKI step signs with all three keys and refuses to start without
@@ -124,7 +122,7 @@ var _ = Describe("ValidatingArtifactBuilder", func() {
 		func(signing builder.SigningOptions) {
 			_, err := b.Build(ctx, builder.BuildOptions{
 				TrustedBoot: true,
-				Outputs:     builder.OutputOptions{TrustedBoot: true, UKI: true},
+				Outputs:     builder.OutputOptions{TrustedBoot: true, ISO: true},
 				Signing:     signing,
 			})
 			Expect(err).To(MatchError(builder.ErrInvalidBuildOptions))
@@ -138,11 +136,11 @@ var _ = Describe("ValidatingArtifactBuilder", func() {
 		}),
 	)
 
-	It("hands a Trusted Boot UKI build to the wrapped builder", func() {
+	It("hands a Trusted Boot ISO build to the wrapped builder", func() {
 		opts := builder.BuildOptions{
 			ID:          "tb-1",
 			TrustedBoot: true,
-			Outputs:     builder.OutputOptions{TrustedBoot: true, UKI: true, Tar: true},
+			Outputs:     builder.OutputOptions{TrustedBoot: true, ISO: true, Tar: true},
 			Signing: builder.SigningOptions{
 				UKISecureBootKey:  "/keys/db.key",
 				UKISecureBootCert: "/keys/db.pem",

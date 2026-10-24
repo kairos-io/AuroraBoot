@@ -26,7 +26,6 @@ function readyArtifact(over: Partial<Artifact> = {}): Artifact {
     gce: false,
     vhd: false,
     maas: false,
-    uki: false,
     fips: false,
     trustedBoot: false,
     autoInstall: false,
