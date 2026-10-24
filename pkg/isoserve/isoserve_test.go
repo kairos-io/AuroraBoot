@@ -85,15 +85,23 @@ var _ = Describe("isoserve.Server", func() {
 	})
 
 	It("returns 404 once the token has expired", func() {
-		url, _, err := srv.Register(isoPath, 20*time.Millisecond)
+		// Two tokens, so that no assertion has to win a race against the TTL.
+		// The long-lived one carries the "still serves while valid" half; a
+		// slow first request cannot turn it into a 404.
+		liveURL, _, err := srv.Register(isoPath, time.Minute)
 		Expect(err).NotTo(HaveOccurred())
 
-		resp, body := get(url, nil)
+		resp, body := get(liveURL, nil)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		Expect(body).To(Equal(payload))
 
+		// The short-lived one carries the expiry half. It is only ever expected
+		// to 404, so the request latency does not matter.
+		expiringURL, _, err := srv.Register(isoPath, 20*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+
 		Eventually(func() int {
-			resp, _ := get(url, nil)
+			resp, _ := get(expiringURL, nil)
 			return resp.StatusCode
 		}, time.Second, 10*time.Millisecond).Should(Equal(http.StatusNotFound))
 	})
