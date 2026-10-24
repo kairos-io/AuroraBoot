@@ -39,6 +39,7 @@ type Auroraboot struct {
 	ContainerImage string
 	Dirs           []string          // directories to mount from host
 	ManualDirs     map[string]string // directories to mount from host to an specific path in the container
+	WorkDir        string            // working directory inside the container (docker run -w), empty keeps the image default
 }
 
 func TestAurorabootE2E(t *testing.T) {
@@ -89,6 +90,10 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 		"--network", "host",
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"--entrypoint", entrypoint,
+	}
+
+	if e.WorkDir != "" {
+		dockerArgs = append(dockerArgs, "-w", e.WorkDir)
 	}
 
 	for _, d := range e.Dirs {
