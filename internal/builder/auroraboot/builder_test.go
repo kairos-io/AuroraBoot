@@ -47,6 +47,10 @@ var _ = Describe("AuroraBoot Builder", func() {
 		}
 
 		b = auroraboot.New(baseDir, mockDeploy, nil)
+		// Build returns while its goroutine is still writing into baseDir,
+		// and baseDir is a Ginkgo TempDir removed as soon as the spec ends.
+		// Join the goroutine first or the two race.
+		DeferCleanup(func() { Expect(b.Shutdown(context.Background())).To(Succeed()) })
 	})
 
 	// waitForBuild waits until the mock deployer has been invoked.
@@ -78,6 +82,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 				return nil
 			}
 			slowBuilder := auroraboot.New(baseDir, slowDeploy, nil)
+			DeferCleanup(func() { Expect(slowBuilder.Shutdown(context.Background())).To(Succeed()) })
 
 			_, err := slowBuilder.Build(context.Background(), builder.BuildOptions{
 				ID:        "test-building",
@@ -277,6 +282,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 				return nil
 			}
 			cancelBuilder := auroraboot.New(baseDir, slowDeploy, nil)
+			DeferCleanup(func() { Expect(cancelBuilder.Shutdown(context.Background())).To(Succeed()) })
 
 			_, err := cancelBuilder.Build(context.Background(), builder.BuildOptions{
 				ID:        "cancel-me",
