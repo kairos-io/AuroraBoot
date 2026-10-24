@@ -242,9 +242,9 @@ func (d *Deployer) StepStartNetboot() error {
 			// "Start Netboot" collides with it on the same port instead of
 			// reporting "already running".
 			if mgr := netbootmgr.FromContext(ctx); mgr != nil {
-				return mgr.StartWithPaths(filepath.Base(d.destination()), d.cloudConfigPath(), d.squashFSfile(), d.initrdFile(), d.kernelFile())
+				return mgr.StartWithPaths(filepath.Base(d.destination()), d.cloudConfigPath(), d.squashFSfile(), d.initrdFile(), d.kernelFile(), d.netbootGrubCfgFile())
 			}
-			return ops.StartPixiecore(d.cloudConfigPath(), d.netBootListenAddr(), d.netbootPort(), d.squashFSfile, d.initrdFile, d.kernelFile, d.Config.NetBoot)(ctx)
+			return ops.StartPixiecore(d.cloudConfigPath(), d.netBootListenAddr(), d.netbootPort(), d.squashFSfile, d.initrdFile, d.kernelFile, d.netbootGrubCfgFile, d.Config.NetBoot)(ctx)
 		}),
 	)
 }
@@ -338,6 +338,13 @@ func (d *Deployer) kernelFile() string {
 
 func (d *Deployer) squashFSfile() string {
 	return filepath.Join(d.dstNetboot(), "kairos.squashfs")
+}
+
+// netbootGrubCfgFile is where ExtractNetboot leaves the livecd grub config. It
+// goes through the same function the extraction does, so a build that sets
+// iso.name reads back the file that run actually wrote.
+func (d *Deployer) netbootGrubCfgFile() string {
+	return ops.NetbootGrubCfgPath(d.dstNetboot(), d.Config.ISO.Name)
 }
 
 func (d *Deployer) isoOption() bool {

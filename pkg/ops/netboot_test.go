@@ -269,7 +269,7 @@ var _ = Describe("netbootCmdline", func() {
 	squashfs := func() string { return filepath.Join(dir, "kairos.squashfs") }
 
 	It("appends the bundled extensions to the default cmdline", func() {
-		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		line, err := netbootCmdline(squashfs(), "/config.yaml", nil, schema.NetBoot{})
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(line).To(HavePrefix(`rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "` + squashfs() + `" }}`))
@@ -280,7 +280,7 @@ var _ = Describe("netbootCmdline", func() {
 	// A configured cmdline replaces the default boot options; it does not mean
 	// the extensions this build bundled should be dropped.
 	It("appends them to a configured cmdline too", func() {
-		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{Cmdline: "console=ttyS0 quiet"})
+		line, err := netbootCmdline(squashfs(), "/config.yaml", nil, schema.NetBoot{Cmdline: "console=ttyS0 quiet"})
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(line).To(ContainSubstring("console=ttyS0 quiet"))
@@ -290,7 +290,7 @@ var _ = Describe("netbootCmdline", func() {
 	It("leaves the cmdline untouched when nothing is bundled", func() {
 		empty := GinkgoT().TempDir()
 
-		line, err := netbootCmdline(filepath.Join(empty, "kairos.squashfs"), "/config.yaml", schema.NetBoot{})
+		line, err := netbootCmdline(filepath.Join(empty, "kairos.squashfs"), "/config.yaml", nil, schema.NetBoot{})
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(line).NotTo(ContainSubstring("kairos.extensions"))
@@ -303,7 +303,7 @@ var _ = Describe("netbootCmdline", func() {
 		Expect(os.WriteFile(filepath.Join(dir, "extensions.yaml"),
 			[]byte(declaration("/run/initramfs/live/100%.sysext.raw")), 0o644)).To(Succeed())
 
-		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		line, err := netbootCmdline(squashfs(), "/config.yaml", nil, schema.NetBoot{})
 		Expect(err).NotTo(HaveOccurred())
 
 		Expect(line).To(HaveSuffix(`kairos.extensions={{ ID "` + filepath.Join(dir, "100%.sysext.raw") + `" }}`))
@@ -313,7 +313,7 @@ var _ = Describe("netbootCmdline", func() {
 	It("fails rather than serving a tree that contradicts its declaration", func() {
 		Expect(os.Remove(filepath.Join(dir, "work.sysext.raw"))).To(Succeed())
 
-		_, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		_, err := netbootCmdline(squashfs(), "/config.yaml", nil, schema.NetBoot{})
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("work.sysext.raw"))
 	})
