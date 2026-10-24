@@ -269,7 +269,7 @@ const UBUNTU_VERSION = "26.04";
 // renovate: datasource=docker depName=fedora
 const FEDORA_VERSION = "44";
 // renovate: datasource=docker depName=opensuse/leap
-const OPENSUSE_LEAP_VERSION = "15.6";
+const OPENSUSE_LEAP_VERSION = "16.1";
 // renovate: datasource=docker depName=debian
 const DEBIAN_VERSION = "13";
 // renovate: datasource=docker depName=alpine
