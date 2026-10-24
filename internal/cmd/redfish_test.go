@@ -187,4 +187,63 @@ var _ = Describe("redfish deploy", Label("redfish", "cmd"), func() {
 			Expect(err.Error()).NotTo(ContainSubstring("no RedFish password provided"))
 		})
 	})
+
+	// The local ISO server's TLS and the InsertMedia transfer protocol used to be
+	// decided independently, so a certificate pair alone served HTTPS behind an
+	// http:// advertisement. These drive the CLI with an IP endpoint so the flow
+	// reaches the flag checks without resolving or contacting anything.
+	Describe("serve TLS posture", func() {
+		baseArgs := func(extra ...string) []string {
+			args := []string{
+				"auroraboot",
+				"redfish",
+				"deploy",
+				"--endpoint", "https://10.0.0.9",
+				"--username", "admin",
+				"--password", "password",
+			}
+			return append(args, extra...)
+		}
+
+		It("refuses a certificate pair without --serve-tls", func() {
+			err := app.Run(baseArgs(
+				"--redfish-serve-url", "http://10.0.0.5:8090",
+				"--serve-tls-cert", "/etc/ssl/bmc.crt",
+				"--serve-tls-key", "/etc/ssl/bmc.key",
+				isoPath,
+			))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("without --serve-tls"))
+		})
+
+		It("refuses --serve-tls when the advertised serve URL is not https", func() {
+			err := app.Run(baseArgs(
+				"--redfish-serve-url", "http://10.0.0.5:8090",
+				"--serve-tls",
+				"--serve-tls-cert", "/etc/ssl/bmc.crt",
+				"--serve-tls-key", "/etc/ssl/bmc.key",
+				isoPath,
+			))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("is not https"))
+		})
+
+		It("refuses an https serve URL with no certificate", func() {
+			err := app.Run(baseArgs(
+				"--redfish-serve-url", "https://10.0.0.5:8090",
+				isoPath,
+			))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("has no certificate"))
+		})
+
+		It("refuses the serve TLS flags alongside --image-url, which bypasses the local server", func() {
+			err := app.Run(baseArgs(
+				"--image-url", "https://10.0.0.5:8090/kairos.iso",
+				"--serve-tls",
+			))
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring("configure the local ISO server"))
+		})
+	})
 })
