@@ -291,6 +291,23 @@ func IsRiscv64(arch string) bool {
 	return arch == constants.ArchRiscv64
 }
 
+// EfiFallbackName returns the name systemd-boot is written under in the ESP's
+// EFI/BOOT fallback directory for arch. Both the side that produces the binary
+// and the side that places it on the ESP have to agree on this name, so they
+// both ask here rather than spelling the two or three cases out again.
+func EfiFallbackName(arch string) (string, error) {
+	switch {
+	case IsAmd64(arch):
+		return constants.EfiFallbackNamex86, nil
+	case IsArm64(arch):
+		return constants.EfiFallbackNameArm, nil
+	case IsRiscv64(arch):
+		return constants.EfiFallbackNameRiscv64, nil
+	default:
+		return "", fmt.Errorf("unsupported arch: %s", arch)
+	}
+}
+
 // NameFromCmdline returns the name of the efi/conf file based on the cmdline
 // we want to have at least 1 efi file that its the default, that is the one we ship with the iso/media/whatever install medium
 // That one is built from the default cmdline and nothing else, so it adds
