@@ -321,6 +321,8 @@ github.com/kairos-io/kairos-operator v0.3.0 h1:C1tcNcRQFFB/q7m+sILgekt2nQvczHGZ4
 github.com/kairos-io/kairos-operator v0.3.0/go.mod h1:X//2Ed/Bu0CiNbUH+WWu1ttcZaSimllz6I9bgX7gaZg=
 github.com/kairos-io/kairos/v4 v4.3.1-0.20261021063548-f0264f568a54 h1:D4vSk1nvMYiOLStmFqnJ9AE58C/L6kuzS5rLUB6vHNg=
 github.com/kairos-io/kairos/v4 v4.3.1-0.20261021063548-f0264f568a54/go.mod h1:vW+efS2Qk+1VNmEYGSWfeb97XEBNk+82msPDRyHoz6c=
+github.com/kairos-io/kairos/v4 v4.4.0-rc2 h1:UdlxcdiEGUzdZlfv4/UkbsOFu2LUJLsLe99N7x+z5dw=
+github.com/kairos-io/kairos/v4 v4.4.0-rc2/go.mod h1:j+jnAD3MnETbafmqyZ3eAoqRV7tFh4UHHf7wVycHdpg=
 github.com/kairos-io/netboot v0.0.0-20261012151809-39e4036684f6 h1:h6l8jxVi9laNUsgVfJFgdHfea5nVfnazxoKiIkDE7xo=
 github.com/kairos-io/netboot v0.0.0-20261012151809-39e4036684f6/go.mod h1:pmR04yZyygecD68+osFBZ1UBm5BHCvdAxsxQltHwR1U=
 github.com/kendru/darwin/go/depgraph v0.0.0-20230809052043-4d1c7e9d1767 h1:Ds6xHRvL0yjG4kZD05leRKt70mM18Fjt0+B5gIqqe1g=
