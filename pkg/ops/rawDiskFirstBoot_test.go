@@ -36,7 +36,7 @@ stages:
                   filesystem: ext2
                 - fsLabel: COS_PERSISTENT
                   pLabel: persistent
-                  filesystem: ext2
+                  filesystem: ext4
 `
 
 func parseYip(content string) yipSchema.YipConfig {
@@ -49,6 +49,20 @@ var _ = Describe("Raw disk first boot config", Label("raw"), func() {
 	It("renders the reset config identical to the legacy template", func() {
 		got := parseYip(resetFirstBootConfig(4242).ToString())
 		Expect(got).To(Equal(parseYip(legacyResetConfig)))
+	})
+
+	It("creates persistent with the partition filesystem and keeps state on the GRUB-safe one", func() {
+		got := parseYip(resetFirstBootConfig(4242).ToString())
+		fs := map[string]string{}
+		for _, stage := range got.Stages[stageRootfsBefore] {
+			for _, part := range stage.Layout.Parts {
+				fs[part.FSLabel] = part.FileSystem
+			}
+		}
+		Expect(fs).To(Equal(map[string]string{
+			sdkConstants.PersistentLabel: sdkConstants.LinuxFs,
+			sdkConstants.StateLabel:      sdkConstants.LinuxImgFs,
+		}))
 	})
 
 	It("creates the cluster plugin config dir before agent.boot runs in initramfs", func() {

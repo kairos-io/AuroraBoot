@@ -100,13 +100,15 @@ var _ = Describe("raw bootable artifacts", Label("raw-bootable"), func() {
 			stateAssertVM(vm, "persistent.mounted", "true")
 			stateAssertVM(vm, "state.mounted", "true")
 			stateAssertVM(vm, "oem.type", "ext4")
-			// Boot-active images create state and persistent as ext4, like an install does
-			partitionFs := "ext2"
+			// Persistent is ext4 on every raw image, like an install. State is ext4 only on
+			// boot-active images; the reset layout keeps it ext2 until yip can turn off
+			// metadata_csum_seed (kairos-io/kairos#5476).
+			stateFs := "ext2"
 			if bootActive {
-				partitionFs = "ext4"
+				stateFs = "ext4"
 			}
-			stateAssertVM(vm, "persistent.type", partitionFs)
-			stateAssertVM(vm, "state.type", partitionFs)
+			stateAssertVM(vm, "persistent.type", "ext4")
+			stateAssertVM(vm, "state.type", stateFs)
 			stateAssertVM(vm, "oem.mount_point", "/oem")
 			stateAssertVM(vm, "persistent.mount_point", "/usr/local")
 			stateAssertVM(vm, "persistent.name", "/dev/vda")
