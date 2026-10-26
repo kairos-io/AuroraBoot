@@ -60,16 +60,22 @@ func resetFirstBootConfig(stateSizeMB int64) *yipSchema.YipConfig {
 				Layout: yipSchema.Layout{
 					Device: &yipSchema.Device{Label: sdkConstants.RecoveryLabel},
 					Parts: []yipSchema.Partition{
+						// COS_STATE stays ext2 for now. GRUB reads it on every boot, and yip's
+						// mkfs cannot pass -O ^metadata_csum_seed yet, so e2fsprogs 1.47+ would
+						// make it unreadable for GRUB < 2.12 without the backport
+						// (kairos-io/kairos#5476).
 						{
 							FSLabel:    sdkConstants.StateLabel,
 							Size:       uint64(stateSizeMB),
 							PLabel:     sdkConstants.StatePartName,
 							FileSystem: sdkConstants.LinuxImgFs,
 						},
+						// COS_PERSISTENT holds live data (k3s/etcd, containerd, kubelet) and
+						// GRUB never reads it, so it gets ext4 like an install does.
 						{
 							FSLabel:    sdkConstants.PersistentLabel,
 							PLabel:     sdkConstants.PersistentPartName,
-							FileSystem: sdkConstants.LinuxImgFs,
+							FileSystem: sdkConstants.LinuxFs,
 						},
 					},
 				},
