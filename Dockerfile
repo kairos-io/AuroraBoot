@@ -26,7 +26,7 @@ ENV CONTAINERD_DISABLE_PIGZ=1
 # request no longer ends the build. See kairos-io/kairos#5565.
 COPY scripts/retry /usr/local/bin/retry
 RUN retry dnf -y update
-RUN retry dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+RUN retry dnf -y install dnf-plugins-core && retry dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 # opensc is needed for the pkcs11 module to work
 # llvm is needed for uki building specifically llvm-objcopy
