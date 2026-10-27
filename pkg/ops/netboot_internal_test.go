@@ -16,7 +16,7 @@ import (
 	"github.com/kairos-io/kairos/v4/sdk/types/logger"
 )
 
-const testGrubCfg = `menuentry "Kairos" --class os --unrestricted {
+const testLivecdGrubCfg = `menuentry "Kairos" --class os --unrestricted {
     linux ($root)/boot/kernel cdroot root=live:CDLABEL=COS_LIVE rd.live.dir=/ net.ifnames=1 install-mode selinux=0 rd.live.overlay.overlayfs
     initrd ($root)/boot/initrd
 }`
@@ -32,7 +32,7 @@ func TestExtractNetbootTakesTheGrubConfig(t *testing.T) {
 		"/rootfs.squashfs":     "squashfs",
 		"/boot/kernel":         "kernel",
 		"/boot/initrd":         "initrd",
-		"/boot/grub2/grub.cfg": testGrubCfg,
+		"/boot/grub2/grub.cfg": testLivecdGrubCfg,
 	})
 
 	if err := ExtractNetboot(func() string { return isoFile }, func() string { return dst }, "kairos")(context.Background()); err != nil {
@@ -77,7 +77,7 @@ func TestWithLiveCmdline(t *testing.T) {
 	const base = `rd.cos.disable root=live:{{ ID "%s" }} config_url={{ ID "%s" }}`
 
 	grubCfgFile := filepath.Join(t.TempDir(), "kairos-grub.cfg")
-	if err := os.WriteFile(grubCfgFile, []byte(testGrubCfg), 0o644); err != nil {
+	if err := os.WriteFile(grubCfgFile, []byte(testLivecdGrubCfg), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
