@@ -13,10 +13,11 @@ on:
   workflow_dispatch:
 
 # The riscv64 runner pool is small and this job averages 54 minutes, so a
-# second push to the same branch must not leave the first one running.
+# second push to the same branch must not leave the first one running. Runs on
+# main queue instead, so every merged commit still gets its baseline result.
 concurrency:
   group: test-riscv64-${{ github.head_ref || github.ref }}-${{ github.repository }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
