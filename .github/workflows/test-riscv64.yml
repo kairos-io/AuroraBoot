@@ -131,7 +131,10 @@ jobs:
         # this job has already shown the compiler itself misbehaving on riscv64
         # (run 39568879746 died in go build with "fatal error: sync: unlock of
         # unlocked mutex" inside cmd/compile). tee plus the upload below keeps
-        # that output even when the job ends as cancelled.
+        # that output when the job is cancelled while the runner is still
+        # alive. When the runner machine itself stops (run 40509213545: this
+        # step was still marked started 70 minutes in, past the 25 minute
+        # command timeout) nothing more runs, and only the job cap bounds it.
         timeout-minutes: 30
         run: |
           # The default shell here is bash -e, without pipefail, so without this
@@ -146,7 +149,8 @@ jobs:
 
       - name: Upload test log
         # Runs on cancellation too, so the goroutine dump the step above leaves
-        # behind outlives a job the service kills at its timeout.
+        # behind outlives a cancelled job, as long as the runner can still run
+        # a step.
         if: always()
         uses: actions/upload-artifact@v7
         with:
