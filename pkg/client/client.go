@@ -35,6 +35,7 @@ type Client struct {
 	Groups     *GroupsService
 	Artifacts  *ArtifactsService
 	Commands   *CommandsService
+	Batches    *BatchesService
 	SecureBoot *SecureBootService
 	Settings   *SettingsService
 }
@@ -60,6 +61,7 @@ func New(baseURL string, opts ...Option) *Client {
 	c.Groups = &GroupsService{c: c}
 	c.Artifacts = &ArtifactsService{c: c}
 	c.Commands = &CommandsService{c: c}
+	c.Batches = &BatchesService{c: c}
 	c.SecureBoot = &SecureBootService{c: c}
 	c.Settings = &SettingsService{c: c}
 	return c
@@ -114,6 +116,7 @@ func (c *Client) WithNodeAPIKey(apiKey string) *Client {
 	cpy.Groups = &GroupsService{c: &cpy}
 	cpy.Artifacts = &ArtifactsService{c: &cpy}
 	cpy.Commands = &CommandsService{c: &cpy}
+	cpy.Batches = &BatchesService{c: &cpy}
 	cpy.SecureBoot = &SecureBootService{c: &cpy}
 	cpy.Settings = &SettingsService{c: &cpy}
 	return &cpy

@@ -105,17 +105,42 @@ func (a *CommandStoreAdapter) ExpireBefore(ctx context.Context, nodeID string, d
 	return a.S.CommandExpireBefore(ctx, nodeID, deadline)
 }
 
-func (a *CommandStoreAdapter) ListByBatch(ctx context.Context, batchID string) ([]*store.NodeCommand, error) {
-	return a.S.ListByBatch(ctx, batchID)
-}
-func (a *CommandStoreAdapter) CancelPendingInBatch(ctx context.Context, batchID string, reason string) (int, error) {
-	return a.S.CancelPendingInBatch(ctx, batchID, reason)
-}
 func (a *CommandStoreAdapter) Delete(ctx context.Context, id string) error {
 	return a.S.CommandDelete(ctx, id)
 }
 func (a *CommandStoreAdapter) DeleteTerminal(ctx context.Context, nodeID string) error {
 	return a.S.CommandDeleteTerminal(ctx, nodeID)
+}
+
+// BatchStoreAdapter adapts Store to the store.BatchStore interface.
+type BatchStoreAdapter struct{ S *Store }
+
+func (a *BatchStoreAdapter) Create(ctx context.Context, b *store.CommandBatch, nodes []*store.BatchNode) error {
+	return a.S.BatchCreate(ctx, b, nodes)
+}
+func (a *BatchStoreAdapter) Get(ctx context.Context, id string) (*store.CommandBatch, error) {
+	return a.S.BatchGet(ctx, id)
+}
+func (a *BatchStoreAdapter) List(ctx context.Context, f store.BatchFilter) ([]*store.CommandBatch, int, error) {
+	return a.S.BatchList(ctx, f)
+}
+func (a *BatchStoreAdapter) BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error) {
+	return a.S.BatchBusyNodes(ctx, nodeIDs)
+}
+func (a *BatchStoreAdapter) Advance(ctx context.Context, batchID string, now time.Time) ([]*store.NodeCommand, error) {
+	return a.S.BatchAdvance(ctx, batchID, now)
+}
+func (a *BatchStoreAdapter) Stop(ctx context.Context, batchID, reason string, now time.Time) error {
+	return a.S.BatchStop(ctx, batchID, reason, now)
+}
+func (a *BatchStoreAdapter) NodeBooted(ctx context.Context, nodeID, bootState string, bootedAt *time.Time, now time.Time) ([]string, error) {
+	return a.S.BatchNodeBooted(ctx, nodeID, bootState, bootedAt, now)
+}
+func (a *BatchStoreAdapter) ActiveIDs(ctx context.Context) ([]string, error) {
+	return a.S.BatchActiveIDs(ctx)
+}
+func (a *BatchStoreAdapter) PostponeExpiredDeadlines(ctx context.Context, now time.Time) error {
+	return a.S.BatchPostponeExpiredDeadlines(ctx, now)
 }
 
 // ArtifactStoreAdapter adapts Store to the store.ArtifactStore interface.
@@ -315,3 +340,5 @@ func (a *SettingsStoreAdapter) Set(ctx context.Context, key, value string) error
 func (a *SettingsStoreAdapter) GetAll(ctx context.Context) (map[string]string, error) {
 	return a.S.SettingGetAll(ctx)
 }
+
+var _ store.BatchStore = (*BatchStoreAdapter)(nil)

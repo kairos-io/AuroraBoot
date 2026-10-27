@@ -430,7 +430,7 @@ var _ = Describe("NodeHandler", func() {
 		It("does not re-deliver a command already claimed (e.g. pushed over WS)", func() {
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
 			// Simulate a command that was already delivered via the WS push path:
-			// pushCommand claims it Pending->Delivered before sending.
+			// PushCommand claims it Pending->Delivered before sending.
 			cs.cmds = []*store.NodeCommand{
 				{ID: "cmd-1", ManagedNodeID: "node-1", Command: "upgrade", Phase: store.CommandDelivered},
 			}

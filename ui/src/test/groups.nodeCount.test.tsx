@@ -51,6 +51,7 @@ function mockFetch(opts: { groups?: unknown[]; failNodes?: boolean } = {}) {
       if (opts.failNodes) return json({ error: "boom" }, 500);
       return json(nodes);
     }
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
     return json([]);
   });
 }
@@ -183,6 +184,7 @@ describe("Group detail delete confirmation", () => {
         if (opts.failNodes) return json({ error: "boom" }, 500);
         return json(opts.nodes ?? []);
       }
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
       return json([]);
     });
   }

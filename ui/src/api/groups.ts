@@ -1,5 +1,5 @@
 import { apiFetch } from "./client";
-import type { CommandResult } from "./nodes";
+import type { Batch, Rollout } from "./batches";
 
 export interface Group {
   id: string;
@@ -52,10 +52,11 @@ export function deleteGroup(id: string): Promise<void> {
 export function sendGroupCommand(
   groupID: string,
   command: string,
-  args?: Record<string, unknown>
-): Promise<CommandResult[]> {
-  return apiFetch<CommandResult[]>(`/api/v1/groups/${groupID}/commands`, {
+  args?: Record<string, unknown>,
+  rollout?: Rollout
+): Promise<Batch> {
+  return apiFetch<Batch>(`/api/v1/groups/${groupID}/commands`, {
     method: "POST",
-    body: JSON.stringify({ command, args }),
+    body: JSON.stringify({ command, args, ...rollout }),
   });
 }
