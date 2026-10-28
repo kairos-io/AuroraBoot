@@ -6,7 +6,7 @@ ARG TARGETARCH
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 # Build the React UI. Output is platform-independent.
-FROM node:24 AS js
+FROM node:26 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm install
