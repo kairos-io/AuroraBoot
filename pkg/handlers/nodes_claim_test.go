@@ -60,7 +60,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 		})
 
 		It("claims an unclaimed node and returns it", func() {
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1"}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1")}}
 
 			rec := claim("g1", `{"claimKey":"machine-a"}`)
 			Expect(rec.Code).To(Equal(http.StatusOK))
@@ -73,7 +73,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 		})
 
 		It("is idempotent for the same key", func() {
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1"}, {ID: "n2", GroupID: "g1"}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1")}, {ID: "n2", GroupID: new("g1")}}
 
 			first := claim("g1", `{"claimKey":"machine-a"}`)
 			second := claim("g1", `{"claimKey":"machine-a"}`)
@@ -85,7 +85,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 		})
 
 		It("returns 409 NoCapacity when the group is exhausted", func() {
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1"}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1")}}
 			claim("g1", `{"claimKey":"machine-a"}`) // takes the only node
 
 			rec := claim("g1", `{"claimKey":"machine-b"}`)
@@ -110,7 +110,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 	Describe("Release", func() {
 		It("releases a claim held by the caller", func() {
 			key := "machine-a"
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1", ClaimKey: &key}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1"), ClaimKey: &key}}
 
 			rec := release("n1", `{"claimKey":"machine-a"}`)
 			Expect(rec.Code).To(Equal(http.StatusOK))
@@ -123,7 +123,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 
 		It("returns 409 ClaimMismatch when a different key owns the node", func() {
 			key := "machine-a"
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1", ClaimKey: &key}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1"), ClaimKey: &key}}
 
 			rec := release("n1", `{"claimKey":"machine-b"}`)
 			Expect(rec.Code).To(Equal(http.StatusConflict))
@@ -135,7 +135,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 		})
 
 		It("is a no-op (released=false, 200) on an unclaimed node", func() {
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1"}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1")}}
 
 			rec := release("n1", `{"claimKey":"machine-a"}`)
 			Expect(rec.Code).To(Equal(http.StatusOK))
@@ -151,7 +151,7 @@ var _ = Describe("NodeHandler claim/release", func() {
 		})
 
 		It("returns 400 when claimKey is missing", func() {
-			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: "g1"}}
+			ns.nodes = []*store.ManagedNode{{ID: "n1", GroupID: new("g1")}}
 			rec := release("n1", `{}`)
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})

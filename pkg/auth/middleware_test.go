@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -65,7 +66,7 @@ func (f *fakeNodeStore) UpdateHeartbeat(_ context.Context, _ string, _ string, _
 	return nil
 }
 func (f *fakeNodeStore) UpdatePhase(_ context.Context, _ string, _ string) error { return nil }
-func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ string) error    { return nil }
+func (f *fakeNodeStore) SetGroup(_ context.Context, _ string, _ *string) error   { return nil }
 func (f *fakeNodeStore) SetLabels(_ context.Context, _ string, _ map[string]string) error {
 	return nil
 }
@@ -73,8 +74,20 @@ func (f *fakeNodeStore) ClaimNode(_ context.Context, _, _ string) (*store.Manage
 	return nil, store.ErrNoClaimCapacity
 }
 func (f *fakeNodeStore) ReleaseNode(_ context.Context, _, _ string) (bool, error) { return false, nil }
-func (f *fakeNodeStore) SetResetPending(_ context.Context, _ string) error        { return nil }
 func (f *fakeNodeStore) AdvanceReset(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) StampResetProgress(_ context.Context, _ string) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) FailResetBefore(_ context.Context, _ string, _ time.Time) (bool, error) {
+	return false, nil
+}
+func (f *fakeNodeStore) SettleAfterReboot(_ context.Context, _, _ string, _ time.Time) error {
+	return nil
+}
+
+func (f *fakeNodeStore) AdvanceUpgrade(_ context.Context, _ string, _ []string, _ string, _ bool) (bool, error) {
 	return false, nil
 }
 func (f *fakeNodeStore) Delete(_ context.Context, _ string) error { return nil }
@@ -87,7 +100,7 @@ var _ = Describe("AdminMiddleware", func() {
 
 	BeforeEach(func() {
 		e = echo.New()
-		middleware = auth.AdminMiddleware("secret-password")
+		middleware = auth.AdminMiddleware(auth.NewAdminAuth("secret-password", auth.NewSessionStore(), ""))
 	})
 
 	It("should allow requests with valid Bearer token", func() {

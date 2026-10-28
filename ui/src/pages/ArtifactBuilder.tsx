@@ -7,6 +7,7 @@ import {
   listSecureBootKeySets,
   uploadOverlayFiles,
   type CreateArtifactInput,
+  type CreateArtifactOutputs,
   type SecureBootKeySet,
 } from "@/api/artifacts";
 import { listGroups, type Group } from "@/api/groups";
@@ -88,8 +89,9 @@ import {
   payloadFromBuilder,
   sanitizeImportedBuildConfig,
 } from "@/lib/buildConfig";
+import { PRODUCT_NAME } from "@/lib/branding";
 
-type OutputField = "iso" | "netboot" | "uki" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "maas" | "tar";
+type OutputField = "iso" | "netboot" | "rawDisk" | "cloudImage" | "gce" | "vhd" | "maas" | "tar";
 type OutputTone = "install" | "disk" | "archive";
 type OutputCardDef = {
   field: OutputField;
@@ -107,6 +109,28 @@ const OUTPUT_TONE_CLASSES: Record<OutputTone, string> = {
   archive: "border-border bg-muted/60 text-foreground",
 };
 
+// A Trusted Boot image has no GRUB and no separate initrd: it boots from a
+// signed UKI that the build packs the whole rootfs into. Netboot and the disk
+// images are built around GRUB and the initrd, so the image ships only as its
+// installer ISO, which the server builds as the UKI ISO, and as a tarball.
+const TRUSTED_BOOT_OUTPUTS: OutputField[] = ["iso", "tar"];
+
+// withBootModeOutputs keeps the outputs the selected boot mode can build. The
+// UKI ISO is the ISO of Trusted Boot mode, so a stored or imported uki flag
+// turns into the ISO. Every path that sets outputs from outside the Output
+// step goes through it, so a clone or an import still sends a request the
+// server takes.
+function withBootModeOutputs(outputs: CreateArtifactOutputs): CreateArtifactOutputs {
+  const next = { ...outputs, iso: outputs.iso || outputs.uki, uki: false };
+  if (!next.trustedBoot) return next;
+  for (const group of OUTPUT_GROUPS) {
+    for (const { field } of group.items) {
+      if (!TRUSTED_BOOT_OUTPUTS.includes(field)) next[field] = false;
+    }
+  }
+  return next;
+}
+
 const OUTPUT_GROUPS: { title: string; tone: OutputTone; items: OutputCardDef[] }[] = [
   {
     title: "Install Media",
@@ -114,7 +138,6 @@ const OUTPUT_GROUPS: { title: string; tone: OutputTone; items: OutputCardDef[] }
     items: [
       { field: "iso", label: "ISO", desc: "Bootable installer image", icon: Disc3 },
       { field: "netboot", label: "Netboot", desc: "PXE network boot artifacts", icon: Wifi },
-      { field: "uki", label: "UKI", desc: "Signed Unified Kernel Image", icon: ShieldCheck },
     ],
   },
   {
@@ -238,11 +261,11 @@ interface BuildTemplate {
 }
 
 // renovate: datasource=docker depName=ghcr.io/kairos-io/hadron extractVersion=^(?<version>v\d+\.\d+\.\d+)
-const HADRON_VERSION = "v0.5.3";
+const HADRON_VERSION = "v0.6.3";
 // renovate: datasource=github-releases depName=kairos-io/kairos
 const KAIROS_VERSION = "v4.3.0";
 // renovate: datasource=docker depName=ubuntu
-const UBUNTU_VERSION = "24.04";
+const UBUNTU_VERSION = "26.04";
 // renovate: datasource=docker depName=fedora
 const FEDORA_VERSION = "44";
 // renovate: datasource=docker depName=opensuse/leap
@@ -370,7 +393,7 @@ const TEMPLATES: BuildTemplate[] = [
     },
   },
   {
-    name: "Ubuntu 24.04",
+    name: `Ubuntu ${UBUNTU_VERSION}`,
     description: "Ubuntu base, auto-kairosified, ISO",
     values: {
       baseImage: `ubuntu:${UBUNTU_VERSION}`,
@@ -605,7 +628,7 @@ function AllowedCommandsPicker({
           No commands selected — the node will still register and send
           heartbeats, but no remote management will be possible. If you
           don&apos;t need any management, untick{" "}
-          <strong>Register with AuroraBoot</strong> instead.
+          <strong>Register with {PRODUCT_NAME}</strong> instead.
         </div>
       )}
     </div>
@@ -631,6 +654,11 @@ export function ArtifactBuilder() {
   // from the current state on every render, so an error goes away as soon as
   // its field is valid again.
   const [shownErrorSteps, setShownErrorSteps] = useState<Set<BuilderStep> | "all">(() => new Set());
+  // What the create handler answered when it refused the build. The form's own
+  // errors are recomputed from state, but this one comes from the server and
+  // nothing on screen would otherwise say the build was rejected. Cleared on
+  // the next submit, so a corrected build does not carry the old message.
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const [overlayFiles, setOverlayFiles] = useState<string[]>([]);
   const [overlayUploading, setOverlayUploading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
@@ -960,12 +988,12 @@ export function ArtifactBuilder() {
       return;
     }
     if (typeof raw !== "object" || raw === null) {
-      toast("Import failed: not an AuroraBoot build config", "error");
+      toast(`Import failed: not a ${PRODUCT_NAME} build config`, "error");
       return;
     }
     const r = raw as Record<string, unknown>;
     if (r.kind !== BUILD_CONFIG_KIND) {
-      toast("Import failed: not an AuroraBoot build config", "error");
+      toast(`Import failed: not a ${PRODUCT_NAME} build config`, "error");
       return;
     }
     if (r.version !== BUILD_CONFIG_VERSION) {
@@ -1004,7 +1032,7 @@ export function ArtifactBuilder() {
       dockerfile: parsed.dockerfile || "",
       overlayId: parsed.overlayId || "",
       kairosInitImage: src.kairosInitImage || "",
-      outputs: { ...EMPTY_OUTPUTS, ...out },
+      outputs: withBootModeOutputs({ ...EMPTY_OUTPUTS, ...out }),
       signing: {
         ...EMPTY_SIGNING,
         ukiKeySetId: resolvedKeySetId,
@@ -1144,7 +1172,7 @@ export function ArtifactBuilder() {
             kubernetesEnabled: a.variant === "standard" ? a.kubernetesEnabled ?? true : true,
             kairosInitImage: a.kairosInitImage || "",
             overlayId: a.overlayId || "",
-            outputs: {
+            outputs: withBootModeOutputs({
               iso: a.iso,
               cloudImage: a.cloudImage,
               netboot: a.netboot,
@@ -1156,7 +1184,7 @@ export function ArtifactBuilder() {
               uki: a.uki ?? false,
               fips: a.fips,
               trustedBoot: a.trustedBoot,
-            },
+            }),
             signing: { ...EMPTY_SIGNING },
             // Already on the artifact response, so the clone has this in hand.
             // Dropping it rebuilt an image that refuses overlays on the very
@@ -1200,7 +1228,7 @@ export function ArtifactBuilder() {
           dockerfile: a.dockerfile || "",
           kairosInitImage: a.kairosInitImage || "",
           overlayId: a.overlayId || "",
-          outputs: {
+          outputs: withBootModeOutputs({
             iso: a.iso,
             cloudImage: a.cloudImage,
             netboot: a.netboot,
@@ -1212,7 +1240,7 @@ export function ArtifactBuilder() {
             uki: a.uki ?? false,
             fips: a.fips,
             trustedBoot: a.trustedBoot,
-          },
+          }),
           signing: { ...EMPTY_SIGNING },
           // Same restore as the Hadron branch above: the hierarchies are on
           // the artifact response and are the clone's to carry over.
@@ -1268,6 +1296,10 @@ export function ArtifactBuilder() {
 
   function updateOutput(field: keyof typeof EMPTY_OUTPUTS, value: boolean) {
     setForm((prev) => ({ ...prev, outputs: { ...prev.outputs, [field]: value } }));
+  }
+
+  function setTrustedBoot(trustedBoot: boolean) {
+    setForm((prev) => ({ ...prev, outputs: withBootModeOutputs({ ...prev.outputs, trustedBoot }) }));
   }
 
   function updateSigning(field: keyof typeof EMPTY_SIGNING, value: string) {
@@ -1374,7 +1406,9 @@ export function ArtifactBuilder() {
 
     // Output
     if (scope === undefined || scope === "output") {
-      const hasOutput = Object.values(form.outputs).some(Boolean);
+      // FIPS and Trusted Boot live in outputs too, but they shape the image
+      // rather than add a format, so only the output cards count.
+      const hasOutput = OUTPUT_GROUPS.some((g) => g.items.some((i) => form.outputs[i.field]));
       if (!hasOutput) {
         errs.push({
           field: "outputs",
@@ -1382,14 +1416,12 @@ export function ArtifactBuilder() {
           message: "At least one output format must be selected.",
         });
       }
-      if (form.outputs.uki) {
-        if (!form.signing.ukiKeySetId) {
-          errs.push({
-            field: "ukiKeySetId",
-            step: "output",
-            message: "A secure boot key set must be selected when UKI is enabled.",
-          });
-        }
+      if (form.outputs.trustedBoot && form.outputs.iso && !form.signing.ukiKeySetId) {
+        errs.push({
+          field: "ukiKeySetId",
+          step: "output",
+          message: "A secure boot key set must be selected for a Trusted Boot ISO.",
+        });
       }
     }
 
@@ -1423,6 +1455,7 @@ export function ArtifactBuilder() {
     // Only allow submission from the Review step (prevents accidental Enter-key submits
     // from inputs or Radix component keyboard handlers on earlier steps).
     if (step !== "review") return;
+    setSubmitError(null);
     const fieldErrors = computeErrors();
     if (fieldErrors.length > 0) {
       setShownErrorSteps("all");
@@ -1488,8 +1521,20 @@ export function ArtifactBuilder() {
       cloudConfig: advancedConfig.trim() || undefined,
     };
 
-    const result = await createArtifact(input);
-    navigate(`/artifacts/${result.id}`);
+    // createArtifact throws on any non-2xx. Without this catch the rejection
+    // escaped the form's onSubmit handler: the page stayed on the Review step
+    // with nothing rendered, so a refused build looked exactly like a click
+    // that did not register. Every message the create handler writes for the
+    // user reaches them through here, so show it and leave the operator on
+    // Review with the button still enabled to correct and try again.
+    try {
+      const result = await createArtifact(input);
+      navigate(`/artifacts/${result.id}`);
+    } catch (err) {
+      setSubmitError(
+        `Build was not started: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
   }
 
   // selectTemplate prefills the form from a template. It does not change the
@@ -1543,6 +1588,9 @@ export function ArtifactBuilder() {
   const errors = liveErrors
     .filter((e) => shownErrorSteps === "all" || shownErrorSteps.has(e.step))
     .map((e) => e.message);
+  // The rejected build goes in the same banner as the field errors, last,
+  // because it is the newest thing the operator did.
+  if (submitError) errors.push(submitError);
   const stepIndex = BUILDER_STEPS.indexOf(step);
   const currentStepErrors = liveErrors.filter((e) => e.step === step);
   const stepHasErrors = (key: BuilderStep) => liveErrors.some((e) => e.step === key);
@@ -1565,14 +1613,26 @@ export function ArtifactBuilder() {
   const availableModels = modelsForArch(form.arch);
 
   // Count only actual output formats (not security modifiers)
-  const selectedOutputCount = OUTPUT_GROUPS.flatMap((g) => g.items).filter(
+  // The output cards of the selected boot mode. Trusted Boot lists only what
+  // its image ships as, and its ISO is the signed UKI installer, named as the
+  // artifact page names it.
+  const outputGroups = form.outputs.trustedBoot
+    ? OUTPUT_GROUPS.map((g) => ({
+        ...g,
+        items: g.items
+          .filter((i) => TRUSTED_BOOT_OUTPUTS.includes(i.field))
+          .map((i) => (i.field === "iso" ? { ...i, label: "UKI ISO", desc: "Signed installer image" } : i)),
+      })).filter((g) => g.items.length > 0)
+    : OUTPUT_GROUPS;
+
+  const selectedOutputCount = outputGroups.flatMap((g) => g.items).filter(
     (i) => form.outputs[i.field],
   ).length;
 
   // Flattened list of currently-picked outputs (with their tone) for the
   // ambient chip row under the step indicator. Rebuilt each render from
   // the same data the Output step uses, so the two views can't drift.
-  const selectedOutputItems = OUTPUT_GROUPS.flatMap((g) =>
+  const selectedOutputItems = outputGroups.flatMap((g) =>
     g.items
       .filter((i) => form.outputs[i.field])
       .map((i) => ({ ...i, tone: g.tone })),
@@ -1713,7 +1773,7 @@ export function ArtifactBuilder() {
               <Label className="mb-2 block text-sm font-medium">
                 Name
                 <InfoTooltip>
-                  Friendly identifier shown throughout AuroraBoot. Not used in the generated artifact filenames.
+                  Friendly identifier shown throughout {PRODUCT_NAME}. Not used in the generated artifact filenames.
                 </InfoTooltip>
               </Label>
               <Input
@@ -2080,7 +2140,7 @@ export function ArtifactBuilder() {
                     Artifact version
                     <InfoTooltip>
                       The version <em>you</em> are releasing with this build. It gets
-                      baked into the image and is how AuroraBoot decides whether a node is
+                      baked into the image and is how {PRODUCT_NAME} decides whether a node is
                       up-to-date or needs an upgrade.
                       <br />
                       <br />
@@ -2522,7 +2582,7 @@ export function ArtifactBuilder() {
                       ISO, so the installed system carries them without pulling
                       anything at first boot. Only extensions published for the{" "}
                       {form.arch} architecture are listed. To use an extension
-                      this AuroraBoot instance built itself, and carry it with
+                      this {PRODUCT_NAME} instance built itself, and carry it with
                       every upgrade to the artifact instead, see "Extensions
                       built on this instance" above.
                     </InfoTooltip>
@@ -2538,7 +2598,7 @@ export function ArtifactBuilder() {
                         <Link to="/settings" className="underline text-foreground">
                           Settings
                         </Link>{" "}
-                        so every build offers them. You can also start AuroraBoot
+                        so every build offers them. You can also start the server
                         with <code className="font-mono text-xs">--extensions-catalog</code>.
                       </p>
                       <div className="grid gap-2">
@@ -2738,12 +2798,12 @@ export function ArtifactBuilder() {
                     </div>
                   )}
 
-                  {selectedExtensionNames.length > 0 && !form.outputs.iso && !form.outputs.uki && (
+                  {selectedExtensionNames.length > 0 && !form.outputs.iso && (
                     <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                       <p className="text-sm text-amber-700">
-                        Extensions are written into the ISO, so select the ISO or
-                        UKI output for them to end up anywhere.
+                        Extensions are written into the ISO, so select the ISO
+                        output for them to end up anywhere.
                       </p>
                     </div>
                   )}
@@ -2965,10 +3025,10 @@ export function ArtifactBuilder() {
                         onChange={(e) => updateProvisioning("registerAuroraBoot", e.target.checked)}
                         className="rounded border-input"
                       />
-                      Register with AuroraBoot
+                      Register with {PRODUCT_NAME}
                     </label>
                     <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Node will phone home to this AuroraBoot on boot.
+                      Node will phone home to this {PRODUCT_NAME} server on boot.
                     </p>
                   </div>
 
@@ -3034,20 +3094,6 @@ export function ArtifactBuilder() {
                       Build with FIPS-validated cryptographic modules.
                     </p>
                   </div>
-                  <div>
-                    <label className="flex items-center gap-2 text-sm font-medium">
-                      <input
-                        type="checkbox"
-                        checked={!!form.outputs.trustedBoot}
-                        onChange={(e) => updateOutput("trustedBoot", e.target.checked)}
-                        className="rounded border-input"
-                      />
-                      Trusted Boot
-                    </label>
-                    <p className="text-xs text-muted-foreground mt-1 ml-6">
-                      Enable measured boot with TPM verification.
-                    </p>
-                  </div>
                 </CardContent>
               </Card>
           </div>
@@ -3057,6 +3103,59 @@ export function ArtifactBuilder() {
         {step === "output" && (
           <div className="grid gap-6 lg:grid-cols-5">
             <div className="lg:col-span-3 space-y-6">
+              <Card>
+                <CardHeader className="pb-3">
+                  <CardTitle className="text-sm">Boot mode</CardTitle>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div role="radiogroup" aria-label="Boot mode" className="grid gap-3 sm:grid-cols-2">
+                    {[
+                      {
+                        trusted: false,
+                        label: "Standard",
+                        desc: "Boots through GRUB. Every output format is available.",
+                      },
+                      {
+                        trusted: true,
+                        label: "Trusted Boot",
+                        desc: "Boots a signed Unified Kernel Image, measured by the TPM.",
+                      },
+                    ].map((mode) => {
+                      const selected = !!form.outputs.trustedBoot === mode.trusted;
+                      return (
+                        <label
+                          key={mode.label}
+                          className={`flex gap-3 rounded-lg border p-3 cursor-pointer transition-colors ${
+                            selected
+                              ? "border-primary bg-primary-soft ring-1 ring-primary/20"
+                              : "border-border hover:border-primary/40"
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="bootMode"
+                            checked={selected}
+                            onChange={() => setTrustedBoot(mode.trusted)}
+                            className="mt-1"
+                          />
+                          <span>
+                            <span className="block font-medium text-sm">{mode.label}</span>
+                            <span className="block text-xs text-muted-foreground mt-0.5">{mode.desc}</span>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                  {form.outputs.trustedBoot && (
+                    <p className="text-xs text-muted-foreground">
+                      A Trusted Boot image carries no GRUB and no separate initrd, so it ships as a
+                      signed UKI installer ISO and as a container tarball. Netboot and disk images
+                      need Standard mode.
+                    </p>
+                  )}
+                </CardContent>
+              </Card>
+
               <Card ref={bindRef("outputs")}>
                 <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-3">
                   <CardTitle className="text-sm">Outputs</CardTitle>
@@ -3065,7 +3164,7 @@ export function ArtifactBuilder() {
                   </span>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  {OUTPUT_GROUPS.map((group) => (
+                  {outputGroups.map((group) => (
                     <div key={group.title}>
                       <p className="text-xs font-medium text-muted-foreground mb-3 uppercase tracking-wide">
                         {group.title}
@@ -3078,6 +3177,7 @@ export function ArtifactBuilder() {
                             <button
                               key={item.field}
                               type="button"
+                              aria-pressed={checked}
                               onClick={() => updateOutput(item.field, !checked)}
                               className={`relative text-left rounded-lg border p-3 transition-colors ${
                                 checked
@@ -3104,19 +3204,19 @@ export function ArtifactBuilder() {
                     </div>
                   ))}
 
-                  {form.outputs.uki && (
+                  {form.outputs.trustedBoot && form.outputs.iso && (
                     <div className="rounded-md bg-amber-500/10 border border-amber-500/25 p-3 flex gap-2">
                       <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                       <p className="text-sm text-amber-700">
-                        UKI requires secure boot signing keys — configure them in the panel below.
+                        The Trusted Boot ISO is signed with secure boot keys. Pick a key set in the panel below.
                       </p>
                     </div>
                   )}
                 </CardContent>
               </Card>
 
-              {/* UKI Signing Keys (only when UKI selected) */}
-              {form.outputs.uki && (
+              {/* UKI Signing Keys (only for a Trusted Boot ISO) */}
+              {form.outputs.trustedBoot && form.outputs.iso && (
                 <Card>
                   <CardHeader>
                     <CardTitle className="text-sm flex items-center gap-2">
@@ -3129,7 +3229,7 @@ export function ArtifactBuilder() {
                       <Label className="text-xs">
                         Key Set
                         <InfoTooltip>
-                          Secure boot key set stored on this AuroraBoot server. Create or import one under Certificates.
+                          Secure boot key set stored on this {PRODUCT_NAME} server. Create or import one under Certificates.
                         </InfoTooltip>
                       </Label>
                       <Select
@@ -3283,7 +3383,7 @@ export function ArtifactBuilder() {
                         className="font-mono text-xs"
                       />
                       <p className="text-xs text-muted-foreground">
-                        Appended to the generated config. AuroraBoot registration is auto-injected by the server.
+                        Appended to the generated config. {PRODUCT_NAME} registration is auto-injected by the server.
                       </p>
                     </div>
                     <div className="grid gap-2">
@@ -3433,7 +3533,7 @@ function BundledExtensionsCard({
       </CardHeader>
       <CardContent>
         <p className="text-xs text-muted-foreground mb-3">
-          Extensions this AuroraBoot instance built on the Extensions page.
+          Extensions this {PRODUCT_NAME} instance built on the Extensions page.
           What you select here rides along with every upgrade to this artifact.
           Only <code>Ready</code> extensions matching arch <code>{arch}</code>{" "}
           are listed.

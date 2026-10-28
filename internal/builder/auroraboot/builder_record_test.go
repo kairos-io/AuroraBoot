@@ -130,7 +130,12 @@ var _ = Describe("AuroraBoot Builder record persistence", func() {
 	// local builds and the cloned form comes up empty.
 	It("persists the Kubernetes fields the clone flow reads from the row", func() {
 		s := newRecStore()
-		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).WithKairosifyFunc(noopKairosify)
+		// Inject the platform probe: without it the cross-arch preflight shells
+		// out to the developer's own docker and the spec depends on the host's
+		// binfmt state.
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, s).
+			WithPlatformsFunc(func(context.Context) ([]string, error) { return nil, nil }).
+			WithKairosifyFunc(noopKairosify)
 		// The build keeps writing into the TempDir after Build returns, so
 		// join it before Ginkgo removes that tree.
 		DeferCleanup(func() { Expect(b.Shutdown(context.Background())).To(Succeed()) })

@@ -3,7 +3,6 @@ import { render, screen, waitFor, fireEvent, act } from "@testing-library/react"
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
-import { setToken } from "@/api/client";
 import { getNode } from "@/api/nodes";
 
 const NODE_ID = "0f9c2f1e-5b4a-4c0e-9d3f-7a1b2c3d4e5f";
@@ -13,7 +12,7 @@ function nodeWithHostname(hostname: string) {
     id: NODE_ID,
     hostname,
     machineID: "a1b2c3d4",
-    groupID: "",
+    groupID: null,
     labels: { role: "worker" },
     phase: "online",
     osRelease: null,
@@ -69,7 +68,6 @@ async function tick(ms: number) {
 
 describe("NodeDetail hostname", () => {
   beforeEach(() => {
-    setToken("test-token");
     vi.useFakeTimers({ shouldAdvanceTime: true });
   });
 

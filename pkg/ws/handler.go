@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/metrics"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -21,21 +22,20 @@ type wsMessage struct {
 	Data json.RawMessage `json:"data,omitempty"`
 }
 
-// heartbeatData is sent by the agent.
-//
-// It intentionally declares only the fields this handler applies. The agent puts
-// more on the wire than this (addresses, boot state); those ride the REST
-// register/heartbeat contract and are deliberately not read here, see
-// handleHeartbeat.
+// heartbeatData is the heartbeat payload the agent sends. handleHeartbeat
+// applies every field except Labels, which is decoded but not applied.
 type heartbeatData struct {
 	AgentVersion string            `json:"agentVersion"`
 	OSRelease    map[string]string `json:"osRelease,omitempty"`
 	Labels       map[string]string `json:"labels,omitempty"`
-	// Hostname is the node's current hostname (optional). Unlike addresses and
-	// boot state it has to be read here: the agent heartbeats over this socket and
-	// stops sending registration payloads once its credentials are on disk, so
-	// this is the only path a hostname change can arrive on
-	// (kairos-io/kairos#4196).
+	// Addresses and BootState are optional. The agent heartbeats over this
+	// socket and stops sending registration payloads once its credentials are
+	// on disk, so this is the path its current addresses and the boot entry it
+	// runs from arrive on after a reboot.
+	Addresses []store.NodeAddress `json:"addresses,omitempty"`
+	BootState string              `json:"bootState,omitempty"`
+	// Hostname is the node's current hostname (optional), read here for the
+	// same reason (kairos-io/kairos#4196).
 	Hostname string `json:"hostname,omitempty"`
 	// Metrics is an optional resource sample (store.NodeMetrics). It is kept raw
 	// and decoded separately so a malformed sample never drops the heartbeat.
@@ -56,8 +56,13 @@ type commandStatusData struct {
 	Result string `json:"result,omitempty"`
 }
 
-var upgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+// newUpgrader returns an upgrader that refuses a browser upgrade from another
+// origin. Without it a page on any site could open the UI socket with the
+// admin's session cookie and read every event.
+func newUpgrader(publicURL string) *websocket.Upgrader {
+	return &websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return auth.OriginAllowed(r, publicURL) },
+	}
 }
 
 // maxMessageBytes caps one incoming WebSocket message on the agent and UI
@@ -99,6 +104,10 @@ type AgentHandler struct {
 	Hub      *Hub
 	Nodes    store.NodeStore
 	Commands store.CommandStore
+
+	// PublicURL is the server's public URL (--url); an upgrade whose Origin
+	// names it is accepted even when a proxy rewrote Host.
+	PublicURL string
 
 	// Finalize, when set, is the auto eject-on-phone-home hook (the same
 	// MaybeFinalizeForNode wired into the REST Register/Heartbeat handlers). A WS
@@ -145,9 +154,13 @@ func (h *AgentHandler) triggerFinalize(nodeID string) {
 	}()
 }
 
-// HandleAgentWS handles GET /api/v1/ws?token=<apiKey>.
+// HandleAgentWS handles GET /api/v1/ws. The node key is read from the
+// Authorization header, or from ?token= for agents that send it there.
 func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
-	token := c.QueryParam("token")
+	token := auth.BearerToken(c)
+	if token == "" {
+		token = c.QueryParam("token")
+	}
 	if token == "" {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "missing token"})
 	}
@@ -158,7 +171,7 @@ func (h *AgentHandler) HandleAgentWS(c echo.Context) error {
 		return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 	}
 
-	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := newUpgrader(h.PublicURL).Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}
@@ -282,14 +295,10 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// context.Background() is correct here: handleHeartbeat is called from the
 	// WS read loop which outlives the original HTTP request context.
 	ctx := context.Background()
-	// The WebSocket heartbeat does not carry network addresses or boot state
-	// (those ride the REST register/heartbeat contract); pass nil/"" so the store
-	// preserves whatever the node reported there. The hostname is passed through:
-	// an agent that reports one is reporting its current one, and an agent that
-	// does not send "" and leaves the stored value alone. remoteIP, unlike those,
-	// is always known here — it is the live connection's address, not something
-	// the agent reports.
-	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, nil, "", hb.Hostname, remoteIP)
+	// An agent that omits addresses, boot state or hostname sends nil or "",
+	// which leaves the stored value alone. remoteIP is always known here: it is
+	// the live connection's address, not something the agent reports.
+	heartbeatErr := h.Nodes.UpdateHeartbeat(ctx, nodeID, hb.AgentVersion, hb.OSRelease, hb.Addresses, hb.BootState, hb.Hostname, remoteIP)
 	if heartbeatErr != nil {
 		log.Printf("ws: failed to update heartbeat for node %s: %v", nodeID, heartbeatErr)
 	}
@@ -300,6 +309,11 @@ func (h *AgentHandler) handleHeartbeat(nodeID string, data json.RawMessage, remo
 	// while its socket is still open must not get samples back after Forget.
 	if heartbeatErr == nil {
 		h.recordMetrics(nodeID, hb.Metrics)
+		if bootedAt, ok := store.BootedAt(time.Now(), hb.Metrics); ok {
+			if err := h.Nodes.SettleAfterReboot(ctx, nodeID, hb.BootState, bootedAt); err != nil {
+				log.Printf("ws: failed to settle node %s after its reboot: %v", nodeID, err)
+			}
+		}
 	}
 	// A WS heartbeat is an "OS is up" signal exactly like the REST heartbeat:
 	// attempt the auto eject-on-phone-home (nil-safe, off this goroutine).
@@ -349,6 +363,22 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 		}
 	}
 
+	// A fail-fast batch stops here: this is the path a real agent reports a
+	// failed upgrade on, so the rule has to be applied on it and not only on
+	// the REST status endpoint. The command is re-read so the batch identity
+	// and the fail-fast flag come from the server's own row rather than from
+	// the frame the node sent.
+	if status.Phase == store.CommandFailed {
+		if cmd, err := h.Commands.GetByID(ctx, status.ID); err == nil && cmd != nil {
+			cmd.Phase = status.Phase
+			if canceled, err := store.CancelBatchAfterFailure(ctx, h.Commands, cmd); err != nil {
+				log.Printf("ws: failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, status.ID, err)
+			} else if canceled > 0 {
+				log.Printf("ws: batch %s stopped after node %s failed; %d pending command(s) canceled", cmd.BatchID, nodeID, canceled)
+			}
+		}
+	}
+
 	if h.Hub != nil && h.Hub.UI != nil {
 		h.Hub.UI.Broadcast(wsMessage{
 			Type: "command_update",
@@ -377,6 +407,7 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 		if !claimed {
 			continue
 		}
+		store.MarkResetDelivered(ctx, h.Nodes, cmd)
 
 		cmdMsg := commandData{
 			ID:      cmd.ID,
@@ -405,11 +436,15 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 // UIHandler handles WebSocket connections from the UI.
 type UIHandler struct {
 	Hub *Hub
+
+	// PublicURL is the server's public URL (--url); an upgrade whose Origin
+	// names it is accepted even when a proxy rewrote Host.
+	PublicURL string
 }
 
 // HandleUIWS handles GET /api/v1/ws/ui.
 func (h *UIHandler) HandleUIWS(c echo.Context) error {
-	conn, err := upgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := newUpgrader(h.PublicURL).Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return err
 	}

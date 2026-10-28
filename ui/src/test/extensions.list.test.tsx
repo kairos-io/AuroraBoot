@@ -5,7 +5,6 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { Extensions } from "@/pages/Extensions";
 import { ExtensionDetail } from "@/pages/ExtensionDetail";
 import { InstallExtensionDialog } from "@/components/InstallExtensionDialog";
-import { setToken } from "@/api/client";
 import type { Extension } from "@/api/extensions";
 
 const ARTIFACT_ID = "a1b2c3d4-0000-4000-8000-000000000001";
@@ -82,7 +81,7 @@ function mockFetch() {
     if (p === `/api/v1/extensions/${READY_ID}/logs`) return new Response("build ok", { status: 200 });
     if (p === "/api/v1/artifacts") return json([{ id: ARTIFACT_ID, name: "ubuntu-24.04-edge-retail", phase: "Ready", message: "" }]);
     if (p === `/api/v1/artifacts/${ARTIFACT_ID}`) return json({ id: ARTIFACT_ID, name: "ubuntu-24.04-edge-retail", phase: "Ready", message: "" });
-    if (p === "/api/v1/secureboot-keys") return json([{ id: KEYSET_ID, name: "fleet-2026", keysDir: "", tpmPcrKeyPath: "", secureBootEnroll: "", createdAt: "" }]);
+    if (p === "/api/v1/secureboot-keys") return json([{ id: KEYSET_ID, name: "fleet-2026", hasTpmPcrKey: false, secureBootEnroll: "", createdAt: "" }]);
     if (p === "/api/v1/groups") return json([{ id: "g1", name: "edge-retail" }]);
     if (p === "/api/v1/nodes")
       return json([
@@ -118,7 +117,6 @@ function cellUnder(row: HTMLElement, header: string): HTMLElement {
 
 describe("Extensions list", () => {
   beforeEach(() => {
-    setToken("t");
     vi.stubGlobal("fetch", mockFetch());
   });
   afterEach(() => {
@@ -178,7 +176,6 @@ describe("Extensions list", () => {
 
 describe("Extension detail", () => {
   beforeEach(() => {
-    setToken("t");
     vi.stubGlobal("fetch", mockFetch());
   });
   afterEach(() => {
@@ -206,7 +203,6 @@ describe("Extension detail", () => {
 
 describe("Install extension dialog", () => {
   beforeEach(() => {
-    setToken("t");
     vi.stubGlobal("fetch", mockFetch());
   });
   afterEach(() => {

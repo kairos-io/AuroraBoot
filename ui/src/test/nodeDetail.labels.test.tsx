@@ -5,7 +5,6 @@ import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
 import { Toaster } from "@/components/ui/toaster";
-import { setToken } from "@/api/client";
 
 const NODE_ID = "0f9c2f1e-5b4a-4c0e-9d3f-7a1b2c3d4e5f";
 
@@ -13,7 +12,7 @@ const node = {
   id: NODE_ID,
   hostname: "edge-01",
   machineID: "9f8e7d6c5b4a",
-  groupID: "",
+  groupID: null,
   labels: { role: "worker" },
   phase: "active",
   osRelease: null,
@@ -72,7 +71,6 @@ function mockFetch(opts: { labelsStatus?: number; labelsBody?: unknown } = {}) {
 }
 
 beforeEach(() => {
-  setToken("test-token");
   // The page opens a UI WebSocket on mount; jsdom would try to dial it.
   vi.stubGlobal(
     "WebSocket",

@@ -14,9 +14,9 @@ import (
 
 var _ = Describe("SettingsHandler", func() {
 	var (
-		e        *echo.Echo
-		token    string
-		handler  *handlers.SettingsHandler
+		e       *echo.Echo
+		token   string
+		handler *handlers.SettingsHandler
 	)
 
 	BeforeEach(func() {

@@ -7,6 +7,8 @@ import {
   deleteArtifact,
   updateArtifact,
   artifactDownloadUrl,
+  artifactImageUrl,
+  createDownloadLink,
   type Artifact,
 } from "@/api/artifacts";
 import { StatusBadge } from "@/components/StatusBadge";
@@ -329,17 +331,17 @@ export function ArtifactDetail() {
     fetchArtifact();
   }
 
-  // absoluteDownloadUrl turns the relative download path into a link that
-  // works when pasted elsewhere, for example into curl on another host.
-  function absoluteDownloadUrl(filename: string): string {
-    return new URL(artifactDownloadUrl(id!, filename), window.location.origin).href;
-  }
-
-  function copyDownloadLink(filename: string) {
-    navigator.clipboard.writeText(absoluteDownloadUrl(filename)).then(
-      () => toast("Copied download link", "success"),
-      () => toast("Copy failed", "error"),
-    );
+  // copyDownloadLink copies a link to one file that works for an hour without
+  // signing in, made absolute on the address this browser reaches the server at.
+  async function copyDownloadLink(filename: string) {
+    try {
+      const link = await createDownloadLink(id!, filename);
+      await navigator.clipboard.writeText(new URL(link.path, window.location.origin).href);
+      const at = new Date(link.expiresAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+      toast(`Link copied, expires in 1 hour (at ${at})`, "success");
+    } catch {
+      toast("Copy failed", "error");
+    }
   }
 
   function openDeploy(method?: "pxe" | "redfish") {
@@ -630,7 +632,7 @@ export function ArtifactDetail() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      title={`Copy the download link for ${filename}`}
+                      title={`Copy a link to ${filename} that works for 1 hour without signing in. Scripts should download through the API with the admin password in an Authorization header.`}
                       onClick={() => copyDownloadLink(filename)}
                     >
                       <Link2 aria-hidden="true" />
@@ -646,7 +648,7 @@ export function ArtifactDetail() {
                   Container image (for upgrades)
                 </p>
                 <a
-                  href={`/api/v1/artifacts/${encodeURIComponent(id!)}/image?token=${encodeURIComponent(localStorage.getItem("auroraboot_token") || "")}`}
+                  href={artifactImageUrl(id!)}
                   download
                   className="inline-flex items-center gap-2 text-xs font-mono text-primary hover:underline break-all"
                 >
@@ -876,7 +878,7 @@ export function ArtifactDetail() {
                       type="button"
                       variant="ghost"
                       size="sm"
-                      title={`Copy the download link for ${filename}`}
+                      title={`Copy a link to ${filename} that works for 1 hour without signing in. Scripts should download through the API with the admin password in an Authorization header.`}
                       onClick={() => copyDownloadLink(filename)}
                     >
                       <Link2 aria-hidden="true" />

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/dashboard-zero-state.png" alt="AuroraBoot dashboard" width="820" />
+  <img src="docs/screenshots/dashboard-zero-state.png" alt="Kairos dashboard" width="820" />
 </p>
 
 <h1 align="center">AuroraBoot</h1>
@@ -53,6 +53,8 @@ Open **http://localhost:9099**, sign in, and the welcome wizard walks you throug
 
 If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL` to that reachable address before starting the stack. Left unset, AuroraBoot falls back to the container's hostname, which nodes can't resolve, so they can't phone home. See `--url` below. Its host is also the address the Deploy dialog reports for the netboot server; with no `AURORABOOT_URL` that dialog reports a local interface address instead.
 
+Behind a reverse proxy that rewrites the `Host` header, set `AURORABOOT_URL` (`--url`) to the address the browser uses. The server refuses sign-in and the live-update socket from a page whose origin matches neither the request `Host` nor that URL, and logs a `refused a request from Origin` line naming all three values.
+
 ### What you get
 
 - **A guided Artifact Builder** with ready-made templates for Ubuntu, Fedora, Debian, openSUSE, Alpine, Rocky and Hadron. Pick architecture, model, variant — the UI filters the choices so you only see what Kairos actually supports.
@@ -72,6 +74,7 @@ If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL`
 | `AURORABOOT_ADMIN_PASSWORD` | Override admin password |
 | `AURORABOOT_REG_TOKEN` | Override registration token |
 | `--disable-rate-limit` | Turn off per-identity rate limiting of the node-driven endpoints |
+| `--reset-timeout 30m` / `AURORABOOT_RESET_TIMEOUT` | How long a node has to come back after a reset before the reset is reported failed. Defaults to 30 minutes; the clock restarts when the node picks the reset command up and again when it re-registers mid-reset, and a negative duration disables expiry |
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
 

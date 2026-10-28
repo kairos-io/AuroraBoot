@@ -20,12 +20,13 @@ const (
 	NodePhaseOffline    NodePhase = "Offline"
 )
 
-// Node describes a Kairos node known to AuroraBoot.
+// Node describes a Kairos node known to AuroraBoot. GroupID is nil for a node
+// outside any group.
 type Node struct {
 	ID            string            `json:"id"`
 	MachineID     string            `json:"machineID"`
 	Hostname      string            `json:"hostname"`
-	GroupID       string            `json:"groupID,omitempty"`
+	GroupID       *string           `json:"groupID,omitempty"`
 	Group         *Group            `json:"group,omitempty"`
 	Phase         NodePhase         `json:"phase"`
 	LastHeartbeat *time.Time        `json:"lastHeartbeat,omitempty"`
@@ -56,6 +57,11 @@ type NodeRegisterRequest struct {
 	MachineID         string `json:"machineID"`
 	Hostname          string `json:"hostname,omitempty"`
 	AgentVersion      string `json:"agentVersion,omitempty"`
+	// Group is the name of the group a new node joins; an unknown name leaves
+	// it ungrouped.
+	Group string `json:"group,omitempty"`
+	// Labels are a new node's initial labels.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // NodeRegisterResponse is returned by POST /api/v1/nodes/register.
@@ -90,6 +96,9 @@ const (
 	CommandPhaseCompleted CommandPhase = "Completed"
 	CommandPhaseFailed    CommandPhase = "Failed"
 	CommandPhaseExpired   CommandPhase = "Expired"
+	// CommandPhaseCanceled is a command a fail-fast batch stopped before it was
+	// ever delivered, so the node ran nothing.
+	CommandPhaseCanceled CommandPhase = "Canceled"
 )
 
 // NodeCommand describes a queued remote operation.
@@ -104,13 +113,44 @@ type NodeCommand struct {
 	DeliveredAt   *time.Time        `json:"deliveredAt,omitempty"`
 	CompletedAt   *time.Time        `json:"completedAt,omitempty"`
 	CreatedAt     time.Time         `json:"createdAt"`
+	// BatchID names the fan-out this command came from. It is empty on a
+	// command addressed to one node.
+	BatchID  string `json:"batchID,omitempty"`
+	FailFast bool   `json:"failFast,omitempty"`
 }
 
-// CreateCommandRequest is the body for single-node and group-wide
-// command creation.
+// BatchOutcome is the state of one fan-out of commands, derived from the
+// per-node commands it created.
+type BatchOutcome struct {
+	BatchID   string        `json:"batchID"`
+	Command   string        `json:"command"`
+	FailFast  bool          `json:"failFast"`
+	Phase     CommandPhase  `json:"phase"`
+	Total     int           `json:"total"`
+	Pending   int           `json:"pending"`
+	Running   int           `json:"running"`
+	Completed int           `json:"completed"`
+	Failed    int           `json:"failed"`
+	Canceled  int           `json:"canceled"`
+	Expired   int           `json:"expired"`
+	Commands  []NodeCommand `json:"commands"`
+}
+
+// CreateCommandRequest is the body of POST /api/v1/nodes/:nodeID/commands.
 type CreateCommandRequest struct {
 	Command string            `json:"command"`
 	Args    map[string]string `json:"args,omitempty"`
+}
+
+// GroupCommandRequest is the body of POST /api/v1/groups/:id/commands. The
+// group is named in the path, so unlike BulkCommandRequest it has no selector.
+type GroupCommandRequest struct {
+	Command string            `json:"command"`
+	Args    map[string]string `json:"args,omitempty"`
+	// FailFast cancels the commands of this fan-out that are still Pending
+	// once any node of it reports Failed. A node that was online when the
+	// fan-out ran already holds its command and is not stopped.
+	FailFast bool `json:"failFast,omitempty"`
 }
 
 // CommandSelector targets nodes for a bulk command operation.
@@ -126,6 +166,10 @@ type BulkCommandRequest struct {
 	Selector CommandSelector   `json:"selector"`
 	Command  string            `json:"command"`
 	Args     map[string]string `json:"args,omitempty"`
+	// FailFast cancels the commands of this fan-out that are still Pending
+	// once any node of it reports Failed. A node that was online when the
+	// fan-out ran already holds its command and is not stopped.
+	FailFast bool `json:"failFast,omitempty"`
 }
 
 // UpdateCommandStatusRequest is the body used by agents to report
@@ -265,11 +309,11 @@ type UpdateArtifactRequest struct {
 type SecureBootKeySet struct {
 	ID               string    `json:"id"`
 	Name             string    `json:"name"`
-	KeysDir          string    `json:"keysDir"`
-	TPMPCRKeyPath    string    `json:"tpmPcrKeyPath"`
 	SecureBootEnroll string    `json:"secureBootEnroll"`
 	CreatedAt        time.Time `json:"createdAt"`
 	UpdatedAt        time.Time `json:"updatedAt"`
+	// HasTPMPCRKey reports whether the set holds a TPM PCR signing key.
+	HasTPMPCRKey bool `json:"hasTpmPcrKey"`
 }
 
 // GenerateKeySetRequest is the body of POST /api/v1/secureboot-keys/generate.

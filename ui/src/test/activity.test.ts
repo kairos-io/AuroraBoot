@@ -120,7 +120,7 @@ describe("needsAttention", () => {
       nodes: [
         node({ id: "off", hostname: "pos-2", phase: "Offline" }),
         node({ id: "rec", hostname: "plc-gw", bootState: "recovery" }),
-        node({ id: "new", hostname: "lab-box", groupID: "" }),
+        node({ id: "new", hostname: "lab-box", groupID: null }),
       ],
       artifacts: [artifact({ id: "abad", name: "kiosk", phase: "Error" })],
       extensions: [extension({ id: "xbad", name: "plc-ext", phase: "Error" })],

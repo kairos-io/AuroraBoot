@@ -233,6 +233,15 @@ var _ = Describe("applyGrubTemplate", Label("iso"), func() {
 		}
 	})
 
+	// hiddenentry is not a GRUB command. GRUB prints "can't find command
+	// 'hiddenentry'" before the menu and the hotkey does not exist. The
+	// text mode switch has to be a menuentry.
+	It("defines the text mode hotkey with a menuentry", func() {
+		result := string(mustApplyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "", ""))
+		Expect(result).ToNot(ContainSubstring("hiddenentry"))
+		Expect(result).To(MatchRegexp(`(?m)^\s*menuentry "Text mode" --hotkey "t" \{$`))
+	})
+
 	It("takes a padded id, since a shell or a yaml quote leaves whitespace", func() {
 		result, err := applyGrubTemplate(constants.GrubLiveBiosCfg, "", "", "",
 			"  "+constants.LiveGrubEntryBootLocal+"\n")

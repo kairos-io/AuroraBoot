@@ -54,7 +54,8 @@ const USER_LABELS: Record<BuildSummaryData["user"], string> = {
 const OUTPUT_LABELS: [keyof Artifact, string][] = [
   ["iso", "ISO"],
   ["netboot", "Netboot"],
-  ["uki", "UKI"],
+  // The ISO of a Trusted Boot build, which the server builds as the UKI ISO.
+  ["uki", "UKI ISO"],
   ["rawDisk", "Raw Disk"],
   ["cloudImage", "Cloud Image"],
   ["gce", "Google Cloud"],
@@ -135,6 +136,7 @@ function sections(d: BuildSummaryData): Section[] {
       title: "Output",
       step: "output",
       rows: [
+        { label: "Boot mode", value: d.trustedBoot ? "Trusted Boot" : "Standard" },
         { label: "Formats", value: list(d.outputs) },
         {
           label: "Overlay files",
@@ -150,7 +152,6 @@ function sections(d: BuildSummaryData): Section[] {
       step: "access",
       rows: [
         { label: "FIPS", value: yesNo(d.fips) },
-        { label: "Trusted Boot", value: yesNo(d.trustedBoot) },
         {
           label: "Insecure registries",
           value: yesNo(d.insecureRegistries),
