@@ -16,3 +16,20 @@ reason = "Transitive go-attestation; OSV lists no patched release (Fixed in N/A)
 id = "GO-2026-5932"
 ignoreUntil = 2026-11-17
 reason = "golang.org/x/crypto/openpgp is unmaintained upstream; OSV lists no patched release (Fixed in N/A). Now on x/crypto v0.56.0. Re-evaluate before expiry."
+
+# labstack/echo v4: both advisories cover every v4 release through v4.16.2 (the
+# newest) and are fixed only in echo v5, so a bump inside v4 cannot clear them.
+# GHSA-246p: echo's RealIP trusts X-Forwarded-For by default. It applies to
+# RegistrationRateLimiter, which keys on RealIP; pkg/auth/ratelimit.go already
+# documents that limiter as a flood speed-bump, with the registration token as
+# the access control. GHSA-99jh: echo's Proxy middleware forwards X-Real-IP;
+# AuroraBoot does not use that middleware.
+[[IgnoredVulns]]
+id = "GHSA-246p-cpwv-v3jq"
+ignoreUntil = 2026-11-30
+reason = "echo v4 has no patched release (fixed only in v5) as of 2026-10-29. RealIP keys only the registration flood limiter; the registration token is the access control. Re-evaluate before expiry or on the echo v5 move."
+
+[[IgnoredVulns]]
+id = "GHSA-99jh-6h7p-pp36"
+ignoreUntil = 2026-11-30
+reason = "echo v4 has no patched release (fixed only in v5) as of 2026-10-29. Affects echo's Proxy middleware, which AuroraBoot does not use. Re-evaluate before expiry or on the echo v5 move."
