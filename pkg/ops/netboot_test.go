@@ -317,6 +317,63 @@ var _ = Describe("netbootCmdline", func() {
 		Expect(err).To(HaveOccurred())
 		Expect(err.Error()).To(ContainSubstring("work.sysext.raw"))
 	})
+
+	// Without the keyword immucore writes no install sentinel, so
+	// 52_installer.yaml writes no installer unit and nothing else on a
+	// netbooted node runs the install. See kairos-io/kairos#5373.
+	It("asks for the installer", func() {
+		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(line).To(ContainSubstring(" install-mode-interactive "))
+	})
+
+	// The interactive installer is the dispatcher: it runs AutoInstall first,
+	// so install.auto still installs unattended, and it offers the pairing
+	// flow. Plain install-mode would install with no prompt and no way back,
+	// which is the entry the ISO menu dropped. install-mode is a prefix of
+	// install-mode-interactive, so the assertion is space-delimited the same
+	// way the kairos stage guard is.
+	It("does not ask for the unattended installer", func() {
+		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(line).ToNot(MatchRegexp(`(^| )install-mode( |$)`))
+	})
+
+	// nodepair.enable started the plain installer before the install intent
+	// moved into immucore (kairos-io/kairos#5464), and starts nothing now. The
+	// pairing flow it stood for is offered by the interactive installer.
+	It("does not carry the legacy pairing keyword", func() {
+		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(line).NotTo(ContainSubstring("nodepair.enable"))
+	})
+
+	// kairos-sdk reads the boot state off this keyword, and immucore only
+	// writes /run/cos/live_mode when it says LiveCD. The install keyword on
+	// its own would not be enough.
+	It("still marks the boot as a netboot", func() {
+		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(line).To(ContainSubstring(" netboot "))
+	})
+
+	// The override is how an operator asks for a netbooted node that does not
+	// install itself, so the default boot options must not survive underneath
+	// it. The bundled extensions are a separate matter and are still appended.
+	It("drops the installer keyword when a cmdline is configured", func() {
+		line, err := netbootCmdline(squashfs(), "/config.yaml", schema.NetBoot{Cmdline: "kairos.ram console=ttyS0"})
+		Expect(err).NotTo(HaveOccurred())
+
+		Expect(line).To(ContainSubstring("kairos.ram console=ttyS0"))
+		Expect(line).NotTo(ContainSubstring("install-mode"))
+		Expect(line).NotTo(ContainSubstring("rd.live.overlay.overlayfs"))
+		Expect(line).To(ContainSubstring(`root=live:{{ ID "` + squashfs() + `" }}`))
+		Expect(line).To(ContainSubstring(`config_url={{ ID "/config.yaml" }}`))
+	})
 })
 
 // A malformed value is an InvalidDeclarationError on the agent side, which
