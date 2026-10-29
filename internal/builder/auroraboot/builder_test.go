@@ -345,8 +345,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				BaseImage:     "quay.io/kairos/ubuntu:latest",
 				OverlayRootfs: "/tmp/my-overlay",
 				Outputs: builder.OutputOptions{
-					ISO: true, // so the deployer step runs and we hit buildUKI after
-					UKI: true,
+					ISO:         true, // so the deployer step runs and we hit buildUKI after
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:    "/keys/db.key",
@@ -383,8 +383,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				Extensions:         []string{"nvidia@v1"},
 				ExtensionsCatalogs: []string{"https://example.test/releases.json"},
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",
@@ -408,8 +408,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				ID:        "uki-schemed",
 				BaseImage: "oci:quay.io/kairos/ubuntu:latest",
 				Outputs: builder.OutputOptions{
-					ISO: true, // so the deployer step runs and we hit buildUKI after
-					UKI: true,
+					ISO:         true, // so the deployer step runs and we hit buildUKI after
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:    "/keys/db.key",
@@ -435,8 +435,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				ID:        "uki-nokeys",
 				BaseImage: "quay.io/kairos/ubuntu:latest",
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				// No Signing populated.
 			})
@@ -471,8 +471,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				ID:        "uki-boom",
 				BaseImage: "quay.io/kairos/ubuntu:latest",
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",
@@ -503,8 +503,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				BaseImage:   "quay.io/kairos/ubuntu:latest",
 				CloudConfig: cc,
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",
@@ -540,7 +540,7 @@ var _ = Describe("AuroraBoot Builder", func() {
 				BaseImage:   "quay.io/kairos/ubuntu:latest",
 				TrustedBoot: true,
 				Outputs: builder.OutputOptions{
-					UKI:         true,
+					ISO:         true,
 					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
@@ -566,9 +566,11 @@ var _ = Describe("AuroraBoot Builder", func() {
 			Expect(status.Artifacts).To(ContainElement(isoPath))
 		})
 
-		// GenISO writes a plain ISO as the source for netboot extraction. The
-		// user asked only for netboot and UKI, so that scaffolding ISO goes
-		// while the UKI ISO stays.
+		// The deployer writes a plain GRUB ISO as scaffolding. A Trusted Boot
+		// build asks for the ISO and means the UKI one, so the scaffolding ISO
+		// goes and only the UKI ISO is left to collect. Without that, the
+		// build would offer two ISOs and the plain one does not boot a
+		// Trusted Boot image.
 		It("removes the scaffolding ISO but keeps the UKI ISO", func() {
 			scaffoldingDeploy := func(_ context.Context, config schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
 				return os.WriteFile(filepath.Join(config.State, "plain.iso"), []byte("plain"), 0o644)
@@ -579,12 +581,13 @@ var _ = Describe("AuroraBoot Builder", func() {
 			})
 
 			_, err := nb.Build(context.Background(), builder.BuildOptions{
-				ID:        "uki-netboot",
-				BaseImage: "quay.io/kairos/ubuntu:latest",
-				Netboot:   true,
+				ID:          "uki-netboot",
+				BaseImage:   "quay.io/kairos/ubuntu:latest",
+				ISO:         true,
+				TrustedBoot: true,
 				Outputs: builder.OutputOptions{
-					Netboot: true,
-					UKI:     true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",

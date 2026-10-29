@@ -23,8 +23,8 @@ definitions:
         type: boolean
       iso:
         description: |-
-          The installer ISO. With trustedBoot it is the signed UKI ISO, the same
-          as uki, and needs signing.ukiKeySetId.
+          The installer ISO. With trustedBoot it is the signed UKI ISO, which
+          needs signing.ukiKeySetId.
         type: boolean
       maas:
         type: boolean
@@ -38,9 +38,6 @@ definitions:
       tar:
         type: boolean
       trustedBoot:
-        type: boolean
-      uki:
-        description: The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.
         type: boolean
       vhd:
         type: boolean
@@ -637,8 +634,6 @@ definitions:
       targetGroupId:
         type: string
       trustedBoot:
-        type: boolean
-      uki:
         type: boolean
       updatedAt:
         type: string

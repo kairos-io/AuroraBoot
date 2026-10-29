@@ -49,7 +49,7 @@ var _ = Describe("AuroraBoot Builder Trusted Boot on a Dockerfile-built Kairos i
 			ID:          id,
 			Dockerfile:  "FROM quay.io/kairos/hadron:latest",
 			TrustedBoot: true,
-			Outputs:     builder.OutputOptions{TrustedBoot: true, UKI: true},
+			Outputs:     builder.OutputOptions{TrustedBoot: true, ISO: true},
 			Signing: builder.SigningOptions{
 				UKISecureBootKey:  "/keys/db.key",
 				UKISecureBootCert: "/keys/db.pem",
