@@ -476,9 +476,24 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 			cmd.Stdout = logWriter
 			cmd.Stderr = logWriter
 		}
-		if err := cmd.Run(); err != nil && logWriter != nil {
-			fmt.Fprintf(logWriter, "Warning: docker save failed: %v\n", err)
-			logWriter.Flush()
+		if err := cmd.Run(); err != nil {
+			// A failed or killed save leaves a partial tar behind that
+			// would be listed as an artifact.
+			_ = os.Remove(tarPath)
+			if ctx.Err() != nil {
+				// Cancel already recorded the build as cancelled.
+				return
+			}
+			msg := fmt.Sprintf("saving the container image as TAR failed: %v", err)
+			if logWriter != nil {
+				fmt.Fprintf(logWriter, "%s\n", msg)
+				logWriter.Flush()
+			}
+			b.setPhase(bs, builder.BuildError, msg)
+			if b.store != nil {
+				_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
+			}
+			return
 		}
 	}
 
@@ -520,6 +535,12 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 			}
 			return
 		}
+	}
+
+	// A cancelled build stays in the Error state Cancel gave it; do not
+	// overwrite it with Ready.
+	if ctx.Err() != nil {
+		return
 	}
 
 	// Step 3: Collect artifact paths.
