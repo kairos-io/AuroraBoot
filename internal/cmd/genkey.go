@@ -41,7 +41,7 @@ var GenKeyCmd = cli.Command{
 		},
 		&cli.StringFlag{
 			Name:  existingKeysDirFlag,
-			Usage: "Path to a directory with PK.key, PK.pem, KEK.key, KEK.pem, db.key and db.pem to use instead of generating new ones. NAME is not needed and --expiration-in-days is ignored when set",
+			Usage: "Path to a directory with PK.key, PK.pem, KEK.key, KEK.pem, db.key and db.pem to use instead of generating new ones. A tpm2-pcr-private.pem in it is copied too, otherwise a new one is generated. NAME is not needed and --expiration-in-days is ignored when set",
 		},
 	},
 	Action: func(ctx *cli.Context) error {

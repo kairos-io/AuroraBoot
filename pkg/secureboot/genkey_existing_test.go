@@ -2,6 +2,10 @@ package secureboot
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"os"
@@ -141,5 +145,76 @@ var _ = Describe("GenerateKeySet with ExistingKeysDir", func() {
 		Expect(after).To(Equal(before))
 		_, err = efiutil.ReadKey(after)
 		Expect(err).ToNot(HaveOccurred())
+	})
+
+	Context("tpm2-pcr-private.pem", func() {
+		pcrKey := func() []byte {
+			key, err := rsa.GenerateKey(rand.Reader, 2048)
+			Expect(err).ToNot(HaveOccurred())
+			der, err := x509.MarshalPKCS8PrivateKey(key)
+			Expect(err).ToNot(HaveOccurred())
+			return pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})
+		}
+
+		It("copies the PCR key from the existing dir as is", func() {
+			want := pcrKey()
+			writeFile(filepath.Join(src, "tpm2-pcr-private.pem"), want)
+
+			Expect(run(Options{OutputDir: out, ExistingKeysDir: src})).To(Succeed())
+
+			got, err := os.ReadFile(filepath.Join(out, "tpm2-pcr-private.pem"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(Equal(want))
+			info, err := os.Stat(filepath.Join(out, "tpm2-pcr-private.pem"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+		})
+
+		It("accepts a PKCS#1 RSA key", func() {
+			key, err := rsa.GenerateKey(rand.Reader, 2048)
+			Expect(err).ToNot(HaveOccurred())
+			want := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+			writeFile(filepath.Join(src, "tpm2-pcr-private.pem"), want)
+
+			Expect(run(Options{OutputDir: out, ExistingKeysDir: src})).To(Succeed())
+
+			got, err := os.ReadFile(filepath.Join(out, "tpm2-pcr-private.pem"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(got).To(Equal(want))
+		})
+
+		It("generates a PCR key when the existing dir has none", func() {
+			Expect(run(Options{OutputDir: out, ExistingKeysDir: src})).To(Succeed())
+
+			got, err := os.ReadFile(filepath.Join(out, "tpm2-pcr-private.pem"))
+			Expect(err).ToNot(HaveOccurred())
+			Expect(checkPCRKey(got)).To(Succeed())
+		})
+
+		It("rejects a PCR key that is not PEM and writes nothing", func() {
+			writeFile(filepath.Join(src, "tpm2-pcr-private.pem"), []byte("garbage"))
+
+			err := run(Options{OutputDir: out, ExistingKeysDir: src})
+			Expect(err).To(MatchError(ContainSubstring("tpm2-pcr-private.pem: is not a PEM encoded private key")))
+			Expect(filepath.Join(out, "PK.key")).ToNot(BeAnExistingFile())
+		})
+
+		It("rejects an encrypted PCR key", func() {
+			writeFile(filepath.Join(src, "tpm2-pcr-private.pem"), pem.EncodeToMemory(&pem.Block{Type: "ENCRYPTED PRIVATE KEY", Bytes: []byte("x")}))
+
+			err := run(Options{OutputDir: out, ExistingKeysDir: src})
+			Expect(err).To(MatchError(ContainSubstring("tpm2-pcr-private.pem: is encrypted")))
+		})
+
+		It("rejects a non-RSA PCR key", func() {
+			key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+			Expect(err).ToNot(HaveOccurred())
+			der, err := x509.MarshalPKCS8PrivateKey(key)
+			Expect(err).ToNot(HaveOccurred())
+			writeFile(filepath.Join(src, "tpm2-pcr-private.pem"), pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der}))
+
+			err = run(Options{OutputDir: out, ExistingKeysDir: src})
+			Expect(err).To(MatchError(ContainSubstring("must be an RSA private key")))
+		})
 	})
 })
