@@ -212,10 +212,13 @@ func Build(opts Options) (err error) {
 		log = &l
 	}
 
-	config := ops.NewConfig(
+	config, err := ops.NewConfig(
 		ops.WithImageExtractor(imageutils.OCIImageExtractor{Insecure: opts.AllowInsecureRegistries}),
 		ops.WithLogger(*log),
 	)
+	if err != nil {
+		return err
+	}
 	if opts.Arch != "" {
 		config.Arch = opts.Arch
 	}
