@@ -72,6 +72,44 @@ func (m *memArtifactStore) Update(_ context.Context, rec *store.ArtifactRecord) 
 	return nil
 }
 
+// UpdatePhaseMessage mirrors the column-scoped write the phase-watch
+// goroutine performs. It has to mutate the stored record, not just
+// succeed: the spec below asserts the Pending -> Building transition by
+// reading the row back.
+func (m *memArtifactStore) UpdatePhaseMessage(_ context.Context, id, phase, message string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.records[id]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	rec.Phase = phase
+	rec.Message = message
+	return nil
+}
+
+func (m *memArtifactStore) UpdateFiles(_ context.Context, id string, files []string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.records[id]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	rec.ArtifactFiles = files
+	return nil
+}
+
+func (m *memArtifactStore) ClearUploadToken(_ context.Context, id string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.records[id]
+	if !ok {
+		return fmt.Errorf("not found")
+	}
+	rec.UploadToken = ""
+	return nil
+}
+
 func (m *memArtifactStore) Delete(_ context.Context, id string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
