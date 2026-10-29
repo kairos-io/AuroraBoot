@@ -118,6 +118,17 @@ func (h *SecureBootHandler) GenerateKeys(c echo.Context) error {
 
 	ctx := c.Request().Context()
 
+	if existing, _ := h.store.GetByName(ctx, req.Name); existing != nil {
+		return c.JSON(http.StatusConflict, map[string]string{"error": fmt.Sprintf("a key set named %q already exists", req.Name)})
+	}
+	// A directory left empty or half filled by a failed run is fine to reuse;
+	// only one that already holds key files is refused.
+	for _, f := range []string{"PK.key", "KEK.key", "db.key", "tpm2-pcr-private.pem"} {
+		if _, err := os.Stat(filepath.Join(outputDir, f)); err == nil {
+			return c.JSON(http.StatusConflict, map[string]string{"error": fmt.Sprintf("directory %s already holds %s on disk", outputDir, f)})
+		}
+	}
+
 	if err := secureboot.GenerateKeySet(secureboot.Options{
 		Name:      req.Name,
 		OutputDir: outputDir,
