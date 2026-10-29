@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -115,6 +116,59 @@ var _ = Describe("SecureBootHandler export/import", func() {
 
 	AfterEach(func() {
 		os.RemoveAll(keysDir)
+	})
+
+	Describe("GenerateKeys", func() {
+		It("returns the generated key set without server paths", func() {
+			if _, err := exec.LookPath("openssl"); err != nil {
+				Skip("openssl not on PATH")
+			}
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/secureboot-keys/generate", strings.NewReader(`{"name":"generated"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			Expect(handler.GenerateKeys(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+
+			Expect(rec.Body.String()).NotTo(ContainSubstring("keysDir"))
+			var resp map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp).NotTo(HaveKey("keysDir"))
+			Expect(resp).NotTo(HaveKey("tpmPcrKeyPath"))
+			Expect(resp).To(HaveKeyWithValue("hasTpmPcrKey", true))
+			Expect(resp).To(HaveKeyWithValue("name", "generated"))
+		})
+	})
+
+	Describe("ListKeys", func() {
+		list := func() []map[string]any {
+			req := httptest.NewRequest(http.MethodGet, "/api/v1/secureboot-keys", nil)
+			rec := httptest.NewRecorder()
+			Expect(handler.ListKeys(echo.New().NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+			Expect(rec.Body.String()).NotTo(ContainSubstring(keysDir))
+			var out []map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+			return out
+		}
+
+		It("returns no server paths and says whether the set holds a TPM PCR key", func() {
+			seedKeySet(ctx, fakeSB, keysDir, "with-tpm", map[string]fileSpec{
+				"db.key":               {data: []byte("K"), mode: 0o600},
+				"tpm2-pcr-private.pem": {data: []byte("T"), mode: 0o600},
+			})
+			seedKeySet(ctx, fakeSB, keysDir, "without-tpm", map[string]fileSpec{
+				"db.key": {data: []byte("K"), mode: 0o600},
+			})
+
+			byName := map[string]map[string]any{}
+			for _, ks := range list() {
+				Expect(ks).NotTo(HaveKey("keysDir"))
+				Expect(ks).NotTo(HaveKey("tpmPcrKeyPath"))
+				byName[ks["name"].(string)] = ks
+			}
+			Expect(byName["with-tpm"]).To(HaveKeyWithValue("hasTpmPcrKey", true))
+			Expect(byName["without-tpm"]).To(HaveKeyWithValue("hasTpmPcrKey", false))
+		})
 	})
 
 	Describe("ExportKeys", func() {
@@ -247,15 +301,22 @@ var _ = Describe("SecureBootHandler export/import", func() {
 			})
 			Expect(rec.Code).To(Equal(http.StatusCreated))
 
-			var ks store.SecureBootKeySet
-			Expect(json.Unmarshal(rec.Body.Bytes(), &ks)).To(Succeed())
-			Expect(ks.Name).To(Equal("imported"))
-			Expect(ks.SecureBootEnroll).To(Equal("if-safe"))
-			Expect(ks.KeysDir).To(Equal(filepath.Join(keysDir, "imported")))
-			Expect(ks.TPMPCRKeyPath).To(Equal(filepath.Join(keysDir, "imported", "tpm2-pcr-private.pem")))
+			Expect(rec.Body.String()).NotTo(ContainSubstring("keysDir"))
+			var resp map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+			Expect(resp).NotTo(HaveKey("keysDir"))
+			Expect(resp).NotTo(HaveKey("tpmPcrKeyPath"))
+			Expect(resp).To(HaveKeyWithValue("hasTpmPcrKey", true))
+			Expect(resp).To(HaveKeyWithValue("name", "imported"))
+			Expect(resp).To(HaveKeyWithValue("secureBootEnroll", "if-safe"))
+
+			stored, err := fakeSB.GetByName(ctx, "imported")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(stored.KeysDir).To(Equal(filepath.Join(keysDir, "imported")))
+			Expect(stored.TPMPCRKeyPath).To(Equal(filepath.Join(keysDir, "imported", "tpm2-pcr-private.pem")))
 
 			// Files on disk with correct content and modes.
-			dbKeyPath := filepath.Join(ks.KeysDir, "db.key")
+			dbKeyPath := filepath.Join(stored.KeysDir, "db.key")
 			data, err := os.ReadFile(dbKeyPath)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(data).To(Equal([]byte("PRIVATE")))
@@ -263,11 +324,27 @@ var _ = Describe("SecureBootHandler export/import", func() {
 			info, err := os.Stat(dbKeyPath)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(info.Mode().Perm()).To(Equal(os.FileMode(0o600)))
+		})
 
-			// Store record persisted.
-			persisted, err := fakeSB.GetByName(ctx, "imported")
-			Expect(err).NotTo(HaveOccurred())
-			Expect(persisted).NotTo(BeNil())
+		It("reports no TPM PCR key when the archive puts a directory at its path", func() {
+			rec, _ := importExported("imported", "source", map[string]fileSpec{
+				"db.key":                     {data: []byte("PRIVATE"), mode: 0o600},
+				"tpm2-pcr-private.pem/child": {data: []byte("NOT A KEY"), mode: 0o600},
+			})
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			var out map[string]any
+			Expect(json.Unmarshal(rec.Body.Bytes(), &out)).To(Succeed())
+			Expect(out).To(HaveKeyWithValue("hasTpmPcrKey", false))
+		})
+
+		It("names the key set, not the directory, when its directory already exists", func() {
+			Expect(os.MkdirAll(filepath.Join(keysDir, "imported"), 0o700)).To(Succeed())
+			rec, _ := importExported("imported", "source", map[string]fileSpec{
+				"db.key": {data: []byte("PRIVATE"), mode: 0o600},
+			})
+			Expect(rec.Code).To(Equal(http.StatusConflict))
+			Expect(rec.Body.String()).NotTo(ContainSubstring(keysDir))
+			Expect(rec.Body.String()).To(ContainSubstring(`imported`))
 		})
 
 		It("returns 409 when a key set with the target name already exists", func() {

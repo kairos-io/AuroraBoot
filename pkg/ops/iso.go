@@ -70,19 +70,22 @@ type BuildISOAction struct {
 type BuildISOActionOption func(a *BuildISOAction)
 type GenericOptions func(a *sdkConfig.Config) error
 
-func NewBuildConfig(opts ...GenericOptions) *BuildConfig {
-	b := &BuildConfig{
-		Config: *NewConfig(opts...),
-		Name:   constants.BuildImgName,
+func NewBuildConfig(opts ...GenericOptions) (*BuildConfig, error) {
+	c, err := NewConfig(opts...)
+	if err != nil {
+		return nil, err
 	}
-	return b
+
+	return &BuildConfig{
+		Config: *c,
+		Name:   constants.BuildImgName,
+	}, nil
 }
 
-func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
+func NewConfig(opts ...GenericOptions) (*sdkConfig.Config, error) {
 	arch, err := utils.GolangArchToArch(runtime.GOARCH)
 	if err != nil {
-		internal.Log.Logger.Error().Err(err).Msg("invalid arch")
-		return nil
+		return nil, fmt.Errorf("invalid host arch %s: %w", runtime.GOARCH, err)
 	}
 
 	c := &sdkConfig.Config{
@@ -96,8 +99,7 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	for _, o := range opts {
 		err := o(c)
 		if err != nil {
-			internal.Log.Logger.Error().Err(err).Msg("error applying config option")
-			return nil
+			return nil, fmt.Errorf("applying config option: %w", err)
 		}
 	}
 
@@ -120,11 +122,31 @@ func NewConfig(opts ...GenericOptions) *sdkConfig.Config {
 	}
 	litter.Config.HidePrivateFields = false
 
-	return c
+	return c, nil
 }
 
-// GenISO generates an ISO from a rootfs, and stores results in dst
-func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
+// isoBaseName is the base name the generated ISO is written under, without the
+// ".iso" suffix and without the optional date stamp GenISO adds on top.
+//
+// override_name wins, because it is what --override-name sets and a command
+// line is a deliberate, one-off override of the configuration. iso.name comes
+// next: the schema calls it the final artifact base name, and it is the name
+// the netboot artifacts already carry. With neither set the name is derived
+// from the rootfs kairos-release file, which is the long-standing default.
+func isoBaseName(i schema.ISO, rootfs string) string {
+	switch {
+	case i.OverrideName != "":
+		return i.OverrideName
+	case i.Name != "":
+		return i.Name
+	default:
+		return fmt.Sprintf("kairos-%s", utils.NameFromRootfs(rootfs))
+	}
+}
+
+// GenISO generates an ISO from a rootfs, and stores results in dst.
+// The cloud config to embed is read from the path cloudConfigFunc returns.
+func GenISO(srcFunc, dstFunc, cloudConfigFunc valueGetOnCall, i schema.ISO, targetArch string, insecure bool) func(ctx context.Context) error {
 	return func(ctx context.Context) error {
 		dst := dstFunc()
 		src := srcFunc()
@@ -134,24 +156,22 @@ func GenISO(srcFunc, dstFunc valueGetOnCall, i schema.ISO, targetArch string, in
 		}
 		defer os.RemoveAll(tmp)
 
-		if i.OverrideName != "" {
-			i.Name = i.OverrideName
-		} else {
-			// Generate name from the rootfs kairos-release file
-			i.Name = fmt.Sprintf("kairos-%s", utils.NameFromRootfs(src))
-		}
+		i.Name = isoBaseName(i, src)
 
-		// We are assuming StepCopyCloudConfig has already run, putting it the config in "dst".
+		// We are assuming StepCopyCloudConfig has already run, writing the config to the path cloudConfigFunc returns.
 		// Copy the cloud config into the temp dir so it ends up on the ISO root.
-		err = copyFileIfExists(filepath.Join(dst, "config.yaml"), filepath.Join(tmp, "config.yaml"))
+		err = copyFileIfExists(cloudConfigFunc(), filepath.Join(tmp, "config.yaml"))
 		if err != nil {
 			return err
 		}
 
 		internal.Log.Logger.Info().Msgf("Generating iso '%s' from '%s' to '%s'", i.Name, src, dst)
-		cfg := NewBuildConfig(
+		cfg, err := NewBuildConfig(
 			WithLogger(internal.Log),
 		)
+		if err != nil {
+			return err
+		}
 		if arch, err := utils.GetArchFromRootfs(src, internal.Log); err == nil && arch != "" {
 			cfg.Arch = arch
 		} else if err != nil {

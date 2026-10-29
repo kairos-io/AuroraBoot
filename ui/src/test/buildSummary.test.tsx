@@ -51,7 +51,8 @@ describe("BuildSummary", () => {
     expect(screen.getByText("Default user")).toBeInTheDocument();
     expect(screen.getByText("Register")).toBeInTheDocument();
     expect(screen.getByText("FIPS")).toBeInTheDocument();
-    expect(screen.getByText("Trusted Boot")).toBeInTheDocument();
+    expect(screen.getByText("Boot mode")).toBeInTheDocument();
+    expect(screen.getByText("Standard")).toBeInTheDocument();
     for (const section of ["Base", "System", "Extensions", "Access", "Output", "Security"]) {
       expect(screen.getByRole("heading", { name: section })).toBeInTheDocument();
     }
@@ -133,7 +134,6 @@ describe("summaryFromArtifact", () => {
       gce: false,
       vhd: false,
       maas: false,
-      uki: false,
       fips: true,
       trustedBoot: false,
       autoInstall: false,
@@ -171,6 +171,21 @@ describe("summaryFromArtifact", () => {
     expect(
       summaryFromArtifact({ ...a, autoInstall: true, "allow-insecure-registries": true }),
     ).toMatchObject({ autoInstall: true, insecureRegistries: true });
+  });
+
+  it("shows the boot mode with the output formats", () => {
+    render(<BuildSummary data={{ ...data, trustedBoot: true, outputs: ["UKI ISO"] }} variant="full" />);
+    const output = screen.getByRole("heading", { name: "Output" }).closest("section")!;
+    expect(output.textContent).toContain("Boot mode");
+    expect(output.textContent).toContain("Trusted Boot");
+    expect(output.textContent).toContain("UKI ISO");
+    const security = screen.getByRole("heading", { name: "Security" }).closest("section")!;
+    expect(security.textContent).not.toContain("Trusted Boot");
+  });
+
+  it("calls the ISO of a Trusted Boot artifact the UKI ISO", () => {
+    const a = { trustedBoot: true, iso: true, tar: true, artifacts: [] } as unknown as Artifact;
+    expect(summaryFromArtifact(a).outputs).toEqual(["UKI ISO", "TAR"]);
   });
 
   it("marks the overlay attached when the artifact has one", () => {

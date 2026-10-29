@@ -22,18 +22,22 @@ definitions:
       gce:
         type: boolean
       iso:
+        description: |-
+          The installer ISO. With trustedBoot it is the signed UKI ISO, which
+          needs signing.ukiKeySetId.
         type: boolean
       maas:
         type: boolean
       netboot:
+        description: |-
+          Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and
+          maas: a Trusted Boot image has no GRUB and no separate initrd.
         type: boolean
       rawDisk:
         type: boolean
       tar:
         type: boolean
       trustedBoot:
-        type: boolean
-      uki:
         type: boolean
       vhd:
         type: boolean
@@ -280,9 +284,25 @@ definitions:
           active | passive | recovery | autoreset (unknown values pass through).
         example: active
         type: string
+      group:
+        description: |-
+          Group is the name of the group a new node joins (optional). The holder
+          of the registration token chooses it for a new node, so the
+          registration token decides group placement. An unknown name leaves the
+          node ungrouped. Ignored when the node registers again.
+        example: edge-sites
+        type: string
       hostname:
         example: kairos-node-01
         type: string
+      labels:
+        additionalProperties:
+          type: string
+        description: |-
+          Labels are a new node's initial labels (optional). The holder of the
+          registration token chooses them for a new node. Ignored when the node
+          registers again.
+        type: object
       machineID:
         example: a1b2c3d4e5f6
         type: string
@@ -318,8 +338,11 @@ definitions:
   handlers.APISetGroupRequest:
     properties:
       groupID:
+        description: GroupID names the target group; null moves the node out of any
+          group.
         example: b1db4f35-6195-410a-94f2-09e66e0a6a83
         type: string
+        x-nullable: true
     type: object
   handlers.APISetLabelsRequest:
     properties:
@@ -359,6 +382,23 @@ definitions:
       name:
         type: string
     type: object
+  handlers.DownloadLinkRequest:
+    properties:
+      filename:
+        type: string
+    type: object
+  handlers.DownloadLinkResponse:
+    properties:
+      expiresAt:
+        type: string
+      path:
+        type: string
+    type: object
+  handlers.LoginRequest:
+    properties:
+      password:
+        type: string
+    type: object
   handlers.ResolvedBundleEntry:
     properties:
       name:
@@ -368,6 +408,21 @@ definitions:
       type:
         type: string
       version:
+        type: string
+    type: object
+  handlers.SecureBootKeySetResponse:
+    properties:
+      createdAt:
+        type: string
+      hasTpmPcrKey:
+        type: boolean
+      id:
+        type: string
+      name:
+        type: string
+      secureBootEnroll:
+        type: string
+      updatedAt:
         type: string
     type: object
   handlers.UploadOverlayResponse:
@@ -580,14 +635,48 @@ definitions:
         type: string
       trustedBoot:
         type: boolean
-      uki:
-        type: boolean
       updatedAt:
         type: string
       variant:
         type: string
       vhd:
         type: boolean
+    type: object
+  store.BatchOutcome:
+    properties:
+      batchID:
+        type: string
+      canceled:
+        type: integer
+      command:
+        type: string
+      commands:
+        description: |-
+          Commands are the per-node rows, kept so a failed batch can still say
+          which node failed and with what result.
+        items:
+          $ref: '#/definitions/store.NodeCommand'
+        type: array
+      completed:
+        type: integer
+      expired:
+        type: integer
+      failFast:
+        type: boolean
+      failed:
+        type: integer
+      pending:
+        type: integer
+      phase:
+        description: |-
+          Phase is the batch as a whole: Pending while any node still has work
+          ahead of it, then Failed if any node failed, Canceled if the batch was
+          stopped before every node ran, and Completed when every node succeeded.
+        type: string
+      running:
+        type: integer
+      total:
+        type: integer
     type: object
   store.CPUMetrics:
     properties:
@@ -655,6 +744,7 @@ definitions:
         $ref: '#/definitions/store.NodeGroup'
       groupID:
         type: string
+        x-nullable: true
       hostname:
         type: string
       id:
@@ -667,6 +757,9 @@ definitions:
         type: string
       lastReset:
         description: LastReset is when the most recent automatic reset completed successfully.
+        type: string
+      lastUpgrade:
+        description: LastUpgrade is when the most recent upgrade completed successfully.
         type: string
       machineID:
         type: string
@@ -684,6 +777,17 @@ definitions:
           all (e.g. the WebSocket heartbeat path, or an older agent). It tracks NAT/DHCP
           changes because every heartbeat re-observes and overwrites it.
         type: string
+      resetProgressAt:
+        description: |-
+          ResetProgressAt is when the reset last made observable progress. Two
+          events stamp it: the node claiming the reset command for delivery, and
+          the node re-registering reporting bootState=autoreset (the lifecycle
+          moving from pending to in-progress). The reset timeout is measured from
+          this timestamp when it is set, so a node that picks the command up late
+          still gets a full window to reboot, wipe and come back instead of sharing
+          the one that started at ResetRequestedAt. Nil until the reset reaches the
+          node, and cleared when a new reset is requested.
+        type: string
       resetRequestedAt:
         description: |-
           ResetRequestedAt is when the reset command was issued (ResetState set to
@@ -699,6 +803,20 @@ definitions:
           "" (none) | pending | in-progress | done | failed.
         type: string
       updatedAt:
+        type: string
+      upgradeRequestedAt:
+        description: |-
+          UpgradeRequestedAt is when the upgrade command was issued (UpgradeState set
+          to pending); nil when no upgrade has been requested.
+        type: string
+      upgradeState:
+        description: |-
+          UpgradeState tracks the upgrade lifecycle across the reboot an upgrade
+          command triggers. The agent acks the command once the new image is staged,
+          before it reboots into it, so a Completed upgrade command only means the
+          upgrade was scheduled; the real outcome is resolved here when the node
+          re-registers and reports its post-reboot boot state. One of:
+          "" (none) | pending | done | failed.
         type: string
     type: object
   store.MemoryMetrics:
@@ -721,6 +839,12 @@ definitions:
         additionalProperties:
           type: string
         type: object
+      batchID:
+        description: |-
+          BatchID names the fan-out this command was created by, so the rows a
+          single bulk or group request produced can be found again as one
+          operation. It is empty on a command addressed to one node.
+        type: string
       command:
         type: string
       completedAt:
@@ -731,6 +855,14 @@ definitions:
         type: string
       expiresAt:
         type: string
+      failFast:
+        description: |-
+          FailFast asks for the still-Pending rows of the batch to be canceled
+          once any node in it fails; a row already Delivered to its node is left
+          to report its own result. It is carried on every row of the batch rather
+          than in a batch table so the rule travels with the command that has to
+          apply it.
+        type: boolean
       id:
         type: string
       managedNodeID:
@@ -801,23 +933,6 @@ definitions:
       uptimeSeconds:
         type: integer
     type: object
-  store.SecureBootKeySet:
-    properties:
-      createdAt:
-        type: string
-      id:
-        type: string
-      keysDir:
-        type: string
-      name:
-        type: string
-      secureBootEnroll:
-        type: string
-      tpmPcrKeyPath:
-        type: string
-      updatedAt:
-        type: string
-    type: object
 info:
   contact:
     name: Kairos authors
@@ -826,13 +941,13 @@ info:
     HTTP API for the AuroraBoot Kairos node manager.
 
     Three security schemes are used across the API:
-    * AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.
-    * NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
-    * RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.
+    * AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.
+    * NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
+    * RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.
 
     Two WebSocket endpoints also exist but are not described in this spec:
-    * GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).
-    * GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).
+    * GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).
+    * GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).
   license:
     name: Apache-2.0
     url: https://www.apache.org/licenses/LICENSE-2.0
@@ -877,6 +992,10 @@ paths:
             $ref: '#/definitions/store.ArtifactRecord'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -945,6 +1064,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/store.ArtifactRecord'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update artifact metadata (name / saved flag)
@@ -1006,6 +1129,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace bundled extensions for an artifact
@@ -1039,6 +1166,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Resolve bundled extensions for upgrade dispatch
@@ -1055,9 +1186,59 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Cancel a running build
+      tags:
+      - Artifacts
+  /api/v1/artifacts/{id}/download-link:
+    post:
+      consumes:
+      - application/json
+      description: Returns a path that downloads one file of the artifact without
+        other credentials for one hour.
+      parameters:
+      - description: Artifact ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File name
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.DownloadLinkRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/handlers.DownloadLinkResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "404":
+          description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      security:
+      - AdminBearer: []
+      summary: Create a download link
       tags:
       - Artifacts
   /api/v1/artifacts/{id}/logs:
@@ -1147,6 +1328,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
         "500":
           description: Internal Server Error
           schema:
@@ -1156,6 +1341,26 @@ paths:
       summary: Upload a rootfs overlay
       tags:
       - Artifacts
+  /api/v1/commands/batches/{batchID}:
+    get:
+      parameters:
+      - description: Batch ID
+        in: path
+        name: batchID
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/store.BatchOutcome'
+      security:
+      - AdminBearer: []
+      summary: Report the state of one fan-out of commands
+      tags:
+      - Commands
   /api/v1/extensions:
     post:
       consumes:
@@ -1178,6 +1383,10 @@ paths:
             $ref: '#/definitions/builder.ExtensionBuildStatus'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1242,6 +1451,10 @@ paths:
             $ref: '#/definitions/store.NodeGroup'
         "400":
           description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1316,6 +1529,10 @@ paths:
           description: Not Found
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update a group
@@ -1354,6 +1571,10 @@ paths:
             $ref: '#/definitions/handlers.APIError'
         "409":
           description: No unclaimed node available (code=NoCapacity)
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1496,6 +1717,10 @@ paths:
           description: Created
           schema:
             $ref: '#/definitions/store.NodeCommand'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Queue a command for a single node
@@ -1522,6 +1747,10 @@ paths:
             $ref: '#/definitions/handlers.decommissionResponse'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1570,6 +1799,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Assign a node to a group
@@ -1596,6 +1829,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - NodeAPIKey: []
       summary: Agent heartbeat
@@ -1622,6 +1859,10 @@ paths:
       responses:
         "200":
           description: OK
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace a node's labels
@@ -1689,6 +1930,10 @@ paths:
           description: Claimed by a different key (code=ClaimMismatch)
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Release a node's claim
@@ -1727,6 +1972,10 @@ paths:
           description: Unauthorized
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       summary: Register a node
       tags:
       - Agent bootstrap
@@ -1739,7 +1988,7 @@ paths:
           description: OK
           schema:
             items:
-              $ref: '#/definitions/store.SecureBootKeySet'
+              $ref: '#/definitions/handlers.SecureBootKeySetResponse'
             type: array
       security:
       - AdminBearer: []
@@ -1802,7 +2051,11 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/store.SecureBootKeySet'
+            $ref: '#/definitions/handlers.SecureBootKeySetResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Generate a SecureBoot key set
@@ -1828,9 +2081,13 @@ paths:
         "201":
           description: Created
           schema:
-            $ref: '#/definitions/store.SecureBootKeySet'
+            $ref: '#/definitions/handlers.SecureBootKeySetResponse'
         "409":
           description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
           schema:
             $ref: '#/definitions/handlers.APIError'
       security:
@@ -1838,6 +2095,64 @@ paths:
       summary: Import a key set exported from another instance
       tags:
       - SecureBoot
+  /api/v1/session:
+    delete:
+      responses:
+        "204":
+          description: No Content
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Sign out
+      tags:
+      - session
+    get:
+      responses:
+        "204":
+          description: No Content
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Check the session
+      tags:
+      - session
+    post:
+      consumes:
+      - application/json
+      description: Exchanges the admin password for an HttpOnly session cookie that
+        lasts 12 hours. A request carrying an Origin header must come from this server's
+        origin.
+      parameters:
+      - description: Admin password
+        in: body
+        name: body
+        required: true
+        schema:
+          $ref: '#/definitions/handlers.LoginRequest'
+      responses:
+        "204":
+          description: No Content
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "401":
+          description: Unauthorized
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "403":
+          description: Forbidden
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+      summary: Sign in
+      tags:
+      - session
   /api/v1/settings/extension-catalogs:
     get:
       produces:
@@ -1864,6 +2179,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.extensionCatalogsResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Replace the saved extension catalogs
@@ -1895,6 +2214,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.imageSourceResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Update the runtime image-source settings
@@ -1925,6 +2248,10 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/handlers.APIRegistrationTokenResponse'
+        "413":
+          description: Request Entity Too Large
+          schema:
+            $ref: '#/definitions/handlers.APIError'
       security:
       - AdminBearer: []
       summary: Rotate the registration token

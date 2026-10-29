@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="docs/screenshots/dashboard-zero-state.png" alt="AuroraBoot dashboard" width="820" />
+  <img src="docs/screenshots/dashboard-zero-state.png" alt="Kairos dashboard" width="820" />
 </p>
 
 <h1 align="center">AuroraBoot</h1>
@@ -53,6 +53,8 @@ Open **http://localhost:9099**, sign in, and the welcome wizard walks you throug
 
 If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL` to that reachable address before starting the stack. Left unset, AuroraBoot falls back to the container's hostname, which nodes can't resolve, so they can't phone home. See `--url` below. Its host is also the address the Deploy dialog reports for the netboot server; with no `AURORABOOT_URL` that dialog reports a local interface address instead.
 
+Behind a reverse proxy that rewrites the `Host` header, set `AURORABOOT_URL` (`--url`) to the address the browser uses. The server refuses sign-in and the live-update socket from a page whose origin matches neither the request `Host` nor that URL, and logs a `refused a request from Origin` line naming all three values.
+
 ### What you get
 
 - **A guided Artifact Builder** with ready-made templates for Ubuntu, Fedora, Debian, openSUSE, Alpine, Rocky and Hadron. Pick architecture, model, variant — the UI filters the choices so you only see what Kairos actually supports.
@@ -72,6 +74,7 @@ If you reach the UI from another machine (not `localhost`), set `AURORABOOT_URL`
 | `AURORABOOT_ADMIN_PASSWORD` | Override admin password |
 | `AURORABOOT_REG_TOKEN` | Override registration token |
 | `--disable-rate-limit` | Turn off per-identity rate limiting of the node-driven endpoints |
+| `--reset-timeout 30m` / `AURORABOOT_RESET_TIMEOUT` | How long a node has to come back after a reset before the reset is reported failed. Defaults to 30 minutes; the clock restarts when the node picks the reset command up and again when it re-registers mid-reset, and a negative duration disables expiry |
 
 See the full [AuroraBoot reference](https://kairos.io/docs/reference/auroraboot/) for everything else.
 
@@ -259,19 +262,22 @@ Passing `-` to `--cloud-config` reads it from stdin, which is handy in CI pipeli
 ### Other subcommands
 
 ```bash
-# Build an ISO from a Kairos release
-auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
-    --output ./out --name kairos.iso
+# Build an ISO from a container image. The source is a positional argument.
+# --output defaults to the current directory. It only receives the ISO and its
+# checksum. In Docker, pass --output or -w, because the image sets no working
+# directory.
+auroraboot build-iso quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+    --override-name kairos --output ./out
 
 # Build a UKI from a container image
-auroraboot build-uki --image quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
+auroraboot build-uki quay.io/kairos/ubuntu:24.04-standard-amd64-generic-v3.6.0 \
     --output-dir ./out
 
 # Build an ISO carrying system extensions from a catalog. Names resolve against
 # the hadron-layers catalog unless --extensions-catalog names another one, and
 # an extension can be pinned with name@version. Both flags are repeatable, and
 # catalogs are searched in order, so your own index can shadow a published name.
-auroraboot build-iso --image quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
+auroraboot build-iso quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.6.0 \
     --extension nvidia --extension tailscale@v1.2.3 --output ./out
 
 # Generate a SecureBoot key set
@@ -281,7 +287,8 @@ auroraboot genkey my-keys --output ./keys
 auroraboot sysext my-ext quay.io/myorg/my-tool:latest
 
 # Redfish-driven deploy to a BMC
-auroraboot redfish --endpoint https://bmc/redfish/v1 --user admin --pass secret --image kairos.iso
+auroraboot redfish deploy --endpoint https://bmc/redfish/v1 --username admin \
+    --password-file ./bmc-password --image-url http://10.0.0.5:8090/kairos.iso
 
 # Extract netboot artifacts from an ISO
 auroraboot netboot kairos.iso ./netboot-out

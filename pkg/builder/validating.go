@@ -5,22 +5,26 @@ import (
 	"fmt"
 )
 
-// ValidatingArtifactBuilder checks the image references in a build request
-// before handing it to the wrapped builder, so no backend has to repeat the
-// check and none can forget it. Status, List and Cancel pass straight through.
+// ValidatingArtifactBuilder checks the image references and the output
+// formats in a build request before handing it to the wrapped builder, so no
+// backend has to repeat the checks and none can forget them. Status, List and Cancel pass straight through.
 type ValidatingArtifactBuilder struct {
 	ArtifactBuilder
 }
 
-// NewValidatingArtifactBuilder wraps next with image reference validation.
+// NewValidatingArtifactBuilder wraps next with build request validation.
 func NewValidatingArtifactBuilder(next ArtifactBuilder) *ValidatingArtifactBuilder {
 	return &ValidatingArtifactBuilder{ArtifactBuilder: next}
 }
 
 // Build rejects opts with ErrInvalidBuildOptions when an image reference is
-// not a plain OCI reference, and otherwise calls the wrapped builder.
+// not a plain OCI reference or an output does not go with the boot mode, and
+// otherwise calls the wrapped builder.
 func (v *ValidatingArtifactBuilder) Build(ctx context.Context, opts BuildOptions) (*BuildStatus, error) {
 	if err := opts.ValidateImageRefs(); err != nil {
+		return nil, err
+	}
+	if err := opts.ValidateOutputs(); err != nil {
 		return nil, err
 	}
 	return v.ArtifactBuilder.Build(ctx, opts)

@@ -136,7 +136,10 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 	}
 
 	artifacts := &buildv1alpha2.ArtifactSpec{Arch: arch}
-	if opts.Outputs.ISO || opts.ISO {
+	// A Trusted Boot build asks for the ISO and means the UKI one, which the
+	// UKI spec below requests. Asking for both would make the operator build
+	// a GRUB ISO the Trusted Boot image cannot be installed from.
+	if (opts.Outputs.ISO || opts.ISO) && !opts.Outputs.UKIISO() {
 		artifacts.ISO = true
 	}
 	if opts.Outputs.CloudImage || opts.Outputs.RawDisk || opts.CloudImage {
@@ -151,7 +154,7 @@ func translateBuildOptions(id string, opts builder.BuildOptions) (buildv1alpha2.
 	if opts.Outputs.VHD {
 		artifacts.AzureImage = true
 	}
-	if opts.Outputs.UKI {
+	if opts.Outputs.UKIISO() {
 		artifacts.UKI = &buildv1alpha2.UKISpec{ISO: true}
 	}
 	if opts.CloudConfig != "" {

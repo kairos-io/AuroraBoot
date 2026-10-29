@@ -3,7 +3,8 @@ import { render, screen, waitFor, fireEvent, within } from "@testing-library/rea
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { ArtifactDetail } from "@/pages/ArtifactDetail";
-import { getArtifact, getArtifactLogs, type Artifact } from "@/api/artifacts";
+import { createDownloadLink, getArtifact, getArtifactLogs, type Artifact } from "@/api/artifacts";
+import { toast } from "@/hooks/useToast";
 
 const ARTIFACT_ID = "b1c2d3e4-0000-4000-8000-000000000001";
 
@@ -25,7 +26,6 @@ function readyArtifact(over: Partial<Artifact> = {}): Artifact {
     gce: false,
     vhd: false,
     maas: false,
-    uki: false,
     fips: false,
     trustedBoot: false,
     autoInstall: false,
@@ -43,11 +43,17 @@ vi.mock("@/api/artifacts", async (importOriginal) => {
     ...actual,
     getArtifact: vi.fn(),
     getArtifactLogs: vi.fn(),
+    createDownloadLink: vi.fn(),
     cancelArtifact: vi.fn().mockResolvedValue(undefined),
     deleteArtifact: vi.fn().mockResolvedValue(undefined),
     updateArtifact: vi.fn().mockResolvedValue(undefined),
   };
 });
+
+vi.mock("@/hooks/useToast", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/hooks/useToast")>()),
+  toast: vi.fn(),
+}));
 
 vi.mock("@/api/groups", () => ({
   listGroups: vi.fn().mockResolvedValue([]),
@@ -76,7 +82,6 @@ describe("ArtifactDetail header, downloads and configuration", () => {
   const writeText = vi.fn().mockResolvedValue(undefined);
 
   beforeEach(() => {
-    localStorage.setItem("auroraboot_token", "t");
     vi.mocked(getArtifact).mockResolvedValue(readyArtifact());
     vi.mocked(getArtifactLogs).mockResolvedValue("done\n");
     writeText.mockClear();
@@ -159,18 +164,33 @@ describe("ArtifactDetail header, downloads and configuration", () => {
     expect(within(banner).queryByRole("button", { name: /deploy/i })).toBeNull();
   });
 
-  it("copies the absolute download URL from each download row", async () => {
+  it("copies a signed link that expires and says when", async () => {
+    vi.mocked(createDownloadLink).mockResolvedValue({
+      path: `/api/v1/artifacts/${ARTIFACT_ID}/download/kairos.iso?exp=1760275800&sig=abc`,
+      expiresAt: "2026-10-12T13:30:00Z",
+    });
     await renderPage();
 
     const buttons = screen.getAllByRole("button", { name: "Copy link" });
-    expect(buttons).toHaveLength(2);
+    expect(buttons[0].getAttribute("title")).toMatch(/1 hour/);
     fireEvent.click(buttons[0]);
 
     await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1));
+    expect(createDownloadLink).toHaveBeenCalledWith(ARTIFACT_ID, "kairos.iso");
     const url = writeText.mock.calls[0][0] as string;
-    expect(url).toBe(
-      `${window.location.origin}/api/v1/artifacts/${ARTIFACT_ID}/download/kairos.iso?token=t`,
-    );
+    expect(url).toBe(`${window.location.origin}/api/v1/artifacts/${ARTIFACT_ID}/download/kairos.iso?exp=1760275800&sig=abc`);
+    expect(url).not.toContain("token=");
+    const at = new Date("2026-10-12T13:30:00Z").toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    expect(toast).toHaveBeenCalledWith(`Link copied, expires in 1 hour (at ${at})`, "success");
+  });
+
+  it("links downloads and the container image without credentials", async () => {
+    vi.mocked(getArtifact).mockResolvedValue(readyArtifact({ containerImage: "auroraboot-kairos:x" }));
+    await renderPage();
+    const hrefs = screen.getAllByRole("link").map((a) => a.getAttribute("href") ?? "");
+    expect(hrefs).toContain(`/api/v1/artifacts/${ARTIFACT_ID}/download/kairos.iso`);
+    expect(hrefs).toContain(`/api/v1/artifacts/${ARTIFACT_ID}/image`);
+    expect(hrefs.filter((h) => h.includes("token="))).toEqual([]);
   });
 
   it("renders the build summary in the configuration section", async () => {

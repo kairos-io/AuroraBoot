@@ -72,6 +72,15 @@ type APIRegisterRequest struct {
 	// BootState is the node's reported boot state (optional): one of
 	// active | passive | recovery | autoreset (unknown values pass through).
 	BootState string `json:"bootState,omitempty" example:"active"`
+	// Group is the name of the group a new node joins (optional). The holder
+	// of the registration token chooses it for a new node, so the
+	// registration token decides group placement. An unknown name leaves the
+	// node ungrouped. Ignored when the node registers again.
+	Group string `json:"group,omitempty" example:"edge-sites"`
+	// Labels are a new node's initial labels (optional). The holder of the
+	// registration token chooses them for a new node. Ignored when the node
+	// registers again.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // APIRegisterResponse is the JSON body returned by POST /api/v1/nodes/register.
@@ -118,7 +127,8 @@ type APISetLabelsRequest struct {
 
 // APISetGroupRequest is the JSON body of PUT /api/v1/nodes/:nodeID/group.
 type APISetGroupRequest struct {
-	GroupID string `json:"groupID" example:"b1db4f35-6195-410a-94f2-09e66e0a6a83"`
+	// GroupID names the target group; null moves the node out of any group.
+	GroupID *string `json:"groupID" example:"b1db4f35-6195-410a-94f2-09e66e0a6a83" extensions:"x-nullable"`
 }
 
 // --- Groups ---
@@ -194,15 +204,18 @@ type APICreateArtifactRequest struct {
 
 // APIArtifactOutputs toggles the build's output formats.
 type APIArtifactOutputs struct {
-	ISO         bool `json:"iso"`
-	CloudImage  bool `json:"cloudImage"`
+	// The installer ISO. With trustedBoot it is the signed UKI ISO, which
+	// needs signing.ukiKeySetId.
+	ISO        bool `json:"iso"`
+	CloudImage bool `json:"cloudImage"`
+	// Not available with trustedBoot, like rawDisk, cloudImage, gce, vhd and
+	// maas: a Trusted Boot image has no GRUB and no separate initrd.
 	Netboot     bool `json:"netboot"`
 	RawDisk     bool `json:"rawDisk"`
 	Tar         bool `json:"tar"`
 	GCE         bool `json:"gce"`
 	VHD         bool `json:"vhd"`
 	MAAS        bool `json:"maas"`
-	UKI         bool `json:"uki"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`
 }

@@ -67,7 +67,7 @@ const SHORT_CONFIG = "hostname: short-host";
 // The Output step is reached with Next from a template with a name, since
 // the stepper does not jump ahead to a step not reached yet.
 async function openAdvancedCloudConfig() {
-  fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+  fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
   fireEvent.change(screen.getByPlaceholderText(/Production v4\.0\.3/), {
     target: { value: "edge" },
   });

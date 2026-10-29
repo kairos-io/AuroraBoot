@@ -54,9 +54,13 @@ func CreateSquashFS(runner runner.Runner, logger logger.KairosLogger, source str
 	return nil
 }
 
+// GolangArchToArch maps a Go architecture name onto the name Kairos uses for
+// the same architecture. It mirrors the SDK's platform.golangArchToArch, so it
+// also accepts the Kairos names themselves and returns them unchanged: an arch
+// read out of a rootfs with GetArchFromRootfs is already x86_64, not amd64.
 func GolangArchToArch(arch string) (string, error) {
 	switch strings.ToLower(arch) {
-	case constants.ArchAmd64:
+	case constants.ArchAmd64, constants.Archx86:
 		return constants.Archx86, nil
 	case constants.ArchArm64:
 		return constants.ArchArm64, nil
@@ -289,6 +293,23 @@ func IsArm64(arch string) bool {
 
 func IsRiscv64(arch string) bool {
 	return arch == constants.ArchRiscv64
+}
+
+// EfiFallbackName returns the name systemd-boot is written under in the ESP's
+// EFI/BOOT fallback directory for arch. Both the side that produces the binary
+// and the side that places it on the ESP have to agree on this name, so they
+// both ask here rather than spelling the two or three cases out again.
+func EfiFallbackName(arch string) (string, error) {
+	switch {
+	case IsAmd64(arch):
+		return constants.EfiFallbackNamex86, nil
+	case IsArm64(arch):
+		return constants.EfiFallbackNameArm, nil
+	case IsRiscv64(arch):
+		return constants.EfiFallbackNameRiscv64, nil
+	default:
+		return "", fmt.Errorf("unsupported arch: %s", arch)
+	}
 }
 
 // NameFromCmdline returns the name of the efi/conf file based on the cmdline

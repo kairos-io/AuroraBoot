@@ -1,6 +1,10 @@
 package handlers
 
 import (
+	"context"
+	"io"
+	"time"
+
 	"github.com/kairos-io/AuroraBoot/pkg/redfish"
 )
 
@@ -20,11 +24,6 @@ func (h *DeployHandler) WithTestFinalizerFactory(f func(cfg redfish.Config) Redf
 // a deployment's eject lifecycle without driving the full async deploy goroutine.
 func (h *DeployHandler) MarkEjectPendingForTest(id string) { h.markEjectPending(id) }
 
-// ImageURLUsesHTTPS exposes the unexported imageURLUsesHTTPS helper to external
-// (handlers_test) tests so the InsertMedia transfer-protocol derivation can be
-// exercised directly.
-var ImageURLUsesHTTPS = imageURLUsesHTTPS
-
 // ResolveOperatorImageURL exposes the unexported image-URL precedence helper so
 // the per-deploy > per-BMC > global-default selection can be unit-tested
 // directly, without driving the async deploy goroutine.
@@ -39,4 +38,30 @@ type NetbootController = netbootController
 func (h *DeployHandler) WithTestNetboot(nb NetbootController) *DeployHandler {
 	h.netboot = nb
 	return h
+}
+
+// WithTestImageExporter replaces the docker pipeline that ExportImage runs to
+// build an artifact's image tar. Test-only.
+func (h *ArtifactHandler) WithTestImageExporter(f func(ctx context.Context, id, containerImage string, w io.Writer) error) *ArtifactHandler {
+	h.exportImage = f
+	return h
+}
+
+// StderrTail exposes the unexported stderrTail helper used to attach docker
+// stderr to export errors.
+var StderrTail = stderrTail
+
+// ImageExportTimeout exposes the upper bound on one image export build.
+const ImageExportTimeout = imageExportTimeout
+
+// RemoveExportLeftovers exposes the cleanup of a crashed export's docker
+// objects.
+var RemoveExportLeftovers = removeExportLeftovers
+
+// SetDockerCleanupTimeout shortens the bound on docker cleanup commands and
+// returns a function that restores it. Test-only.
+func SetDockerCleanupTimeout(d time.Duration) func() {
+	prev := dockerCleanupTimeout
+	dockerCleanupTimeout = d
+	return func() { dockerCleanupTimeout = prev }
 }

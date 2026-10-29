@@ -92,6 +92,24 @@ test: ui-build ## Run Go tests
 test-operator-e2e: ## Run the kind-based operator builder e2e suite
 	go test -tags=operator_e2e ./test/operator/... -v -timeout=30m
 
+# Type-check every build-tagged tree without running it. A tag that no default
+# build, vet or lint passes is invisible to all of them, so the tree can stop
+# compiling while CI stays green -- which is what happened to test/operator
+# between 2026-07-24 and kairos-io/kairos#5402. Add one line here per new
+# tagged tree; the CI job calls this target, not the tags.
+.PHONY: vet-tagged
+vet-tagged: ## Type-check build-tagged trees no default build compiles
+	go vet -tags=operator_e2e ./test/operator/...
+
+# Run the phonehome tier: AuroraBoot in a container and two QEMU VMs it
+# installs and upgrades. Needs docker, qemu, swtpm, OVMF and KVM; FIRMWARE
+# overrides the OVMF code image: the default is Arch's path, Debian and Ubuntu
+# use /usr/share/OVMF/OVMF_CODE_4M.fd. The e2e suite builds the auroraboot:test
+# image itself.
+.PHONY: test-e2e-phonehome
+test-e2e-phonehome: ## Run the phonehome e2e tier on two VMs
+	KVM=true FIRMWARE=$${FIRMWARE:-/usr/share/edk2/x64/OVMF_CODE.4m.fd} go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 100m --grace-period 10m ./e2e
+
 # Install development dependencies
 install-deps: ## Install development dependencies
 	@echo "Installing Go dependencies..."
@@ -128,7 +146,7 @@ helm-chart-template: ## Render the helm chart with example values (for eyeballin
 helm-chart-test: ## Run helm-unittest suites against the AuroraBoot chart
 	@helm plugin list 2>/dev/null | grep -q '^unittest' || { \
 		echo "helm-unittest plugin missing. Install with:"; \
-		echo "  helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.5.2"; \
+		echo "  helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.2.1 --verify=false"; \
 		exit 1; \
 	}
 	helm unittest $(HELM_CHART_DIR)

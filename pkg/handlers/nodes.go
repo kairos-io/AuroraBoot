@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"strings"
 	"time"
@@ -22,6 +23,10 @@ import (
 // into the command's ExpiresAt so the DB reflects the same deadline — a node
 // that comes online after the window is closed will not run the teardown.
 const decommissionTimeout = 30 * time.Second
+
+// DefaultResetTimeout is how long AuroraBoot waits for a node to return after
+// an automatic reset before reporting the lifecycle as failed.
+const DefaultResetTimeout = 30 * time.Minute
 
 // nodeFinalizer is the auto eject-on-phone-home hook: given a node id it ejects the
 // virtual media of that node's pending-eject Redfish deployment (when one can be
@@ -50,6 +55,11 @@ type NodeHandler struct {
 	// metrics, when non-nil, receives the resource sample a heartbeat carries
 	// and drops a node's samples when the node is deleted. nil ignores metrics.
 	metrics *metrics.Buffer
+
+	// resetTimeout bounds the pending/in-progress reset lifecycle. Expiration is
+	// evaluated lazily when nodes are read, which matches the UI and controller
+	// polling paths without adding a process-wide background worker.
+	resetTimeout time.Duration
 }
 
 // NewNodeHandler creates a new NodeHandler.
@@ -62,6 +72,7 @@ func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups s
 		regToken:      regToken,
 		aurorabootURL: aurorabootURL,
 		baseCtx:       context.Background(),
+		resetTimeout:  DefaultResetTimeout,
 	}
 }
 
@@ -69,6 +80,16 @@ func NewNodeHandler(nodes store.NodeStore, commands store.CommandStore, groups s
 // recording: heartbeats that carry metrics are accepted and the metrics ignored.
 func (h *NodeHandler) SetMetrics(b *metrics.Buffer) {
 	h.metrics = b
+}
+
+// WithResetTimeout configures how long an automatic reset may remain pending or
+// in-progress. Zero keeps the default; a negative duration disables expiration.
+func (h *NodeHandler) WithResetTimeout(timeout time.Duration) *NodeHandler {
+	if timeout == 0 {
+		timeout = DefaultResetTimeout
+	}
+	h.resetTimeout = timeout
+	return h
 }
 
 // WithFinalizer wires the auto eject-on-phone-home hook and the server base context
@@ -98,31 +119,36 @@ func (h *NodeHandler) triggerFinalize(nodeID string) {
 	}()
 }
 
-// resolveReset advances a node's automatic-reset lifecycle (kairos-io/kairos#4255)
-// when it re-registers after the reset reboot. The phonehome agent calls Register
-// on every boot, so a Register from a node whose ResetState is pending/in-progress
-// means it rebooted; the reported boot state gives the outcome:
-//   - autoreset        → in-progress (the node booted the statereset entry and is
-//     mid-reset; the following boot will be active)
-//   - active           → done (the reset finished and the node is healthy again),
-//     stamping LastReset
-//   - passive/recovery → failed (the active image did not survive the reset)
+// expireReset marks an overdue reset failed. FailResetBefore provides the atomic
+// compare-and-set, so concurrent UI/controller reads can safely race. Updating
+// the supplied snapshot after a successful transition ensures this response
+// immediately contains the terminal state.
 //
-// Transitions are compare-and-set so concurrent re-registers resolve exactly once.
-// Best-effort: a store error is ignored — the next boot/heartbeat retries. A node
-// not awaiting a reset is left untouched.
-func (h *NodeHandler) resolveReset(ctx context.Context, node *store.ManagedNode, bootState string) {
-	if node.ResetState != store.ResetStatePending && node.ResetState != store.ResetStateInProgress {
+// Best-effort, like store.ResolveReset: a store error is logged and discarded rather
+// than failing the read. These endpoints are the UI's node page and the CAPI
+// provider's read path, so one rejected bookkeeping write must not hide the
+// whole fleet — and a lost CAS already returns the stale pending state, so
+// there would be no consistent behaviour to fail for anyway. The next read
+// retries the transition.
+func (h *NodeHandler) expireReset(ctx context.Context, node *store.ManagedNode, now time.Time) {
+	if !resetExpired(node, h.resetTimeout, now) {
 		return
 	}
-	inFlight := []string{store.ResetStatePending, store.ResetStateInProgress}
-	switch bootState {
-	case store.BootStateAutoReset:
-		_, _ = h.nodes.AdvanceReset(ctx, node.ID, []string{store.ResetStatePending}, store.ResetStateInProgress, false)
-	case store.BootStateActive:
-		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateDone, true)
-	case store.BootStatePassive, store.BootStateRecovery:
-		_, _ = h.nodes.AdvanceReset(ctx, node.ID, inFlight, store.ResetStateFailed, false)
+
+	advanced, err := h.nodes.FailResetBefore(ctx, node.ID, now.Add(-h.resetTimeout))
+	if err != nil {
+		log.Printf("reset expiry: node %s: %v", node.ID, err)
+		return
+	}
+	if advanced {
+		node.ResetState = store.ResetStateFailed
+	}
+}
+
+func (h *NodeHandler) expireResets(ctx context.Context, nodes []*store.ManagedNode) {
+	now := time.Now()
+	for _, node := range nodes {
+		h.expireReset(ctx, node, now)
 	}
 }
 
@@ -134,6 +160,12 @@ type registerRequest struct {
 	AgentVersion      string              `json:"agentVersion"`
 	Addresses         []store.NodeAddress `json:"addresses,omitempty"`
 	BootState         string              `json:"bootState,omitempty"`
+	// Group names the group a new node joins, as written into the phonehome
+	// config by an artifact built with a target group. An unknown name
+	// leaves the node ungrouped.
+	Group string `json:"group,omitempty"`
+	// Labels are a new node's initial labels.
+	Labels map[string]string `json:"labels,omitempty"`
 }
 
 // Register handles POST /api/v1/nodes/register.
@@ -148,6 +180,7 @@ type registerRequest struct {
 //	@Success		201		{object}	APIRegisterResponse
 //	@Failure		400		{object}	APIError
 //	@Failure		401		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/register [post]
 func (h *NodeHandler) Register(c echo.Context) error {
 	var req registerRequest
@@ -165,9 +198,11 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// A re-register is a strong "OS is up" signal too (a freshly-installed node
 		// phones home on first boot): attempt the auto eject-on-phone-home.
 		h.triggerFinalize(existing.ID)
-		// If this node is coming back from a reset reboot, resolve the reset
-		// lifecycle from the reported boot state (kairos-io/kairos#4255).
-		h.resolveReset(c.Request().Context(), existing, req.BootState)
+		// A node that registers again has rebooted: one that lost its
+		// credentials in a reset comes back through here. Resolve a pending
+		// reset or upgrade from the boot state it reports (kairos-io/kairos#4255).
+		store.ResolveReset(c.Request().Context(), h.nodes, existing, req.BootState)
+		store.ResolveUpgrade(c.Request().Context(), h.nodes, existing, req.BootState)
 		// Return existing node info
 		return c.JSON(http.StatusOK, map[string]any{
 			"id":     existing.ID,
@@ -183,6 +218,7 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		Phase:        store.PhaseRegistered,
 		APIKey:       uuid.New().String(),
 		Labels:       make(map[string]string),
+		GroupID:      h.groupIDByName(c.Request().Context(), req.Group),
 		// Optional; empty when an older agent does not report them. Stored exactly
 		// as received — interface filtering is the agent's responsibility.
 		Addresses: req.Addresses,
@@ -190,6 +226,10 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		// RemoteIP is server-observed, not agent-reported: the request the agent
 		// just made to register is itself the observation.
 		RemoteIP: c.RealIP(),
+	}
+
+	for k, v := range req.Labels {
+		node.Labels[k] = v
 	}
 
 	if err := h.nodes.Register(c.Request().Context(), node); err != nil {
@@ -204,6 +244,20 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		"id":     node.ID,
 		"apiKey": node.APIKey,
 	})
+}
+
+// groupIDByName returns the ID of the group called name, or nil when name is
+// empty or no such group exists. Registration goes ahead either way: the
+// group only places the node, and an admin can place it later.
+func (h *NodeHandler) groupIDByName(ctx context.Context, name string) *string {
+	if name == "" || h.groups == nil {
+		return nil
+	}
+	g, err := h.groups.GetByName(ctx, name)
+	if err != nil || g == nil {
+		return nil
+	}
+	return &g.ID
 }
 
 // List handles GET /api/v1/nodes.
@@ -229,6 +283,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 		}
+		h.expireResets(ctx, nodes)
 		return c.JSON(http.StatusOK, nodes)
 	}
 
@@ -242,6 +297,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 		}
+		h.expireResets(ctx, nodes)
 		return c.JSON(http.StatusOK, nodes)
 	}
 
@@ -249,6 +305,7 @@ func (h *NodeHandler) List(c echo.Context) error {
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list nodes"})
 	}
+	h.expireResets(ctx, nodes)
 	return c.JSON(http.StatusOK, nodes)
 }
 
@@ -264,10 +321,12 @@ func (h *NodeHandler) List(c echo.Context) error {
 //	@Router			/api/v1/nodes/{nodeID} [get]
 func (h *NodeHandler) Get(c echo.Context) error {
 	nodeID := c.Param("nodeID")
-	node, err := h.nodes.GetByID(c.Request().Context(), nodeID)
+	ctx := c.Request().Context()
+	node, err := h.nodes.GetByID(ctx, nodeID)
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
 	}
+	h.expireReset(ctx, node, time.Now())
 	return c.JSON(http.StatusOK, node)
 }
 
@@ -317,6 +376,7 @@ type decommissionResponse struct {
 //	@Param			nodeID	path		string	true	"Node ID"
 //	@Success		200		{object}	decommissionResponse
 //	@Failure		404		{object}	APIError
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/decommission [post]
 func (h *NodeHandler) Decommission(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -388,6 +448,7 @@ type setLabelsRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetLabelsRequest	true	"Labels payload"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/labels [put]
 func (h *NodeHandler) SetLabels(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -403,7 +464,8 @@ func (h *NodeHandler) SetLabels(c echo.Context) error {
 
 // setGroupRequest is the expected body for setting a group.
 type setGroupRequest struct {
-	GroupID string `json:"groupID"`
+	// GroupID names the target group; null moves the node out of any group.
+	GroupID *string `json:"groupID"`
 }
 
 // SetGroup handles PUT /api/v1/nodes/:nodeID/group.
@@ -415,12 +477,16 @@ type setGroupRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetGroupRequest	true	"Target group"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/group [put]
 func (h *NodeHandler) SetGroup(c echo.Context) error {
 	nodeID := c.Param("nodeID")
 	var req setGroupRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+	}
+	if req.GroupID != nil && *req.GroupID == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "groupID must name a group, or be null for no group"})
 	}
 	if err := h.nodes.SetGroup(c.Request().Context(), nodeID, req.GroupID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to set group"})
@@ -449,6 +515,7 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 //	@Failure		400		{object}	APIError
 //	@Failure		404		{object}	APIError
 //	@Failure		409		{object}	APIError	"No unclaimed node available (code=NoCapacity)"
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/groups/{id}/claim [post]
 func (h *NodeHandler) Claim(c echo.Context) error {
 	groupID := c.Param("id")
@@ -500,6 +567,7 @@ func (h *NodeHandler) Claim(c echo.Context) error {
 //	@Failure		400		{object}	APIError
 //	@Failure		404		{object}	APIError
 //	@Failure		409		{object}	APIError	"Claimed by a different key (code=ClaimMismatch)"
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/release [post]
 func (h *NodeHandler) Release(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -565,6 +633,7 @@ type heartbeatRequest struct {
 //	@Param			nodeID	path		string					true	"Node ID"
 //	@Param			body	body		APIHeartbeatRequest	true	"Heartbeat payload"
 //	@Success		200
+//	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/heartbeat [post]
 func (h *NodeHandler) Heartbeat(c echo.Context) error {
 	nodeID := c.Param("nodeID")
@@ -579,6 +648,11 @@ func (h *NodeHandler) Heartbeat(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update phase"})
 	}
 	h.recordMetrics(c, nodeID, req.Metrics)
+	if bootedAt, ok := store.BootedAt(time.Now(), req.Metrics); ok {
+		if err := h.nodes.SettleAfterReboot(c.Request().Context(), nodeID, req.BootState, bootedAt); err != nil {
+			c.Logger().Warnf("settling node %s after its reboot: %v", nodeID, err)
+		}
+	}
 	// Heartbeat is the universal "OS is up" signal (and the fallback when a node
 	// never re-registers): attempt the auto eject-on-phone-home off-request. The
 	// per-deployment CAS makes a repeated heartbeat a harmless no-op once ejected.
@@ -655,6 +729,7 @@ func (h *NodeHandler) GetCommands(c echo.Context) error {
 			if !ok {
 				continue
 			}
+			store.MarkResetDelivered(ctx, h.nodes, cmd)
 			cmd.Phase = store.CommandDelivered
 			cmd.DeliveredAt = &now
 			claimed = append(claimed, cmd)

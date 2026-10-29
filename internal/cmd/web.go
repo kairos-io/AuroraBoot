@@ -6,13 +6,13 @@
 //	@description	HTTP API for the AuroraBoot Kairos node manager.
 //	@description
 //	@description	Three security schemes are used across the API:
-//	@description	  * AdminBearer — Authorization: Bearer <admin-password>. Human/UI/automation callers.
-//	@description	  * NodeAPIKey — Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
-//	@description	  * RegistrationToken — shared secret carried inside the body of POST /api/v1/nodes/register.
+//	@description	  * AdminBearer: Authorization: Bearer <admin-password>. Scripts and automation callers. The web UI signs in through POST /api/v1/session and uses a session cookie instead.
+//	@description	  * NodeAPIKey: Authorization: Bearer <api-key>. Registered Kairos nodes calling their own endpoints. The api-key is returned from POST /api/v1/nodes/register.
+//	@description	  * RegistrationToken: shared secret carried inside the body of POST /api/v1/nodes/register.
 //	@description
 //	@description	Two WebSocket endpoints also exist but are not described in this spec:
-//	@description	  * GET /api/v1/ws — agent command channel (auth via ?token=<api-key>).
-//	@description	  * GET /api/v1/ws/ui — UI live update channel (auth via ?token=<admin-password>).
+//	@description	  * GET /api/v1/ws: agent command channel (auth via Authorization: Bearer <api-key>, or ?token=<api-key> for agents that cannot set headers).
+//	@description	  * GET /api/v1/ws/ui: UI live update channel (auth via the session cookie, or Authorization: Bearer <admin-password>; same-origin only).
 //
 //	@contact.name	Kairos authors
 //	@contact.url	https://github.com/kairos-io/AuroraBoot
@@ -58,6 +58,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,7 @@ var WebCMD = cli.Command{
 		&cli.Float64Flag{Name: "register-rate-limit", Usage: "Per-client-IP registration requests/sec (0 = generous default)", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT"}},
 		&cli.IntFlag{Name: "node-rate-limit-burst", Usage: "Per-node instantaneous allowance for heartbeat and command polling (0 = the larger of 20 and one second of --node-rate-limit)", EnvVars: []string{"AURORABOOT_NODE_RATE_LIMIT_BURST"}},
 		&cli.IntFlag{Name: "register-rate-limit-burst", Usage: "Per-client-IP instantaneous registration allowance (0 = the larger of 20 and one second of --register-rate-limit). Lower it to tighten a token brute-force at a low sustained rate", EnvVars: []string{"AURORABOOT_REGISTER_RATE_LIMIT_BURST"}},
+		&cli.DurationFlag{Name: "reset-timeout", Value: handlers.DefaultResetTimeout, Usage: "Fail pending or in-progress resets that have not returned within this duration. The clock restarts when a node re-registers mid-reset, so a long wipe is not reported failed; set a negative duration to disable", EnvVars: []string{"AURORABOOT_RESET_TIMEOUT"}},
 	},
 	Action: runWeb,
 }
@@ -138,6 +140,7 @@ func runWeb(c *cli.Context) error {
 	redfishServeTLSCert := c.String("redfish-serve-tls-cert")
 	redfishServeTLSKey := c.String("redfish-serve-tls-key")
 	redfishQuirksDir := c.String("redfish-quirks-dir")
+	resetTimeout := c.Duration("reset-timeout")
 
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -327,6 +330,18 @@ func runWeb(c *cli.Context) error {
 		serveURL = externalURL
 	}
 	if redfishServeAddr != "" {
+		// The scheme of every URL the BMC is handed comes from BaseURL, while the
+		// transport comes from the cert/key pair. Nothing downstream reconciles the
+		// two: the deploy handler takes the URL from one and the InsertMedia
+		// TransferProtocolType from the other, so a disagreement here is only
+		// discovered by the BMC, which fails the fetch without naming a flag.
+		serveURLSource := "--redfish-serve-url"
+		if redfishServeURL == "" {
+			serveURLSource = "--url (--redfish-serve-url is not set)"
+		}
+		if err := checkServeURLScheme(serveURL, serveURLSource, redfishServeTLSCert != "" && redfishServeTLSKey != ""); err != nil {
+			return err
+		}
 		isoServe = isoserve.New(isoserve.Config{
 			BaseURL:  serveURL,
 			BindAddr: redfishServeAddr,
@@ -394,6 +409,7 @@ func runWeb(c *cli.Context) error {
 		NodeRateLimitBurst:     c.Int("node-rate-limit-burst"),
 		RegisterRateLimitRPS:   c.Float64("register-rate-limit"),
 		RegisterRateLimitBurst: c.Int("register-rate-limit-burst"),
+		ResetTimeout:           resetTimeout,
 	})
 
 	fmt.Fprintf(os.Stderr, "AuroraBoot fleet server starting on %s\n", listenAddr)
@@ -470,6 +486,33 @@ func loadOrGenerateSecret(path, label string) string {
 	}
 	fmt.Fprintf(os.Stderr, "Generated %s: %s (saved to %s)\n", label, secret, path)
 	return secret
+}
+
+// checkServeURLScheme reports whether the base URL advertised to a BMC agrees
+// with how the local ISO server actually serves it. isoserve.Server.Register
+// mints every served URL from that base, so the base carries the scheme the BMC
+// reads, while usesTLS is the transport the listener will speak. An InsertMedia
+// request built from both is self-contradictory whenever they disagree, so this
+// refuses the launch instead of deferring the failure to the BMC. source names
+// the flag serveURL came from, since it falls back to --url.
+func checkServeURLScheme(serveURL, source string, usesTLS bool) error {
+	parsed, err := url.Parse(serveURL)
+	if err != nil {
+		return fmt.Errorf("parsing %s %q: %w", source, serveURL, err)
+	}
+	switch parsed.Scheme {
+	case "https":
+		if !usesTLS {
+			return fmt.Errorf("%s is %q, but the Redfish ISO server has no TLS material, so it would serve cleartext under an https:// URL: pass --redfish-serve-tls-cert and --redfish-serve-tls-key, or advertise an http:// URL", source, serveURL)
+		}
+	case "http":
+		if usesTLS {
+			return fmt.Errorf("%s is %q, but --redfish-serve-tls-cert and --redfish-serve-tls-key make the Redfish ISO server serve HTTPS: advertise an https:// URL, or drop the TLS flags", source, serveURL)
+		}
+	default:
+		return fmt.Errorf("%s is %q, which a BMC cannot fetch: the advertised base URL must use http or https", source, serveURL)
+	}
+	return nil
 }
 
 // redfishServeURLSeed returns the advertised URL to seed the image-source

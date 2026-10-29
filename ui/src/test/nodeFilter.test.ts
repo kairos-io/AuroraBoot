@@ -16,7 +16,7 @@ function node(overrides: Partial<Node> = {}): Node {
     id: "n1",
     hostname: "edge-1",
     machineID: "m1",
-    groupID: "",
+    groupID: null,
     labels: {},
     phase: "Online",
     osRelease: null,
@@ -79,7 +79,7 @@ describe("matchesSearch", () => {
 describe("filterNodes", () => {
   const fleet = [
     node({ id: "a", phase: "Online", groupID: "g1", labels: { site: "milan" } }),
-    node({ id: "b", phase: "offline", groupID: "", labels: { role: "worker" } }),
+    node({ id: "b", phase: "offline", groupID: null, labels: { role: "worker" } }),
     node({ id: "c", phase: "Offline", groupID: "g2", labels: { site: "rome" } }),
   ];
   const base = { q: "", phase: "", group: "", label: "", groupBy: "none" };
@@ -122,7 +122,7 @@ describe("groupNodes", () => {
 
   it("groups by group, in group order, with Not in a group last", () => {
     const fleet = [
-      node({ id: "a", groupID: "" }),
+      node({ id: "a", groupID: null }),
       node({ id: "b", groupID: "g2" }),
       node({ id: "c", groupID: "g1" }),
     ];

@@ -3,7 +3,6 @@ import { render, screen, within, fireEvent } from "@testing-library/react";
 import { MemoryRouter } from "react-router";
 
 import { Dashboard } from "@/pages/Dashboard";
-import { setToken } from "@/api/client";
 
 const ago = (minutes: number) => new Date(Date.now() - minutes * 60_000).toISOString();
 
@@ -53,7 +52,6 @@ function json(body: unknown) {
 }
 
 function mockApi(data: Record<string, unknown>) {
-  setToken("t");
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input: RequestInfo | URL) => {

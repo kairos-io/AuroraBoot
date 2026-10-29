@@ -42,9 +42,9 @@ func TestE2E(t *testing.T) {
 
 var (
 	// Server
-	aurorabootURL  string
-	adminPass    = "e2e-admin"
-	regToken     = "e2e-token"
+	aurorabootURL string
+	adminPass     = "e2e-admin"
+	regToken      = "e2e-token"
 
 	// Paths
 	tmpDir       string
@@ -58,10 +58,10 @@ var (
 	vmAuroraBootURL string
 
 	// Config from env
-	kairosBaseImage  string
-	agentRepo        string
-	agentBranch      string
-	prebuiltISO      string // optional: skip build, use this ISO directly
+	kairosBaseImage string
+	agentRepo       string
+	agentBranch     string
+	prebuiltISO     string // optional: skip build, use this ISO directly
 )
 
 var _ = BeforeSuite(func() {
@@ -110,7 +110,7 @@ var _ = BeforeSuite(func() {
 		Builder:       builder,
 		AdminPassword: adminPass,
 		RegToken:      regToken,
-		AuroraBootURL:   aurorabootURL,
+		AuroraBootURL: aurorabootURL,
 		ArtifactsDir:  artifactsDir,
 		Hub:           hub,
 	})

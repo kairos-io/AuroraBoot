@@ -18,6 +18,12 @@ import (
 
 // CleanTmpDirs removes the temp rootfs and netboot directories when finished to not leave things around
 func (d *Deployer) CleanTmpDirs() error {
+	if d.WorkDir != "" {
+		// Everything the run created is in WorkDir. Never touch State.
+		d.Log.Logger.Debug().Str("workDir", d.WorkDir).Msg("Cleaning up work directory")
+		return os.RemoveAll(d.WorkDir)
+	}
+
 	var err *multierror.Error
 	d.Log.Logger.Debug().Str("tmpRootFs", d.tmpRootFs()).Msg("Cleaning up temp rootfs directory")
 	err = multierror.Append(err, os.RemoveAll(d.tmpRootFs()))
@@ -90,9 +96,10 @@ func (d *Deployer) StepCopyCloudConfig() error {
 			// opt-in and still shows it.
 			d.Log.Logger.Info().Int("bytes", len(d.Config.CloudConfig)).Msg("Copying cloud config")
 			d.Log.Logger.Debug().Str("cloudConfig", d.Config.CloudConfig).Msg("Cloud config contents")
-			if _, err := os.Stat(d.destination()); err != nil && os.IsNotExist(err) {
+			dir := filepath.Dir(d.cloudConfigPath())
+			if _, err := os.Stat(dir); err != nil && os.IsNotExist(err) {
 				d.Log.Logger.Error().Err(err).Msg("Destination directory does not exist, creating it")
-				if err := os.MkdirAll(d.destination(), 0755); err != nil {
+				if err := os.MkdirAll(dir, 0755); err != nil {
 					return err
 				}
 			}
@@ -125,7 +132,7 @@ func (d *Deployer) StepGenISO() error {
 			netbootRequested := !d.Config.DisableNetboot
 			return isoRequested || netbootRequested
 		}),
-		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
+		herd.WithDeps(constants.OpDumpSource, constants.OpCopyCloudConfig, constants.OpPrepareDirs), herd.WithCallback(ops.GenISO(d.tmpRootFs, d.destination, d.cloudConfigPath, d.Config.ISO, d.Config.Arch, d.Config.AllowInsecureRegistriesBool())))
 }
 
 func (d *Deployer) StepDownloadISO() error {
@@ -144,7 +151,7 @@ func (d *Deployer) StepExtractNetboot() error {
 		herd.EnableIf(func() bool { return !d.Config.DisableNetboot && !d.rawDiskIsSet() }),
 		herd.ConditionalOption(func() bool { return d.isoOption() }, herd.WithDeps(constants.OpDownloadISO)),
 		herd.ConditionalOption(func() bool { return d.fromImage() }, herd.WithDeps(constants.OpGenISO)),
-		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.getIsoFile, d.dstNetboot, d.Config.ISO.Name)))
+		herd.WithDeps(constants.OpGenISO), herd.WithCallback(ops.ExtractNetboot(d.getIsoFile, d.dstNetboot, d.netbootPrefix())))
 }
 
 // StepGenRawDisk Generate the raw disk image.
@@ -155,14 +162,31 @@ func (d *Deployer) StepGenRawDisk() error {
 			return d.Config.Disk.EFI || d.Config.Disk.GCE || d.Config.Disk.VHD || d.Config.Disk.Partitions || d.Config.Disk.MAAS
 		}),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenEFIRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.Config.Disk.Partitions, d.Config.Disk.MAAS, d.diskExtensions())))
+		herd.WithCallback(ops.GenEFIRawDisk(d.rawImageParams())))
 }
 
 func (d *Deployer) StepGenMBRRawDisk() error {
 	return d.Add(constants.OpGenBIOSRawDisk,
 		herd.EnableIf(func() bool { return d.Config.Disk.BIOS }),
 		herd.WithDeps(constants.OpDumpSource),
-		herd.WithCallback(ops.GenBiosRawDisk(d.tmpRootFs(), d.rawDiskPath(), d.rawDiskSize(), d.rawDiskStateSize(), d.rawDiskRecoveryImageSize(), d.Config.NoDefaultCloudConfig, d.diskExtensions())))
+		herd.WithCallback(ops.GenBiosRawDisk(d.rawImageParams())))
+}
+
+func (d *Deployer) rawImageParams() ops.RawImageParams {
+	return ops.RawImageParams{
+		Source:                   d.tmpRootFs(),
+		Output:                   d.rawDiskPath(),
+		FinalSize:                d.rawDiskSize(),
+		StateSize:                d.rawDiskStateSize(),
+		RecoveryImageSize:        d.rawDiskRecoveryImageSize(),
+		NoDefaultCloudConfig:     d.Config.NoDefaultCloudConfig,
+		SeparatePartitionsImages: d.Config.Disk.Partitions,
+		MAAS:                     d.Config.Disk.MAAS,
+		BootActive:               d.Config.Disk.BootActive,
+		StateSlots:               d.rawDiskStateSlots(),
+		NoRecovery:               d.Config.Disk.NoRecovery,
+		Extensions:               d.diskExtensions(),
+	}
 }
 
 func (d *Deployer) StepConvertGCE() error {
@@ -257,7 +281,14 @@ func (d *Deployer) fromImage() bool {
 // temp-rootfs lived under state_dir. Only the location changes here, not the
 // per-build uniqueness, so PrepDirs' RemoveAll for one build can never clobber
 // another build's rootfs.
+//
+// When WorkDir is set (build-iso), the rootfs lives in it instead. WorkDir is
+// created per run under os.TempDir(), so the same guarantees hold, and two runs
+// that share one output directory no longer share an unpack directory.
 func (d *Deployer) tmpRootFs() string {
+	if d.WorkDir != "" {
+		return filepath.Join(d.WorkDir, "rootfs")
+	}
 	// Hash the normalized state_dir (StateDir cleans the path, so "/output" and
 	// "/output/" collapse to the same key) and use the full digest so distinct
 	// state_dirs can never collide onto the same unpack directory.
@@ -299,6 +330,9 @@ func (d *Deployer) getIsoFile() string {
 }
 
 func (d *Deployer) dstNetboot() string {
+	if d.WorkDir != "" {
+		return filepath.Join(d.WorkDir, "netboot")
+	}
 	return d.Config.StateDir("netboot")
 }
 
@@ -311,16 +345,29 @@ func (d *Deployer) netbootReleaseOption() bool {
 	return !d.Config.DisableNetboot && !d.fromImage()
 }
 
+// The three helpers below name the files StepExtractNetboot wrote, so they go
+// through the same function the extraction does. They used to hardcode the
+// kairos prefix, which is correct only while iso.name is unset.
 func (d *Deployer) initrdFile() string {
-	return filepath.Join(d.dstNetboot(), "kairos-initrd")
+	_, _, initrd := ops.NetbootArtifactPaths(d.dstNetboot(), d.netbootPrefix())
+	return initrd
 }
 
 func (d *Deployer) kernelFile() string {
-	return filepath.Join(d.dstNetboot(), "kairos-kernel")
+	_, kernel, _ := ops.NetbootArtifactPaths(d.dstNetboot(), d.netbootPrefix())
+	return kernel
 }
 
 func (d *Deployer) squashFSfile() string {
-	return filepath.Join(d.dstNetboot(), "kairos.squashfs")
+	squashFS, _, _ := ops.NetbootArtifactPaths(d.dstNetboot(), d.netbootPrefix())
+	return squashFS
+}
+
+// netbootPrefix is the base name the netboot artifacts carry. It is the only
+// input ExtractNetboot and the server that serves its output share, so both
+// sides of the pipeline read it from here.
+func (d *Deployer) netbootPrefix() string {
+	return d.Config.ISO.Name
 }
 
 func (d *Deployer) isoOption() bool {
@@ -328,6 +375,9 @@ func (d *Deployer) isoOption() bool {
 }
 
 func (d *Deployer) cloudConfigPath() string {
+	if d.WorkDir != "" {
+		return filepath.Join(d.WorkDir, "config.yaml")
+	}
 	return filepath.Join(d.destination(), "config.yaml")
 }
 
@@ -409,6 +459,16 @@ func (d *Deployer) rawDiskStateSize() int64 {
 		return 0
 	}
 	return sizeInt
+}
+
+// rawDiskStateSlots returns disk.state_slots, 0 (the default) when unset or invalid; Validate rejects invalid values first.
+func (d *Deployer) rawDiskStateSlots() int {
+	slots, err := d.Config.Disk.StateSlotsCount()
+	if err != nil {
+		d.Log.Logger.Error().Err(err).Msg("Failed to parse disk state slots, using the default")
+		return 0
+	}
+	return slots
 }
 
 func (d *Deployer) rawDiskRecoveryImageSize() int64 {

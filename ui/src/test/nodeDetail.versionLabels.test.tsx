@@ -3,7 +3,6 @@ import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
-import { setToken } from "@/api/client";
 import { getNode } from "@/api/nodes";
 
 const NODE_ID = "0f9c2f1e-5b4a-4c0e-9d3f-7a1b2c3d4e5f";
@@ -21,7 +20,7 @@ function nodeWithVersions() {
     id: NODE_ID,
     hostname: "edge-01",
     machineID: "a1b2c3d4",
-    groupID: "",
+    groupID: null,
     labels: { role: "worker" },
     phase: "online",
     osRelease: { KAIROS_VERSION: IMAGE_VERSION },
@@ -67,7 +66,6 @@ function renderPage() {
 
 describe("NodeDetail version labels", () => {
   beforeEach(() => {
-    setToken("test-token");
   });
 
   afterEach(() => {

@@ -2,14 +2,15 @@ package e2e_test
 
 import (
 	"fmt"
-	"github.com/kairos-io/kairos/v4/sdk/utils"
-	"github.com/onsi/gomega/types"
 	"os"
 	"os/exec"
 	"path"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kairos-io/kairos/v4/sdk/utils"
+	"github.com/onsi/gomega/types"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
@@ -19,7 +20,7 @@ var getVersionCmd = ". /etc/kairos-release; [ ! -z \"$KAIROS_VERSION\" ] && echo
 
 var stateAssertVM = func(vm testVM, query, expected string) {
 	By(fmt.Sprintf("Expecting state %s to be %s", query, expected))
-	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	out, err := vm.SudoOut(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
 	ExpectWithOffset(1, out).To(ContainSubstring(expected))
 }
@@ -29,7 +30,7 @@ var stateContains = func(vm testVM, query string, expected ...string) {
 	for _, e := range expected {
 		or = append(or, ContainSubstring(e))
 	}
-	out, err := vm.Sudo(fmt.Sprintf("kairos-agent state get %s", query))
+	out, err := vm.SudoOut(fmt.Sprintf("kairos-agent state get %s", query))
 	ExpectWithOffset(1, err).ToNot(HaveOccurred(), out)
 	ExpectWithOffset(1, strings.ToLower(out)).To(Or(or...))
 }
@@ -38,6 +39,7 @@ type Auroraboot struct {
 	ContainerImage string
 	Dirs           []string          // directories to mount from host
 	ManualDirs     map[string]string // directories to mount from host to an specific path in the container
+	WorkDir        string            // working directory inside the container (docker run -w), empty keeps the image default
 }
 
 func TestAurorabootE2E(t *testing.T) {
@@ -88,6 +90,10 @@ func (e *Auroraboot) ContainerRun(entrypoint string, args ...string) (string, er
 		"--network", "host",
 		"-v", "/var/run/docker.sock:/var/run/docker.sock",
 		"--entrypoint", entrypoint,
+	}
+
+	if e.WorkDir != "" {
+		dockerArgs = append(dockerArgs, "-w", e.WorkDir)
 	}
 
 	for _, d := range e.Dirs {

@@ -43,10 +43,20 @@ type OutputOptions struct {
 	GCE         bool
 	VHD         bool
 	MAAS        bool
-	UKI         bool
 	FIPS        bool
 	TrustedBoot bool
 }
+
+// UKIISO reports whether the ISO this build produces is the signed UKI
+// installer rather than the GRUB one.
+//
+// Trusted Boot is the only mode that produces one: kairos-init -t builds an
+// image with no GRUB and no separate initrd, so the only ISO it can be
+// installed from is the UKI ISO. API and UI therefore offer a single ISO
+// option and the boot mode decides which one gets built, rather than a
+// separate uki flag that is only ever valid together with trustedBoot
+// (kairos-io/kairos#5497).
+func (o OutputOptions) UKIISO() bool { return o.TrustedBoot && o.ISO }
 
 // SigningOptions holds SecureBoot / UKI signing paths.
 type SigningOptions struct {
@@ -89,14 +99,14 @@ type BuildOptions struct {
 
 	// LogRedactValues are substrings the builder scrubs from every log line
 	// before persisting to the store or broadcasting to the UI. The Create
-	// handler populates this with per-build secrets it just injected into
-	// the cloud-config (registration token, default node password) so a
-	// build step that echoes the cloud-config cannot land those values in
-	// the GET /logs response or the live log pane. Best-effort: values
-	// shorter than 8 characters are skipped to avoid replacing unrelated
-	// text that happens to contain them, and only verbatim occurrences
-	// are redacted - anything transformed (base64, JSON-escaped) still
-	// passes.
+	// handler populates this with the secrets it hands the builder: the
+	// registration token and node password it injects into the
+	// cloud-config, and the UploadToken. A build step that prints one of
+	// them therefore cannot land it in the GET /logs response or the live
+	// log pane. Best-effort: values shorter than 8 characters are skipped
+	// to avoid replacing unrelated text that happens to contain them, and
+	// only verbatim occurrences are redacted - anything transformed
+	// (base64, JSON-escaped) still passes.
 	LogRedactValues []string
 
 	// Grouped options (preferred for new code).
@@ -167,7 +177,7 @@ type BuildStatus struct {
 	ID        string   `json:"id"`
 	Phase     string   `json:"phase"` // Pending, Building, Ready, Error
 	Message   string   `json:"message"`
-	Artifacts []string `json:"artifacts"` // paths to built files
+	Artifacts []string `json:"artifacts"` // paths of the built files on the server; API responses carry base names
 }
 
 // Build phases.

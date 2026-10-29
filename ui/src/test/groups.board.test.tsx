@@ -4,14 +4,13 @@ import { MemoryRouter } from "react-router";
 
 import { Groups } from "@/pages/Groups";
 import { Toaster } from "@/components/ui/toaster";
-import { setToken } from "@/api/client";
 
 function makeNode(id: string, hostname: string, extra: Record<string, unknown> = {}) {
   return {
     id,
     hostname,
     machineID: `m-${id}`,
-    groupID: "",
+    groupID: null,
     labels: {},
     phase: "Online",
     osRelease: null,
@@ -80,7 +79,6 @@ function dataTransfer() {
 }
 
 beforeEach(() => {
-  setToken("t");
 });
 
 afterEach(() => {
@@ -116,6 +114,22 @@ describe("Groups board", () => {
       expect(f.calls).toContainEqual({ url: "/api/v1/nodes/n-new/group", method: "PUT", body: { groupID: "g2" } }),
     );
     expect(within(column("lab")).getByText("lab-new-box")).toBeInTheDocument();
+  });
+
+  it("sends a null group when a card is dropped on Not in a group", async () => {
+    const f = mockFetch();
+    vi.stubGlobal("fetch", f.fn);
+    renderPage();
+    const card = await screen.findByRole("button", { name: "pos-milan-01" });
+    const dt = dataTransfer();
+    fireEvent.dragStart(card, { dataTransfer: dt });
+    fireEvent.dragOver(column("Not in a group"), { dataTransfer: dt });
+    fireEvent.drop(column("Not in a group"), { dataTransfer: dt });
+
+    await waitFor(() =>
+      expect(f.calls).toContainEqual({ url: "/api/v1/nodes/n-shop/group", method: "PUT", body: { groupID: null } }),
+    );
+    expect(within(column("Not in a group")).getByText("pos-milan-01")).toBeInTheDocument();
   });
 
   it("moves the card back and shows a toast when the move fails", async () => {
