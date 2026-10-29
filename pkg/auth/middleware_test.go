@@ -253,15 +253,45 @@ var _ = Describe("RequireNodeMatch", func() {
 var _ = Describe("RegistrationTokenAuth", func() {
 	var (
 		e          *echo.Echo
+		tok        *auth.RegistrationToken
 		middleware echo.MiddlewareFunc
 	)
 
 	BeforeEach(func() {
 		e = echo.New()
-		// Pointer so the rotation test below can mutate what the middleware
-		// sees on subsequent requests.
-		tok := "reg-token-123"
-		middleware = auth.RegistrationTokenAuth(&tok)
+		// Shared holder so the rotation specs below can change what the
+		// middleware sees on subsequent requests.
+		tok = auth.NewRegistrationToken("reg-token-123")
+		middleware = auth.RegistrationTokenAuth(tok)
+	})
+
+	register := func(token string) int {
+		body := `{"registrationToken":"` + token + `","hostname":"test-node"}`
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler := middleware(func(c echo.Context) error {
+			return c.String(http.StatusOK, "ok")
+		})
+		Expect(handler(e.NewContext(req, rec))).To(Succeed())
+		return rec.Code
+	}
+
+	DescribeTable("rejects a wrong token",
+		func(wrong string) {
+			Expect(register(wrong)).To(Equal(http.StatusUnauthorized))
+		},
+		Entry("of the same length", "reg-token-124"),
+		Entry("that is a prefix of the token", "reg-token-12"),
+		Entry("that extends the token", "reg-token-1234"),
+		Entry("that is empty", ""),
+	)
+
+	It("accepts only the current token after a rotation", func() {
+		tok.Set("rotated-token")
+		Expect(register("reg-token-123")).To(Equal(http.StatusUnauthorized))
+		Expect(register("rotated-tokem")).To(Equal(http.StatusUnauthorized))
+		Expect(register("rotated-token")).To(Equal(http.StatusOK))
 	})
 
 	It("should allow requests with a valid registration token", func() {

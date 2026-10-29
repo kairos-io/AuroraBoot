@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
 	"github.com/labstack/echo/v4"
@@ -17,13 +18,13 @@ import (
 var _ = Describe("SettingsHandler image-source", func() {
 	var (
 		e        *echo.Echo
-		token    string
+		token    *auth.RegistrationToken
 		settings *fakeSettingsStore
 	)
 
 	BeforeEach(func() {
 		e = echo.New()
-		token = "tok"
+		token = auth.NewRegistrationToken("tok")
 		settings = newFakeSettingsStore()
 	})
 
@@ -34,7 +35,7 @@ var _ = Describe("SettingsHandler image-source", func() {
 		if withServe {
 			serve = isoserve.New(isoserve.Config{BaseURL: "http://10.0.0.5:8090"})
 		}
-		return handlers.NewSettingsHandler(&token, "").
+		return handlers.NewSettingsHandler(token, "").
 			WithImageSource(settings, serve, "http://10.0.0.5:8090")
 	}
 
