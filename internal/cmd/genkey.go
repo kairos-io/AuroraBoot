@@ -9,6 +9,7 @@ import (
 const (
 	skipMicrosoftCertsFlag = "skip-microsoft-certs-I-KNOW-WHAT-IM-DOING"
 	customCertDirFlag      = "custom-cert-dir"
+	overwriteFlag          = "overwrite"
 	existingKeysDirFlag    = "existing-keys-dir"
 )
 
@@ -39,6 +40,10 @@ var GenKeyCmd = cli.Command{
 			Name:  customCertDirFlag,
 			Usage: "Path to a directory containing custom certificates to enroll",
 		},
+		&cli.BoolFlag{
+			Name:  overwriteFlag,
+			Usage: "Generate new keys even if the output directory already holds keys. The old keys are replaced and machines that enrolled them will reject anything signed with the new ones",
+		},
 		&cli.StringFlag{
 			Name:  existingKeysDirFlag,
 			Usage: "Path to a directory with PK.key, PK.pem, KEK.key, KEK.pem, db.key and db.pem to use instead of generating new ones. NAME is not needed and --expiration-in-days is ignored when set",
@@ -52,6 +57,7 @@ var GenKeyCmd = cli.Command{
 			ExpirationInDays:   ctx.String("expiration-in-days"),
 			SkipMicrosoftCerts: ctx.Bool(skipMicrosoftCertsFlag),
 			CustomCertDir:      ctx.String(customCertDirFlag),
+			Overwrite:          ctx.Bool(overwriteFlag),
 			ExistingKeysDir:    ctx.String(existingKeysDirFlag),
 			Logger:             &log,
 		})

@@ -62,6 +62,13 @@ type Options struct {
 	// genkey CLI documentation for details). Empty disables custom cert handling.
 	CustomCertDir string
 
+	// Overwrite allows generating new keys into an OutputDir that already
+	// holds PK.key, KEK.key, db.key or tpm2-pcr-private.pem. Without it
+	// GenerateKeySet refuses, because replacing those files makes every
+	// machine that enrolled the old keys reject what is signed afterwards.
+	// Ignored when ExistingKeysDir is set.
+	Overwrite bool
+
 	// Logger is the kairos-sdk logger used for progress messages. If nil, a
 	// default debug-level logger is used.
 	Logger *logger.KairosLogger
@@ -94,6 +101,16 @@ func GenerateKeySet(opts Options) error {
 
 	uuid := sbctl.CreateUUID()
 	guid := efiutil.StringToGUID(string(uuid))
+
+	if opts.ExistingKeysDir == "" && !opts.Overwrite {
+		for _, name := range []string{"PK.key", "KEK.key", "db.key", "tpm2-pcr-private.pem"} {
+			if _, err := os.Stat(filepath.Join(opts.OutputDir, name)); err == nil {
+				return fmt.Errorf("output directory %s already holds %s; refusing to overwrite existing keys, use a different directory or allow overwriting", opts.OutputDir, name)
+			} else if !os.IsNotExist(err) {
+				return fmt.Errorf("checking %s: %w", name, err)
+			}
+		}
+	}
 
 	if err := os.MkdirAll(opts.OutputDir, 0700); err != nil {
 		return fmt.Errorf("creating output directory: %w", err)
