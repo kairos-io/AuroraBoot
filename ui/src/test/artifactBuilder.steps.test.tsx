@@ -18,6 +18,7 @@ vi.mock("@/api/groups", () => ({
 }));
 
 import { ArtifactBuilder, BUILDER_STEPS } from "@/pages/ArtifactBuilder";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 beforeEach(() => {
   Object.defineProperty(window, "matchMedia", {
@@ -62,7 +63,7 @@ function nameInput() {
 
 async function startWithUbuntu() {
   renderBuilder();
-  fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+  fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
   fireEvent.change(nameInput(), { target: { value: "edge" } });
 }
 
@@ -73,7 +74,7 @@ describe("ArtifactBuilder: six steps", () => {
 
   it("keeps the Base step when a template is clicked", async () => {
     renderBuilder();
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     expect(currentStep()?.textContent).toMatch(/Base/);
     expect(nameInput()).toBeInTheDocument();
   });
@@ -88,7 +89,7 @@ describe("ArtifactBuilder: six steps", () => {
 
   it("requires a name and clears the error once the name is set", async () => {
     renderBuilder();
-    fireEvent.click(await screen.findByText("Ubuntu 24.04"));
+    fireEvent.click(await screen.findByText(/^Ubuntu \d+\.\d+$/));
     fireEvent.click(screen.getByRole("button", { name: "Next: System" }));
 
     expect(await screen.findByText(/Name is required/)).toBeInTheDocument();
@@ -122,7 +123,7 @@ describe("ArtifactBuilder: six steps", () => {
 
     expect(currentStep()?.textContent).toMatch(/Access/);
     expect(screen.getByLabelText("Auto-install")).toBeInTheDocument();
-    expect(screen.getByLabelText("Register with AuroraBoot")).toBeInTheDocument();
+    expect(screen.getByLabelText(`Register with ${PRODUCT_NAME}`)).toBeInTheDocument();
     expect(screen.getByLabelText("FIPS")).toBeInTheDocument();
     expect(screen.getByText(/Allowed remote commands/)).toBeInTheDocument();
   });
@@ -144,7 +145,7 @@ describe("ArtifactBuilder: six steps", () => {
 
   it("puts Import and Export in the header menu", async () => {
     renderBuilder();
-    await screen.findByText("Ubuntu 24.04");
+    await screen.findByText(/^Ubuntu \d+\.\d+$/);
     expect(screen.queryByRole("button", { name: /^Export/ })).not.toBeInTheDocument();
     fireEvent.keyDown(screen.getByRole("button", { name: "More actions" }), { key: "Enter" });
     await waitFor(() => expect(screen.getByRole("menuitem", { name: /Import config/ })).toBeInTheDocument());

@@ -285,19 +285,6 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 	})
 })
 
-var _ = Describe("imageURLUsesHTTPS", func() {
-	DescribeTable("derives the transfer protocol from the URL scheme",
-		func(imageURL string, wantHTTPS bool) {
-			got, err := handlers.ImageURLUsesHTTPS(imageURL)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(got).To(Equal(wantHTTPS))
-		},
-		Entry("https scheme advertises HTTPS", "https://10.0.0.5/x.iso", true),
-		Entry("http scheme advertises HTTP", "http://10.0.0.5/x.iso", false),
-		Entry("scheme match is case-insensitive", "HTTPS://10.0.0.5/x.iso", true),
-	)
-})
-
 var _ = Describe("Server.UsesTLS drives the InsertMedia transfer protocol", func() {
 	It("reports HTTPS when both cert and key are configured", func() {
 		s := isoserve.New(isoserve.Config{

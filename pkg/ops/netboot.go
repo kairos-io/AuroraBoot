@@ -25,9 +25,26 @@ import (
 // but rather at the time of the call, e.g. when the ISO file is downloaded or the destination directory is created.
 type valueGetOnCall func() string
 
-// DefaultNetbootPrefix is the base name the netboot artifacts carry when the
+// DefaultNetbootPrefix is the base name of the netboot artifacts when the
 // configuration names none.
 const DefaultNetbootPrefix = "kairos"
+
+// NetbootArtifactPaths returns the three paths ExtractNetboot writes under dst
+// for the given prefix, which is iso.name from the configuration.
+//
+// The server that serves those files has to ask for the same three names, so
+// the producer and the consumer both read them from here. Spelling them twice
+// is what made a run with iso.name set extract <name>-kernel and then serve
+// kairos-kernel.
+func NetbootArtifactPaths(dst, prefix string) (squashFS, kernel, initrd string) {
+	if prefix == "" {
+		prefix = DefaultNetbootPrefix
+	}
+
+	return filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix)),
+		filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix)),
+		filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
+}
 
 // NetbootGrubCfgPath is the path ExtractNetboot writes the livecd grub config
 // to, for the given prefix, which is iso.name from the configuration.
@@ -52,39 +69,31 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 		src := isoFunc()
 		dst := dstFunc()
 
-		if prefix == "" {
-			prefix = DefaultNetbootPrefix
-		}
-
 		if _, err := os.Stat(dst); err != nil && os.IsNotExist(err) {
 			return fmt.Errorf("destination directory %s does not exist: %w", dst, err)
 		}
 		internal.Log.Logger.Info().Str("prefix", prefix).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
 
-		artifact := filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix))
-		err := iso.ExtractFileFromIso("/rootfs.squashfs", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix))
-		err = iso.ExtractFileFromIso("/boot/kernel", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
-		err = iso.ExtractFileFromIso("/boot/initrd", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
+		squashFS, kernel, initrd := NetbootArtifactPaths(dst, prefix)
+
+		for _, a := range []struct {
+			inIso, artifact string
+		}{
+			{"/rootfs.squashfs", squashFS},
+			{"/boot/kernel", kernel},
+			{"/boot/initrd", initrd},
+		} {
+			if err := iso.ExtractFileFromIso(a.inIso, src, a.artifact, &internal.Log); err != nil {
+				internal.Log.Logger.Error().Err(err).Str("artifact", a.artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
+				return err
+			}
 		}
 
 		// The livecd grub config holds the cmdline the ISO boots with, which
 		// the netboot cmdline is meant to match. Not every ISO has one, so a
 		// miss only costs the caller those options: hence the nil logger, the
 		// error of an expected miss does not belong on the Error channel.
-		artifact = NetbootGrubCfgPath(dst, prefix)
+		artifact := NetbootGrubCfgPath(dst, prefix)
 		if err := iso.ExtractFileFromIso(filepath.Join(constants.GrubPrefixDir, constants.GrubCfg), src, artifact, nil); err != nil {
 			internal.Log.Logger.Warn().Err(err).Str("artifact", artifact).Str("source", src).Msg("No livecd grub config in the ISO, netboot will boot with the default cmdline")
 			_ = os.Remove(artifact)
@@ -137,6 +146,26 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 // through the start-pixie subprocess, behave the same as an in-process CLI
 // build.
 //
+// The default carries install-mode-interactive because a netboot is an
+// install. immucore turns that keyword into /run/cos/install_mode_interactive
+// (sdk/state.InstallIntentSentinels), and the bundled 52_installer.yaml gates
+// kairos-interactive.service on that file. Nothing else on a netbooted node
+// runs the install: kairos-agent start stands aside when the config asks for
+// an unattended install. The rest of the guard already holds on a netboot,
+// because a cmdline carrying netboot is a LiveCD boot to kairos-sdk and
+// immucore writes /run/cos/live_mode for it. See kairos-io/kairos#5373.
+//
+// The interactive installer rather than the plain one, because it is the
+// dispatcher: it runs AutoInstall first, so a config carrying install.auto
+// still installs unattended, and it offers the go-nodepair pairing flow from
+// its welcome screen. That is what the legacy nodepair.enable keyword used to
+// ask for, and that keyword starts no installer at all since
+// kairos-io/kairos#5464.
+//
+// An explicit netboot.cmdline replaces the whole default, keeping only the two
+// keys netboot has to control, so an operator who wants a live node that does
+// not install still has a way to ask for one.
+//
 // The livecd options are merged in before the extensions are appended. The
 // merge rewrites the option list, while the kairos.extensions value is a list
 // of pixiecore {{ ID }} templates this build minted and nothing else may
@@ -151,7 +180,7 @@ func netbootCmdline(squashFSfile, cloudConfigFile string, grubCfgFileGet valueGe
 	if nb.Cmdline != "" {
 		line = fmt.Sprintf(`root=live:{{ ID "%s" }} config_url={{ ID "%s" }}`, squashFSfile, cloudConfigFile) + " " + nb.Cmdline
 	} else {
-		line = fmt.Sprintf(`rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, cloudConfigFile)
+		line = fmt.Sprintf(`rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode-interactive config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`, squashFSfile, cloudConfigFile)
 
 		// Without an explicit override, take the options the ISO itself boots
 		// with instead of leaving this list to drift away from it.

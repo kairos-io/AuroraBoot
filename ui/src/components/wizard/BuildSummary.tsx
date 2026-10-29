@@ -54,7 +54,6 @@ const USER_LABELS: Record<BuildSummaryData["user"], string> = {
 const OUTPUT_LABELS: [keyof Artifact, string][] = [
   ["iso", "ISO"],
   ["netboot", "Netboot"],
-  ["uki", "UKI"],
   ["rawDisk", "Raw Disk"],
   ["cloudImage", "Cloud Image"],
   ["gce", "Google Cloud"],
@@ -135,6 +134,7 @@ function sections(d: BuildSummaryData): Section[] {
       title: "Output",
       step: "output",
       rows: [
+        { label: "Boot mode", value: d.trustedBoot ? "Trusted Boot" : "Standard" },
         { label: "Formats", value: list(d.outputs) },
         {
           label: "Overlay files",
@@ -150,7 +150,6 @@ function sections(d: BuildSummaryData): Section[] {
       step: "access",
       rows: [
         { label: "FIPS", value: yesNo(d.fips) },
-        { label: "Trusted Boot", value: yesNo(d.trustedBoot) },
         {
           label: "Insecure registries",
           value: yesNo(d.insecureRegistries),
@@ -240,7 +239,12 @@ export function summaryFromArtifact(a: Artifact): BuildSummaryData {
     commands: [],
     fips: !!a.fips,
     trustedBoot: !!a.trustedBoot,
-    outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([, label]) => label),
+    // There is one ISO option and the boot mode says which ISO it is, so the
+    // summary names the one this build produces rather than leaving the
+    // reader to infer it from the Trusted Boot row.
+    outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([k, label]) =>
+      k === "iso" && a.trustedBoot ? "UKI ISO" : label,
+    ),
     overlayFiles: 0,
     overlayAttached: !!a.overlayId,
     autoInstall: !!a.autoInstall,

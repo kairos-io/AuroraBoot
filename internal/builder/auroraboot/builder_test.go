@@ -4,16 +4,19 @@ import (
 	"context"
 	"errors"
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"time"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
-	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/internal/builder/auroraboot"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
+	"github.com/kairos-io/AuroraBoot/pkg/extensions"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
+	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/uki"
 )
 
@@ -342,8 +345,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				BaseImage:     "quay.io/kairos/ubuntu:latest",
 				OverlayRootfs: "/tmp/my-overlay",
 				Outputs: builder.OutputOptions{
-					ISO: true, // so the deployer step runs and we hit buildUKI after
-					UKI: true,
+					ISO:         true, // so the deployer step runs and we hit buildUKI after
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:    "/keys/db.key",
@@ -380,8 +383,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				Extensions:         []string{"nvidia@v1"},
 				ExtensionsCatalogs: []string{"https://example.test/releases.json"},
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",
@@ -405,8 +408,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				ID:        "uki-schemed",
 				BaseImage: "oci:quay.io/kairos/ubuntu:latest",
 				Outputs: builder.OutputOptions{
-					ISO: true, // so the deployer step runs and we hit buildUKI after
-					UKI: true,
+					ISO:         true, // so the deployer step runs and we hit buildUKI after
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:    "/keys/db.key",
@@ -432,8 +435,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				ID:        "uki-nokeys",
 				BaseImage: "quay.io/kairos/ubuntu:latest",
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				// No Signing populated.
 			})
@@ -468,8 +471,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				ID:        "uki-boom",
 				BaseImage: "quay.io/kairos/ubuntu:latest",
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",
@@ -500,8 +503,8 @@ var _ = Describe("AuroraBoot Builder", func() {
 				BaseImage:   "quay.io/kairos/ubuntu:latest",
 				CloudConfig: cc,
 				Outputs: builder.OutputOptions{
-					ISO: true,
-					UKI: true,
+					ISO:         true,
+					TrustedBoot: true,
 				},
 				Signing: builder.SigningOptions{
 					UKISecureBootKey:  "/keys/db.key",
@@ -518,5 +521,168 @@ var _ = Describe("AuroraBoot Builder", func() {
 			defer ukiMu.Unlock()
 			Expect(capturedUKI.CloudConfig).To(Equal(cc))
 		})
+
+		// A Trusted Boot build asks for UKI without the plain ISO, because the
+		// UKI step writes the bootable ISO itself. That ISO is the build's
+		// output and must survive the removal of unrequested plain ISOs.
+		It("keeps the UKI ISO when the plain ISO was not requested", func() {
+			b.WithUKIBuildFunc(func(o uki.Options) error {
+				for _, name := range []string{"kairos.iso", "kairos.iso.sha256"} {
+					if err := os.WriteFile(filepath.Join(o.OutputDir, name), []byte("uki"), 0o644); err != nil {
+						return err
+					}
+				}
+				return nil
+			})
+
+			_, err := b.Build(context.Background(), builder.BuildOptions{
+				ID:          "uki-no-plain-iso",
+				BaseImage:   "quay.io/kairos/ubuntu:latest",
+				TrustedBoot: true,
+				Outputs: builder.OutputOptions{
+					ISO:         true,
+					TrustedBoot: true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:  "/keys/db.key",
+					UKISecureBootCert: "/keys/db.pem",
+					UKITPMPCRKey:      "/keys/tpm.pem",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() string {
+				s, _ := b.Status(context.Background(), "uki-no-plain-iso")
+				if s == nil {
+					return ""
+				}
+				return s.Phase
+			}, 5*time.Second, 10*time.Millisecond).Should(Equal(builder.BuildReady))
+
+			isoPath := filepath.Join(baseDir, "uki-no-plain-iso", "kairos.iso")
+			Expect(isoPath).To(BeAnExistingFile())
+			status, err := b.Status(context.Background(), "uki-no-plain-iso")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(status.Artifacts).To(ContainElement(isoPath))
+		})
+
+		// The deployer writes a plain GRUB ISO as scaffolding. A Trusted Boot
+		// build asks for the ISO and means the UKI one, so the scaffolding ISO
+		// goes and only the UKI ISO is left to collect. Without that, the
+		// build would offer two ISOs and the plain one does not boot a
+		// Trusted Boot image.
+		It("removes the scaffolding ISO but keeps the UKI ISO", func() {
+			scaffoldingDeploy := func(_ context.Context, config schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
+				return os.WriteFile(filepath.Join(config.State, "plain.iso"), []byte("plain"), 0o644)
+			}
+			nb := auroraboot.New(baseDir, scaffoldingDeploy, nil)
+			nb.WithUKIBuildFunc(func(o uki.Options) error {
+				return os.WriteFile(filepath.Join(o.OutputDir, "kairos.iso"), []byte("uki"), 0o644)
+			})
+
+			_, err := nb.Build(context.Background(), builder.BuildOptions{
+				ID:          "uki-netboot",
+				BaseImage:   "quay.io/kairos/ubuntu:latest",
+				ISO:         true,
+				TrustedBoot: true,
+				Outputs: builder.OutputOptions{
+					ISO:         true,
+					TrustedBoot: true,
+				},
+				Signing: builder.SigningOptions{
+					UKISecureBootKey:  "/keys/db.key",
+					UKISecureBootCert: "/keys/db.pem",
+					UKITPMPCRKey:      "/keys/tpm.pem",
+				},
+			})
+			Expect(err).NotTo(HaveOccurred())
+
+			Eventually(func() string {
+				s, _ := nb.Status(context.Background(), "uki-netboot")
+				if s == nil {
+					return ""
+				}
+				return s.Phase
+			}, 5*time.Second, 10*time.Millisecond).Should(Equal(builder.BuildReady))
+
+			outputDir := filepath.Join(baseDir, "uki-netboot")
+			Expect(filepath.Join(outputDir, "plain.iso")).NotTo(BeAnExistingFile())
+			Expect(filepath.Join(outputDir, "kairos.iso")).To(BeAnExistingFile())
+		})
+	})
+})
+
+// The cross-arch preflight is the only thing standing between a user and the
+// exec format error from kairos-io/kairos#4088, so pin what a refusal does:
+// the build ends in BuildError, the row says so too, and the deployer never
+// runs. It also has to reach that verdict without pulling anything.
+var _ = Describe("AuroraBoot Builder cross-arch preflight", func() {
+	It("fails the build and the row when the daemon cannot emulate the arch", func() {
+		s := newRecStore()
+		deployed := make(chan struct{}, 1)
+		deploy := func(_ context.Context, _ schema.Config, _ schema.ReleaseArtifact, _ string, _ io.Writer) error {
+			deployed <- struct{}{}
+			return nil
+		}
+
+		b := auroraboot.New(GinkgoT().TempDir(), deploy, s).
+			// A host that can only build for itself.
+			WithPlatformsFunc(func(context.Context) ([]string, error) {
+				return []string{"linux/amd64"}, nil
+			})
+
+		_, err := b.Build(context.Background(), builder.BuildOptions{
+			ID:         "binfmt-refused",
+			Dockerfile: "FROM quay.io/kairos/ubuntu:latest\nRUN echo hi\n",
+			Source:     builder.ImageSource{Arch: "arm64"},
+			Outputs:    builder.OutputOptions{ISO: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Eventually(func() string {
+			st, _ := b.Status(context.Background(), "binfmt-refused")
+			if st == nil {
+				return ""
+			}
+			return st.Phase
+		}, 5*time.Second, 10*time.Millisecond).Should(Equal(builder.BuildError))
+
+		status, err := b.Status(context.Background(), "binfmt-refused")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(status.Message).To(And(
+			ContainSubstring("cannot build for linux/arm64"),
+			ContainSubstring("binfmt_misc"),
+		))
+
+		// The artifact row carries the same verdict, so the UI shows it.
+		rec, err := s.GetByID(context.Background(), "binfmt-refused")
+		Expect(err).NotTo(HaveOccurred())
+		Expect(rec.Phase).To(Equal(store.ArtifactError))
+		Expect(rec.Message).To(ContainSubstring("binfmt_misc"))
+
+		// And nothing was built or deployed.
+		Consistently(deployed, 200*time.Millisecond).ShouldNot(Receive())
+	})
+
+	// A Dockerfile that only COPYs onto an already-kairosified base executes no
+	// target-architecture binary, so it needs no emulation. The preflight used
+	// to run at the top of the build and refused these too.
+	It("does not consult the builder when no step runs a target binary", func() {
+		probed := make(chan struct{}, 1)
+		b := auroraboot.New(GinkgoT().TempDir(), noopDeploy, nil).
+			WithPlatformsFunc(func(context.Context) ([]string, error) {
+				probed <- struct{}{}
+				return []string{"linux/amd64"}, nil
+			})
+
+		_, err := b.Build(context.Background(), builder.BuildOptions{
+			ID:        "copy-only",
+			BaseImage: "quay.io/kairos/ubuntu:latest",
+			Source:    builder.ImageSource{Arch: "arm64"},
+			Outputs:   builder.OutputOptions{ISO: true},
+		})
+		Expect(err).NotTo(HaveOccurred())
+
+		Consistently(probed, 500*time.Millisecond).ShouldNot(Receive())
 	})
 })

@@ -6,7 +6,7 @@ ARG TARGETARCH
 FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 # Build the React UI. Output is platform-independent.
-FROM node:24 AS js
+FROM node:26 AS js
 WORKDIR /work/ui
 COPY ui/package.json ui/package-lock.json* ./
 RUN npm install
@@ -21,12 +21,16 @@ ENV TMPDIR=/tmp
 # `luet repo update` fails with `/usr/bin/unpigz: invalid argument` on arm for some reason without this option:
 # https://github.com/containerd/containerd/blob/7c3aca7a610df76212171d200ca3811ff6096eb8/archive/compression/compression.go#L50
 ENV CONTAINERD_DISABLE_PIGZ=1
-RUN dnf -y update
-RUN dnf -y install dnf-plugins-core && dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
+# Mirrors drop a request now and then, and a single 404 used to end the build.
+# scripts/retry runs a mirror fetch again if it fails, so one dropped
+# request no longer ends the build. See kairos-io/kairos#5565.
+COPY scripts/retry /usr/local/bin/retry
+RUN retry dnf -y update
+RUN retry dnf -y install dnf-plugins-core && retry dnf-3 config-manager --add-repo https://download.docker.com/linux/fedora/docker-ce.repo
 ## ISO+ Arm image + Netboot + cloud images Build depedencies
 # opensc is needed for the pkcs11 module to work
 # llvm is needed for uki building specifically llvm-objcopy
-RUN dnf in -y bc \
+RUN retry dnf in -y bc \
               binutils \
               busybox \
               containerd.io \
@@ -60,12 +64,15 @@ RUN dnf in -y bc \
 
 FROM golang:1.27 AS with-swagger
 WORKDIR /app
+# scripts/retry runs a network fetch again if it fails, so one dropped
+# request no longer ends the build. See kairos-io/kairos#5565.
+COPY scripts/retry /usr/local/bin/retry
 # Build the swag CLI from the version go.mod pins through its tool directive.
 # "go install ...@latest" fetched an unpinned CLI on every build, so the
 # generated docs could change with no code change, and a proxy.golang.org
 # hiccup failed the whole image build.
 COPY go.mod go.sum ./
-RUN go build -o /usr/local/bin/swag github.com/swaggo/swag/cmd/swag
+RUN retry go build -o /usr/local/bin/swag github.com/swaggo/swag/cmd/swag
 COPY . .
 RUN swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
@@ -79,9 +86,10 @@ ARG VERSION=v0.0.0
 WORKDIR /work
 # libpcsclite-dev is required by github.com/go-piv/piv-go/v2 (transitive via sbctl)
 RUN apt-get update && apt-get install -y --no-install-recommends libpcsclite-dev && rm -rf /var/lib/apt/lists/*
+COPY scripts/retry /usr/local/bin/retry
 ADD go.mod .
 ADD go.sum .
-RUN go mod download
+RUN retry go mod download
 ADD . .
 COPY --from=js /work/internal/ui/dist ./internal/ui/dist
 COPY --from=swagger /app/docs ./docs
@@ -93,13 +101,16 @@ RUN go build -tags ui -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedorariscv/base:44 AS riscv64
 ENV BUILDKIT_PROGRESS=plain
 ENV TMPDIR=/tmp
+# scripts/retry runs a mirror fetch again if it fails, so one dropped
+# request no longer ends the build. See kairos-io/kairos#5565.
+COPY scripts/retry /usr/local/bin/retry
 # Install base dependencies (same as main base stage)
-RUN dnf -y update && \
-    dnf -y install dnf-plugins-core && \
-    dnf in -y bc binutils curl dosfstools e2fsprogs erofs-utils gdisk genisoimage \
+RUN retry dnf -y update && \
+    retry dnf -y install dnf-plugins-core && \
+    retry dnf in -y bc binutils curl dosfstools e2fsprogs erofs-utils gdisk genisoimage \
               grub2 jq kpartx lvm2 llvm mtools openssl parted rsync squashfs-tools \
               sudo udev util-linux xorriso zstd && \
-    dnf install -y \
+    retry dnf install -y \
         systemd-boot-unsigned \
         grub2-efi-riscv64 \
         grub2-efi-riscv64-modules || true

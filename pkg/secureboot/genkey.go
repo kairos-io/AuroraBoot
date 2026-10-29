@@ -12,7 +12,9 @@ package secureboot
 
 import (
 	"bytes"
+	"crypto/rsa"
 	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"os"
@@ -31,7 +33,8 @@ import (
 // Options configures a Secure Boot key set generation.
 type Options struct {
 	// Name is the common-name prefix used for the X.509 certificate subjects
-	// (e.g. "<name>-PK", "<name>-KEK", "<name>-db"). Required.
+	// (e.g. "<name>-PK", "<name>-KEK", "<name>-db"). Required unless
+	// ExistingKeysDir is set.
 	Name string
 
 	// OutputDir is the directory where all generated key files will be written.
@@ -39,8 +42,20 @@ type Options struct {
 	OutputDir string
 
 	// ExpirationInDays controls the X.509 certificate validity. Defaults to "365"
-	// when empty.
+	// when empty. Ignored when ExistingKeysDir is set.
 	ExpirationInDays string
+
+	// ExistingKeysDir is an optional directory holding PK.key, PK.pem,
+	// KEK.key, KEK.pem, db.key and db.pem. When set, those key pairs are
+	// copied into OutputDir instead of generating new ones, and the rest of
+	// the set (.der, .auth, .esl) is built from them. Keys must be
+	// unencrypted PKCS#8 RSA PEM and match their certificate.
+	//
+	// The directory may also hold tpm2-pcr-private.pem, an unencrypted RSA
+	// private key. When present it is copied as is, so UKIs keep the same PCR
+	// public key and already encrypted nodes can still unlock. When absent a
+	// new one is generated; it is not derived from the other keys.
+	ExistingKeysDir string
 
 	// SkipMicrosoftCerts disables bundling Microsoft OEM certificates into the
 	// KEK and db .auth files. THIS COULD BRICK FIRMWARE — only set to true if
@@ -70,7 +85,7 @@ type Options struct {
 // KEK; KEK signs db). When SkipMicrosoftCerts is false (the default), the KEK
 // and db databases also include Microsoft's OEM certificates.
 func GenerateKeySet(opts Options) error {
-	if opts.Name == "" {
+	if opts.Name == "" && opts.ExistingKeysDir == "" {
 		return errors.New("name is required")
 	}
 	if opts.OutputDir == "" {
@@ -100,33 +115,43 @@ func GenerateKeySet(opts Options) error {
 		defer os.RemoveAll(customDerDir)
 	}
 
+	copiedPCR := false
+	if opts.ExistingKeysDir != "" {
+		var err error
+		copiedPCR, err = copyExistingKeys(*log, opts.ExistingKeysDir, opts.OutputDir)
+		if err != nil {
+			return err
+		}
+	}
+
 	for _, keyType := range []string{"PK", "KEK", "db"} {
-		log.Infof("Generating %s", keyType)
 		key := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.key", keyType))
 		pem := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.pem", keyType))
 		der := filepath.Join(opts.OutputDir, fmt.Sprintf("%s.der", keyType))
 
-		args := []string{
-			"req", "-nodes", "-x509", "-subj", fmt.Sprintf("/CN=%s-%s/", opts.Name, keyType),
-			"-keyout", key,
-			"-out", pem,
-		}
-		expirationDays := opts.ExpirationInDays
-		if expirationDays == "" {
-			expirationDays = "365"
-		}
-		args = append(args, "-days", expirationDays)
+		if opts.ExistingKeysDir == "" {
+			log.Infof("Generating %s", keyType)
+			args := []string{
+				"req", "-nodes", "-x509", "-subj", fmt.Sprintf("/CN=%s-%s/", opts.Name, keyType),
+				"-keyout", key,
+				"-out", pem,
+			}
+			expirationDays := opts.ExpirationInDays
+			if expirationDays == "" {
+				expirationDays = "365"
+			}
+			args = append(args, "-days", expirationDays)
 
-		cmd := exec.Command("openssl", args...)
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			return fmt.Errorf("generating %s key+cert: %w / %s", keyType, err, string(out))
+			cmd := exec.Command("openssl", args...)
+			if out, err := cmd.CombinedOutput(); err != nil {
+				return fmt.Errorf("generating %s key+cert: %w / %s", keyType, err, string(out))
+			}
+			log.Infof("%s generated at %s and %s", keyType, key, pem)
 		}
-		log.Infof("%s generated at %s and %s", keyType, key, pem)
 
 		log.Infof("Converting %s.pem to DER", keyType)
-		cmd = exec.Command("openssl", "x509", "-outform", "DER", "-in", pem, "-out", der)
-		if out, err = cmd.CombinedOutput(); err != nil {
+		cmd := exec.Command("openssl", "x509", "-outform", "DER", "-in", pem, "-out", der)
+		if out, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("converting %s to DER: %w / %s", keyType, err, string(out))
 		}
 		log.Infof("%s generated at %s", keyType, der)
@@ -142,14 +167,139 @@ func GenerateKeySet(opts Options) error {
 		}
 	}
 
-	// Generate the TPM PCR policy encryption key (used for UKI builds).
+	// Generate the TPM PCR policy encryption key (used for UKI builds), unless
+	// one was copied from the existing keys directory.
+	tpmPrivate := filepath.Join(opts.OutputDir, pcrKeyName)
+	if copiedPCR {
+		return nil
+	}
 	log.Infof("Generating policy encryption key")
-	tpmPrivate := filepath.Join(opts.OutputDir, "tpm2-pcr-private.pem")
 	cmd := exec.Command("openssl", "genrsa", "-out", tpmPrivate, "2048")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("generating tpm2-pcr-private.pem: %w / %s", err, string(out))
 	}
 
+	return nil
+}
+
+// pcrKeyName is the TPM PCR policy key that UKI builds sign their measurements with.
+const pcrKeyName = "tpm2-pcr-private.pem"
+
+// copyExistingKeys checks the PK, KEK and db key pairs in srcDir and copies
+// them into dstDir, together with tpm2-pcr-private.pem when srcDir has one
+// (the returned bool says whether it did). Nothing is written until every file
+// has been read and each key has been checked.
+func copyExistingKeys(log logger.KairosLogger, srcDir, dstDir string) (bool, error) {
+	type keyFile struct {
+		name string
+		mode os.FileMode
+		data []byte
+	}
+	var files []keyFile
+
+	for _, keyType := range []string{"PK", "KEK", "db"} {
+		keyName, pemName := keyType+".key", keyType+".pem"
+		for _, name := range []string{keyName, pemName} {
+			src := filepath.Join(srcDir, name)
+			srcInfo, err := os.Stat(src)
+			if err != nil {
+				if os.IsNotExist(err) {
+					return false, fmt.Errorf("existing keys directory %s is missing %s", srcDir, name)
+				}
+				return false, fmt.Errorf("reading %s: %w", src, err)
+			}
+			if dstInfo, err := os.Stat(filepath.Join(dstDir, name)); err == nil && os.SameFile(srcInfo, dstInfo) {
+				return false, fmt.Errorf("output directory %s already holds %s from the existing keys directory; use a different output directory", dstDir, name)
+			}
+		}
+
+		keyBytes, err := os.ReadFile(filepath.Join(srcDir, keyName))
+		if err != nil {
+			return false, fmt.Errorf("reading %s: %w", keyName, err)
+		}
+		pemBytes, err := os.ReadFile(filepath.Join(srcDir, pemName))
+		if err != nil {
+			return false, fmt.Errorf("reading %s: %w", pemName, err)
+		}
+
+		block, _ := pem.Decode(keyBytes)
+		if block == nil {
+			return false, fmt.Errorf("%s is not a PEM encoded private key", keyName)
+		}
+		if block.Type == "ENCRYPTED PRIVATE KEY" || strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED") {
+			return false, fmt.Errorf("%s is encrypted; provide an unencrypted key", keyName)
+		}
+		key, err := efiutil.ReadKey(keyBytes)
+		if err != nil {
+			return false, fmt.Errorf("%s must be an unencrypted PKCS#8 RSA private key: %w", keyName, err)
+		}
+		cert, err := efiutil.ReadCert(pemBytes)
+		if err != nil {
+			return false, fmt.Errorf("%s is not a PEM encoded X.509 certificate: %w", pemName, err)
+		}
+		if !key.PublicKey.Equal(cert.PublicKey) {
+			return false, fmt.Errorf("%s does not match the public key in %s", keyName, pemName)
+		}
+
+		files = append(files, keyFile{keyName, 0o600, keyBytes}, keyFile{pemName, 0o644, pemBytes})
+	}
+
+	havePCR := false
+	pcrSrc := filepath.Join(srcDir, pcrKeyName)
+	if srcInfo, err := os.Stat(pcrSrc); err == nil {
+		if dstInfo, err := os.Stat(filepath.Join(dstDir, pcrKeyName)); err == nil && os.SameFile(srcInfo, dstInfo) {
+			return false, fmt.Errorf("output directory %s already holds %s from the existing keys directory; use a different output directory", dstDir, pcrKeyName)
+		}
+		pcrBytes, err := os.ReadFile(pcrSrc)
+		if err != nil {
+			return false, fmt.Errorf("reading %s: %w", pcrKeyName, err)
+		}
+		if err := checkPCRKey(pcrBytes); err != nil {
+			return false, fmt.Errorf("%s: %w", pcrKeyName, err)
+		}
+		files = append(files, keyFile{pcrKeyName, 0o600, pcrBytes})
+		havePCR = true
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("reading %s: %w", pcrSrc, err)
+	}
+
+	for _, f := range files {
+		dst := filepath.Join(dstDir, f.name)
+		if err := os.WriteFile(dst, f.data, f.mode); err != nil {
+			return false, fmt.Errorf("writing %s: %w", dst, err)
+		}
+		if err := os.Chmod(dst, f.mode); err != nil {
+			return false, fmt.Errorf("setting permissions on %s: %w", dst, err)
+		}
+	}
+	log.Infof("Using existing PK, KEK and db keys from %s", srcDir)
+	if havePCR {
+		log.Infof("Using existing %s from %s", pcrKeyName, srcDir)
+	} else {
+		log.Infof("No %s in %s, a new one will be generated", pcrKeyName, srcDir)
+	}
+
+	return havePCR, nil
+}
+
+// checkPCRKey makes sure data is an unencrypted PEM encoded RSA private key.
+func checkPCRKey(data []byte) error {
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return errors.New("is not a PEM encoded private key")
+	}
+	if block.Type == "ENCRYPTED PRIVATE KEY" || strings.Contains(block.Headers["Proc-Type"], "ENCRYPTED") {
+		return errors.New("is encrypted; provide an unencrypted key")
+	}
+	if key, err := x509.ParsePKCS8PrivateKey(block.Bytes); err == nil {
+		if _, ok := key.(*rsa.PrivateKey); !ok {
+			return errors.New("must be an RSA private key")
+		}
+		return nil
+	}
+	if _, err := x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
+		return errors.New("must be an unencrypted RSA private key in PKCS#1 or PKCS#8 PEM form")
+	}
 	return nil
 }
 

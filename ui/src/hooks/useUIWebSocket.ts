@@ -1,5 +1,4 @@
 import { useEffect, useRef, useState } from "react";
-import { getToken } from "@/api/client";
 
 interface WSMessage {
   type: string;
@@ -19,11 +18,8 @@ export function useUIWebSocket(onMessage: (msg: WSMessage) => void): { connected
   const [connected, setConnected] = useState(false);
 
   useEffect(() => {
-    const token = getToken();
-    if (!token) return;
-
     const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-    const url = `${protocol}//${window.location.host}/api/v1/ws/ui?token=${token}`;
+    const url = `${protocol}//${window.location.host}/api/v1/ws/ui`;
 
     let ws: WebSocket;
     let reconnectTimer: ReturnType<typeof setTimeout>;

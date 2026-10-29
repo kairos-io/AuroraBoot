@@ -12,6 +12,20 @@ permissions:
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
+    # The store specs that need concurrent writers run against this server;
+    # they are skipped when AURORABOOT_TEST_POSTGRES_DSN is unset.
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -24,7 +38,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: ui/package-lock.json
       - name: Build UI bundle (embedded via go:embed)
@@ -41,14 +55,34 @@ jobs:
         with:
           driver-opts: network=host
       - name: Run tests
+        env:
+          AURORABOOT_TEST_POSTGRES_DSN: postgres://postgres:test@localhost:5432/postgres?sslmode=disable
         run: |
-          sudo go run github.com/onsi/ginkgo/v2/ginkgo --tags ui -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
+          sudo env AURORABOOT_TEST_POSTGRES_DSN="$AURORABOOT_TEST_POSTGRES_DSN" go run github.com/onsi/ginkgo/v2/ginkgo --tags ui -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --skip-package ./e2e ./...
       - name: Codecov
         uses: codecov/codecov-action@v7
         env:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           files: ./coverage.out
+  vet-tagged:
+    name: vet-tagged
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # Running the suite needs kind, docker and kubectl and takes up to 30
+      # minutes, so this type-checks it instead. No other job passes
+      # operator_e2e, and go vet applies no build tags of its own, so without
+      # this step nothing here compiles test/operator at all. Needs no UI
+      # bundle (internal/ui builds from embed_noui.go without the ui tag) and
+      # no system packages.
+      - name: Type-check build-tagged trees
+        run: make vet-tagged
   helm-chart:
     runs-on: ubuntu-latest
     permissions:
@@ -59,15 +93,15 @@ jobs:
       - name: Set up Helm
         uses: azure/setup-helm@v5
         with:
-          version: v3.22.0
+          version: v4.3.1
       - name: Install helm-unittest plugin
-        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 0.5.2
+        run: helm plugin install https://github.com/helm-unittest/helm-unittest --version 1.2.1 --verify=false
       - name: Lint chart
         run: make helm-chart-lint
       - name: Run chart unit tests
         run: make helm-chart-test
   build-image:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -95,7 +129,7 @@ jobs:
           path: /tmp/auroraboot-image.tar
           retention-days: 1
   e2e-tests:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -150,6 +184,11 @@ jobs:
           '
           ls -la /dev/loop*
       - name: Run e2e tests
+        # /tmp is a RAM-backed tmpfs capped at half the memory on 26.04
+        # runners, too small for the raw and GCE disks the specs stage there.
+        # TMPDIR moves os.MkdirTemp onto the runner's disk.
+        env:
+          TMPDIR: ${{ runner.temp }}
         run: |
           go run github.com/onsi/ginkgo/v2/ginkgo -v -r -p --covermode=atomic --coverprofile=coverage.out --timeout=2h --label-filter "e2e" ./e2e
       - name: Codecov
@@ -159,7 +198,7 @@ jobs:
         with:
           files: ./coverage.out
   test-bootable-iso-uki:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -168,7 +207,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev swtpm libpcsclite-dev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev swtpm libpcsclite-dev
       - name: Grant access to /dev/kvm
         run: |
           echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
@@ -212,7 +251,7 @@ jobs:
           --sb-cert /keys/db.pem \
           --output-type iso \
           -x "console=ttyS0" \
-          quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3
+          quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
@@ -223,12 +262,87 @@ jobs:
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           KVM: true
           EFIVARS_EMPTY: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export ISO=$(find $PWD/build -name *.iso)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi:
+    runs-on: ubuntu-26.04
+    needs: build-image
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        run: |
+          echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          test -w /dev/kvm
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Prefer IPv4
+        uses: ./.github/actions/prefer-ipv4
+      - name: Set up Docker Buildx
+        id: buildx
+        uses: docker/setup-buildx-action@v4
+        with:
+          driver-opts: network=host
+      - name: Download image artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: auroraboot-image
+          path: /tmp/
+      - name: Load image
+        run: docker load -i /tmp/auroraboot-image.tar
+      - name: Generate raw image
+        run: |
+          mkdir build
+          docker run --rm --privileged \
+          --network=host \
+          -v $PWD/build/:/output \
+          auroraboot:ci \
+          --debug \
+          --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
+          --set "disk.efi=true" \
+          --set "disk.size=16000" \
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
+      - name: Test raw image is bootable
+        env:
+          KVM: true
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
+          EFIVARS_EMPTY: true
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          export RAW_IMAGE=$(find $PWD/build -name *.raw)
+          go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
+  test-bootable-raw-efi-boot-active:
     runs-on: ubuntu-24.04
     needs: build-image
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - layout: boot-active
+            extra_args: --set disk.boot_active=true
+            expect_passive: "true"
+            no_recovery: "false"
+          - layout: single-image
+            extra_args: --set disk.boot_active=true --set disk.no_recovery=true --set disk.state_slots=1
+            expect_passive: "false"
+            no_recovery: "true"
+    name: test-bootable-raw-efi-boot-active (${{ matrix.layout }})
     steps:
       - name: Checkout code
         uses: actions/checkout@v7
@@ -273,8 +387,9 @@ jobs:
           --debug \
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.efi=true" \
+          ${{ matrix.extra_args }} \
           --set "disk.size=16000" \
-          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
@@ -283,11 +398,14 @@ jobs:
           KVM: true
           FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
           EFIVARS_EMPTY: true
+          BOOT_ACTIVE: "true"
+          EXPECT_PASSIVE: ${{ matrix.expect_passive }}
+          NO_RECOVERY: ${{ matrix.no_recovery }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-bios:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build-image
     steps:
       - name: Checkout code
@@ -296,7 +414,7 @@ jobs:
           fetch-depth: 0
       - name: Install deps
         run: |
-          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-system-x86 qemu-utils qemu-kvm acl udev libpcsclite-dev
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev libpcsclite-dev
       - name: Grant access to /dev/kvm
         run: |
           echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
@@ -334,10 +452,11 @@ jobs:
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.bios=true" \
           --set "disk.size=16000" \
-          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
       - name: Test raw image is bootable
         env:
           KVM: true
+          TMPDIR: ${{ runner.temp }}
         run: |
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
@@ -362,7 +481,7 @@ jobs:
      - name: Load image
        run: docker load -i /tmp/auroraboot-image.tar
      - name: Cypress run
-       uses: cypress-io/github-action@v7.4.6
+       uses: cypress-io/github-action@v7.4.8
        with:
          working-directory: e2e/web/
          start: docker run --network=host --rm auroraboot:ci web
@@ -375,3 +494,50 @@ jobs:
        with:
          name: cypress-screenshots
          path: e2e/web/cypress/screenshots/
+  phonehome-vm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Install deps
+        run: |
+          sudo apt-get update && sudo apt-get install -y ovmf libvirt-clients libvirt-daemon-system libvirt-daemon virtinst bridge-utils qemu-system-x86 qemu-utils acl udev swtpm libpcsclite-dev
+      - name: Grant access to /dev/kvm
+        run: |
+          echo "KERNEL==\"kvm\", GROUP=\"$(id -gn)\", MODE=\"0660\", OPTIONS+=\"static_node=kvm\"" | sudo tee /etc/udev/rules.d/99-kvm-access.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+          sudo udevadm settle
+          sudo setfacl -m "u:$(id -un):rw" /dev/kvm
+          test -w /dev/kvm
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Prefer IPv4
+        uses: ./.github/actions/prefer-ipv4
+      - name: Find OVMF firmware
+        uses: ./.github/actions/find-ovmf-firmware
+        id: find_ovmf
+        with:
+          prefer_secboot: false
+      - name: Run phonehome VM tier
+        env:
+          KVM: true
+          FIRMWARE: ${{ steps.find_ovmf.outputs.firmware }}
+          # /tmp is a RAM-backed tmpfs on these runners, too small for the
+          # VM disks and built artifacts.
+          TMPDIR: ${{ runner.temp }}
+        run: |
+          go run github.com/onsi/ginkgo/v2/ginkgo -v --label-filter phonehome-vm --timeout 100m --grace-period 10m ./e2e
+      - name: Upload phonehome logs
+        if: failure() || cancelled()
+        uses: actions/upload-artifact@v7
+        with:
+          name: phonehome-logs
+          path: e2e/logs/phonehome
+          if-no-files-found: ignore
+          retention-days: 7

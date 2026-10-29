@@ -3,14 +3,13 @@ import { render, screen, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router";
 
 import { Nodes } from "@/pages/Nodes";
-import { setToken } from "@/api/client";
 
 function makeNode(id: string, hostname: string, extra: Record<string, unknown> = {}) {
   return {
     id,
     hostname,
     machineID: `m-${id}`,
-    groupID: "",
+    groupID: null,
     labels: {},
     phase: "Online",
     osRelease: null,
@@ -69,7 +68,6 @@ function renderAt(url: string) {
 }
 
 beforeEach(() => {
-  setToken("t");
   vi.stubGlobal("fetch", mockFetch());
 });
 

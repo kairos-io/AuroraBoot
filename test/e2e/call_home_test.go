@@ -16,9 +16,9 @@ import (
 
 var _ = Describe("Call-Home E2E Flow", Label("e2e", "call-home"), func() {
 	var (
-		vm       VM
+		vm        VM
 		vmStarted bool
-		stateDir string
+		stateDir  string
 	)
 
 	BeforeEach(func() {

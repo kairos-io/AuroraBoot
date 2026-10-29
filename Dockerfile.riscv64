@@ -9,12 +9,15 @@ FROM quay.io/luet/base:$LUET_VERSION AS luet
 
 FROM golang:1.27 AS with-swagger
 WORKDIR /app
+# scripts/retry runs a network fetch again if it fails, so one dropped
+# request no longer ends the build. See kairos-io/kairos#5565.
+COPY scripts/retry /usr/local/bin/retry
 # Build the swag CLI from the version go.mod pins through its tool directive.
 # "go install ...@latest" fetched an unpinned CLI on every build, so the
 # generated docs could change with no code change, and a proxy.golang.org
 # hiccup failed the whole image build.
 COPY go.mod go.sum ./
-RUN go build -o /usr/local/bin/swag github.com/swaggo/swag/cmd/swag
+RUN retry go build -o /usr/local/bin/swag github.com/swaggo/swag/cmd/swag
 COPY . .
 RUN swag init -g internal/cmd/web.go --output docs --parseDependency --parseInternal --parseDepth 2
 
@@ -26,9 +29,10 @@ FROM ${SWAGGER_STAGE} AS swagger
 FROM golang:1.27 AS builder
 ARG VERSION=v0.0.0
 WORKDIR /work
+COPY scripts/retry /usr/local/bin/retry
 ADD go.mod .
 ADD go.sum .
-RUN go mod download
+RUN retry go mod download
 ADD . .
 # UI is pre-built and included in the build context
 COPY --from=swagger /app/docs ./docs
@@ -41,13 +45,16 @@ RUN go build -tags ui -ldflags "-X main.version=${VERSION}" -o auroraboot
 FROM fedorariscv/base:44 AS riscv64
 ENV BUILDKIT_PROGRESS=plain
 ENV TMPDIR=/tmp
+# scripts/retry runs a mirror fetch again if it fails, so one dropped
+# request no longer ends the build. See kairos-io/kairos#5565.
+COPY scripts/retry /usr/local/bin/retry
 # Install base dependencies
-RUN dnf -y update && \
-    dnf -y install dnf-plugins-core && \
-    dnf in -y bc binutils curl dosfstools e2fsprogs erofs-utils gdisk genisoimage \
+RUN retry dnf -y update && \
+    retry dnf -y install dnf-plugins-core && \
+    retry dnf in -y bc binutils curl dosfstools e2fsprogs erofs-utils gdisk genisoimage \
               grub2 jq kpartx lvm2 llvm mtools openssl parted rsync squashfs-tools \
               sudo udev util-linux xorriso zstd && \
-    dnf install -y \
+    retry dnf install -y \
         systemd-boot-unsigned \
         grub2-efi-riscv64 \
         grub2-efi-riscv64-modules || true

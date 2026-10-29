@@ -53,7 +53,7 @@ func (s *GroupsService) Delete(ctx context.Context, groupID string) error {
 }
 
 // SendCommand queues a command for every member of a group.
-func (s *GroupsService) SendCommand(ctx context.Context, groupID string, req CreateCommandRequest) ([]NodeCommand, error) {
+func (s *GroupsService) SendCommand(ctx context.Context, groupID string, req GroupCommandRequest) ([]NodeCommand, error) {
 	var out []NodeCommand
 	if err := s.c.do(ctx, http.MethodPost, "/api/v1/groups/"+groupID+"/commands", nil, req, &out); err != nil {
 		return nil, err

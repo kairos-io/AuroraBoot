@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Copy, Check } from "lucide-react";
+import { PRODUCT_NAME } from "@/lib/branding";
 
 export function Import() {
   const [searchParams] = useSearchParams();
@@ -43,7 +44,7 @@ export function Import() {
 
   return (
     <div>
-      <PageHeader title="Import Nodes" description="Register new machines with AuroraBoot" />
+      <PageHeader title="Import Nodes" description={`Register new machines with ${PRODUCT_NAME}`} />
 
       <Card className="mb-6">
         <CardHeader>
@@ -79,7 +80,7 @@ export function Import() {
         </CardHeader>
         <CardContent>
           <p className="text-sm text-muted-foreground mb-4">
-            Run this command on each node you want to register with AuroraBoot.
+            Run this command on each node you want to register with {PRODUCT_NAME}.
           </p>
           <div className="relative">
             <pre className="terminal-output rounded-md p-4 text-sm font-mono overflow-x-auto">
@@ -100,7 +101,7 @@ export function Import() {
           </div>
           <div className="mt-6 space-y-2 text-sm text-muted-foreground">
             <p>
-              The install script will download and configure the AuroraBoot agent
+              The install script will download and configure the {PRODUCT_NAME} agent
               on the target node. The agent will register with this server and
               appear in the Nodes list.
             </p>

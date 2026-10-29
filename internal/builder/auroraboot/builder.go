@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/joho/godotenv"
 	"github.com/kairos-io/AuroraBoot/deployer"
 	"github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
@@ -84,6 +85,7 @@ type Builder struct {
 	baseDir        string
 	deployFunc     DeployerFunc
 	ukiBuildFn     UKIBuildFunc
+	platformsFn    PlatformsFunc
 	kairosifyFn    KairosifyFunc
 	store          store.ArtifactStore
 	logBroadcaster builder.LogBroadcaster
@@ -152,11 +154,12 @@ func New(baseDir string, deployFunc DeployerFunc, artifactStore store.ArtifactSt
 		deployFunc = DefaultDeployerFunc
 	}
 	return &Builder{
-		builds:     make(map[string]*buildState),
-		baseDir:    baseDir,
-		deployFunc: deployFunc,
-		ukiBuildFn: DefaultUKIBuildFunc,
-		store:      artifactStore,
+		builds:      make(map[string]*buildState),
+		baseDir:     baseDir,
+		deployFunc:  deployFunc,
+		ukiBuildFn:  DefaultUKIBuildFunc,
+		platformsFn: dockerBuildxPlatforms,
+		store:       artifactStore,
 
 		kairosInitImage: defaultKairosInitImage + ":" + defaultKairosInitVersion,
 	}
@@ -181,6 +184,14 @@ func (b *Builder) WithKairosInitImage(ref string) (*Builder, error) {
 // Tests use this to capture the uki.Options we pass through.
 func (b *Builder) WithUKIBuildFunc(fn UKIBuildFunc) *Builder {
 	b.ukiBuildFn = fn
+	return b
+}
+
+// WithPlatformsFunc swaps the buildx platform probe used by the cross-arch
+// preflight. Tests use this so no unit test shells out to the developer's own
+// docker and depends on the host's binfmt state.
+func (b *Builder) WithPlatformsFunc(fn PlatformsFunc) *Builder {
+	b.platformsFn = fn
 	return b
 }
 
@@ -275,7 +286,6 @@ func (b *Builder) Build(ctx context.Context, opts builder.BuildOptions) (*builde
 			GCE:                     opts.Outputs.GCE,
 			VHD:                     opts.Outputs.VHD,
 			MAAS:                    opts.Outputs.MAAS,
-			UKI:                     opts.Outputs.UKI,
 			KairosInitImage:         opts.KairosInitImage,
 			AutoInstall:             opts.Provisioning.AutoInstall,
 			RegisterAuroraBoot:      opts.Provisioning.RegisterAuroraBoot,
@@ -472,8 +482,28 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 		}
 	}
 
-	// Step 2.6: Build UKI (Unified Kernel Image) if requested.
-	if opts.Outputs.UKI {
+	// Step 2.6: Clean up ISO files when the caller didn't request ISO output.
+	// Netboot extraction needs a generated ISO as its source, so GenISO may
+	// still have run as scaffolding — but the user never asked for the ISO
+	// itself and we shouldn't keep multi-GB files around or list them as
+	// build outputs. The raw-disk paths don't produce ISOs at all, so the
+	// only files present here would be that scaffolding ISO. This runs
+	// before the UKI step, whose output is an ISO the user did ask for. A
+	// Trusted Boot build asks for the ISO and gets the UKI one, so the
+	// scaffolding ISO goes here too rather than sitting next to it.
+	if !opts.Outputs.ISO || opts.Outputs.UKIISO() {
+		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
+			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
+			for _, p := range matches {
+				if err := os.Remove(p); err != nil && logWriter != nil {
+					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
+				}
+			}
+		}
+	}
+
+	// Step 2.7: Build UKI (Unified Kernel Image) if requested.
+	if opts.Outputs.UKIISO() {
 		if logWriter != nil {
 			fmt.Fprintf(logWriter, "\n=== Building UKI (Unified Kernel Image) ===\n")
 			logWriter.Flush()
@@ -489,23 +519,6 @@ func (b *Builder) run(ctx context.Context, bs *buildState, opts builder.BuildOpt
 				_ = b.updateDBPhase(context.Background(), bs.status.ID, store.ArtifactError, msg)
 			}
 			return
-		}
-	}
-
-	// Step 2.7: Clean up ISO files when the caller didn't request ISO output.
-	// Netboot extraction needs a generated ISO as its source, so GenISO may
-	// still have run as scaffolding — but the user never asked for the ISO
-	// itself and we shouldn't keep multi-GB files around or list them as
-	// build outputs. The raw-disk paths don't produce ISOs at all, so the
-	// only files present here would be that scaffolding ISO.
-	if !opts.Outputs.ISO {
-		for _, pattern := range []string{"*.iso", "*.iso.sha256"} {
-			matches, _ := filepath.Glob(filepath.Join(outputDir, pattern))
-			for _, p := range matches {
-				if err := os.Remove(p); err != nil && logWriter != nil {
-					fmt.Fprintf(logWriter, "Warning: could not remove unrequested %s: %v\n", filepath.Base(p), err)
-				}
-			}
 		}
 	}
 
@@ -560,10 +573,18 @@ func (b *Builder) setPhase(bs *buildState, phase, message string) {
 	b.mu.Unlock()
 }
 
-// isKairosified checks if an image already contains /etc/kairos-release.
-func (b *Builder) isKairosified(ctx context.Context, image string) bool {
-	cmd := exec.CommandContext(ctx, "docker", "run", "--rm", "--entrypoint", "cat", image, "/etc/kairos-release")
-	return cmd.Run() == nil
+// kairosRelease reads /etc/kairos-release from image. ok is false when the
+// image has none, which means it is not a Kairos image yet.
+func (b *Builder) kairosRelease(ctx context.Context, image string) (release map[string]string, ok bool) {
+	out, err := exec.CommandContext(ctx, "docker", "run", "--rm", "--entrypoint", "cat", image, "/etc/kairos-release").Output()
+	if err != nil {
+		return nil, false
+	}
+	release, err = godotenv.Unmarshal(string(out))
+	if err != nil {
+		return map[string]string{}, true
+	}
+	return release, true
 }
 
 // kairosInitValueRe is the allowlist for admin-supplied values that end up
@@ -626,14 +647,28 @@ func (b *Builder) ensureKairosified(ctx context.Context, image string, opts buil
 	}
 	// The probe below is itself a `docker run`, so an injected derivation step
 	// has to take precedence over it, not only over the build it guards.
-	if b.kairosifyFn == nil && b.isKairosified(ctx, image) {
-		return image, nil
+	if b.kairosifyFn == nil {
+		if release, ok := b.kairosRelease(ctx, image); ok {
+			// kairos-init is skipped for this image, so its -t never runs. The
+			// UKI step would pack a GRUB image into a signed UKI that does not
+			// boot as Trusted Boot.
+			if (opts.TrustedBoot || opts.Outputs.TrustedBoot) && release["KAIROS_TRUSTED_BOOT"] != "true" {
+				return "", fmt.Errorf("the Dockerfile built a Kairos image without Trusted Boot (KAIROS_TRUSTED_BOOT is not true in /etc/kairos-release); build it with kairos-init -t true or turn Trusted Boot off")
+			}
+			return image, nil
+		}
 	}
 	return b.kairosify(ctx, image, opts, outputDir, logWriter)
 }
 
 // kairosify builds a per-artifact Kairos image using kairos-init.
 func (b *Builder) kairosify(ctx context.Context, image string, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	// This step emits "RUN /kairos-init", which executes a target-architecture
+	// binary, so refuse the build now if the daemon host cannot emulate that
+	// architecture. Reported as kairos-io/kairos#4088.
+	if err := b.checkBuildPlatform(ctx, opts.Source.Arch); err != nil {
+		return "", err
+	}
 	if err := validateKairosInitOptions(opts); err != nil {
 		return "", fmt.Errorf("validating kairos-init options: %w", err)
 	}
@@ -713,7 +748,7 @@ func (b *Builder) assembleConfig(opts builder.BuildOptions, containerImage, outp
 		State:             outputDir,
 		DisableHTTPServer: true,
 		DisableNetboot:    !opts.Netboot,
-		DisableISOboot:    !opts.ISO,
+		DisableISOboot:    !opts.ISO || opts.Outputs.UKIISO(),
 	}
 
 	if opts.Source.Arch != "" {
@@ -804,6 +839,13 @@ func (b *Builder) buildUKI(ctx context.Context, opts builder.BuildOptions, conta
 
 // dockerBuild runs `docker build` when a Dockerfile is provided.
 func (b *Builder) dockerBuild(ctx context.Context, opts builder.BuildOptions, outputDir string, logWriter *dbLogWriter) (string, error) {
+	// A custom Dockerfile's RUN steps execute target-architecture binaries, so
+	// refuse the build now rather than letting it die on an exec format error
+	// that names neither the architecture nor the missing emulator.
+	if err := b.checkBuildPlatform(ctx, opts.Source.Arch); err != nil {
+		return "", err
+	}
+
 	// The UI's Hadron composer emits middle content only (no FROM line) so
 	// the operator backend can hand it to the kairos-operator as OCISpec
 	// wrapped by BuildOptions.BaseImage. On the local backend the Dockerfile

@@ -43,10 +43,20 @@ type OutputOptions struct {
 	GCE         bool
 	VHD         bool
 	MAAS        bool
-	UKI         bool
 	FIPS        bool
 	TrustedBoot bool
 }
+
+// UKIISO reports whether the ISO this build produces is the signed UKI
+// installer rather than the GRUB one.
+//
+// Trusted Boot is the only mode that produces one: kairos-init -t builds an
+// image with no GRUB and no separate initrd, so the only ISO it can be
+// installed from is the UKI ISO. API and UI therefore offer a single ISO
+// option and the boot mode decides which one gets built, rather than a
+// separate uki flag that is only ever valid together with trustedBoot
+// (kairos-io/kairos#5497).
+func (o OutputOptions) UKIISO() bool { return o.TrustedBoot && o.ISO }
 
 // SigningOptions holds SecureBoot / UKI signing paths.
 type SigningOptions struct {
@@ -167,7 +177,7 @@ type BuildStatus struct {
 	ID        string   `json:"id"`
 	Phase     string   `json:"phase"` // Pending, Building, Ready, Error
 	Message   string   `json:"message"`
-	Artifacts []string `json:"artifacts"` // paths to built files
+	Artifacts []string `json:"artifacts"` // paths of the built files on the server; API responses carry base names
 }
 
 // Build phases.
