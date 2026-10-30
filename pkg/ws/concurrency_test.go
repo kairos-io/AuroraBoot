@@ -4,7 +4,9 @@ import (
 	"context"
 	"fmt"
 	"net/http/httptest"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/gorilla/websocket"
@@ -160,5 +162,56 @@ var _ = Describe("WebSocket concurrent writers", func() {
 			}
 		}
 		Expect(got).To(Equal(n))
+	})
+
+	It("drops a UI client that stops reading instead of blocking every broadcast", func() {
+		DeferCleanup(ws.SetWriteWait(200 * time.Millisecond))
+
+		good, _, err := dialWS(server, "/api/v1/ws/ui")
+		Expect(err).NotTo(HaveOccurred())
+		defer good.Close()
+		Eventually(hub.UI.Count, 5*time.Second, 20*time.Millisecond).Should(Equal(1))
+
+		// Never read from this one, so its socket buffers fill up.
+		stuck, _, err := dialWS(server, "/api/v1/ws/ui")
+		Expect(err).NotTo(HaveOccurred())
+		defer stuck.Close()
+		Eventually(hub.UI.Count, 5*time.Second, 20*time.Millisecond).Should(Equal(2))
+
+		var goodGot atomic.Int64
+		go func() {
+			for {
+				mt, _, err := good.ReadMessage()
+				if err != nil {
+					return
+				}
+				if mt == websocket.TextMessage {
+					goodGot.Add(1)
+				}
+			}
+		}()
+
+		pad := strings.Repeat("x", 1<<20)
+		var sent atomic.Int64
+		var slowest atomic.Int64
+		broadcastDone := make(chan struct{})
+		go func() {
+			defer close(broadcastDone)
+			for i := 0; i < 128 && hub.UI.Count() > 1; i++ {
+				start := time.Now()
+				hub.UI.Broadcast(map[string]any{"type": "test", "seq": i, "pad": pad})
+				if d := int64(time.Since(start)); d > slowest.Load() {
+					slowest.Store(d)
+				}
+				sent.Add(1)
+			}
+		}()
+
+		Eventually(broadcastDone, 20*time.Second).Should(BeClosed(), "Broadcast blocked on the client that stopped reading")
+		Expect(time.Duration(slowest.Load())).To(BeNumerically("<", 2*time.Second))
+		Eventually(hub.UI.Count, 5*time.Second, 20*time.Millisecond).Should(Equal(1))
+
+		hub.UI.Broadcast(map[string]any{"type": "test", "seq": "after"})
+		Eventually(goodGot.Load, 10*time.Second, 20*time.Millisecond).Should(Equal(sent.Load() + 1))
 	})
 })
