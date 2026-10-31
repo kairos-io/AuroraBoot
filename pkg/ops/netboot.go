@@ -100,7 +100,7 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 			return err
 		}
 
-		return netboot.Server(kernelFile, line, address, netbootPort, initrdFile, true)
+		return netboot.Server(ctx, kernelFile, line, address, netbootPort, initrdFile, true)
 	}
 }
 
