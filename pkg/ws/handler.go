@@ -407,29 +407,49 @@ func (h *AgentHandler) sendPendingCommands(nodeID string, conn *wsConn) {
 		if !claimed {
 			continue
 		}
-		store.MarkResetDelivered(ctx, h.Nodes, cmd)
 
 		cmdMsg := commandData{
 			ID:      cmd.ID,
 			Command: cmd.Command,
 			Args:    cmd.Args,
 		}
+		// From here on the command is claimed, so every path that gives up
+		// without sending it has to hand the claim back. Delivered is the end of
+		// the line for delivery — GetPending matches Pending only and nothing
+		// else moves a command out of Delivered — so a claim left behind is a
+		// command that never runs.
 		data, err := json.Marshal(cmdMsg)
 		if err != nil {
 			log.Printf("ws: failed to marshal command %s: %v", cmd.ID, err)
+			h.requeue(ctx, cmd.ID, nodeID)
 			continue
 		}
 		msg := wsMessage{Type: "command", Data: data}
 		msgBytes, err := json.Marshal(msg)
 		if err != nil {
 			log.Printf("ws: failed to marshal ws message for command %s: %v", cmd.ID, err)
+			h.requeue(ctx, cmd.ID, nodeID)
 			continue
 		}
 
 		if err := conn.writeMessage(websocket.TextMessage, msgBytes); err != nil {
 			log.Printf("ws: failed to send pending command %s to node %s: %v", cmd.ID, nodeID, err)
+			h.requeue(ctx, cmd.ID, nodeID)
+			// The connection is gone, so the rest of the batch is untouched and
+			// still Pending; the next reconnect replays all of them.
 			break
 		}
+		// Stamp after the write, not after the claim: a requeued command was
+		// never delivered, so it must not refresh the node's reset window.
+		store.MarkResetDelivered(ctx, h.Nodes, cmd)
+	}
+}
+
+// requeue returns a claimed but undelivered command to the Pending queue so the
+// next poll or reconnect delivers it.
+func (h *AgentHandler) requeue(ctx context.Context, cmdID, nodeID string) {
+	if _, err := h.Commands.ReleaseClaim(ctx, cmdID); err != nil {
+		log.Printf("ws: failed to requeue undelivered command %s for node %s: %v", cmdID, nodeID, err)
 	}
 }
 
