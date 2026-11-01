@@ -133,17 +133,27 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 // An explicit netboot.cmdline replaces the whole default, keeping only the two
 // keys netboot has to control, so an operator who wants a live node that does
 // not install still has a way to ask for one.
+//
+// An empty cloudConfigFile means no config is served, so the line carries no
+// config_url at all. Pixiecore would otherwise mint a URL for an empty path
+// that it then fails to serve, and every node would retry it on each config
+// load.
 func netbootCmdline(squashFSfile, cloudConfigFile string, nb schema.NetBoot) (string, error) {
-	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode-interactive config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
+	configURL := ""
+	if cloudConfigFile != "" {
+		configURL = fmt.Sprintf(` config_url={{ ID "%s" }}`, cloudConfigFile)
+	}
+
+	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode-interactive%s console=tty1 console=ttyS0 console=tty0`
 
 	if nb.Cmdline != "" {
-		cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline
+		cmdLine = `root=live:{{ ID "%s" }}%s ` + nb.Cmdline
 	}
 
 	// Expand the two served paths first, then append the extensions: an
 	// extension image path ends in a file name AuroraBoot did not choose, so
 	// it can legitimately contain a % that Sprintf would read as a verb.
-	line := fmt.Sprintf(cmdLine, squashFSfile, cloudConfigFile)
+	line := fmt.Sprintf(cmdLine, squashFSfile, configURL)
 
 	declaration, err := extensionsCmdline(filepath.Dir(squashFSfile), nb.Cmdline)
 	if err != nil {
