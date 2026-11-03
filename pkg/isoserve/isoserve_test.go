@@ -106,6 +106,33 @@ var _ = Describe("isoserve.Server", func() {
 		}, time.Second, 10*time.Millisecond).Should(Equal(http.StatusNotFound))
 	})
 
+	It("keeps serving an extended token past its original TTL", func() {
+		url, token, err := srv.Register(isoPath, 50*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(srv.Extend(token, time.Minute)).To(BeTrue())
+
+		time.Sleep(100 * time.Millisecond)
+		resp, body := get(url, nil)
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(body).To(Equal(payload))
+	})
+
+	It("does not extend an unknown, revoked or expired token", func() {
+		Expect(srv.Extend("not-a-real-token", time.Minute)).To(BeFalse())
+
+		_, revoked, err := srv.Register(isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		srv.Revoke(revoked)
+		Expect(srv.Extend(revoked, time.Minute)).To(BeFalse())
+
+		expiredURL, expired, err := srv.Register(isoPath, 10*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+		time.Sleep(50 * time.Millisecond)
+		Expect(srv.Extend(expired, time.Minute)).To(BeFalse())
+		resp, _ := get(expiredURL, nil)
+		Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+	})
+
 	It("returns 404 after a token is revoked", func() {
 		url, token, err := srv.Register(isoPath, time.Minute)
 		Expect(err).NotTo(HaveOccurred())

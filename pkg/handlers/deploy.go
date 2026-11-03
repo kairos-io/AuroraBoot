@@ -68,8 +68,8 @@ type DeployHandler struct {
 
 	// servedISOs holds the serve token of each completed deployment whose BMC may
 	// still be reading the locally served ISO. The token is revoked when the
-	// deployment is finalized; until then it lives at most until its TTL. Guarded
-	// by runsMu.
+	// deployment is finalized, or after servedISOHold if it never is. Guarded by
+	// runsMu.
 	servedISOs map[string]string
 
 	// refreshAll enforces a single in-flight "refresh all" BMC-status sweep: a
@@ -144,13 +144,24 @@ func (h *DeployHandler) deregisterRun(id string) {
 	delete(h.runs, id)
 }
 
+// servedISOHold bounds how long a completed deployment keeps its served ISO
+// while waiting to be finalized. It outlasts the auto-eject fallback window so a
+// phone-home inside that window still finds the media served.
+const servedISOHold = ejectFallbackWindow + 15*time.Minute
+
 // holdServedISO keeps a deployment's serve token live past the end of the deploy
 // run, so the BMC can keep reading the installer ISO until the deployment is
-// finalized.
-func (h *DeployHandler) holdServedISO(id, token string) {
+// finalized. If finalize never comes, the token is released after servedISOHold.
+// It reports false when the token could not be extended.
+func (h *DeployHandler) holdServedISO(id, token string) bool {
+	if !h.isoServe.Extend(token, servedISOHold) {
+		return false
+	}
 	h.runsMu.Lock()
-	defer h.runsMu.Unlock()
 	h.servedISOs[id] = token
+	h.runsMu.Unlock()
+	time.AfterFunc(servedISOHold, func() { h.releaseServedISO(id) })
+	return true
 }
 
 // releaseServedISO revokes the serve token held for a deployment, if any.
@@ -532,9 +543,10 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 	defer cancel()
 	defer h.deregisterRun(deploymentID)
 
-	// Revoke the serve token when the deploy fails or is cancelled. A successful
-	// deploy hands the token to holdServedISO instead: the Reset only starts the
-	// installer boot, and the BMC keeps reading the ISO until the media is ejected.
+	// Revoke the serve token when the deploy fails or is cancelled, or when no
+	// eject is armed. A successful deploy that arms the eject hands the token to
+	// holdServedISO instead: the Reset only starts the installer boot, and the
+	// BMC keeps reading the ISO until the media is ejected.
 	keepServed := false
 	if serveToken != "" && h.isoServe != nil {
 		defer func() {
@@ -575,9 +587,8 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		return
 	}
 
-	if serveToken != "" && h.isoServe != nil {
-		h.holdServedISO(deploymentID, serveToken)
-		keepServed = true
+	if ejectAfter && serveToken != "" && h.isoServe != nil {
+		keepServed = h.holdServedISO(deploymentID, serveToken)
 	}
 
 	msg := "Deployment completed successfully"

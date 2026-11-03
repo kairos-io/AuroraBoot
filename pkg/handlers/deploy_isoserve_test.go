@@ -192,9 +192,9 @@ var _ = Describe("DeployHandler.DeployRedfish served ISO lifetime", func() {
 		isoTS.Close()
 	})
 
-	deploy := func() string {
+	deployWith := func(body string) string {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts/art-1/deploy/redfish",
-			strings.NewReader(`{"bmcTargetId":"bmc-1"}`))
+			strings.NewReader(body))
 		req.Header.Set("Content-Type", "application/json")
 		rec := httptest.NewRecorder()
 		c := e.NewContext(req, rec)
@@ -206,6 +206,7 @@ var _ = Describe("DeployHandler.DeployRedfish served ISO lifetime", func() {
 		Expect(json.Unmarshal(rec.Body.Bytes(), &dep)).To(Succeed())
 		return dep.ID
 	}
+	deploy := func() string { return deployWith(`{"bmcTargetId":"bmc-1"}`) }
 
 	deployment := func(id string) store.Deployment {
 		dep, err := deployments.GetByID(context.Background(), id)
@@ -244,6 +245,16 @@ var _ = Describe("DeployHandler.DeployRedfish served ISO lifetime", func() {
 		Expect(rec.Code).To(Equal(http.StatusOK))
 
 		Expect(rangeRead()).To(Equal(http.StatusNotFound))
+	})
+
+	It("revokes the ISO when the deploy completes without an eject armed", func() {
+		id := deployWith(`{"bmcTargetId":"bmc-1","ejectAfterInstall":false}`)
+		Eventually(func() string { return deployment(id).Status }, 10*time.Second, 20*time.Millisecond).
+			Should(Equal(store.DeployCompleted))
+		Expect(deployment(id).EjectState).NotTo(Equal(store.EjectStatePending))
+		Expect(bmc.mountedImage()).To(HavePrefix(isoTS.URL))
+
+		Eventually(rangeRead, 2*time.Second, 20*time.Millisecond).Should(Equal(http.StatusNotFound))
 	})
 
 	It("revokes the ISO when the deploy fails", func() {

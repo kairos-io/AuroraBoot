@@ -125,6 +125,20 @@ func (s *Server) Register(absPath string, ttl time.Duration) (url, token string,
 	return url, tok, nil
 }
 
+// Extend moves a live token's expiry to ttl from now. It reports false, and
+// changes nothing, when the token is unknown, revoked or already expired.
+func (s *Server) Extend(token string, ttl time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[token]
+	if !ok || time.Now().After(e.expiry) {
+		return false
+	}
+	e.expiry = time.Now().Add(ttl)
+	s.entries[token] = e
+	return true
+}
+
 // Revoke immediately invalidates a token. It is safe to call with an unknown or
 // already-revoked token.
 func (s *Server) Revoke(token string) {
