@@ -285,12 +285,12 @@ func nodeAssignedArtifact(ctx context.Context, commandStore store.CommandStore, 
 // through a limit, so a client without a token can make it hold no more than
 // maxRegistrationBodyBytes; a larger body is refused with 413.
 //
-// The token is supplied as a pointer because SettingsHandler.RotateRegistrationToken
-// updates it in place; the middleware must read the current value on every
+// The token is a shared holder because SettingsHandler.RotateRegistrationToken
+// replaces it at runtime; the middleware must read the current value on every
 // request, otherwise rotated tokens wouldn't actually invalidate old ones
 // (a pre-rotation registration would keep succeeding against the middleware's
 // captured copy).
-func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
+func RegistrationTokenAuth(token *RegistrationToken) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			if c.Request().ContentLength > maxRegistrationBodyBytes {
@@ -317,9 +317,9 @@ func RegistrationTokenAuth(token *string) echo.MiddlewareFunc {
 
 			current := ""
 			if token != nil {
-				current = *token
+				current = token.Get()
 			}
-			if body.RegistrationToken != current {
+			if !secureCompare(body.RegistrationToken, current) {
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid registration token"})
 			}
 			return next(c)

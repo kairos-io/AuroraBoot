@@ -24,6 +24,27 @@ import (
 // but rather at the time of the call, e.g. when the ISO file is downloaded or the destination directory is created.
 type valueGetOnCall func() string
 
+// DefaultNetbootPrefix is the base name of the netboot artifacts when the
+// configuration names none.
+const DefaultNetbootPrefix = "kairos"
+
+// NetbootArtifactPaths returns the three paths ExtractNetboot writes under dst
+// for the given prefix, which is iso.name from the configuration.
+//
+// The server that serves those files has to ask for the same three names, so
+// the producer and the consumer both read them from here. Spelling them twice
+// is what made a run with iso.name set extract <name>-kernel and then serve
+// kairos-kernel.
+func NetbootArtifactPaths(dst, prefix string) (squashFS, kernel, initrd string) {
+	if prefix == "" {
+		prefix = DefaultNetbootPrefix
+	}
+
+	return filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix)),
+		filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix)),
+		filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
+}
+
 // ExtractNetboot extracts all the required netbooting artifacts
 // isoFunc is a function that returns the path to the ISO file
 // we need the function to be passed so its executed in the context of the deployer as otherwise
@@ -33,32 +54,24 @@ func ExtractNetboot(isoFunc, dstFunc valueGetOnCall, prefix string) func(ctx con
 		src := isoFunc()
 		dst := dstFunc()
 
-		if prefix == "" {
-			prefix = "kairos"
-		}
-
 		if _, err := os.Stat(dst); err != nil && os.IsNotExist(err) {
 			return fmt.Errorf("destination directory %s does not exist: %w", dst, err)
 		}
 		internal.Log.Logger.Info().Str("prefix", prefix).Str("source", src).Str("destination", dst).Msg("Extracting netboot artifacts")
 
-		artifact := filepath.Join(dst, fmt.Sprintf("%s.squashfs", prefix))
-		err := iso.ExtractFileFromIso("/rootfs.squashfs", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-kernel", prefix))
-		err = iso.ExtractFileFromIso("/boot/kernel", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
-		}
-		artifact = filepath.Join(dst, fmt.Sprintf("%s-initrd", prefix))
-		err = iso.ExtractFileFromIso("/boot/initrd", src, artifact, &internal.Log)
-		if err != nil {
-			internal.Log.Logger.Error().Err(err).Str("artifact", artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
-			return err
+		squashFS, kernel, initrd := NetbootArtifactPaths(dst, prefix)
+
+		for _, a := range []struct {
+			inIso, artifact string
+		}{
+			{"/rootfs.squashfs", squashFS},
+			{"/boot/kernel", kernel},
+			{"/boot/initrd", initrd},
+		} {
+			if err := iso.ExtractFileFromIso(a.inIso, src, a.artifact, &internal.Log); err != nil {
+				internal.Log.Logger.Error().Err(err).Str("artifact", a.artifact).Str("source", src).Str("destination", dst).Msgf("Failed extracting netboot artfact")
+				return err
+			}
 		}
 		carried, err := extractNetbootExtensions(src, dst)
 		if err != nil {
@@ -100,8 +113,28 @@ func StartPixiecore(cloudConfigFile, address, netbootPort string, squashFSfileGe
 // as an argument is what makes the web dashboard's netboot server, which goes
 // through the start-pixie subprocess, behave the same as an in-process CLI
 // build.
+//
+// The default carries install-mode-interactive because a netboot is an
+// install. immucore turns that keyword into /run/cos/install_mode_interactive
+// (sdk/state.InstallIntentSentinels), and the bundled 52_installer.yaml gates
+// kairos-interactive.service on that file. Nothing else on a netbooted node
+// runs the install: kairos-agent start stands aside when the config asks for
+// an unattended install. The rest of the guard already holds on a netboot,
+// because a cmdline carrying netboot is a LiveCD boot to kairos-sdk and
+// immucore writes /run/cos/live_mode for it. See kairos-io/kairos#5373.
+//
+// The interactive installer rather than the plain one, because it is the
+// dispatcher: it runs AutoInstall first, so a config carrying install.auto
+// still installs unattended, and it offers the go-nodepair pairing flow from
+// its welcome screen. That is what the legacy nodepair.enable keyword used to
+// ask for, and that keyword starts no installer at all since
+// kairos-io/kairos#5464.
+//
+// An explicit netboot.cmdline replaces the whole default, keeping only the two
+// keys netboot has to control, so an operator who wants a live node that does
+// not install still has a way to ask for one.
 func netbootCmdline(squashFSfile, cloudConfigFile string, nb schema.NetBoot) (string, error) {
-	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot nodepair.enable config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
+	cmdLine := `rd.live.overlay.overlayfs rd.neednet=1 ip=dhcp rd.cos.disable root=live:{{ ID "%s" }} netboot install-mode-interactive config_url={{ ID "%s" }} console=tty1 console=ttyS0 console=tty0`
 
 	if nb.Cmdline != "" {
 		cmdLine = `root=live:{{ ID "%s" }} config_url={{ ID "%s" }} ` + nb.Cmdline

@@ -71,9 +71,10 @@ var _ = Describe("translateBuildOptions", func() {
 						FIPS:              true,
 					},
 				},
+				// Trusted Boot, so the ISO asked for above is the UKI one.
 				Artifacts: &buildv1alpha2.ArtifactSpec{
 					Arch: "arm64",
-					ISO:  true,
+					UKI:  &buildv1alpha2.UKISpec{ISO: true},
 				},
 			},
 		},
@@ -195,9 +196,10 @@ var _ = Describe("translateBuildOptions", func() {
 						},
 					},
 				},
+				// Trusted Boot, so the ISO asked for above is the UKI one.
 				Artifacts: &buildv1alpha2.ArtifactSpec{
 					Arch: "arm64",
-					ISO:  true,
+					UKI:  &buildv1alpha2.UKISpec{ISO: true},
 				},
 			},
 		},
@@ -213,7 +215,6 @@ var _ = Describe("translateBuildOptions", func() {
 					Netboot:    true,
 					GCE:        true,
 					VHD:        true,
-					UKI:        true,
 				},
 			},
 			want: buildv1alpha2.OSArtifactSpec{
@@ -227,7 +228,28 @@ var _ = Describe("translateBuildOptions", func() {
 					Netboot:    true,
 					GCEImage:   true,
 					AzureImage: true,
-					UKI:        &buildv1alpha2.UKISpec{ISO: true},
+				},
+			},
+		},
+		{
+			// The ISO of a Trusted Boot build is the UKI one, so the spec asks
+			// for the UKI and not for the GRUB ISO. Asking for both would make
+			// the operator build an ISO the image cannot be installed from.
+			name: "Trusted Boot ISO becomes the UKI spec, not a plain ISO",
+			opts: builder.BuildOptions{
+				Source:  builder.ImageSource{Arch: "amd64"},
+				Outputs: builder.OutputOptions{ISO: true, TrustedBoot: true},
+			},
+			want: buildv1alpha2.OSArtifactSpec{
+				Image: buildv1alpha2.ImageSpec{
+					BuildOptions: &buildv1alpha2.BuildOptions{
+						Version:     "latest",
+						TrustedBoot: true,
+					},
+				},
+				Artifacts: &buildv1alpha2.ArtifactSpec{
+					Arch: "amd64",
+					UKI:  &buildv1alpha2.UKISpec{ISO: true},
 				},
 			},
 		},

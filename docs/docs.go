@@ -2114,7 +2114,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "iso": {
-                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, the same\nas uki, and needs signing.ukiKeySetId.",
+                    "description": "The installer ISO. With trustedBoot it is the signed UKI ISO, which\nneeds signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "maas": {
@@ -2131,10 +2131,6 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "trustedBoot": {
-                    "type": "boolean"
-                },
-                "uki": {
-                    "description": "The signed UKI installer ISO. Needs trustedBoot and signing.ukiKeySetId.",
                     "type": "boolean"
                 },
                 "vhd": {
@@ -2960,9 +2956,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "trustedBoot": {
-                    "type": "boolean"
-                },
-                "uki": {
                     "type": "boolean"
                 },
                 "updatedAt": {

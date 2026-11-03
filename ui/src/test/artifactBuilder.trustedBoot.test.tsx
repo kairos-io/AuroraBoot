@@ -84,7 +84,6 @@ async function clone(overrides: Record<string, unknown> = {}) {
     netboot: true,
     rawDisk: true,
     tar: true,
-    uki: false,
     fips: false,
     trustedBoot: false,
     artifacts: [],
@@ -159,7 +158,6 @@ describe("ArtifactBuilder: boot mode", () => {
       tar: true,
       netboot: false,
       rawDisk: false,
-      uki: false,
     });
   });
 
@@ -189,8 +187,8 @@ describe("ArtifactBuilder: boot mode", () => {
     expect(createArtifact).not.toHaveBeenCalled();
   });
 
-  it("opens a cloned UKI artifact in Trusted Boot mode with the ISO selected", async () => {
-    await clone({ trustedBoot: true, iso: false, uki: true, netboot: false, rawDisk: false, tar: false });
+  it("opens a cloned Trusted Boot artifact in Trusted Boot mode with the ISO selected", async () => {
+    await clone({ trustedBoot: true, iso: true, netboot: false, rawDisk: false, tar: false });
     openStep("Output");
 
     expect((screen.getByRole("radio", { name: /^Trusted Boot/ }) as HTMLInputElement).checked).toBe(true);
@@ -228,7 +226,6 @@ describe("ArtifactBuilder: boot mode", () => {
     expect(body.outputs).toMatchObject({
       trustedBoot: true,
       iso: true,
-      uki: false,
       netboot: false,
       rawDisk: false,
     });

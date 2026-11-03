@@ -264,6 +264,14 @@ func (b *ExtensionBuilder) run(ctx context.Context, bs *extBuildState, opts buil
 		return
 	}
 
+	// Cancel only closes the build context, so a CLI that was already
+	// finishing can return success after the cancellation. Publishing Ready
+	// then hands the caller an extension that Cancel said would not be built.
+	if err := ctx.Err(); err != nil {
+		b.setPhase(bs, builder.BuildError, err.Error())
+		return
+	}
+
 	rawFilename := opts.Name + "." + opts.Type + ".raw"
 	b.updateRawFilename(bs.status.ID, rawFilename)
 	b.mu.Lock()

@@ -134,7 +134,6 @@ describe("summaryFromArtifact", () => {
       gce: false,
       vhd: false,
       maas: false,
-      uki: false,
       fips: true,
       trustedBoot: false,
       autoInstall: false,
@@ -185,7 +184,7 @@ describe("summaryFromArtifact", () => {
   });
 
   it("calls the ISO of a Trusted Boot artifact the UKI ISO", () => {
-    const a = { trustedBoot: true, uki: true, tar: true, artifacts: [] } as unknown as Artifact;
+    const a = { trustedBoot: true, iso: true, tar: true, artifacts: [] } as unknown as Artifact;
     expect(summaryFromArtifact(a).outputs).toEqual(["UKI ISO", "TAR"]);
   });
 

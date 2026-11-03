@@ -9,6 +9,7 @@ import (
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/labstack/echo/v4"
 )
@@ -21,18 +22,18 @@ var _ = Describe("SettingsHandler extension catalogs", func() {
 
 	var (
 		e        *echo.Echo
-		token    string
+		token    *auth.RegistrationToken
 		settings *fakeSettingsStore
 	)
 
 	BeforeEach(func() {
 		e = echo.New()
-		token = "tok"
+		token = auth.NewRegistrationToken("tok")
 		settings = newFakeSettingsStore()
 	})
 
 	newHandler := func(launch ...string) *handlers.SettingsHandler {
-		return handlers.NewSettingsHandler(&token, "").
+		return handlers.NewSettingsHandler(token, "").
 			WithImageSource(settings, nil, "").
 			WithExtensionCatalogs(launch)
 	}
@@ -105,7 +106,7 @@ var _ = Describe("SettingsHandler extension catalogs", func() {
 	)
 
 	It("rejects writes when no settings store is wired", func() {
-		h := handlers.NewSettingsHandler(&token, "")
+		h := handlers.NewSettingsHandler(token, "")
 		rec, _ := doPut(h, `{"saved":["https://a.example.com/c.json"]}`)
 		Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
 	})

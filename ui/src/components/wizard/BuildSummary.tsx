@@ -54,8 +54,6 @@ const USER_LABELS: Record<BuildSummaryData["user"], string> = {
 const OUTPUT_LABELS: [keyof Artifact, string][] = [
   ["iso", "ISO"],
   ["netboot", "Netboot"],
-  // The ISO of a Trusted Boot build, which the server builds as the UKI ISO.
-  ["uki", "UKI ISO"],
   ["rawDisk", "Raw Disk"],
   ["cloudImage", "Cloud Image"],
   ["gce", "Google Cloud"],
@@ -241,7 +239,12 @@ export function summaryFromArtifact(a: Artifact): BuildSummaryData {
     commands: [],
     fips: !!a.fips,
     trustedBoot: !!a.trustedBoot,
-    outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([, label]) => label),
+    // There is one ISO option and the boot mode says which ISO it is, so the
+    // summary names the one this build produces rather than leaving the
+    // reader to infer it from the Trusted Boot row.
+    outputs: OUTPUT_LABELS.filter(([k]) => a[k]).map(([k, label]) =>
+      k === "iso" && a.trustedBoot ? "UKI ISO" : label,
+    ),
     overlayFiles: 0,
     overlayAttached: !!a.overlayId,
     autoInstall: !!a.autoInstall,

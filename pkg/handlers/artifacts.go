@@ -165,7 +165,6 @@ type artifactOutputs struct {
 	GCE         bool `json:"gce"`
 	VHD         bool `json:"vhd"`
 	MAAS        bool `json:"maas"`
-	UKI         bool `json:"uki"`
 	FIPS        bool `json:"fips"`
 	TrustedBoot bool `json:"trustedBoot"`
 }
@@ -217,14 +216,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	// The installer ISO of a Trusted Boot image is the signed UKI ISO, so an
-	// ISO request on such a build is a UKI request. The outputs a Trusted Boot
-	// image cannot be built into are refused by the validating builder.
-	if req.Outputs.TrustedBoot && req.Outputs.ISO {
-		req.Outputs.ISO = false
-		req.Outputs.UKI = true
-	}
-
 	var overlayRootfs string
 	if req.OverlayID != "" {
 		dir, err := h.overlayDir(req.OverlayID)
@@ -410,7 +401,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		GCE:         req.Outputs.GCE,
 		VHD:         req.Outputs.VHD,
 		MAAS:        req.Outputs.MAAS,
-		UKI:         req.Outputs.UKI,
 		FIPS:        req.Outputs.FIPS,
 		TrustedBoot: req.Outputs.TrustedBoot,
 	}
@@ -532,7 +522,6 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 			GCE:                     req.Outputs.GCE,
 			VHD:                     req.Outputs.VHD,
 			MAAS:                    req.Outputs.MAAS,
-			UKI:                     req.Outputs.UKI,
 			KairosInitImage:         req.KairosInitImage,
 			AutoInstall:             autoInstall,
 			RegisterAuroraBoot:      registerAuroraBoot,

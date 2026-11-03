@@ -27,6 +27,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/utils"
 	v1mock "github.com/kairos-io/kairos/v4/agent/tests/mocks"
 	sdkLogger "github.com/kairos-io/kairos/v4/sdk/types/logger"
+	"github.com/kairos-io/kairos/v4/sdk/types/platform"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/spf13/viper"
@@ -478,6 +479,37 @@ IMAGE_LABEL=custom-label`
 			name := utils.NameFromRootfs(tmpDir)
 			// Should not panic, may return incomplete name
 			Expect(name).To(ContainSubstring("ubuntu"))
+		})
+	})
+
+	Describe("GolangArchToArch", Label("arch"), func() {
+		// This function is a copy of the SDK's platform.golangArchToArch.
+		// The two have to answer alike, because WithArch calls both: it
+		// normalizes through this one and then builds a Platform through
+		// the SDK one, so a value only one of them accepts fails a build
+		// that the other would have run.
+		DescribeTable("maps an architecture name the way the SDK does",
+			func(in, want string) {
+				got, err := utils.GolangArchToArch(in)
+				Expect(err).ToNot(HaveOccurred())
+				Expect(got).To(Equal(want))
+
+				p, err := platform.NewPlatformFromArch(in)
+				Expect(err).ToNot(HaveOccurred(), "the SDK rejects %q", in)
+				Expect(p.Arch).To(Equal(want), "the SDK disagrees on %q", in)
+			},
+			Entry("amd64", "amd64", constants.Archx86),
+			// x86_64 is what GetArchFromRootfs reads out of KAIROS_ARCH
+			// and what the arch: key of a config file is likely to say.
+			Entry("x86_64", "x86_64", constants.Archx86),
+			Entry("arm64", "arm64", constants.ArchArm64),
+			Entry("riscv64", "riscv64", constants.ArchRiscv64),
+			Entry("uppercase", "X86_64", constants.Archx86),
+		)
+
+		It("rejects an architecture it does not know", func() {
+			_, err := utils.GolangArchToArch("sparc")
+			Expect(err).To(HaveOccurred())
 		})
 	})
 })

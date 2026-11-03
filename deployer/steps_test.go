@@ -1,12 +1,19 @@
 package deployer
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
+	"github.com/kairos-io/AuroraBoot/pkg/constants"
 	"github.com/kairos-io/AuroraBoot/pkg/schema"
+	"github.com/spectrocloud-labs/herd"
 )
 
 // isUnder reports whether path is the dir itself or lives inside it, comparing
@@ -77,5 +84,145 @@ func TestTmpRootFsUniquePerStateDir(t *testing.T) {
 
 	if a.tmpRootFs() == b.tmpRootFs() {
 		t.Fatalf("distinct state_dirs must map to distinct temp rootfs dirs, both got %q", a.tmpRootFs())
+	}
+}
+
+// newWorkDirDeployer builds a deployer with PrepDirs, StepCopyCloudConfig and
+// one extra step that runs after the cloud config was written.
+func newWorkDirDeployer(state, workDir, cloudConfig string, extra func() error) *Deployer {
+	d := NewDeployer(schema.Config{State: state, CloudConfig: cloudConfig}, schema.ReleaseArtifact{}, herd.EnableInit)
+	d.WorkDir = workDir
+	_ = d.PrepDirs()
+	_ = d.StepCopyCloudConfig()
+	_ = d.Add("probe", herd.WithDeps(constants.OpCopyCloudConfig), herd.WithCallback(func(ctx context.Context) error {
+		return extra()
+	}))
+	return d
+}
+
+// TestWorkDirKeepsHelperPathsOutOfState checks that with a WorkDir set, the
+// cloud config, the rootfs and the netboot dir all live in the WorkDir and
+// none of them in the state dir.
+func TestWorkDirKeepsHelperPathsOutOfState(t *testing.T) {
+	state := t.TempDir()
+	work := t.TempDir()
+	d := &Deployer{Config: schema.Config{State: state}, WorkDir: work}
+
+	for name, p := range map[string]string{
+		"tmpRootFs":       d.tmpRootFs(),
+		"cloudConfigPath": d.cloudConfigPath(),
+		"dstNetboot":      d.dstNetboot(),
+	} {
+		if !isUnder(p, work) {
+			t.Errorf("%s() must live under WorkDir %q, got %q", name, work, p)
+		}
+		if isUnder(p, state) {
+			t.Errorf("%s() must not live under state dir %q, got %q", name, state, p)
+		}
+	}
+}
+
+// TestWorkDirLeavesUserConfigInState checks that a run with a WorkDir neither
+// overwrites nor deletes a config.yaml that already sits in the state dir.
+func TestWorkDirLeavesUserConfigInState(t *testing.T) {
+	state := t.TempDir()
+	work := filepath.Join(t.TempDir(), "work")
+	user := []byte("hostname: users-own\n")
+	if err := os.WriteFile(filepath.Join(state, "config.yaml"), user, 0600); err != nil {
+		t.Fatal(err)
+	}
+
+	d := newWorkDirDeployer(state, work, "hostname: from-flag\n", func() error { return nil })
+	if err := d.Run(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if err := d.CleanTmpDirs(); err != nil {
+		t.Fatal(err)
+	}
+
+	entries, err := os.ReadDir(state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	if !reflect.DeepEqual(names, []string{"config.yaml"}) {
+		t.Fatalf("state dir must list exactly [config.yaml], got %v", names)
+	}
+	got, err := os.ReadFile(filepath.Join(state, "config.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(user) {
+		t.Fatalf("user config.yaml was changed: %q", got)
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Fatalf("WorkDir must be removed after CleanTmpDirs, stat err: %v", err)
+	}
+}
+
+// TestWorkDirConcurrentBuildsKeepOwnConfig checks that two builds that share a
+// state dir but have their own WorkDir do not see each other's cloud config or
+// share a rootfs.
+func TestWorkDirConcurrentBuildsKeepOwnConfig(t *testing.T) {
+	state := t.TempDir()
+	base := t.TempDir()
+
+	var barrier sync.WaitGroup
+	barrier.Add(2)
+	seen := make([]string, 2)
+	deployers := make([]*Deployer, 2)
+	for i := range deployers {
+		i := i
+		deployers[i] = newWorkDirDeployer(state, filepath.Join(base, fmt.Sprintf("w%d", i)), fmt.Sprintf("hostname: build-%d\n", i), func() error {
+			barrier.Done()
+			barrier.Wait()
+			b, err := os.ReadFile(deployers[i].cloudConfigPath())
+			seen[i] = string(b)
+			return err
+		})
+	}
+
+	var wg sync.WaitGroup
+	for _, d := range deployers {
+		wg.Add(1)
+		go func(d *Deployer) {
+			defer wg.Done()
+			_ = d.Run(context.Background())
+		}(d)
+	}
+	wg.Wait()
+
+	for i, d := range deployers {
+		if err := d.CollectErrors(); err != nil {
+			t.Fatalf("build %d: %v", i, err)
+		}
+		if want := fmt.Sprintf("hostname: build-%d\n", i); seen[i] != want {
+			t.Errorf("build %d read %q, want %q", i, seen[i], want)
+		}
+	}
+	if deployers[0].tmpRootFs() == deployers[1].tmpRootFs() {
+		t.Fatalf("builds with distinct WorkDirs must not share a rootfs, both got %q", deployers[0].tmpRootFs())
+	}
+}
+
+// TestWorkDirRemovedOnStepFailure checks that a failing step is reported and
+// that CleanTmpDirs still removes the WorkDir.
+func TestWorkDirRemovedOnStepFailure(t *testing.T) {
+	state := t.TempDir()
+	work := filepath.Join(t.TempDir(), "work")
+
+	d := newWorkDirDeployer(state, work, "hostname: x\n", func() error { return errors.New("boom") })
+	_ = d.Run(context.Background())
+	if d.CollectErrors() == nil {
+		t.Fatal("CollectErrors() must report the failing step")
+	}
+	if err := d.CleanTmpDirs(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(work); !os.IsNotExist(err) {
+		t.Fatalf("WorkDir must be removed after a failed step, stat err: %v", err)
 	}
 }

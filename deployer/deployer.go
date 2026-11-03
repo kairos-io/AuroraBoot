@@ -22,6 +22,11 @@ type Deployer struct {
 	// NewDeployer defaults it to internal.Log so callers that don't care
 	// (the CLI) keep their existing terminal output.
 	Log sdklogger.KairosLogger
+	// WorkDir is a private directory that holds the helper files of one run:
+	// the cloud config copy, the unpacked rootfs and the netboot dir. It is set
+	// by build-iso so that State only receives the finished artifacts. When
+	// empty, those files keep their State based layout.
+	WorkDir string
 }
 
 func NewDeployer(c schema.Config, a schema.ReleaseArtifact, opts ...herd.GraphOption) *Deployer {

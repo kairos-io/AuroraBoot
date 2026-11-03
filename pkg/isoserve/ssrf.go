@@ -82,3 +82,15 @@ func isBlockedIP(ip net.IP) (bool, string) {
 	}
 	return false, ""
 }
+
+// URLUsesHTTPS reports whether a media URL is fetched over HTTPS, derived from
+// its scheme. The InsertMedia TransferProtocolType advertised to a BMC must
+// match the URL the BMC actually fetches, so every caller that hands a BMC a URL
+// derives the protocol from the URL with this rather than from a separate flag.
+func URLUsesHTTPS(raw string) (bool, error) {
+	u, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil {
+		return false, fmt.Errorf("reading media URL scheme: %w", err)
+	}
+	return strings.EqualFold(u.Scheme, "https"), nil
+}

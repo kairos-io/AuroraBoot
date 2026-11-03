@@ -201,8 +201,11 @@ var _ = Describe("ArtifactHandler", func() {
 			Entry("maas", "maas"),
 		)
 
-		// The UKI ISO only boots an image kairos-init prepared for Trusted Boot.
-		It("returns 400 for the UKI ISO without Trusted Boot", func() {
+		// outputs.uki is gone: a Trusted Boot build asks for the ISO and gets
+		// the UKI one (kairos-io/kairos#5497). A caller still sending the old
+		// field gets the outputs the rest of the request names, which here is
+		// none, rather than a UKI build it did not ask for in the new shape.
+		It("ignores the removed uki output", func() {
 			body := `{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/artifacts", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -210,12 +213,10 @@ var _ = Describe("ArtifactHandler", func() {
 			c := e.NewContext(req, rec)
 
 			Expect(handler.Create(c)).To(Succeed())
-			Expect(rec.Code).To(Equal(http.StatusBadRequest))
-
-			var resp map[string]string
-			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
-			Expect(resp["error"]).To(ContainSubstring("outputs.uki requires outputs.trustedBoot"))
-			Expect(fb.builds).To(BeEmpty())
+			Expect(rec.Code).To(Equal(http.StatusCreated))
+			Expect(fb.builds).To(HaveLen(1))
+			Expect(fb.lastOpts.Outputs.ISO).To(BeFalse())
+			Expect(fb.lastOpts.Outputs.TrustedBoot).To(BeFalse())
 		})
 
 		// The installer ISO of a Trusted Boot image is the signed UKI ISO, so
@@ -244,19 +245,16 @@ var _ = Describe("ArtifactHandler", func() {
 
 				Expect(rec.Code).To(Equal(http.StatusCreated))
 				Expect(fb.builds).To(HaveLen(1))
-				Expect(fb.lastOpts.ISO).To(BeFalse())
-				Expect(fb.lastOpts.Outputs.ISO).To(BeFalse())
-				Expect(fb.lastOpts.Outputs.UKI).To(BeTrue())
+				// The request reaches the builder as it was written. The ISO
+				// it names is the UKI one because the build is Trusted Boot,
+				// which is what UKIISO reports, so no conversion happens here
+				// and the stored record says iso rather than uki.
+				Expect(fb.lastOpts.ISO).To(BeTrue())
+				Expect(fb.lastOpts.Outputs.ISO).To(BeTrue())
+				Expect(fb.lastOpts.Outputs.UKIISO()).To(BeTrue())
 				Expect(fb.lastOpts.Outputs.Tar).To(BeTrue())
 				Expect(fb.lastOpts.Outputs.TrustedBoot).To(BeTrue())
 				Expect(fb.lastOpts.Signing.UKITPMPCRKey).To(Equal("/keys/prod/tpm2-pcr-private.pem"))
-			})
-
-			It("accepts a Trusted Boot build that asks for the UKI ISO alone", func() {
-				rec := create(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"uki":true,"trustedBoot":true},"signing":{"ukiKeySetId":"ks-1"}}`)
-
-				Expect(rec.Code).To(Equal(http.StatusCreated))
-				Expect(fb.builds).To(HaveLen(1))
 			})
 
 			// The UKI step needs all three keys and would otherwise fail

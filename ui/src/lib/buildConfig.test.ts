@@ -35,7 +35,6 @@ function makeForm(overrides: Partial<CreateArtifactInput> = {}): CreateArtifactI
       gce: false,
       vhd: false,
       maas: false,
-      uki: false,
       fips: false,
       trustedBoot: false,
     },
@@ -73,7 +72,6 @@ function makeArtifact(overrides: Partial<Artifact> = {}): Artifact {
     gce: false,
     vhd: false,
     maas: false,
-    uki: false,
     fips: false,
     trustedBoot: false,
     autoInstall: true,
@@ -412,7 +410,6 @@ describe("payloadFromArtifact", () => {
         kubernetesDistro: "k3s",
         kubernetesVersion: "v1.28.0",
         targetGroupId: "grp-1",
-        uki: true,
         iso: true,
       }),
       groups,
@@ -425,7 +422,6 @@ describe("payloadFromArtifact", () => {
     expect(p.source.model).toBe("rpi4");
     expect(p.source.variant).toBe("standard");
     expect(p.source.kubernetesDistro).toBe("k3s");
-    expect(p.outputs.uki).toBe(true);
     expect(p.outputs.iso).toBe(true);
     expect(p.provisioning.targetGroupName).toBe("production");
     // Signing is intentionally empty — the artifact record doesn't carry it.

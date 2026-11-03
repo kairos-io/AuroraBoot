@@ -137,6 +137,36 @@ var _ = Describe("SecureBootHandler export/import", func() {
 			Expect(resp).To(HaveKeyWithValue("hasTpmPcrKey", true))
 			Expect(resp).To(HaveKeyWithValue("name", "generated"))
 		})
+
+		It("returns 409 and leaves the existing keys alone when the name is taken", func() {
+			seedKeySet(ctx, fakeSB, keysDir, "prod", map[string]fileSpec{
+				"PK.key": {data: []byte("ORIGINAL"), mode: 0o600},
+			})
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/secureboot-keys/generate", strings.NewReader(`{"name":"prod"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			Expect(handler.GenerateKeys(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusConflict))
+
+			data, err := os.ReadFile(filepath.Join(keysDir, "prod", "PK.key"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(data)).To(Equal("ORIGINAL"))
+		})
+
+		It("returns 409 when the directory exists on disk without a record", func() {
+			dir := filepath.Join(keysDir, "orphan")
+			Expect(os.MkdirAll(dir, 0o700)).To(Succeed())
+			Expect(os.WriteFile(filepath.Join(dir, "PK.key"), []byte("ORIGINAL"), 0o600)).To(Succeed())
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/secureboot-keys/generate", strings.NewReader(`{"name":"orphan"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+			Expect(handler.GenerateKeys(e.NewContext(req, rec))).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusConflict))
+
+			data, err := os.ReadFile(filepath.Join(dir, "PK.key"))
+			Expect(err).NotTo(HaveOccurred())
+			Expect(string(data)).To(Equal("ORIGINAL"))
+		})
 	})
 
 	Describe("ListKeys", func() {

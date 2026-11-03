@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strings"
 
@@ -93,10 +94,45 @@ func commonFlagsSysextConfext() []cli.Flag {
 	}
 }
 
+// supportedArches are the values --arch accepts, in the Go/OCI spelling the
+// flag takes and the image platform uses. Keep it as the single source for
+// both the flag validation and systemdArchitecture: the two used to be
+// separate literals, riscv64 was added to one of them only, and a riscv64
+// extension shipped declaring itself x86-64.
+var supportedArches = []string{"amd64", "arm64", "riscv64"}
+
+// systemdArchitecture returns the name systemd's architecture table uses for
+// a --arch value, which is what belongs in the ARCHITECTURE= field of an
+// extension-release file.
+//
+// The two namespaces are not the same namespace. systemd spells amd64
+// "x86-64" and agrees with Go on arm64 and riscv64
+// (systemd src/basic/architecture.c, architecture_to_string).
+//
+// Getting it wrong is silent. systemd-sysext compares the field against the
+// running architecture and, when they differ, SKIPS the extension and reports
+// success, logging the reason at debug level only
+// (systemd src/shared/extension-util.c, extension_release_validate). The node
+// boots with the .raw present and nothing merged. So report an unknown
+// architecture as an error here rather than falling back to a default: a loud
+// build failure is the only failure mode an operator can act on.
+func systemdArchitecture(arch string) (string, error) {
+	switch arch {
+	case "amd64":
+		return "x86-64", nil
+	case "arm64":
+		return "arm64", nil
+	case "riscv64":
+		return "riscv64", nil
+	default:
+		return "", fmt.Errorf("unsupported architecture: %s", arch)
+	}
+}
+
 // validateSysextConfextArgs validates the arguments for both sysext and confext commands
 func validateSysextConfextArgs(ctx *cli.Context) error {
 	arch := ctx.String("arch")
-	if arch != "amd64" && arch != "arm64" && arch != "riscv64" {
+	if !slices.Contains(supportedArches, arch) {
 		return fmt.Errorf("unsupported architecture: %s", arch)
 	}
 	if ctx.NArg() < 2 {
@@ -216,9 +252,10 @@ func generateSysextConfext(ctx *cli.Context) error {
 		return err
 	}
 
-	arch := "x86-64"
-	if ctx.String("arch") == "arm64" {
-		arch = "arm64"
+	arch, err := systemdArchitecture(ctx.String("arch"))
+	if err != nil {
+		logger.Logger.Error().Str("arch", ctx.String("arch")).Err(err).Msg("⛔ writing release file")
+		return err
 	}
 
 	extensionData := fmt.Sprintf("ID=_any\nARCHITECTURE=%s", arch)

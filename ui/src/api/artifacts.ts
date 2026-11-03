@@ -24,7 +24,6 @@ export interface Artifact {
   gce: boolean;
   vhd: boolean;
   maas: boolean;
-  uki: boolean;
   fips: boolean;
   trustedBoot: boolean;
   kairosInitImage?: string;
@@ -67,7 +66,6 @@ export interface CreateArtifactOutputs {
   gce: boolean;
   vhd: boolean;
   maas: boolean;
-  uki: boolean;
   fips: boolean;
   trustedBoot: boolean;
 }

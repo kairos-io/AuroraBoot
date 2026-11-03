@@ -115,13 +115,11 @@ const OUTPUT_TONE_CLASSES: Record<OutputTone, string> = {
 // installer ISO, which the server builds as the UKI ISO, and as a tarball.
 const TRUSTED_BOOT_OUTPUTS: OutputField[] = ["iso", "tar"];
 
-// withBootModeOutputs keeps the outputs the selected boot mode can build. The
-// UKI ISO is the ISO of Trusted Boot mode, so a stored or imported uki flag
-// turns into the ISO. Every path that sets outputs from outside the Output
-// step goes through it, so a clone or an import still sends a request the
-// server takes.
+// withBootModeOutputs keeps the outputs the selected boot mode can build.
+// Every path that sets outputs from outside the Output step goes through it,
+// so a clone or an import still sends a request the server takes.
 function withBootModeOutputs(outputs: CreateArtifactOutputs): CreateArtifactOutputs {
-  const next = { ...outputs, iso: outputs.iso || outputs.uki, uki: false };
+  const next = { ...outputs };
   if (!next.trustedBoot) return next;
   for (const group of OUTPUT_GROUPS) {
     for (const { field } of group.items) {
@@ -263,7 +261,7 @@ interface BuildTemplate {
 // renovate: datasource=docker depName=ghcr.io/kairos-io/hadron extractVersion=^(?<version>v\d+\.\d+\.\d+)
 const HADRON_VERSION = "v0.6.3";
 // renovate: datasource=github-releases depName=kairos-io/kairos
-const KAIROS_VERSION = "v4.3.0";
+const KAIROS_VERSION = "v4.4.0";
 // renovate: datasource=docker depName=ubuntu
 const UBUNTU_VERSION = "26.04";
 // renovate: datasource=docker depName=fedora
@@ -389,7 +387,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -401,7 +399,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -413,7 +411,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -425,7 +423,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -437,7 +435,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -449,7 +447,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -461,7 +459,7 @@ const TEMPLATES: BuildTemplate[] = [
       model: "generic",
       arch: "amd64",
       variant: "core",
-      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, uki: false, fips: false, trustedBoot: false },
+      outputs: { iso: true, cloudImage: false, netboot: false, rawDisk: false, tar: false, gce: false, vhd: false, maas: false, fips: false, trustedBoot: false },
     },
   },
   {
@@ -481,7 +479,6 @@ const EMPTY_OUTPUTS = {
   gce: false,
   vhd: false,
   maas: false,
-  uki: false,
   fips: false,
   trustedBoot: false,
 };
@@ -1181,7 +1178,6 @@ export function ArtifactBuilder() {
               gce: a.gce ?? false,
               vhd: a.vhd ?? false,
               maas: a.maas ?? false,
-              uki: a.uki ?? false,
               fips: a.fips,
               trustedBoot: a.trustedBoot,
             }),
@@ -1237,7 +1233,6 @@ export function ArtifactBuilder() {
             gce: a.gce ?? false,
             vhd: a.vhd ?? false,
             maas: a.maas ?? false,
-            uki: a.uki ?? false,
             fips: a.fips,
             trustedBoot: a.trustedBoot,
           }),
@@ -1313,7 +1308,18 @@ export function ArtifactBuilder() {
   // When arch changes, reset model to first available compatible with the new arch.
   function handleArchChange(arch: string) {
     const models = modelsForArch(arch);
-    update("arch", arch);
+    // A bundled extension is built for one architecture, and the handler
+    // refuses a build whose bundle does not match the artifact arch. The
+    // picks are made on the Extensions step, so going back and switching
+    // arch would otherwise carry them forward and the build would be
+    // rejected at submit with nothing in the form to explain why. The
+    // hierarchies are plain paths and stay.
+    const archChanged = arch !== form.arch;
+    setForm((prev) =>
+      archChanged && (prev.bundledExtensions?.length ?? 0) > 0
+        ? { ...prev, arch, bundledExtensions: [] }
+        : { ...prev, arch },
+    );
     if (!customModel) {
       // Keep current model if still compatible, otherwise fall back to 'generic' / first.
       const stillCompatible = models.some((m) => m.value === form.model);
@@ -1519,6 +1525,24 @@ export function ArtifactBuilder() {
       },
       // Send only the user's extra YAML — backend builds the canonical document.
       cloudConfig: advancedConfig.trim() || undefined,
+      // Both of these are collected on the Extensions step and both are
+      // validated and stored by the handler, so leaving them out of this
+      // literal discarded them at submit with no error anywhere: the picks
+      // simply were not on the artifact afterwards. They are built field by
+      // field rather than spread from `form`, so a field the form gains is
+      // silently dropped until it is named here.
+      extensionHierarchies:
+        (form.extensionHierarchies?.sysext?.length ?? 0) > 0 ||
+        (form.extensionHierarchies?.confext?.length ?? 0) > 0
+          ? {
+              sysext: form.extensionHierarchies?.sysext ?? [],
+              confext: form.extensionHierarchies?.confext ?? [],
+            }
+          : undefined,
+      bundledExtensions:
+        (form.bundledExtensions?.length ?? 0) > 0
+          ? form.bundledExtensions
+          : undefined,
     };
 
     // createArtifact throws on any non-2xx. Without this catch the rejection
@@ -1664,7 +1688,11 @@ export function ArtifactBuilder() {
     commands: form.provisioning.registerAuroraBoot ? (form.provisioning.allowedCommands ?? []) : [],
     fips: form.outputs.fips,
     trustedBoot: form.outputs.trustedBoot,
-    outputs: selectedOutputItems.map((i) => i.label),
+    // One ISO option, and the boot mode says which ISO it is. Name the one
+    // this build produces rather than leave it to the Trusted Boot row.
+    outputs: selectedOutputItems.map((i) =>
+      i.field === "iso" && form.outputs.trustedBoot ? "UKI ISO" : i.label,
+    ),
     overlayFiles: overlayFiles.length,
     overlayAttached: !!form.overlayId,
     autoInstall: form.provisioning.autoInstall,

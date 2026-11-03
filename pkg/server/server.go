@@ -164,6 +164,7 @@ func New(cfg Config) *echo.Echo {
 	e.Use(middleware.Recover())
 
 	regToken := cfg.RegToken
+	sharedRegToken := auth.NewRegistrationToken(regToken)
 	sessions := auth.NewSessionStore()
 	adminAuth := auth.NewAdminAuth(cfg.AdminPassword, sessions, cfg.AuroraBootURL)
 	linkSigner := auth.NewLinkSigner()
@@ -232,7 +233,7 @@ func New(cfg Config) *echo.Echo {
 		)
 	}
 	groupHandler := handlers.NewGroupHandler(cfg.GroupStore)
-	settingsHandler := handlers.NewSettingsHandler(&regToken, cfg.RegTokenFile).
+	settingsHandler := handlers.NewSettingsHandler(sharedRegToken, cfg.RegTokenFile).
 		WithImageSource(cfg.SettingsStore, cfg.ISOServe, cfg.RedfishServeURL).
 		WithExtensionCatalogs(cfg.ExtensionCatalogs)
 
@@ -284,7 +285,7 @@ func New(cfg Config) *echo.Echo {
 	// attempts.
 	regGroup := e.Group("/api/v1/nodes")
 	regGroup.Use(auth.RegistrationRateLimiter(registerRateRPS, cfg.RegisterRateLimitBurst))
-	regGroup.Use(auth.RegistrationTokenAuth(&regToken))
+	regGroup.Use(auth.RegistrationTokenAuth(sharedRegToken))
 	regGroup.POST("/register", nodeHandler.Register)
 
 	// Agent-only node endpoints (node API key auth). RequireNodeMatch binds

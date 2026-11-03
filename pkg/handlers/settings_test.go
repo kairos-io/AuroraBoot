@@ -4,10 +4,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	"github.com/kairos-io/AuroraBoot/pkg/auth"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/labstack/echo/v4"
 )
@@ -15,14 +18,14 @@ import (
 var _ = Describe("SettingsHandler", func() {
 	var (
 		e       *echo.Echo
-		token   string
+		token   *auth.RegistrationToken
 		handler *handlers.SettingsHandler
 	)
 
 	BeforeEach(func() {
 		e = echo.New()
-		token = "initial-token"
-		handler = handlers.NewSettingsHandler(&token, "")
+		token = auth.NewRegistrationToken("initial-token")
+		handler = handlers.NewSettingsHandler(token, "")
 	})
 
 	Describe("GetRegistrationToken", func() {
@@ -55,8 +58,42 @@ var _ = Describe("SettingsHandler", func() {
 			Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
 			Expect(resp["registrationToken"]).NotTo(Equal("initial-token"))
 			Expect(resp["registrationToken"]).NotTo(BeEmpty())
-			// Token should also be updated in the pointer
-			Expect(token).To(Equal(resp["registrationToken"]))
+			// The shared holder the middleware reads must see the new token
+			Expect(token.Get()).To(Equal(resp["registrationToken"]))
+		})
+	})
+
+	Describe("rotation racing registration", func() {
+		It("keeps the registration middleware consistent with concurrent rotations", func() {
+			register := auth.RegistrationTokenAuth(token)(func(c echo.Context) error {
+				return c.String(http.StatusOK, "ok")
+			})
+
+			var wg sync.WaitGroup
+			for i := 0; i < 8; i++ {
+				wg.Add(2)
+				go func() {
+					defer wg.Done()
+					defer GinkgoRecover()
+					for j := 0; j < 50; j++ {
+						req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/registration-token/rotate", nil)
+						Expect(handler.RotateRegistrationToken(e.NewContext(req, httptest.NewRecorder()))).To(Succeed())
+					}
+				}()
+				go func() {
+					defer wg.Done()
+					defer GinkgoRecover()
+					for j := 0; j < 50; j++ {
+						body := `{"registrationToken":"stale-token","hostname":"node"}`
+						req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/register", strings.NewReader(body))
+						req.Header.Set("Content-Type", "application/json")
+						rec := httptest.NewRecorder()
+						Expect(register(e.NewContext(req, rec))).To(Succeed())
+						Expect(rec.Code).To(Equal(http.StatusUnauthorized))
+					}
+				}()
+			}
+			wg.Wait()
 		})
 	})
 })

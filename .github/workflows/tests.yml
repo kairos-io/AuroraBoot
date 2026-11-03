@@ -38,7 +38,7 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version: '26'
           cache: 'npm'
           cache-dependency-path: ui/package-lock.json
       - name: Build UI bundle (embedded via go:embed)
@@ -65,6 +65,24 @@ jobs:
           CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
         with:
           files: ./coverage.out
+  vet-tagged:
+    name: vet-tagged
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v7
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # Running the suite needs kind, docker and kubectl and takes up to 30
+      # minutes, so this type-checks it instead. No other job passes
+      # operator_e2e, and go vet applies no build tags of its own, so without
+      # this step nothing here compiles test/operator at all. Needs no UI
+      # bundle (internal/ui builds from embed_noui.go without the ui tag) and
+      # no system packages.
+      - name: Type-check build-tagged trees
+        run: make vet-tagged
   helm-chart:
     runs-on: ubuntu-latest
     permissions:
@@ -233,7 +251,7 @@ jobs:
           --sb-cert /keys/db.pem \
           --output-type iso \
           -x "console=ttyS0" \
-          quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3
+          quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
@@ -296,7 +314,7 @@ jobs:
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.efi=true" \
           --set "disk.size=16000" \
-          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
@@ -371,7 +389,7 @@ jobs:
           --set "disk.efi=true" \
           ${{ matrix.extra_args }} \
           --set "disk.size=16000" \
-          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
       - name: Find OVMF firmware
         uses: ./.github/actions/find-ovmf-firmware
         id: find_ovmf
@@ -434,7 +452,7 @@ jobs:
           --set "disable_http_server=true" --set "disable_netboot=true" --set "state_dir=/output" \
           --set "disk.bios=true" \
           --set "disk.size=16000" \
-          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.2.3"
+          --set "container_image=oci://quay.io/kairos/ubuntu:24.04-core-amd64-generic-v3.7.2"
       - name: Test raw image is bootable
         env:
           KVM: true

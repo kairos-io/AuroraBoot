@@ -85,15 +85,23 @@ var _ = Describe("isoserve.Server", func() {
 	})
 
 	It("returns 404 once the token has expired", func() {
-		url, _, err := srv.Register(isoPath, 20*time.Millisecond)
+		// Two tokens, so that no assertion has to win a race against the TTL.
+		// The long-lived one carries the "still serves while valid" half; a
+		// slow first request cannot turn it into a 404.
+		liveURL, _, err := srv.Register(isoPath, time.Minute)
 		Expect(err).NotTo(HaveOccurred())
 
-		resp, body := get(url, nil)
+		resp, body := get(liveURL, nil)
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		Expect(body).To(Equal(payload))
 
+		// The short-lived one carries the expiry half. It is only ever expected
+		// to 404, so the request latency does not matter.
+		expiringURL, _, err := srv.Register(isoPath, 20*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+
 		Eventually(func() int {
-			resp, _ := get(url, nil)
+			resp, _ := get(expiringURL, nil)
 			return resp.StatusCode
 		}, time.Second, 10*time.Millisecond).Should(Equal(http.StatusNotFound))
 	})
@@ -193,5 +201,35 @@ var _ = Describe("isoserve.Server", func() {
 	It("requires a bind address to start", func() {
 		bad := isoserve.New(isoserve.Config{})
 		Expect(bad.Start(context.Background())).To(HaveOccurred())
+	})
+
+	// The token in the URL is the whole capability, so a half-configured TLS
+	// pair must not quietly become a cleartext listener.
+	DescribeTable("refuses to start on a half-configured TLS pair",
+		func(cfg isoserve.Config, wants string) {
+			half := isoserve.New(cfg)
+			err := half.Start(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(wants))
+			Expect(half.UsesTLS()).To(BeFalse())
+			// No listener was bound, so nothing needs shutting down.
+			Expect(half.Addr()).To(BeNil())
+		},
+		Entry("certificate without key",
+			isoserve.Config{BindAddr: "127.0.0.1:0", CertFile: "/tmp/cert.pem"},
+			"certificate was given without a key"),
+		Entry("key without certificate",
+			isoserve.Config{BindAddr: "127.0.0.1:0", KeyFile: "/tmp/key.pem"},
+			"key was given without a certificate"),
+	)
+
+	It("still serves plain HTTP when neither TLS file is given", func() {
+		plain := isoserve.New(isoserve.Config{BindAddr: "127.0.0.1:0"})
+		Expect(plain.Start(context.Background())).To(Succeed())
+		Expect(plain.UsesTLS()).To(BeFalse())
+
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		defer cancel()
+		Expect(plain.Shutdown(ctx)).To(Succeed())
 	})
 })

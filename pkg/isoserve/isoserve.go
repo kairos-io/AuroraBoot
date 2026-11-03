@@ -140,6 +140,17 @@ func (s *Server) Start(ctx context.Context) error {
 	if s.bindAddr == "" {
 		return errors.New("starting iso-serve: bind address is required")
 	}
+	// A half-configured pair is a misconfiguration, not a request for plain
+	// HTTP. The capability token lives in the URL, so falling back to the
+	// cleartext branch below would put it on the wire for the whole deploy,
+	// silently and with an unchanged startup banner. Fail closed here rather
+	// than in each command, so no caller can downgrade by omission.
+	if s.certFile == "" && s.keyFile != "" {
+		return errors.New("starting iso-serve: a TLS key was given without a certificate; set both or neither, because serving the capability token over plain HTTP would expose it")
+	}
+	if s.certFile != "" && s.keyFile == "" {
+		return errors.New("starting iso-serve: a TLS certificate was given without a key; set both or neither, because serving the capability token over plain HTTP would expose it")
+	}
 
 	s.httpSrv = &http.Server{
 		Addr:    s.bindAddr,
