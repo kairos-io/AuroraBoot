@@ -2580,9 +2580,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "description": {
+                    "description": "Description replaces the group description; an empty string clears it and an omitted field keeps the current one.",
                     "type": "string"
                 },
                 "name": {
+                    "description": "Name replaces the group name; an empty or omitted name keeps the current one.",
                     "type": "string"
                 }
             }

@@ -179,6 +179,54 @@ var _ = Describe("GroupHandler", func() {
 			var group store.NodeGroup
 			Expect(json.Unmarshal(rec.Body.Bytes(), &group)).To(Succeed())
 			Expect(group.Name).To(Equal("production"))
+			Expect(group.Description).To(Equal("Production environment"))
+		})
+
+		update := func(body string) store.NodeGroup {
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/groups/grp-1", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("grp-1")
+
+			Expect(handler.Update(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var group store.NodeGroup
+			Expect(json.Unmarshal(rec.Body.Bytes(), &group)).To(Succeed())
+			return group
+		}
+
+		It("clears the description when it is sent as an empty string", func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod", Description: "old desc"},
+			}
+
+			group := update(`{"name":"prod","description":""}`)
+			Expect(group.Description).To(BeEmpty())
+			Expect(gs.groups[0].Description).To(BeEmpty())
+		})
+
+		It("leaves the description alone when the field is omitted", func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod", Description: "old desc"},
+			}
+
+			group := update(`{"name":"production"}`)
+			Expect(group.Name).To(Equal("production"))
+			Expect(group.Description).To(Equal("old desc"))
+			Expect(gs.groups[0].Description).To(Equal("old desc"))
+		})
+
+		It("leaves the name alone when it is sent as an empty string", func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod", Description: "old desc"},
+			}
+
+			group := update(`{"name":"","description":"new desc"}`)
+			Expect(group.Name).To(Equal("prod"))
+			Expect(group.Description).To(Equal("new desc"))
 		})
 	})
 

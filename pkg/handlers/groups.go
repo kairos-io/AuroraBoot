@@ -119,9 +119,11 @@ func setNodeCount(g *store.NodeGroup, counts map[string]int) {
 }
 
 // updateGroupRequest is the expected body for updating a group.
+// An omitted description leaves the stored one unchanged; an empty string
+// clears it.
 type updateGroupRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
 }
 
 // Update handles PUT /api/v1/groups/:id.
@@ -154,8 +156,8 @@ func (h *GroupHandler) Update(c echo.Context) error {
 	if req.Name != "" {
 		group.Name = req.Name
 	}
-	if req.Description != "" {
-		group.Description = req.Description
+	if req.Description != nil {
+		group.Description = *req.Description
 	}
 
 	if err := h.groups.Update(ctx, group); err != nil {
