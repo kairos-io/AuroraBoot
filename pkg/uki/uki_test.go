@@ -520,3 +520,17 @@ ID=debian
 `, false),
 	)
 })
+
+var _ = Describe("single-efi-cmdline file names", func() {
+	It("accepts titles that only differ by case", func() {
+		opts := validTestOptions()
+		opts.SingleEfiCmdlines = []string{"Debug: rd.debug", "debug: rd.shell"}
+		Expect(opts.validate()).To(Succeed())
+	})
+
+	It("accepts a title that maps onto the default entry", func() {
+		opts := validTestOptions()
+		opts.SingleEfiCmdlines = []string{"Norole: rd.debug"}
+		Expect(opts.validate()).To(Succeed())
+	})
+})
