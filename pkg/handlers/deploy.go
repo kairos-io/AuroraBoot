@@ -66,6 +66,12 @@ type DeployHandler struct {
 	runsMu sync.Mutex
 	runs   map[string]context.CancelFunc
 
+	// servedISOs holds the serve token of each completed deployment whose BMC may
+	// still be reading the locally served ISO. The token is revoked when the
+	// deployment is finalized, or after servedISOHold if it never is. Guarded by
+	// runsMu.
+	servedISOs map[string]string
+
 	// refreshAll enforces a single in-flight "refresh all" BMC-status sweep: a
 	// concurrent RefreshAllBMCTargets call returns 409 rather than launching a
 	// second parallel sweep that would double the BMC-ping load.
@@ -96,6 +102,7 @@ func NewDeployHandler(
 		hub:          hub,
 		baseCtx:      context.Background(),
 		runs:         make(map[string]context.CancelFunc),
+		servedISOs:   make(map[string]string),
 	}
 	// Leave the interface nil rather than holding a typed nil pointer.
 	if nb != nil {
@@ -135,6 +142,37 @@ func (h *DeployHandler) deregisterRun(id string) {
 	h.runsMu.Lock()
 	defer h.runsMu.Unlock()
 	delete(h.runs, id)
+}
+
+// servedISOHold bounds how long a completed deployment keeps its served ISO
+// while waiting to be finalized. It outlasts the auto-eject fallback window so a
+// phone-home inside that window still finds the media served.
+const servedISOHold = ejectFallbackWindow + 15*time.Minute
+
+// holdServedISO keeps a deployment's serve token live past the end of the deploy
+// run, so the BMC can keep reading the installer ISO until the deployment is
+// finalized. If finalize never comes, the token is released after servedISOHold.
+// It reports false when the token could not be extended.
+func (h *DeployHandler) holdServedISO(id, token string) bool {
+	if !h.isoServe.Extend(token, servedISOHold) {
+		return false
+	}
+	h.runsMu.Lock()
+	h.servedISOs[id] = token
+	h.runsMu.Unlock()
+	time.AfterFunc(servedISOHold, func() { h.releaseServedISO(id) })
+	return true
+}
+
+// releaseServedISO revokes the serve token held for a deployment, if any.
+func (h *DeployHandler) releaseServedISO(id string) {
+	h.runsMu.Lock()
+	token, ok := h.servedISOs[id]
+	delete(h.servedISOs, id)
+	h.runsMu.Unlock()
+	if ok && h.isoServe != nil {
+		h.isoServe.Revoke(token)
+	}
 }
 
 // CancelRun aborts an in-flight deployment by id. It reports whether a matching
@@ -505,11 +543,17 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 	defer cancel()
 	defer h.deregisterRun(deploymentID)
 
-	// Revoke the one-shot serve token once the deploy reaches any terminal state.
-	// The BMC has finished fetching the ISO by the time the deploy returns, so the
-	// capability URL no longer needs to be live.
+	// Revoke the serve token when the deploy fails or is cancelled, or when no
+	// eject is armed. A successful deploy that arms the eject hands the token to
+	// holdServedISO instead: the Reset only starts the installer boot, and the
+	// BMC keeps reading the ISO until the media is ejected.
+	keepServed := false
 	if serveToken != "" && h.isoServe != nil {
-		defer h.isoServe.Revoke(serveToken)
+		defer func() {
+			if !keepServed {
+				h.isoServe.Revoke(serveToken)
+			}
+		}()
 	}
 
 	deployer := redfish.NewDeployer(redfish.Config{
@@ -541,6 +585,10 @@ func (h *DeployHandler) runRedfishDeploy(ctx context.Context, cancel context.Can
 		log.Printf("[%s] redfish deploy failed: %v", logPrefix, err)
 		h.failDeployment(deploymentID, fmt.Sprintf("redfish deploy failed: %v", err))
 		return
+	}
+
+	if ejectAfter && serveToken != "" && h.isoServe != nil {
+		keepServed = h.holdServedISO(deploymentID, serveToken)
 	}
 
 	msg := "Deployment completed successfully"
