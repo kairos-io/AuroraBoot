@@ -69,7 +69,7 @@ type ArtifactHandler struct {
 	secureBootKeys store.SecureBootKeySetStore
 	extensions     store.ExtensionStore
 	bundles        store.ArtifactExtensionBundleStore
-	regToken       string
+	regToken       *auth.RegistrationToken
 	aurorabootURL  string
 	artifactsDir   string
 	linkSigner     *auth.LinkSigner
@@ -99,7 +99,7 @@ func NewArtifactHandler(
 		secureBootKeys: secureBootKeys,
 		extensions:     extensions,
 		bundles:        bundles,
-		regToken:       regToken,
+		regToken:       auth.NewRegistrationToken(regToken),
 		aurorabootURL:  aurorabootURL,
 		artifactsDir:   artifactsDir,
 		exportImage:    dockerFlattenExport,
@@ -352,12 +352,16 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to prepare build"})
 	}
 
+	// Read the registration token once so the redaction list and the
+	// cloud-config carry the same value even if it rotates mid-request.
+	regToken := h.regToken.Get()
+
 	// Build opts — set both flat fields and grouped sub-structs.
 	opts := builder.BuildOptions{
 		ID:                uuid.New().String(),
 		Name:              req.Name,
 		UploadToken:       uploadToken,
-		LogRedactValues:   []string{h.regToken, req.Provisioning.Password, uploadToken},
+		LogRedactValues:   []string{regToken, req.Provisioning.Password, uploadToken},
 		BaseImage:         req.BaseImage,
 		KairosVersion:     req.KairosVersion,
 		Model:             req.Model,
@@ -460,7 +464,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		autoInstall:        autoInstall,
 		registerAuroraBoot: registerAuroraBoot,
 		aurorabootURL:      h.aurorabootURL,
-		regToken:           h.regToken,
+		regToken:           regToken,
 		groupName:          groupName,
 		allowedCommands:    allowedCommands,
 		variant:            req.Variant,
@@ -825,6 +829,13 @@ func safePathSegment(s string) error {
 		return errors.New("path traversal")
 	}
 	return nil
+}
+
+// WithRegistrationToken makes the handler read the registration token from t
+// on every build, so builds pick up rotations done through the settings API.
+func (h *ArtifactHandler) WithRegistrationToken(t *auth.RegistrationToken) *ArtifactHandler {
+	h.regToken = t
+	return h
 }
 
 // WithLinkSigner sets the signer used for download links.
