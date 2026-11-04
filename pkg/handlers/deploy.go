@@ -803,12 +803,22 @@ func sortedFeatures(features map[string]bool) []string {
 
 // --- BMC Target CRUD ---
 
+// bmcTargetRequest is the JSON body of POST and PUT /api/v1/bmc-targets.
+// store.BMCTarget keeps Password out of JSON so responses never carry it; the
+// request shape is the one place a client can send it.
+type bmcTargetRequest struct {
+	store.BMCTarget
+	Password string `json:"password"`
+}
+
 // CreateBMCTarget handles POST /api/v1/bmc-targets.
 func (h *DeployHandler) CreateBMCTarget(c echo.Context) error {
-	var target store.BMCTarget
-	if err := c.Bind(&target); err != nil {
+	var req bmcTargetRequest
+	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	target := req.BMCTarget
+	target.Password = req.Password
 	if target.Endpoint == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint is required"})
 	}
@@ -855,10 +865,12 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "BMC target not found"})
 	}
 
-	var updated store.BMCTarget
-	if err := c.Bind(&updated); err != nil {
+	var req bmcTargetRequest
+	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	updated := req.BMCTarget
+	updated.Password = req.Password
 	// SSRF-validate the BMC endpoint on write (same posture as Create and the CLI).
 	// The ping/refresh-all paths actively fetch this endpoint, so it must be guarded.
 	if updated.Endpoint != "" {
