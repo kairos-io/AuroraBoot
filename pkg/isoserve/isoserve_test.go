@@ -140,6 +140,22 @@ var _ = Describe("isoserve.Server", func() {
 		Expect(body).NotTo(ContainSubstring("TOP-SECRET"))
 	})
 
+	It("builds the URL on the given advertised base and still serves the token", func() {
+		url, token, err := srv.RegisterAt("https://iso.example.com/proxy/", isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(url).To(Equal("https://iso.example.com/proxy/redfish/iso/" + token + "/kairos.iso"))
+
+		resp, body := get(ts.URL+strings.TrimPrefix(url, "https://iso.example.com/proxy"), nil)
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(body).To(Equal(payload))
+	})
+
+	It("falls back to the launch BaseURL when the advertised base is empty", func() {
+		url, token, err := srv.RegisterAt("", isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(url).To(Equal(ts.URL + "/redfish/iso/" + token + "/kairos.iso"))
+	})
+
 	It("rejects a non-absolute or non-existent path at registration", func() {
 		_, _, err := srv.Register("relative/path.iso", time.Minute)
 		Expect(err).To(HaveOccurred())
