@@ -79,7 +79,7 @@ var _ = Describe("custom cert dir with SHA256 entries", func() {
 			"db.esl: our own cert should appear exactly once")
 		Expect(countTypeInEsl(esl, signature.CERT_X509_GUID, vendor.Raw)).To(Equal(1),
 			"db.esl: the vendor cert should appear exactly once")
-		Expect(countTypeInEsl(esl, signature.CERT_SHA256_GUID, digest[:])).To(Equal(0),
-			"db.esl: the vendor SHA256 digest is dropped")
+		Expect(countTypeInEsl(esl, signature.CERT_SHA256_GUID, digest[:])).To(Equal(1),
+			"db.esl: the vendor SHA256 digest should appear exactly once")
 	})
 })
