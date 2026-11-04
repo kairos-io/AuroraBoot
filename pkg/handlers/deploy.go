@@ -444,12 +444,17 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 				"error": "local ISO serving is not enabled on this server; provide imageUrl with a URL the BMC can reach, set a default image URL, or enable AuroraBoot-served artifacts",
 			})
 		}
-		// ArtifactFiles stores each file's path relative to the server's working
-		// directory (e.g. "data/artifacts/<id>/foo.iso"). Resolve it to an
-		// absolute path: isoserve.Register requires an absolute path, and
-		// re-joining it with artifactsDir/artifactID would double the prefix into
-		// a bogus path that does not exist.
-		absISO, err := filepath.Abs(isoFile)
+		// ArtifactFiles holds either a bare file name (uploaded files, stored on
+		// disk under artifactsDir/<id>/) or a path that already carries its
+		// directory (local builds write "data/artifacts/<id>/foo.iso" relative to
+		// the server's working directory, or a full path). Only a bare name is
+		// joined with artifactsDir/artifactID; joining a path that already has
+		// the prefix would double it. isoserve.Register needs an absolute path.
+		isoPath := isoFile
+		if filepath.Base(isoFile) == isoFile {
+			isoPath = filepath.Join(h.artifactsDir, artifactID, isoFile)
+		}
+		absISO, err := filepath.Abs(isoPath)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("resolving artifact ISO path: %v", err)})
 		}
