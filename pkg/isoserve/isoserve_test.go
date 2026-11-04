@@ -2,8 +2,17 @@ package isoserve_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -223,6 +232,73 @@ var _ = Describe("isoserve.Server", func() {
 			"key was given without a certificate"),
 	)
 
+	// freeAddr returns a loopback address nothing is listening on, so a test can
+	// check afterwards that a failed Start left the port unbound.
+	freeAddr := func() string {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		addr := ln.Addr().String()
+		Expect(ln.Close()).To(Succeed())
+		return addr
+	}
+
+	DescribeTable("refuses to start when the TLS pair cannot be loaded",
+		func(write func(dir string) (cert, key string)) {
+			cert, key := write(GinkgoT().TempDir())
+			addr := freeAddr()
+			bad := isoserve.New(isoserve.Config{BindAddr: addr, CertFile: cert, KeyFile: key})
+			err := bad.Start(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(cert))
+			Expect(err.Error()).To(ContainSubstring(key))
+			Expect(bad.Addr()).To(BeNil())
+
+			conn, dialErr := net.DialTimeout("tcp", addr, time.Second)
+			if dialErr == nil {
+				_ = conn.Close()
+			}
+			Expect(dialErr).To(HaveOccurred(), "nothing should be listening on %s", addr)
+		},
+		Entry("missing files", func(dir string) (string, string) {
+			return filepath.Join(dir, "missing-cert.pem"), filepath.Join(dir, "missing-key.pem")
+		}),
+		Entry("garbage files", func(dir string) (string, string) {
+			cert := filepath.Join(dir, "cert.pem")
+			key := filepath.Join(dir, "key.pem")
+			Expect(os.WriteFile(cert, []byte("not a certificate"), 0600)).To(Succeed())
+			Expect(os.WriteFile(key, []byte("not a key"), 0600)).To(Succeed())
+			return cert, key
+		}),
+	)
+
+	It("serves over TLS with a valid certificate and key", func() {
+		dir := GinkgoT().TempDir()
+		cert, key, pool := writeSelfSigned(dir)
+
+		tlsSrv := isoserve.New(isoserve.Config{BindAddr: "127.0.0.1:0", CertFile: cert, KeyFile: key})
+		Expect(tlsSrv.Start(context.Background())).To(Succeed())
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			Expect(tlsSrv.Shutdown(ctx)).To(Succeed())
+		}()
+		Expect(tlsSrv.UsesTLS()).To(BeTrue())
+
+		url, _, err := tlsSrv.Register(isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		client := &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "127.0.0.1"}},
+		}
+		resp, err := client.Get("https://" + tlsSrv.Addr().String() + url)
+		Expect(err).NotTo(HaveOccurred())
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+		_ = resp.Body.Close()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(body).To(Equal(payload))
+	})
+
 	It("still serves plain HTTP when neither TLS file is given", func() {
 		plain := isoserve.New(isoserve.Config{BindAddr: "127.0.0.1:0"})
 		Expect(plain.Start(context.Background())).To(Succeed())
@@ -233,3 +309,34 @@ var _ = Describe("isoserve.Server", func() {
 		Expect(plain.Shutdown(ctx)).To(Succeed())
 	})
 })
+
+// writeSelfSigned writes a self-signed certificate for 127.0.0.1 and its key
+// into dir, and returns their paths plus a pool that trusts the certificate.
+func writeSelfSigned(dir string) (certPath, keyPath string, pool *x509.CertPool) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	Expect(err).NotTo(HaveOccurred())
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "isoserve-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	Expect(err).NotTo(HaveOccurred())
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	Expect(err).NotTo(HaveOccurred())
+
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	Expect(os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600)).To(Succeed())
+	Expect(os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0600)).To(Succeed())
+
+	parsed, err := x509.ParseCertificate(der)
+	Expect(err).NotTo(HaveOccurred())
+	pool = x509.NewCertPool()
+	pool.AddCert(parsed)
+	return certPath, keyPath, pool
+}
