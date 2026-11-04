@@ -520,3 +520,21 @@ ID=debian
 `, false),
 	)
 })
+
+var _ = Describe("writeISOCloudConfig", func() {
+	It("writes the cloud-config to config.yaml at the ISO root", func() {
+		isoDir := tTempDir()
+		cc := "#cloud-config\ninstall:\n  auto: true\n"
+		Expect(writeISOCloudConfig(isoDir, cc)).To(Succeed())
+		got, err := os.ReadFile(filepath.Join(isoDir, "config.yaml"))
+		Expect(err).ToNot(HaveOccurred())
+		Expect(string(got)).To(Equal(cc))
+	})
+
+	It("writes nothing when there is no cloud-config", func() {
+		isoDir := tTempDir()
+		Expect(writeISOCloudConfig(isoDir, "  \n")).To(Succeed())
+		_, err := os.Stat(filepath.Join(isoDir, "config.yaml"))
+		Expect(os.IsNotExist(err)).To(BeTrue())
+	})
+})
