@@ -141,9 +141,18 @@ func (h *UIHub) Broadcast(msg any) {
 		conns = append(conns, conn)
 	}
 	h.mu.RUnlock()
+	// Write to every client at once, so a client that stopped reading costs one
+	// writeWait instead of delaying the others behind it. Waiting for all of
+	// them keeps per-client message order for callers that broadcast in a row.
+	var wg sync.WaitGroup
 	for _, conn := range conns {
-		_ = conn.writeMessage(websocket.TextMessage, data)
+		wg.Add(1)
+		go func(c *wsConn) {
+			defer wg.Done()
+			_ = c.writeMessage(websocket.TextMessage, data)
+		}(conn)
 	}
+	wg.Wait()
 }
 
 // BroadcastLogChunk fans out a chunk of build log to every connected UI
