@@ -743,13 +743,24 @@ func ZstdFile(sourcePath, targetPath string) error {
 	if err != nil {
 		return fmt.Errorf("error creating compressed initramfs file: %w", err)
 	}
-	defer outputFile.Close()
 
-	zstdWriter, _ := zstd.NewWriter(outputFile, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
-	defer zstdWriter.Close()
+	zstdWriter, err := zstd.NewWriter(outputFile, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	if err != nil {
+		_ = outputFile.Close()
+		return fmt.Errorf("error creating zstd encoder: %w", err)
+	}
 
 	if _, err := io.Copy(zstdWriter, inputFile); err != nil {
+		_ = zstdWriter.Close()
+		_ = outputFile.Close()
 		return fmt.Errorf("error writing data to the compress initramfs file: %w", err)
+	}
+	if err := zstdWriter.Close(); err != nil {
+		_ = outputFile.Close()
+		return fmt.Errorf("error finishing the compressed initramfs file: %w", err)
+	}
+	if err := outputFile.Close(); err != nil {
+		return fmt.Errorf("error closing the compressed initramfs file: %w", err)
 	}
 	return nil
 }
