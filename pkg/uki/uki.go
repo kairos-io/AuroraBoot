@@ -427,6 +427,9 @@ func (o Options) validate() error {
 	if len(o.ExtraCmdlines) > 0 && o.ExtendCmdline != "" {
 		return errors.New("uki.Build: ExtraCmdlines and ExtendCmdline are mutually exclusive")
 	}
+	if err := o.validateEntryFileNames(); err != nil {
+		return err
+	}
 
 	outputType := o.OutputType
 	if outputType == "" {
@@ -487,6 +490,27 @@ func (o Options) validate() error {
 	}
 	if _, err := os.Stat(o.SBCert); err != nil {
 		return fmt.Errorf("sb-cert does not exist: %s", o.SBCert)
+	}
+	return nil
+}
+
+// validateEntryFileNames rejects boot entries that would be written to the
+// same EFI file, as the later one would silently replace the earlier one.
+func (o Options) validateEntryFileNames() error {
+	bootBranding := o.BootBranding
+	if bootBranding == "" {
+		bootBranding = "Kairos"
+	}
+	entries := append(
+		getUkiCmdline(constants.UkiCmdline, o.ExtendCmdline, bootBranding, o.ExtraCmdlines, o.CmdLinesV2),
+		getUkiSingleCmdlines(constants.UkiCmdline, bootBranding, o.SingleEfiCmdlines, logger.KairosLogger{})...,
+	)
+	seen := map[string]utils.BootEntry{}
+	for _, entry := range entries {
+		if prev, ok := seen[entry.FileName]; ok {
+			return fmt.Errorf("uki.Build: boot entries %q and %q both produce %s.efi, use distinct titles", prev.Title, entry.Title, entry.FileName)
+		}
+		seen[entry.FileName] = entry
 	}
 	return nil
 }
