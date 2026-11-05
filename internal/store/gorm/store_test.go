@@ -908,6 +908,53 @@ var _ = Describe("Gorm Store", func() {
 		})
 	})
 
+	Describe("ArtifactUpdateNameSaved", func() {
+		It("writes only name and saved and does not clobber a concurrent phase write", func() {
+			rec := &store.ArtifactRecord{
+				ID: "art-name", Name: "old", Phase: store.ArtifactBuilding, BaseImage: "img",
+				UploadToken: "tok",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			Expect(s.ArtifactUpdatePhaseMessage(ctx, "art-name", store.ArtifactReady, "done")).To(Succeed())
+			Expect(s.ArtifactUpdateFiles(ctx, "art-name", []string{"kairos.iso"})).To(Succeed())
+
+			name, saved := "renamed", true
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-name", &name, &saved)).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-name")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Name).To(Equal("renamed"))
+			Expect(refreshed.Saved).To(BeTrue())
+			Expect(refreshed.Phase).To(Equal(store.ArtifactReady))
+			Expect(refreshed.Message).To(Equal("done"))
+			Expect(refreshed.ArtifactFiles).To(Equal([]string{"kairos.iso"}))
+			Expect(refreshed.UploadToken).To(Equal("tok"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+
+		It("writes zero values and skips nil fields", func() {
+			rec := &store.ArtifactRecord{ID: "art-zero", Name: "keep", Saved: true}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			unsaved := false
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-zero", nil, &unsaved)).To(Succeed())
+			refreshed, err := s.ArtifactGetByID(ctx, "art-zero")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Name).To(Equal("keep"))
+			Expect(refreshed.Saved).To(BeFalse())
+
+			empty := ""
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-zero", &empty, nil)).To(Succeed())
+			refreshed, err = s.ArtifactGetByID(ctx, "art-zero")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Name).To(BeEmpty())
+			Expect(refreshed.Saved).To(BeFalse())
+
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-zero", nil, nil)).To(Succeed())
+		})
+	})
+
 	Describe("ArtifactClearUploadToken", func() {
 		It("zeroes upload_token and leaves everything else alone", func() {
 			rec := &store.ArtifactRecord{

@@ -1112,6 +1112,24 @@ func (s *Store) ArtifactUpdateFiles(ctx context.Context, id string, files []stri
 		Updates(store.ArtifactRecord{ArtifactFiles: files}).Error
 }
 
+// ArtifactUpdateNameSaved writes only the name and saved columns for the row
+// with id, skipping the ones that are nil. A map is used so an empty name or a
+// false saved flag is still written. Nothing is written when both are nil.
+func (s *Store) ArtifactUpdateNameSaved(ctx context.Context, id string, name *string, saved *bool) error {
+	cols := map[string]interface{}{}
+	if name != nil {
+		cols["name"] = *name
+	}
+	if saved != nil {
+		cols["saved"] = *saved
+	}
+	if len(cols) == 0 {
+		return nil
+	}
+	return s.db.WithContext(ctx).Model(&store.ArtifactRecord{}).Where("id = ?", id).
+		Updates(cols).Error
+}
+
 // ArtifactClearUploadToken zeroes the upload_token column for the row with id.
 // watchCRPhase calls this on the terminal transition so a leaked token cannot
 // be replayed against Upload after the build has finished. Select forces the

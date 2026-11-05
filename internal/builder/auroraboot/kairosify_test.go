@@ -28,12 +28,13 @@ func (*kairosifyTestStore) Update(context.Context, *store.ArtifactRecord) error 
 func (*kairosifyTestStore) UpdatePhaseMessage(context.Context, string, string, string) error {
 	return nil
 }
-func (*kairosifyTestStore) UpdateFiles(context.Context, string, []string) error { return nil }
-func (*kairosifyTestStore) ClearUploadToken(context.Context, string) error      { return nil }
-func (*kairosifyTestStore) Delete(context.Context, string) error                { return nil }
-func (*kairosifyTestStore) DeleteByPhase(context.Context, string) error         { return nil }
-func (*kairosifyTestStore) GetLogs(context.Context, string) (string, error)     { return "", nil }
-func (*kairosifyTestStore) AppendLog(context.Context, string, string) error     { return nil }
+func (*kairosifyTestStore) UpdateFiles(context.Context, string, []string) error           { return nil }
+func (*kairosifyTestStore) UpdateNameSaved(context.Context, string, *string, *bool) error { return nil }
+func (*kairosifyTestStore) ClearUploadToken(context.Context, string) error                { return nil }
+func (*kairosifyTestStore) Delete(context.Context, string) error                          { return nil }
+func (*kairosifyTestStore) DeleteByPhase(context.Context, string) error                   { return nil }
+func (*kairosifyTestStore) GetLogs(context.Context, string) (string, error)               { return "", nil }
+func (*kairosifyTestStore) AppendLog(context.Context, string, string) error               { return nil }
 
 func installFakeDocker(t *testing.T) string {
 	t.Helper()
