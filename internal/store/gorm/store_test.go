@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gorm.io/gorm"
 
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -345,6 +346,42 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.GroupID).To(HaveValue(Equal(g.ID)))
 			Expect(found.Group).NotTo(BeNil())
 			Expect(found.Group.Name).To(Equal("target-grp"))
+		})
+
+		It("refuses to set a group on an unknown node", func() {
+			g := &store.NodeGroup{Name: "orphan-grp"}
+			Expect(s.Create(ctx, g)).To(Succeed())
+
+			Expect(s.SetGroup(ctx, "no-such-node", &g.ID)).To(MatchError(gorm.ErrRecordNotFound))
+		})
+
+		It("refuses to move a node into an unknown group", func() {
+			n := &store.ManagedNode{MachineID: "sg2"}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			missing := "no-such-group"
+			Expect(s.SetGroup(ctx, n.ID, &missing)).To(MatchError(gorm.ErrRecordNotFound))
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.GroupID).To(BeNil())
+		})
+
+		It("moves a node out of its group", func() {
+			g := &store.NodeGroup{Name: "leave-grp"}
+			Expect(s.Create(ctx, g)).To(Succeed())
+			n := &store.ManagedNode{MachineID: "sg3", GroupID: &g.ID}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			Expect(s.SetGroup(ctx, n.ID, nil)).To(Succeed())
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.GroupID).To(BeNil())
+		})
+
+		It("refuses to set labels on an unknown node", func() {
+			Expect(s.SetLabels(ctx, "no-such-node", map[string]string{"a": "b"})).To(MatchError(gorm.ErrRecordNotFound))
 		})
 
 		It("sets labels", func() {

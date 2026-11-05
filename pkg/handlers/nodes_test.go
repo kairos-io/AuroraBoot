@@ -272,6 +272,19 @@ var _ = Describe("NodeHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusOK))
 		})
+
+		It("returns 404 for an unknown node", func() {
+			body := `{"labels":{"env":"production"}}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/missing/labels", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("missing")
+
+			Expect(handler.SetLabels(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
 	})
 
 	Describe("SetGroup", func() {
@@ -304,6 +317,29 @@ var _ = Describe("NodeHandler", func() {
 
 			Expect(rec.Code).To(Equal(http.StatusOK))
 			Expect(ns.nodes[0].GroupID).To(BeNil())
+		})
+
+		It("returns 404 for an unknown group and leaves the node alone", func() {
+			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+
+			rec := setGroup(`{"groupID":"no-such-group"}`)
+
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(ns.nodes[0].GroupID).To(BeNil())
+		})
+
+		It("returns 404 for an unknown node", func() {
+			gs.groups = []*store.NodeGroup{{ID: "grp-1"}}
+
+			rec := setGroup(`{"groupID":"grp-1"}`)
+
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
+
+		It("returns 404 for an unknown node on a null group id", func() {
+			rec := setGroup(`{"groupID":null}`)
+
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
 		})
 
 		// An empty string names no group. Taking it for "no group" would
