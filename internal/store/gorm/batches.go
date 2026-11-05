@@ -395,7 +395,15 @@ func (a *batchAdvance) reconcileRunning() {
 			if cmd.CompletedAt != nil {
 				since = *cmd.CompletedAt
 			}
+			// A deadline already past here means the advance after the
+			// command completed did not run in time, because AuroraBoot was
+			// down. Startup postponed the started row's deadline for that
+			// downtime, and the node could not report coming back in it
+			// either, so the postponed deadline stands.
 			deadline := since.Add(a.rebootTimeout())
+			if deadline.Before(a.now) && row.Deadline != nil && row.Deadline.After(deadline) {
+				deadline = *row.Deadline
+			}
 			row.State = store.BatchNodeRebooting
 			row.RebootingSince = &since
 			row.Deadline = &deadline

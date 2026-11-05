@@ -209,6 +209,27 @@ var _ = Describe("Gorm batch settling", func() {
 		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeRunning))
 	})
 
+	It("keeps a postponed deadline when a command that completed before the server went down is reconciled", func() {
+		nodes := register(1)
+		id := newBatch(nodes, store.CmdUpgrade, 1, true)
+		start := time.Now().Add(-time.Hour)
+		cmds := advanceAt(id, start)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandCompleted, "")).To(Succeed())
+		completed := start.Add(time.Minute)
+		Expect(s.UnsafeDB().Model(&store.NodeCommand{}).Where("id = ?", cmds[0].ID).
+			Update("completed_at", completed).Error).To(Succeed())
+		now := time.Now()
+		Expect(s.BatchPostponeExpiredDeadlines(ctx, now)).To(Succeed())
+
+		advanceAt(id, now)
+
+		b := get(id)
+		Expect(b.Phase).To(Equal(store.BatchRunning))
+		Expect(b.Nodes[0].State).To(Equal(store.BatchNodeRebooting))
+		Expect(b.Nodes[0].RebootingSince).To(HaveValue(BeTemporally("~", completed, time.Second)))
+		Expect(b.Nodes[0].Deadline).To(HaveValue(BeTemporally("~", now.Add(10*time.Minute), time.Second)))
+	})
+
 	It("postpones the deadline of a started node that passed while the server was down", func() {
 		nodes := register(1)
 		id := newBatch(nodes, store.CmdExec, 1, false)
