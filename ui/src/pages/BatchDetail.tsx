@@ -314,7 +314,7 @@ function BatchView({ id }: { id: string | undefined }) {
         open={confirmStop}
         onOpenChange={setConfirmStop}
         title="Stop batch"
-        description="Nodes that have not started are canceled. Nodes already running finish their command."
+        description="Nodes that have not received the command are canceled. Nodes already running it finish."
         confirmLabel="Stop batch"
         destructive
         onConfirm={handleStop}

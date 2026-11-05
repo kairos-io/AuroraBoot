@@ -732,8 +732,8 @@ export function CommandDialog({
                         Stop on the first failure
                       </label>
                       <p className="text-xs text-muted-foreground">
-                        Nodes that have not started are canceled. Nodes already
-                        running finish.
+                        Nodes that have not received the command are canceled.
+                        Nodes already running it finish.
                       </p>
                     </div>
                   </>

@@ -101,6 +101,126 @@ var _ = Describe("Gorm batch settling", func() {
 		return n
 	}
 
+	// claim marks a command delivered, as pushing it to its agent does.
+	claim := func(cmdID string) {
+		claimed, err := s.ClaimForDelivery(ctx, cmdID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(claimed).To(BeTrue())
+	}
+
+	commandPhase := func(cmdID string) string {
+		var cmd store.NodeCommand
+		Expect(s.UnsafeDB().First(&cmd, "id = ?", cmdID).Error).To(Succeed())
+		return cmd.Phase
+	}
+
+	heardFrom := func(nodeID string, t time.Time) {
+		Expect(s.UnsafeDB().Model(&store.ManagedNode{}).Where("id = ?", nodeID).
+			Update("last_heartbeat", t).Error).To(Succeed())
+	}
+
+	It("cancels the undelivered commands of started nodes when the batch is stopped by hand", func() {
+		nodes := register(3)
+		id := newBatch(nodes, store.CmdUpgrade, 0, true)
+		cmds := advance(id)
+		Expect(cmds).To(HaveLen(3))
+		claim(cmds[0].ID)
+
+		Expect(s.BatchStop(ctx, id, "stopped by the user", time.Now())).To(Succeed())
+
+		b := get(id)
+		Expect(b.Nodes[0].State).To(Equal(store.BatchNodeRunning))
+		Expect(commandPhase(cmds[0].ID)).To(Equal(store.CommandDelivered))
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(Equal(store.UpgradeStatePending))
+		for i, row := range b.Nodes[1:] {
+			Expect(row.State).To(Equal(store.BatchNodeCanceled))
+			Expect(row.Message).To(Equal("batch stopped"))
+			Expect(row.FinishedAt).NotTo(BeNil())
+			Expect(commandPhase(cmds[i+1].ID)).To(Equal(store.CommandCanceled))
+			Expect(nodeByID(row.NodeID).UpgradeState).To(BeEmpty())
+		}
+		Expect(b.FinishedAt).To(BeNil())
+	})
+
+	It("cancels the undelivered commands of started nodes when a failure stops the batch", func() {
+		nodes := register(3)
+		id := newBatch(nodes, store.CmdExec, 0, true)
+		cmds := advance(id)
+		Expect(cmds).To(HaveLen(3))
+		claim(cmds[1].ID)
+		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandFailed, "exit status 1")).To(Succeed())
+
+		Expect(advance(id)).To(BeEmpty())
+
+		b := get(id)
+		Expect(b.Phase).To(Equal(store.BatchStopped))
+		Expect(b.Nodes[1].State).To(Equal(store.BatchNodeRunning))
+		Expect(b.Nodes[2].State).To(Equal(store.BatchNodeCanceled))
+		Expect(b.Nodes[2].Message).To(Equal("batch stopped"))
+		Expect(commandPhase(cmds[2].ID)).To(Equal(store.CommandCanceled))
+		pending, err := s.GetPending(ctx, nodes[2].ID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(pending).To(BeEmpty())
+	})
+
+	It("times out a started node that stopped sending heartbeats past its deadline", func() {
+		nodes := register(2)
+		id := newBatch(nodes, store.CmdUpgrade, 1, false)
+		start := time.Now()
+		cmds := advanceAt(id, start)
+		Expect(get(id).Nodes[0].Deadline).To(HaveValue(BeTemporally("~", start.Add(10*time.Minute), time.Second)))
+		heardFrom(nodes[0].ID, start)
+
+		next := advanceAt(id, start.Add(11*time.Minute))
+
+		b := get(id)
+		Expect(b.Nodes[0].State).To(Equal(store.BatchNodeTimedOut))
+		Expect(b.Nodes[0].Message).To(Equal("stopped sending heartbeats before it finished its command"))
+		Expect(commandPhase(cmds[0].ID)).To(Equal(store.CommandCanceled))
+		Expect(nodeByID(nodes[0].ID).UpgradeState).To(BeEmpty())
+		Expect(next).To(HaveLen(1))
+		Expect(next[0].ManagedNodeID).To(Equal(nodes[1].ID))
+	})
+
+	It("times out a started node that went offline with its command delivered and keeps the command", func() {
+		nodes := register(1)
+		id := newBatch(nodes, store.CmdExec, 1, false)
+		start := time.Now()
+		cmds := advanceAt(id, start)
+		claim(cmds[0].ID)
+		heardFrom(nodes[0].ID, start.Add(10*time.Minute))
+		Expect(s.UpdatePhase(ctx, nodes[0].ID, store.PhaseOffline)).To(Succeed())
+
+		advanceAt(id, start.Add(11*time.Minute))
+
+		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeTimedOut))
+		Expect(commandPhase(cmds[0].ID)).To(Equal(store.CommandDelivered))
+	})
+
+	It("leaves a started node that still sends heartbeats running past its deadline", func() {
+		nodes := register(1)
+		id := newBatch(nodes, store.CmdExec, 1, false)
+		start := time.Now()
+		advanceAt(id, start)
+		heardFrom(nodes[0].ID, start.Add(10*time.Minute))
+
+		advanceAt(id, start.Add(11*time.Minute))
+
+		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeRunning))
+	})
+
+	It("postpones the deadline of a started node that passed while the server was down", func() {
+		nodes := register(1)
+		id := newBatch(nodes, store.CmdExec, 1, false)
+		start := time.Now()
+		advanceAt(id, start)
+		now := start.Add(20 * time.Minute)
+
+		Expect(s.BatchPostponeExpiredDeadlines(ctx, now)).To(Succeed())
+
+		Expect(get(id).Nodes[0].Deadline).To(HaveValue(BeTemporally("~", now.Add(10*time.Minute), time.Second)))
+	})
+
 	It("times out a rebooting node past its deadline and fails its upgrade", func() {
 		nodes := register(1)
 		id, since := rebooting(nodes, store.CmdUpgrade, 1, false)
@@ -299,6 +419,7 @@ var _ = Describe("Gorm batch settling", func() {
 
 		cmds := advance(id)
 		Expect(cmds).To(HaveLen(2))
+		claim(cmds[1].ID)
 		Expect(s.UpdateStatus(ctx, cmds[0].ID, store.CommandFailed, "exit status 1")).To(Succeed())
 		Expect(advance(id)).To(BeEmpty())
 
@@ -320,7 +441,7 @@ var _ = Describe("Gorm batch settling", func() {
 	It("stops a running batch by hand", func() {
 		nodes := register(3)
 		id := newBatch(nodes, store.CmdExec, 1, true)
-		advance(id)
+		claim(advance(id)[0].ID)
 
 		Expect(s.BatchStop(ctx, id, "stopped by the user", time.Now())).To(Succeed())
 
@@ -387,7 +508,9 @@ var _ = Describe("Gorm batch settling", func() {
 		Entry("reset on autoreset", store.CmdReset, store.BootStateAutoReset, store.BatchNodeRebooting, "", true),
 		Entry("reset on active", store.CmdReset, store.BootStateActive, store.BatchNodeDone, "", true),
 		Entry("reboot on active", store.CmdReboot, store.BootStateActive, store.BatchNodeDone, "", true),
-		Entry("reboot on recovery", store.CmdReboot, store.BootStateRecovery, store.BatchNodeDone, "", true),
+		Entry("reboot on passive", store.CmdReboot, store.BootStatePassive, store.BatchNodeFailed, "fell back to passive", true),
+		Entry("reboot on recovery", store.CmdReboot, store.BootStateRecovery, store.BatchNodeFailed, "fell back to recovery", true),
+		Entry("reboot on an unknown boot state", store.CmdReboot, "netboot", store.BatchNodeDone, "", true),
 		Entry("upgrade on an unknown boot state", store.CmdUpgrade, "netboot", store.BatchNodeRebooting, "", false),
 		Entry("upgrade on autoreset", store.CmdUpgrade, store.BootStateAutoReset, store.BatchNodeRebooting, "", false),
 		Entry("reset on an unknown boot state", store.CmdReset, "netboot", store.BatchNodeRebooting, "", false),
@@ -524,7 +647,7 @@ var _ = Describe("Gorm batch settling", func() {
 		running := newBatch(nodes[0:1], store.CmdExec, 1, true)
 
 		stoppedRunning := newBatch(nodes[1:2], store.CmdExec, 1, true)
-		advance(stoppedRunning)
+		claim(advance(stoppedRunning)[0].ID)
 		Expect(s.BatchStop(ctx, stoppedRunning, "stopped by the user", time.Now())).To(Succeed())
 
 		stoppedRebooting, _ := rebooting(nodes[2:3], store.CmdReboot, 1, true)

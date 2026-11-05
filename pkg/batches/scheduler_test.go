@@ -113,6 +113,11 @@ var _ = Describe("Scheduler", func() {
 		nodes := onlineNodes(2)
 		b, err := sched.Start(ctx, request(store.CmdExec, 1, nodes[0], nodes[1]))
 		Expect(err).NotTo(HaveOccurred())
+		started, err := bs.Get(ctx, b.ID)
+		Expect(err).NotTo(HaveOccurred())
+		claimed, err := s.ClaimForDelivery(ctx, *started.Nodes[0].CommandID)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(claimed).To(BeTrue())
 		Expect(sched.Stop(ctx, b.ID)).To(Succeed())
 
 		called := false
@@ -333,7 +338,7 @@ var _ = Describe("Scheduler", func() {
 	})
 
 	Describe("Stop", func() {
-		It("stops a running batch and cancels its waiting rows", func() {
+		It("stops a running batch and cancels its waiting rows and undelivered commands", func() {
 			nodes := onlineNodes(2)
 			b, err := sched.Start(ctx, request(store.CmdExec, 1, nodes...))
 			Expect(err).NotTo(HaveOccurred())
@@ -344,8 +349,11 @@ var _ = Describe("Scheduler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(got.Phase).To(Equal(store.BatchStopped))
 			Expect(got.StopReason).To(Equal("stopped by the user"))
-			Expect(got.Nodes[0].State).To(Equal(store.BatchNodeRunning))
+			Expect(got.Nodes[0].State).To(Equal(store.BatchNodeCanceled))
 			Expect(got.Nodes[1].State).To(Equal(store.BatchNodeCanceled))
+			pending, err := s.GetPending(ctx, nodes[0].ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(pending).To(BeEmpty())
 
 			Expect(sched.Stop(ctx, b.ID)).To(MatchError(store.ErrBatchNotRunning))
 		})

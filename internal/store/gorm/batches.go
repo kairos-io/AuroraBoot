@@ -277,6 +277,9 @@ type batchAdvance struct {
 	resetTimeout time.Duration
 	// nodePhase maps each existing node of the batch to its phase.
 	nodePhase map[string]string
+	// lastHeard maps each existing node of the batch to its last heartbeat,
+	// nil when it never sent one.
+	lastHeard map[string]*time.Time
 	// commands maps the command ID of each running row to its command.
 	commands map[string]*store.NodeCommand
 	changed  map[*store.BatchNode]bool
@@ -298,17 +301,20 @@ func (a *batchAdvance) load(tx *gorm.DB) error {
 		}
 	}
 	a.nodePhase = map[string]string{}
+	a.lastHeard = map[string]*time.Time{}
 	if len(nodeIDs) > 0 {
 		var nodes []struct {
-			ID    string
-			Phase string
+			ID            string
+			Phase         string
+			LastHeartbeat *time.Time
 		}
-		if err := tx.Model(&store.ManagedNode{}).Select("id, phase").
+		if err := tx.Model(&store.ManagedNode{}).Select("id, phase, last_heartbeat").
 			Where("id IN ?", nodeIDs).Scan(&nodes).Error; err != nil {
 			return err
 		}
 		for _, n := range nodes {
 			a.nodePhase[n.ID] = n.Phase
+			a.lastHeard[n.ID] = n.LastHeartbeat
 		}
 	}
 	a.commands = map[string]*store.NodeCommand{}
@@ -409,21 +415,54 @@ func rebootTimeout(seconds int) time.Duration {
 	return time.Duration(seconds) * time.Second
 }
 
-// timeOut settles each rebooting row past its deadline as timed_out and marks
-// the upgrade or reset of its node failed. It leaves the node's recorded
-// reboot in place, so SettleAfterReboot can still move that state to done or
-// failed when the node comes back later; the batch row stays timed_out.
+// nodeSilentAfter is how long a node can go without a heartbeat before a
+// batch counts it as gone. Agents send one every 30 seconds by default.
+const nodeSilentAfter = 2 * time.Minute
+
+// gone reports whether the node of row is offline or has not sent a heartbeat
+// for nodeSilentAfter. Agents that only poll over REST never go offline, so
+// the heartbeat age is what shows that they stopped.
+func (a *batchAdvance) gone(row *store.BatchNode) bool {
+	if a.nodePhase[row.NodeID] != store.PhaseOnline {
+		return true
+	}
+	heard := a.lastHeard[row.NodeID]
+	return heard == nil || heard.Before(a.now.Add(-nodeSilentAfter))
+}
+
+// timeOut settles the rows past their deadline as timed_out.
+//
+// A running row times out only when its node is also gone, because a node
+// that still sends heartbeats can be busy with a long command. Its command is
+// canceled if it was never delivered; a delivered one is left to report on
+// its own if the node comes back.
+//
+// A rebooting row times out at its deadline, and the upgrade or reset of its
+// node is marked failed. The node's recorded reboot stays in place, so
+// SettleAfterReboot can still move that state to done or failed when the node
+// comes back later; the batch row stays timed_out.
 func (a *batchAdvance) timeOut(tx *gorm.DB) error {
 	timeout := a.rebootTimeout()
 	minutes := int((timeout + time.Minute - 1) / time.Minute)
 	message := fmt.Sprintf("did not come back within %d minutes", minutes)
-	var nodeIDs []string
+	var nodeIDs, commandIDs []string
 	for _, row := range a.rows {
-		if row.State != store.BatchNodeRebooting || row.Deadline == nil || !row.Deadline.Before(a.now) {
+		if row.Deadline == nil || !row.Deadline.Before(a.now) {
 			continue
 		}
-		a.settle(row, store.BatchNodeTimedOut, message)
-		nodeIDs = append(nodeIDs, row.NodeID)
+		switch {
+		case row.State == store.BatchNodeRunning && a.gone(row):
+			a.settle(row, store.BatchNodeTimedOut, "stopped sending heartbeats before it finished its command")
+			if row.CommandID != nil {
+				commandIDs = append(commandIDs, *row.CommandID)
+			}
+		case row.State == store.BatchNodeRebooting:
+			a.settle(row, store.BatchNodeTimedOut, message)
+			nodeIDs = append(nodeIDs, row.NodeID)
+		}
+	}
+	if _, err := cancelPendingCommands(tx, commandIDs, "node stopped sending heartbeats", a.now); err != nil {
+		return err
 	}
 	if len(nodeIDs) == 0 {
 		return nil
@@ -448,39 +487,133 @@ func (a *batchAdvance) timeOut(tx *gorm.DB) error {
 	return nil
 }
 
-// stopOnFailure applies the batch's stop-on-failure rule to the rows that
-// failed in this change, and cancels the waiting rows it holds in memory when
-// the batch stopped.
+// stopOnFailure stops a running batch with stop on failure on when any row
+// failed in this change, naming the failed row with the lowest position.
 func (a *batchAdvance) stopOnFailure(tx *gorm.DB) error {
-	if err := stopOnFailure(tx, a.batch, a.failed, a.now); err != nil {
+	b := a.batch
+	if b.Phase != store.BatchRunning || !b.StopOnFailure || len(a.failed) == 0 {
+		return nil
+	}
+	first := a.failed[0]
+	for _, row := range a.failed[1:] {
+		if row.Position < first.Position {
+			first = row
+		}
+	}
+	nodeID := first.NodeID
+	message := first.Message
+	if message == "" {
+		message = "command failed"
+	}
+	return a.stop(tx, first.Hostname+": "+message, &nodeID)
+}
+
+// stop moves the batch to stopped. It cancels the waiting rows, and the
+// running rows whose command was never delivered along with that command, so
+// no node starts the command after the batch stopped. Rows whose command
+// reached the agent, and rebooting rows, keep going and settle on their own.
+// The rows it changes are written by save.
+func (a *batchAdvance) stop(tx *gorm.DB, reason string, byNodeID *string) error {
+	b := a.batch
+	if err := tx.Model(&store.CommandBatch{}).Where("id = ?", b.ID).Updates(map[string]any{
+		"phase":              store.BatchStopped,
+		"stopped_at":         a.now,
+		"stop_reason":        reason,
+		"stopped_by_node_id": byNodeID,
+	}).Error; err != nil {
 		return err
 	}
-	a.cancelWaiting()
+	now := a.now
+	b.Phase = store.BatchStopped
+	b.StoppedAt = &now
+	b.StopReason = reason
+	b.StoppedByNodeID = byNodeID
+
+	var commandIDs []string
+	for _, row := range a.rows {
+		if row.State == store.BatchNodeRunning && row.CommandID != nil {
+			commandIDs = append(commandIDs, *row.CommandID)
+		}
+	}
+	canceled, err := cancelPendingCommands(tx, commandIDs, batchStoppedMessage, a.now)
+	if err != nil {
+		return err
+	}
+	for _, row := range a.rows {
+		undelivered := row.State == store.BatchNodeRunning && row.CommandID != nil && canceled[*row.CommandID]
+		if row.State == store.BatchNodeWaiting || undelivered {
+			a.settle(row, store.BatchNodeCanceled, batchStoppedMessage)
+		}
+	}
 	return nil
 }
 
-// cancelWaiting mirrors on the rows in memory what stopBatch wrote for a
-// stopped batch.
-func (a *batchAdvance) cancelWaiting() {
-	if a.batch.Phase != store.BatchStopped {
-		return
+// cancelPendingCommands moves the commands among ids that are still Pending
+// to Canceled, clears the lifecycle state they left pending on their nodes,
+// and returns the IDs it canceled.
+//
+// The UPDATE carries `phase = Pending` for the same reason ClaimForDelivery
+// does: a command another goroutine is claiming for delivery right now is won
+// by exactly one of the two. A claim that lands first leaves no Pending row to
+// cancel, so the command is delivered and reports its own result; a cancel
+// that lands first leaves no Pending row for the claim's compare-and-set, so
+// it is never pushed.
+//
+// A canceled reset or upgrade never runs, so nothing would resolve the pending
+// state createCommands set for it, and the node's next unrelated active boot
+// would report the operation done. settleOrphanedLifecycle clears that state
+// unless another command still owns it.
+func cancelPendingCommands(tx *gorm.DB, ids []string, reason string, now time.Time) (map[string]bool, error) {
+	if len(ids) == 0 {
+		return nil, nil
 	}
-	for _, row := range a.rows {
-		if row.State == store.BatchNodeWaiting {
-			row.State = store.BatchNodeCanceled
-			row.Message = batchStoppedMessage
-			now := a.now
-			row.FinishedAt = &now
-		}
+	var canceled []store.NodeCommand
+	if err := tx.Model(&canceled).
+		Clauses(clause.Returning{Columns: []clause.Column{
+			{Name: "id"}, {Name: "managed_node_id"}, {Name: "command"},
+		}}).
+		Where("id IN ? AND phase = ?", ids, store.CommandPending).
+		Updates(map[string]any{
+			"phase":        store.CommandCanceled,
+			"result":       reason,
+			"completed_at": now,
+		}).Error; err != nil {
+		return nil, err
 	}
+	resetNodes, upgradeNodes := lifecycleNodes(canceled)
+	if err := lockNodes(tx, resetNodes, upgradeNodes); err != nil {
+		return nil, err
+	}
+	if err := settleOrphanedLifecycle(tx, store.CmdReset, resetNodes,
+		"reset_state", store.ResetStatePending, "reset_requested_at",
+		map[string]any{"reset_state": "", "reset_requested_at": nil}); err != nil {
+		return nil, err
+	}
+	if err := settleOrphanedLifecycle(tx, store.CmdUpgrade, upgradeNodes,
+		"upgrade_state", store.UpgradeStatePending, "upgrade_requested_at",
+		map[string]any{"upgrade_state": "", "upgrade_requested_at": nil}); err != nil {
+		return nil, err
+	}
+	out := make(map[string]bool, len(canceled))
+	for _, c := range canceled {
+		out[c.ID] = true
+	}
+	return out, nil
 }
 
 // nodeBooted settles a rebooting row from the boot state its node came back
-// with, and reports whether it changed the row. A reset boots into autoreset
-// first; the row keeps waiting for the next boot with a fresh deadline.
+// with, and reports whether it changed the row. A node that comes back on
+// passive or recovery fell back from a broken active image. A reboot is done
+// on any other boot state, including one the agent does not report. A reset
+// boots into autoreset first; the row keeps waiting for the next boot with a
+// fresh deadline.
 func (a *batchAdvance) nodeBooted(row *store.BatchNode, bootState string, bootedAt *time.Time) bool {
 	if a.batch.Command == store.CmdReboot {
-		a.settle(row, store.BatchNodeDone, "")
+		if bootState == store.BootStatePassive || bootState == store.BootStateRecovery {
+			a.settle(row, store.BatchNodeFailed, "fell back to "+bootState)
+		} else {
+			a.settle(row, store.BatchNodeDone, "")
+		}
 		return true
 	}
 	if a.batch.Command != store.CmdUpgrade && a.batch.Command != store.CmdReset {
@@ -553,7 +686,9 @@ func (a *batchAdvance) fillSlots() []*store.NodeCommand {
 		row.State = store.BatchNodeRunning
 		row.CommandID = &cmd.ID
 		now := a.now
+		deadline := now.Add(a.rebootTimeout())
 		row.StartedAt = &now
+		row.Deadline = &deadline
 		a.changed[row] = true
 		free--
 	}
@@ -604,53 +739,8 @@ func (a *batchAdvance) finish(tx *gorm.DB) error {
 
 const batchStoppedMessage = "batch stopped"
 
-// stopOnFailure stops a running batch with stop on failure on when any row
-// failed, naming the failed row with the lowest position.
-func stopOnFailure(tx *gorm.DB, b *store.CommandBatch, failed []*store.BatchNode, now time.Time) error {
-	if b.Phase != store.BatchRunning || !b.StopOnFailure || len(failed) == 0 {
-		return nil
-	}
-	first := failed[0]
-	for _, row := range failed[1:] {
-		if row.Position < first.Position {
-			first = row
-		}
-	}
-	nodeID := first.NodeID
-	message := first.Message
-	if message == "" {
-		message = "command failed"
-	}
-	return stopBatch(tx, b, first.Hostname+": "+message, &nodeID, now)
-}
-
-// stopBatch moves b to stopped and cancels its waiting rows. Rows that are
-// running or rebooting keep going and settle on their own.
-func stopBatch(tx *gorm.DB, b *store.CommandBatch, reason string, byNodeID *string, now time.Time) error {
-	if err := tx.Model(&store.CommandBatch{}).Where("id = ?", b.ID).Updates(map[string]any{
-		"phase":              store.BatchStopped,
-		"stopped_at":         now,
-		"stop_reason":        reason,
-		"stopped_by_node_id": byNodeID,
-	}).Error; err != nil {
-		return err
-	}
-	b.Phase = store.BatchStopped
-	b.StoppedAt = &now
-	b.StopReason = reason
-	b.StoppedByNodeID = byNodeID
-	return tx.Model(&store.BatchNode{}).
-		Where("batch_id = ? AND state = ?", b.ID, store.BatchNodeWaiting).
-		Updates(map[string]any{
-			"state":       store.BatchNodeCanceled,
-			"message":     batchStoppedMessage,
-			"finished_at": now,
-		}).Error
-}
-
-// BatchStop stops a running batch by hand: its waiting rows are canceled and
-// its running rows finish on their own. ErrBatchNotRunning when the batch is
-// not running.
+// BatchStop stops a running batch by hand, as batchAdvance.stop describes.
+// ErrBatchNotRunning when the batch is not running.
 func (s *Store) BatchStop(ctx context.Context, batchID, reason string, now time.Time) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		b, err := lockBatch(tx, batchID)
@@ -665,10 +755,12 @@ func (s *Store) BatchStop(ctx context.Context, batchID, reason string, now time.
 			return err
 		}
 		a := newBatchAdvance(b, rows, now)
-		if err := stopBatch(tx, b, reason, nil, now); err != nil {
+		if err := a.stop(tx, reason, nil); err != nil {
 			return err
 		}
-		a.cancelWaiting()
+		if err := a.save(tx); err != nil {
+			return err
+		}
 		return a.finish(tx)
 	})
 }
@@ -749,10 +841,10 @@ func nodeBootedInBatch(tx *gorm.DB, batchID, nodeID, bootState string, bootedAt 
 	if !a.nodeBooted(row, bootState, bootedAt) {
 		return false, nil
 	}
-	if err := a.save(tx); err != nil {
+	if err := a.stopOnFailure(tx); err != nil {
 		return false, err
 	}
-	if err := a.stopOnFailure(tx); err != nil {
+	if err := a.save(tx); err != nil {
 		return false, err
 	}
 	return true, a.finish(tx)
@@ -770,21 +862,22 @@ func (s *Store) BatchActiveIDs(ctx context.Context) ([]string, error) {
 	return ids, err
 }
 
-// BatchPostponeExpiredDeadlines gives every rebooting row whose deadline
-// passed before now a new deadline of now plus its batch's timeout. A node
-// cannot report coming back while AuroraBoot is down, so the time it was down
-// does not count against the node.
+// BatchPostponeExpiredDeadlines gives every running or rebooting row whose
+// deadline passed before now a new deadline of now plus its batch's timeout.
+// A node cannot report its command or its boot, nor send heartbeats, while
+// AuroraBoot is down, so the time it was down does not count against the node.
 //
 // Deadlines are compared in Go: SQLite stores times as text, so a comparison
 // in SQL depends on how each value was formatted.
 func (s *Store) BatchPostponeExpiredDeadlines(ctx context.Context, now time.Time) error {
-	var rebooting []*store.BatchNode
-	if err := s.db.WithContext(ctx).Where("state = ?", store.BatchNodeRebooting).
-		Order("batch_id ASC").Find(&rebooting).Error; err != nil {
+	inFlight := []string{store.BatchNodeRunning, store.BatchNodeRebooting}
+	var waiting []*store.BatchNode
+	if err := s.db.WithContext(ctx).Where("state IN ?", inFlight).
+		Order("batch_id ASC").Find(&waiting).Error; err != nil {
 		return err
 	}
 	var batchIDs []string
-	for _, row := range rebooting {
+	for _, row := range waiting {
 		if row.Deadline != nil && row.Deadline.Before(now) && !slices.Contains(batchIDs, row.BatchID) {
 			batchIDs = append(batchIDs, row.BatchID)
 		}
@@ -801,7 +894,7 @@ func (s *Store) BatchPostponeExpiredDeadlines(ctx context.Context, now time.Time
 			}
 			deadline := now.Add(rebootTimeout(b.RebootTimeoutSeconds))
 			for _, row := range rows {
-				if row.State != store.BatchNodeRebooting || row.Deadline == nil || !row.Deadline.Before(now) {
+				if !slices.Contains(inFlight, row.State) || row.Deadline == nil || !row.Deadline.Before(now) {
 					continue
 				}
 				if err := tx.Model(&store.BatchNode{}).

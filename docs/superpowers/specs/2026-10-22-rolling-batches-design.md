@@ -27,8 +27,10 @@ fact. That is #4268.
 
 - A batch runs at most N nodes at the same time. N is set per batch; empty or 0
   means all nodes at once.
-- With stop-on-failure on, the first failed node stops the batch: nodes that
-  have not started are canceled, nodes already running finish.
+- With stop-on-failure on, the first failed node stops the batch. Nodes that
+  have not started are canceled, and so are nodes whose command was never
+  delivered, along with that command. Nodes already running their command
+  finish.
 - A node that AuroraBoot rebooted and that does not come back within a timeout
   counts as failed.
 - Every batch keeps a record of its settings, its outcome, why it stopped and
@@ -73,8 +75,8 @@ concurrency N never has more than N nodes holding a slot.
 |---|---|---|
 | `upgrade` | comes back on `active` | command reports `Failed`; comes back on `passive` or `recovery`; timeout |
 | `reset` | comes back on `active` after the reset | command reports `Failed`; comes back on `passive` or `recovery`; timeout |
-| `reboot` | comes back, on any boot entry | command reports `Failed`; timeout |
-| `exec`, `apply-cloud-config`, `extension`, `upgrade-recovery` | command reports `Completed` | command reports `Failed` |
+| `reboot` | comes back on any boot entry other than `passive` or `recovery` | command reports `Failed`; comes back on `passive` or `recovery`; timeout |
+| `exec`, `apply-cloud-config`, `extension`, `upgrade-recovery` | command reports `Completed` | command reports `Failed`; node gone past its deadline |
 
 For `upgrade`, `reset` and `reboot` the timeout clock starts when the command
 reports `Completed`, which is when the agent has scheduled the reboot. The
@@ -110,8 +112,14 @@ frees up. When every waiting node left is offline and no node holds a slot, the
 remaining nodes settle as `skipped` with "offline when the batch reached it". A
 skip is not a failure and does not stop the batch.
 
-A node that took its command and then hangs (a stuck `exec`, for example) holds
-its slot until it reports or the user stops the batch, as in the operator.
+A started node gets a deadline as well, `reboot_timeout` after it started. A
+node still running its command past that deadline settles as `timed_out` with
+"stopped sending heartbeats before it finished its command" when it is offline
+or has sent no heartbeat for two minutes, and its command is canceled if it was
+never delivered. Agents that only poll over REST are never marked offline, so
+the heartbeat age is what shows that they stopped. A node that took its command
+and keeps sending heartbeats (a long `exec`, for example) holds its slot until
+it reports or the user stops the batch.
 
 ## Data model
 
@@ -150,10 +158,11 @@ command row today.
 - `state`: `waiting`, `running`, `rebooting`, `done`, `failed`, `timed_out`,
   `skipped`, `canceled`
 - `message`: e.g. "fell back to passive", "did not come back within 10
-  minutes", "offline when the batch reached it", "batch stopped"
-- `started_at`, `rebooting_since` and `deadline` (set when the node enters
-  `rebooting`, from the command's completion time, and again when a resetting
-  node comes back on `autoreset`), `finished_at`
+  minutes", "stopped sending heartbeats before it finished its command",
+  "offline when the batch reached it", "batch stopped"
+- `started_at`, `rebooting_since` and `deadline` (set when the node starts,
+  again when it enters `rebooting`, from the command's completion time, and
+  again when a resetting node comes back on `autoreset`), `finished_at`
 
 `done`, `failed`, `timed_out`, `skipped` and `canceled` are final. A final row
 never changes again.
@@ -163,8 +172,9 @@ If a node, or the command of a running row, is deleted, the row settles as
 action, not a failure, so it does not stop the batch.
 
 `NodeCommand.BatchID` stays, so a command can be traced to its batch.
-`NodeCommand.FailFast`, `store.CancelBatchAfterFailure` and the
-`CancelPendingInBatch` path are removed. `SummarizeBatch` is replaced by reading
+`NodeCommand.FailFast` and `store.CancelBatchAfterFailure` are removed. The
+undelivered commands a stopped batch cancels are the commands of its running
+rows, so the batch store cancels them by ID. `SummarizeBatch` is replaced by reading
 the batch record.
 
 ## Scheduling
@@ -192,24 +202,26 @@ Events that settle a node, then fill free slots or stop the batch:
   registration), which settles its `rebooting` rows from the boot state as in
   the table above.
 - A periodic check (for example every 30 seconds) that settles every
-  `rebooting` node past its deadline as `timed_out`. When it does, the node's
-  upgrade or reset lifecycle state is marked failed as well, with the same
-  message. If the node comes back later, its lifecycle state may become done,
+  `rebooting` node past its deadline as `timed_out`, and every `running` node
+  past its deadline that is gone, as described above. When a `rebooting` node
+  times out, its upgrade or reset lifecycle state is marked failed as well,
+  with the same message. If the node comes back later, its lifecycle state may become done,
   but its batch row stays `timed_out`.
 
 After a node settles:
 
 - If it failed and the batch has stop-on-failure on: the batch becomes
-  `stopped` with the reason and the node, and every `waiting` row becomes
-  `canceled` with "batch stopped".
+  `stopped` with the reason and the node. Every `waiting` row, and every
+  `running` row whose command is still `Pending`, becomes `canceled` with
+  "batch stopped", and those commands are canceled.
 - Otherwise, if waiting nodes remain, start the next online ones until N nodes
   hold a slot. If no node holds a slot and every waiting node is offline, they
   settle as `skipped`.
 - When every row is final, set the batch phase and `finished_at`.
 
 Stopping by hand: the same as a stop on failure, with `stopped_by_node_id`
-null and the reason "stopped by the user". Running nodes finish and settle
-normally.
+null and the reason "stopped by the user". Nodes whose command reached the
+agent finish and settle normally.
 
 The batch state lives in the database, so a restart of AuroraBoot picks up
 where it left off: the periodic check also fills free slots of running batches,
