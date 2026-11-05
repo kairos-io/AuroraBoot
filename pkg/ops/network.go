@@ -127,7 +127,11 @@ func downloadOnce(ctx context.Context, url, dst string) (string, error) {
 	req = req.WithContext(ctx)
 	internal.Log.Logger.Info().Msgf("Downloading %v...", req.URL())
 	resp := client.Do(req)
-	internal.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
+	// A cancel or connect error before the response headers leaves
+	// HTTPResponse nil; the loop below then reports resp.Err().
+	if resp.HTTPResponse != nil {
+		internal.Log.Logger.Printf("%s:  %v", url, resp.HTTPResponse.Status)
+	}
 
 	// start UI loop
 	t := time.NewTicker(500 * time.Millisecond)

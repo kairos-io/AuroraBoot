@@ -74,3 +74,27 @@ var _ = Describe("download canceled mid-transfer", Label("network"), func() {
 		}, 500*time.Millisecond, 50*time.Millisecond).Should(BeTrue(), "the partial file came back")
 	})
 })
+
+var _ = Describe("download canceled before the response headers", Label("network"), func() {
+	It("returns the cancellation instead of panicking on a missing response", func() {
+		// The server never answers: it holds every request until the client
+		// goes away, so grab has no HTTP response when ctx is canceled.
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			<-r.Context().Done()
+		}))
+		defer srv.Close()
+
+		dst := filepath.Join(GinkgoT().TempDir(), "kairos.iso")
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		time.AfterFunc(100*time.Millisecond, cancel)
+
+		var err error
+		Expect(func() {
+			_, err = download(ctx, srv.URL+"/kairos.iso", dst)
+		}).NotTo(Panic())
+		Expect(err).To(HaveOccurred())
+		Expect(ctx.Err()).To(MatchError(context.Canceled))
+		Expect(dst).NotTo(BeAnExistingFile())
+	})
+})
