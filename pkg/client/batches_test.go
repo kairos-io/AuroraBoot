@@ -146,5 +146,21 @@ var _ = Describe("BatchesService", func() {
 			Expect(gotBody).NotTo(HaveKey("stopOnFailure"))
 			Expect(gotBody).NotTo(HaveKey("rebootTimeoutSeconds"))
 		})
+
+		It("returns the busy nodes of a 409 in the APIError", func() {
+			status, reply = http.StatusConflict, `{"error":"nodes are already in a running batch","nodeIDs":["n1","n2"]}`
+			_, err := cli.Groups.SendCommand(context.Background(), "g1", client.GroupCommandRequest{Command: "upgrade"})
+			var apiErr *client.APIError
+			Expect(errors.As(err, &apiErr)).To(BeTrue())
+			Expect(apiErr.StatusCode).To(Equal(http.StatusConflict))
+			Expect(apiErr.NodeIDs).To(Equal([]string{"n1", "n2"}))
+
+			_, err = cli.Commands.CreateBulk(context.Background(), client.BulkCommandRequest{
+				Selector: client.CommandSelector{GroupID: "g1"},
+				Command:  "upgrade",
+			})
+			Expect(errors.As(err, &apiErr)).To(BeTrue())
+			Expect(apiErr.NodeIDs).To(Equal([]string{"n1", "n2"}))
+		})
 	})
 })

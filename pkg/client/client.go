@@ -132,6 +132,9 @@ type APIError struct {
 	// Code is the server's stable, machine-readable discriminator (e.g.
 	// "NoCapacity", "ClaimMismatch") when several conditions share one status.
 	Code string `json:"code,omitempty"`
+	// NodeIDs lists the nodes a 409 from starting a batch names as already in
+	// a running batch.
+	NodeIDs []string `json:"nodeIDs,omitempty"`
 }
 
 // Error implements the error interface.
