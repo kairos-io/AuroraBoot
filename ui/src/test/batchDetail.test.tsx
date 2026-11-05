@@ -427,6 +427,47 @@ describe("BatchDetail", () => {
     expect(sendBulkCommand.mock.calls[0][2]).toEqual(args);
   });
 
+  describe("repeating an image upgrade that carried extensions", () => {
+    const args = {
+      source: "oci:quay.io/kairos/ubuntu:v4.4.0",
+      extensions: JSON.stringify([{ name: "a", type: "sysext", version: "1", source: "s" }]),
+    };
+
+    async function openRepeat() {
+      getBatch.mockResolvedValue(
+        makeBatch({
+          args,
+          phase: "stopped",
+          stoppedAt: "2026-10-23T10:30:00Z",
+          stopReason: "x",
+          counts: { failed: 2 },
+          nodes: [row("n1", "failed"), row("n2", "failed")],
+        }),
+      );
+      sendBulkCommand.mockResolvedValue(makeBatch({ id: "b2" }));
+      renderPage();
+      fireEvent.click(await screen.findByRole("button", { name: "Start a new batch for the 2 remaining nodes" }));
+      return screen.findByRole("dialog");
+    }
+
+    it("sends the original extensions when the image is unchanged", async () => {
+      const dialog = await openRepeat();
+      fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade 2 nodes" }));
+      await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+      expect(sendBulkCommand.mock.calls[0][2]).toEqual(args);
+    });
+
+    it("leaves the extensions out when the image changed", async () => {
+      const dialog = await openRepeat();
+      fireEvent.change(within(dialog).getByDisplayValue("quay.io/kairos/ubuntu:v4.4.0"), {
+        target: { value: "quay.io/kairos/ubuntu:v4.5.0" },
+      });
+      fireEvent.click(within(dialog).getByRole("button", { name: "Upgrade 2 nodes" }));
+      await waitFor(() => expect(sendBulkCommand).toHaveBeenCalled());
+      expect(sendBulkCommand.mock.calls[0][2]).toEqual({ source: "oci:quay.io/kairos/ubuntu:v4.5.0" });
+    });
+  });
+
   it("leaves every extension unticked when the artifact upgrade sent none", async () => {
     const args = { source: "artifact:art1" };
     resolveBundle.mockResolvedValue([

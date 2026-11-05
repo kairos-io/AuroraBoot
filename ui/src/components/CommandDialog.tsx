@@ -366,6 +366,12 @@ export function CommandDialog({
         }
       } else if (imageArg) {
         args.source = "oci:" + imageArg;
+        // The form has no extension picker for an image, but the API takes
+        // extensions with any source, so a repeated upgrade of the same image
+        // keeps the ones it carried.
+        if (defaultArgs?.extensions && defaultArgs.source === args.source) {
+          args.extensions = defaultArgs.extensions;
+        }
       }
       if (command === "upgrade-recovery") {
         args.recovery = "true";
