@@ -356,8 +356,29 @@ func (s *Store) UpdatePhase(ctx context.Context, id string, phase string) error 
 	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).Where("id = ?", id).Update("phase", phase).Error
 }
 
+// SetGroup reports gorm.ErrRecordNotFound when either the node or the target
+// group does not exist. SQLite does not enforce the group_id foreign key, so
+// the group is looked up rather than left to the database.
 func (s *Store) SetGroup(ctx context.Context, nodeID string, groupID *string) error {
-	return s.db.WithContext(ctx).Model(&store.ManagedNode{}).Where("id = ?", nodeID).Update("group_id", groupID).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if groupID != nil {
+			var count int64
+			if err := tx.Model(&store.NodeGroup{}).Where("id = ?", *groupID).Count(&count).Error; err != nil {
+				return err
+			}
+			if count == 0 {
+				return gorm.ErrRecordNotFound
+			}
+		}
+		res := tx.Model(&store.ManagedNode{}).Where("id = ?", nodeID).Update("group_id", groupID)
+		if res.Error != nil {
+			return res.Error
+		}
+		if res.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
+		}
+		return nil
+	})
 }
 
 func (s *Store) SetLabels(ctx context.Context, nodeID string, labels map[string]string) error {

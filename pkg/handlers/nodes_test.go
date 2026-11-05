@@ -288,6 +288,7 @@ var _ = Describe("NodeHandler", func() {
 
 		It("should set a group on a node", func() {
 			ns.nodes = []*store.ManagedNode{{ID: "node-1"}}
+			gs.groups = []*store.NodeGroup{{ID: "grp-1"}}
 
 			rec := setGroup(`{"groupID":"grp-1"}`)
 
