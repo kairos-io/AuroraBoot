@@ -189,6 +189,9 @@ export function CommandDialog({
 }: CommandDialogProps) {
   const rolloutIds = useId();
   const [concurrencyArg, setConcurrencyArg] = useState("");
+  // A number input reports text it cannot read, such as "two", as an empty
+  // value, which would otherwise mean all nodes at once.
+  const [concurrencyUnreadable, setConcurrencyUnreadable] = useState(false);
   const [stopOnFailure, setStopOnFailure] = useState(true);
   const [timeoutMinutes, setTimeoutMinutes] = useState("10");
   const [command, setCommand] = useState<CommandKey | "">("");
@@ -226,7 +229,8 @@ export function CommandDialog({
   const showRollout = isRollout || (startsBatch && reboots);
   // The server reads a missing concurrency as all nodes at once, so a value
   // that is not a whole number must block the submit instead of being dropped.
-  const concurrencyValid = !isRollout || /^\d*$/.test(concurrencyArg.trim());
+  const concurrencyValid =
+    !isRollout || (!concurrencyUnreadable && /^\d*$/.test(concurrencyArg.trim()));
   // The resolve effect reads the defaults through these strings, so a parent
   // that passes a new defaultArgs object with the same content (a polled
   // batch) does not resolve again and reset the operator's picks.
@@ -238,6 +242,7 @@ export function CommandDialog({
       setConcurrencyArg(
         defaultRollout.concurrency ? String(defaultRollout.concurrency) : "",
       );
+      setConcurrencyUnreadable(false);
       setStopOnFailure(defaultRollout.stopOnFailure);
       setTimeoutMinutes(String(defaultRollout.rebootTimeoutSeconds / 60));
     }
@@ -276,6 +281,7 @@ export function CommandDialog({
       setUpgradeSourceMode("image");
       setSelectedArtifactId("");
       setConcurrencyArg("");
+      setConcurrencyUnreadable(false);
       setStopOnFailure(true);
       setTimeoutMinutes("10");
     }
@@ -710,6 +716,9 @@ export function CommandDialog({
                         aria-invalid={!concurrencyValid}
                         aria-describedby={`${rolloutIds}-concurrency-help`}
                         onChange={(e) => setConcurrencyArg(e.target.value)}
+                        // React drops the change event while the value stays
+                        // empty, so the unreadable flag is read on every input.
+                        onInput={(e) => setConcurrencyUnreadable(e.currentTarget.validity.badInput)}
                       />
                       {concurrencyValid ? (
                         <p id={`${rolloutIds}-concurrency-help`} className="text-xs text-muted-foreground">

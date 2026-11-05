@@ -139,6 +139,18 @@ describe("the Nodes at a time setting", () => {
     expect(onSubmit).not.toHaveBeenCalled();
   });
 
+  it("blocks the submit for text the browser cannot read as a number", () => {
+    const onSubmit = vi.fn();
+    openForm(onSubmit, "Reboot", 3);
+    const input = screen.getByLabelText("Nodes at a time");
+    // A browser reports "two" in a number input as an empty value with
+    // validity.badInput set; jsdom never sets it, so the test does.
+    Object.defineProperty(input, "validity", { value: { badInput: true }, configurable: true });
+    fireEvent.input(input, { target: { value: "" } });
+    expect(screen.getByText("Enter a whole number, or leave it empty to run on all nodes at once.")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reboot 3 nodes" })).toBeDisabled();
+  });
+
   it("treats 0 as all nodes at once", () => {
     const onSubmit = vi.fn();
     openForm(onSubmit, "Reboot", 3);
