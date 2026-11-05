@@ -19,6 +19,70 @@ export function commandLabel(command: string): string {
   return commandLabels[command] ?? command;
 }
 
+export interface CommandDetail {
+  label: string;
+  value: string;
+}
+
+function extensionsText(raw: string): string {
+  try {
+    const rows = JSON.parse(raw) as { type: string; name: string }[];
+    return rows.map((e) => `${e.type}/${e.name}`).join(", ");
+  } catch {
+    return raw;
+  }
+}
+
+// commandDetails turns a command's arguments into labelled values a person
+// can read. artifactName resolves an artifact ID to its name, if it has one.
+// The recovery flag is left out because the command label already says it.
+export function commandDetails(
+  command: string,
+  args: Record<string, string> | null | undefined,
+  artifactName: (id: string) => string | undefined,
+): CommandDetail[] {
+  const details: CommandDetail[] = [];
+  for (const [key, value] of Object.entries(args ?? {})) {
+    if (key === "source" && value.startsWith("oci:")) {
+      details.push({ label: "Image", value: value.slice("oci:".length) });
+    } else if (key === "source" && value.startsWith("artifact:")) {
+      const id = value.slice("artifact:".length);
+      details.push({ label: "Artifact", value: artifactName(id) || id });
+    } else if (key === "source") {
+      details.push({ label: "Source", value });
+    } else if (key === "extensions" && command !== "extension") {
+      details.push({ label: "Extensions", value: extensionsText(value) });
+    } else if (key === "recovery" && command === "upgrade-recovery") {
+      continue;
+    } else if (key === "config") {
+      details.push({ label: "Cloud config", value });
+    } else if (key === "command") {
+      details.push({ label: "Shell command", value });
+    } else {
+      details.push({ label: key, value });
+    }
+  }
+  return details;
+}
+
+// commandSummary is the most telling argument of a command on one line, such
+// as the image an upgrade installs, or "" when it has none.
+export function commandSummary(details: CommandDetail[]): string {
+  const first = details[0];
+  if (!first) return "";
+  if (first.label === "Image" || first.label === "Shell command") return first.value;
+  return `${first.label.toLowerCase()} ${first.value.split("\n")[0]}`;
+}
+
+// targetsText names the batch's first nodes and counts the ones left out.
+export function targetsText(batch: Batch): string {
+  const names = batch.hostnames ?? [];
+  if (names.length === 0) return "";
+  const total = Object.values(batch.counts).reduce((sum, n) => sum + (n ?? 0), 0);
+  const rest = total - names.length;
+  return rest > 0 ? `${names.join(", ")} and ${rest} more` : names.join(", ");
+}
+
 // The states a node can end in without having finished its command.
 const remainingStates: BatchNodeState[] = ["failed", "timed_out", "skipped", "canceled"];
 

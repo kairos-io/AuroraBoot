@@ -40,6 +40,9 @@ export interface Batch {
   stopReason: string;
   stoppedByNodeID: string | null;
   counts: Partial<Record<BatchNodeState, number>>;
+  // The hostnames of the first few nodes in start order. Only the batch list
+  // has them.
+  hostnames?: string[];
   nodes?: BatchNode[];
 }
 

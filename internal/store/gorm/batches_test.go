@@ -2,6 +2,7 @@ package gorm_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"time"
 
@@ -82,6 +83,23 @@ var _ = Describe("Gorm batch store", func() {
 		Expect(err).NotTo(HaveOccurred())
 		Expect(page).To(HaveLen(2))
 		Expect(total).To(Equal(3))
+	})
+
+	It("lists each batch with the hostnames of its first nodes in start order", func() {
+		var rows []*store.BatchNode
+		for i := 7; i >= 0; i-- {
+			row := waiting("b1", fmt.Sprintf("n%d", i), i)
+			row.Hostname = fmt.Sprintf("host-%d", i)
+			rows = append(rows, row)
+		}
+		create("b1", nil, rows...)
+		create("b2", nil, &store.BatchNode{BatchID: "b2", NodeID: "n9", Hostname: "host-9", State: store.BatchNodeWaiting})
+
+		list, _, err := s.BatchList(ctx, store.BatchFilter{})
+		Expect(err).NotTo(HaveOccurred())
+		byID := map[string]*store.CommandBatch{list[0].ID: list[0], list[1].ID: list[1]}
+		Expect(byID["b1"].Hostnames).To(Equal([]string{"host-0", "host-1", "host-2", "host-3", "host-4"}))
+		Expect(byID["b2"].Hostnames).To(Equal([]string{"host-9"}))
 	})
 
 	It("reports nodes with a row that is not final as busy", func() {

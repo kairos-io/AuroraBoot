@@ -3412,6 +3412,13 @@ const docTemplate = `{
                     "type": "string",
                     "x-nullable": true
                 },
+                "hostnames": {
+                    "description": "Hostnames holds the hostnames of the batch's first five nodes in start\norder (BatchListHostnames). Only the batch list fills it.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },

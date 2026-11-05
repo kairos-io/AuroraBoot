@@ -22,8 +22,9 @@ vi.mock("@/api/nodes", () => ({
   listNodes: (...a: unknown[]) => listNodes(...a),
 }));
 const resolveBundle = vi.fn();
+const listArtifacts = vi.fn();
 vi.mock("@/api/artifacts", () => ({
-  listArtifacts: vi.fn().mockResolvedValue([]),
+  listArtifacts: (...a: unknown[]) => listArtifacts(...a),
   resolveBundle: (...a: unknown[]) => resolveBundle(...a),
 }));
 
@@ -89,6 +90,7 @@ async function tick(ms: number) {
 beforeEach(() => {
   vi.clearAllMocks();
   resolveBundle.mockResolvedValue([]);
+  listArtifacts.mockResolvedValue([]);
   listNodes.mockResolvedValue(
     ["n1", "n2", "n3", "n4", "n9"].map((id) => ({ id, hostname: `host-${id}` })),
   );
@@ -99,6 +101,24 @@ afterEach(() => {
 });
 
 describe("BatchDetail", () => {
+  it("shows the command's arguments and the selection it targeted", async () => {
+    listArtifacts.mockResolvedValue([{ id: "a1", name: "edge v4.4" }]);
+    getBatch.mockResolvedValue(
+      makeBatch({
+        args: { source: "artifact:a1", extensions: JSON.stringify([{ type: "sysext", name: "k3s" }]) },
+        selection: "2 selected nodes",
+        nodes: [row("n1", "waiting"), row("n2", "waiting", { position: 1 })],
+      }),
+    );
+    renderPage();
+    const details = await screen.findByRole("region", { name: "Command" });
+    await waitFor(() => expect(within(details).getByText("edge v4.4")).toBeInTheDocument());
+    expect(within(details).getByText("Artifact")).toBeInTheDocument();
+    expect(within(details).getByText("sysext/k3s")).toBeInTheDocument();
+    expect(within(details).getByText("Targets")).toBeInTheDocument();
+    expect(within(details).getByText("2 selected nodes")).toBeInTheDocument();
+  });
+
   it("explains why a stopped batch stopped", async () => {
     getBatch.mockResolvedValue(
       makeBatch({

@@ -107,6 +107,23 @@ var _ = Describe("Gorm batch store on PostgreSQL", func() {
 		return b, nodes, since
 	}
 
+	It("lists a batch with the hostnames of its first nodes in start order", func() {
+		b := &store.CommandBatch{ID: uuid.NewString(), Command: store.CmdUpgrade, Concurrency: 1}
+		var rows []*store.BatchNode
+		for i := 6; i >= 0; i-- {
+			rows = append(rows, &store.BatchNode{
+				BatchID: b.ID, NodeID: uuid.NewString(), Position: i,
+				Hostname: "host-" + string(rune('a'+i)), State: store.BatchNodeWaiting,
+			})
+		}
+		Expect(s.BatchCreate(ctx, b, rows)).To(Succeed())
+
+		list, _, err := s.BatchList(ctx, store.BatchFilter{})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(list).To(HaveLen(1))
+		Expect(list[0].Hostnames).To(Equal([]string{"host-a", "host-b", "host-c", "host-d", "host-e"}))
+	})
+
 	It("stops the batch when a node comes back on a fallback", func() {
 		b, nodes, since := rebootingOnPostgres(2)
 

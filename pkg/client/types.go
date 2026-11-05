@@ -162,7 +162,9 @@ type Batch struct {
 	StopReason           string            `json:"stopReason"`
 	StoppedByNodeID      *string           `json:"stoppedByNodeID"`
 	Counts               map[string]int    `json:"counts"`
-	Nodes                []BatchNode       `json:"nodes,omitempty"`
+	// Hostnames holds the hostnames of the batch's first nodes. Only lists fill it.
+	Hostnames []string    `json:"hostnames,omitempty"`
+	Nodes     []BatchNode `json:"nodes,omitempty"`
 }
 
 // BatchList is one page of batches and the total number that match.

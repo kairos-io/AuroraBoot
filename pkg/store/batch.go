@@ -68,6 +68,9 @@ type CommandBatch struct {
 	StoppedByNodeID      *string           `json:"stoppedByNodeID" extensions:"x-nullable"`
 	// Counts maps each node state to how many nodes are in it.
 	Counts map[string]int `json:"counts" gorm:"-"`
+	// Hostnames holds the hostnames of the batch's first five nodes in start
+	// order (BatchListHostnames). Only the batch list fills it.
+	Hostnames []string `json:"hostnames,omitempty" gorm:"-"`
 	// Nodes is filled by BatchGet only.
 	Nodes []*BatchNode `json:"nodes,omitempty" gorm:"foreignKey:BatchID"`
 }
@@ -91,6 +94,9 @@ type BatchNode struct {
 
 // TableName names the per-node table of a batch.
 func (BatchNode) TableName() string { return "command_batch_nodes" }
+
+// BatchListHostnames is how many hostnames BatchList returns per batch.
+const BatchListHostnames = 5
 
 // BatchFilter narrows BatchStore.List.
 type BatchFilter struct {

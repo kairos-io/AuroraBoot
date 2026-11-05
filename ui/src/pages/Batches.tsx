@@ -14,7 +14,15 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { commandLabel, countsText, phaseStatus } from "@/lib/batch";
+import { useArtifactNames } from "@/hooks/useArtifactNames";
+import {
+  commandDetails,
+  commandLabel,
+  commandSummary,
+  countsText,
+  phaseStatus,
+  targetsText,
+} from "@/lib/batch";
 import { timeAgo } from "@/lib/time";
 
 const PAGE_SIZE = 50;
@@ -25,6 +33,7 @@ export function Batches() {
   const [offset, setOffset] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const artifactName = useArtifactNames();
 
   useEffect(() => {
     let live = true;
@@ -75,35 +84,65 @@ export function Batches() {
               <TableHeader>
                 <TableRow>
                   <TableHead>Command</TableHead>
-                  <TableHead>Selection</TableHead>
+                  <TableHead>Targets</TableHead>
                   <TableHead>Phase</TableHead>
                   <TableHead>Nodes</TableHead>
                   <TableHead>Started</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {batches.map((b) => (
-                  <TableRow key={b.id}>
-                    <TableCell className="font-medium">
-                      <Link to={`/batches/${b.id}`} className="hover:underline">
-                        {commandLabel(b.command)}
-                      </Link>
-                    </TableCell>
-                    <TableCell>{b.selection}</TableCell>
-                    <TableCell>
-                      <StatusBadge status={phaseStatus(b.phase)} label={b.phase} />
-                    </TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
-                      {countsText(b)}
-                    </TableCell>
-                    <TableCell
-                      className="text-xs text-muted-foreground"
-                      title={new Date(b.createdAt).toLocaleString()}
-                    >
-                      {timeAgo(b.createdAt)}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {batches.map((b) => {
+                  const summary = commandSummary(
+                    commandDetails(b.command, b.args, artifactName),
+                  );
+                  const targets = targetsText(b);
+                  return (
+                    <TableRow key={b.id}>
+                      <TableCell className="max-w-xs">
+                        <Link
+                          to={`/batches/${b.id}`}
+                          className="font-medium hover:underline"
+                        >
+                          {commandLabel(b.command)}
+                        </Link>
+                        {summary && (
+                          <div
+                            className="truncate font-mono text-xs text-muted-foreground"
+                            title={summary}
+                          >
+                            {summary}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell className="max-w-xs">
+                        <div>{b.selection}</div>
+                        {targets && (
+                          <div
+                            className="truncate text-xs text-muted-foreground"
+                            title={targets}
+                          >
+                            {targets}
+                          </div>
+                        )}
+                      </TableCell>
+                      <TableCell>
+                        <StatusBadge
+                          status={phaseStatus(b.phase)}
+                          label={b.phase}
+                        />
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground">
+                        {countsText(b)}
+                      </TableCell>
+                      <TableCell
+                        className="text-xs text-muted-foreground"
+                        title={new Date(b.createdAt).toLocaleString()}
+                      >
+                        {timeAgo(b.createdAt)}
+                      </TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           )}

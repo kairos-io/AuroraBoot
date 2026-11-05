@@ -768,6 +768,13 @@ definitions:
       groupID:
         type: string
         x-nullable: true
+      hostnames:
+        description: |-
+          Hostnames holds the hostnames of the batch's first five nodes in start
+          order (BatchListHostnames). Only the batch list fills it.
+        items:
+          type: string
+        type: array
       id:
         type: string
       nodes:

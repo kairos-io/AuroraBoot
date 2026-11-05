@@ -68,8 +68,8 @@ func (s *Store) BatchGet(ctx context.Context, id string) (*store.CommandBatch, e
 	return &b, nil
 }
 
-// BatchList returns batches newest first, without nodes, and the total number
-// matching the filter.
+// BatchList returns batches newest first, without nodes but with the
+// hostnames of their first nodes, and the total number matching the filter.
 func (s *Store) BatchList(ctx context.Context, f store.BatchFilter) ([]*store.CommandBatch, int, error) {
 	q := s.db.WithContext(ctx).Model(&store.CommandBatch{})
 	if f.GroupID != "" {
@@ -91,6 +91,9 @@ func (s *Store) BatchList(ctx context.Context, f store.BatchFilter) ([]*store.Co
 		return nil, 0, err
 	}
 	if err := s.fillBatchCounts(ctx, batches); err != nil {
+		return nil, 0, err
+	}
+	if err := s.fillBatchHostnames(ctx, batches); err != nil {
 		return nil, 0, err
 	}
 	return batches, int(total), nil
@@ -121,6 +124,35 @@ func (s *Store) fillBatchCounts(ctx context.Context, batches []*store.CommandBat
 	}
 	for _, r := range rows {
 		byID[r.BatchID].Counts[r.State] = r.N
+	}
+	return nil
+}
+
+// fillBatchHostnames sets the hostnames of each batch's first nodes. Positions
+// count from 0 in start order, so the first nodes are those below the limit.
+func (s *Store) fillBatchHostnames(ctx context.Context, batches []*store.CommandBatch) error {
+	byID := make(map[string]*store.CommandBatch, len(batches))
+	ids := make([]string, 0, len(batches))
+	for _, b := range batches {
+		byID[b.ID] = b
+		ids = append(ids, b.ID)
+	}
+	if len(ids) == 0 {
+		return nil
+	}
+	var rows []struct {
+		BatchID  string
+		Hostname string
+	}
+	if err := s.db.WithContext(ctx).Model(&store.BatchNode{}).
+		Select("batch_id, hostname").
+		Where("batch_id IN ? AND position < ?", ids, store.BatchListHostnames).
+		Order("position").
+		Scan(&rows).Error; err != nil {
+		return err
+	}
+	for _, r := range rows {
+		byID[r.BatchID].Hostnames = append(byID[r.BatchID].Hostnames, r.Hostname)
 	}
 	return nil
 }

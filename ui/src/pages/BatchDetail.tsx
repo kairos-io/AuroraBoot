@@ -18,7 +18,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
+import { useArtifactNames } from "@/hooks/useArtifactNames";
 import {
+  commandDetails,
   commandLabel,
   commandReboots,
   isBatchActive,
@@ -83,6 +85,7 @@ function BatchView({ id }: { id: string | undefined }) {
   // The IDs of the nodes that exist now, or null until they are known or when
   // the list could not be fetched.
   const [existingIDs, setExistingIDs] = useState<Set<string> | null>(null);
+  const artifactName = useArtifactNames();
 
   const load = useCallback(() => {
     if (!id) return;
@@ -160,6 +163,7 @@ function BatchView({ id }: { id: string | undefined }) {
   }
 
   const rows = batch.nodes ?? [];
+  const details = commandDetails(batch.command, batch.args, artifactName);
   const remaining = remainingNodes(batch, existingIDs);
   const nodeChoices = remaining.map((n) => ({ id: n.nodeID, label: n.hostname }));
   const rollout = {
@@ -237,6 +241,25 @@ function BatchView({ id }: { id: string | undefined }) {
           </div>
         </div>
       )}
+
+      <section aria-label="Command" className="mb-6">
+        <Card>
+          <CardContent className="p-4">
+            <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-6 gap-y-2 text-sm">
+              <dt className="text-muted-foreground">Command</dt>
+              <dd>{commandLabel(batch.command)}</dd>
+              {details.map((d) => (
+                <div key={d.label} className="contents">
+                  <dt className="text-muted-foreground">{d.label}</dt>
+                  <dd className="whitespace-pre-wrap break-all font-mono text-xs leading-5">{d.value}</dd>
+                </div>
+              ))}
+              <dt className="text-muted-foreground">Targets</dt>
+              <dd>{batch.selection}</dd>
+            </dl>
+          </CardContent>
+        </Card>
+      </section>
 
       <div className="mb-4 flex flex-wrap gap-x-6 gap-y-1 text-sm text-muted-foreground">
         {nonZeroCounts(batch).map(([label, n]) => (
