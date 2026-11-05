@@ -133,10 +133,16 @@ export function GroupDetail() {
   ) {
     if (!id) return;
     let batch: Batch;
-    if (cmdTarget === "selection") {
-      batch = await sendBulkCommand({ nodeIDs: selectedIDs }, command, args, rollout);
-    } else {
-      batch = await sendGroupCommand(id, command, args, rollout);
+    try {
+      // The group ID narrows nothing here, since every selected node is in
+      // the group, but it records the group so its page lists the batch.
+      batch =
+        cmdTarget === "selection"
+          ? await sendBulkCommand({ groupID: id, nodeIDs: selectedIDs }, command, args, rollout)
+          : await sendGroupCommand(id, command, args, rollout);
+    } catch (err) {
+      toast(`Failed to send command: ${(err as Error).message}`, "error");
+      return;
     }
     setCmdTarget(null);
     navigate(`/batches/${batch.id}`);
