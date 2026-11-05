@@ -103,12 +103,13 @@ func (d *Deployer) Probe(ctx context.Context) (*ProbeReport, error) {
 	// Session auth proves a SessionService, and auto only falls back to Basic when
 	// the ServiceRoot has none. An explicit basic Connect never read the
 	// ServiceRoot, so read it here: the auth mode used says nothing about it.
+	// HasSessionService is informational, so a failed read (a 5xx, a body that
+	// does not parse, a redirect our stricter client rejects) leaves it false
+	// rather than failing a probe that worked before this read existed.
 	if d.usedBasicAuth && d.authMode == AuthModeBasic {
-		hasSession, err := d.serviceRootHasSessionService(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("reading the ServiceRoot for a SessionService: %w", d.scrub(err))
+		if hasSession, err := d.serviceRootHasSessionService(ctx); err == nil {
+			report.HasSessionService = hasSession
 		}
-		report.HasSessionService = hasSession
 	}
 
 	systems, err := d.client.GetService().Systems()
