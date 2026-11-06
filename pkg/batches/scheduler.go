@@ -130,6 +130,13 @@ func (s *Scheduler) Start(ctx context.Context, req StartRequest) (*store.Command
 	return s.store.Get(ctx, b.ID)
 }
 
+// BusyNodes returns the IDs among nodeIDs that have a row that is not final in
+// any batch, stopped batches included: a stopped batch still settles the nodes
+// it started.
+func (s *Scheduler) BusyNodes(ctx context.Context, nodeIDs []string) ([]string, error) {
+	return s.store.BusyNodes(ctx, nodeIDs)
+}
+
 // Advance advances one batch and delivers the commands it created. Errors are logged.
 func (s *Scheduler) Advance(ctx context.Context, batchID string) {
 	cmds, err := s.store.Advance(ctx, batchID, s.clock())

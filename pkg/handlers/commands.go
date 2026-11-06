@@ -4,12 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"fmt"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/kairos-io/AuroraBoot/pkg/auth"
+	"github.com/kairos-io/AuroraBoot/pkg/batches"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/kairos-io/AuroraBoot/pkg/ws"
 	"github.com/labstack/echo/v4"
@@ -25,6 +29,9 @@ type CommandHandler struct {
 	// resetTimeout also bounds delivery: an offline node must not execute a
 	// reset after its node-level lifecycle has already timed out.
 	resetTimeout time.Duration
+	// batches starts and advances rolling batches. nil answers the batch
+	// endpoints with 503.
+	batches *batches.Scheduler
 }
 
 // NewCommandHandler creates a new CommandHandler.
@@ -57,22 +64,37 @@ func (h *CommandHandler) setResetExpiry(cmd *store.NodeCommand) {
 	cmd.ExpiresAt = &expires
 }
 
+// WithBatches wires the scheduler the group and bulk endpoints start batches
+// with and that command status reports advance. Returns the handler for chaining.
+func (h *CommandHandler) WithBatches(s *batches.Scheduler) *CommandHandler {
+	h.batches = s
+	return h
+}
+
 // createCommandRequest is the expected body for creating a command.
 type createCommandRequest struct {
 	Command string            `json:"command"`
 	Args    map[string]string `json:"args"`
 }
 
-// groupCommandRequest is the expected body for fanning a command out over a
-// group. It is deliberately not bulkCommandRequest: the group is named in the
-// path, so a selector in the body would be silently ignored.
+// rolloutOptions are the batch settings the group and bulk endpoints accept.
+type rolloutOptions struct {
+	// Concurrency caps how many nodes run at once. 0 runs every node at once.
+	Concurrency int `json:"concurrency,omitempty"`
+	// StopOnFailure stops the batch when a node fails. nil means true.
+	StopOnFailure *bool `json:"stopOnFailure,omitempty"`
+	// RebootTimeoutSeconds is how long a node that reboots may take to come
+	// back. 0 means store.DefaultRebootTimeoutSeconds.
+	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
+}
+
+// groupCommandRequest is the expected body for sending a command to a group.
+// It is deliberately not bulkCommandRequest: the group is named in the path,
+// so a selector in the body would be silently ignored.
 type groupCommandRequest struct {
 	Command string            `json:"command"`
 	Args    map[string]string `json:"args"`
-	// FailFast cancels the commands of this fan-out that are still Pending
-	// once any node of it reports Failed. A node that was online when the
-	// fan-out ran already holds its command and is not stopped.
-	FailFast bool `json:"failFast,omitempty"`
+	rolloutOptions
 }
 
 // Create handles POST /api/v1/nodes/:nodeID/commands.
@@ -98,6 +120,19 @@ func (h *CommandHandler) Create(c echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
 	}
 
+	// A batch settles a node that reboots from the node's lifecycle state,
+	// which a single-node upgrade, reset or reboot shares. A node whose batch
+	// row is not final, in a stopped batch too, is still settled by it.
+	if store.RebootsNode(req.Command) && h.batches != nil {
+		busy, err := h.batches.BusyNodes(c.Request().Context(), []string{nodeID})
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to check the node's batches"})
+		}
+		if len(busy) > 0 {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "node is in a running batch"})
+		}
+	}
+
 	cmd := &store.NodeCommand{
 		ID:            uuid.New().String(),
 		ManagedNodeID: nodeID,
@@ -117,7 +152,7 @@ func (h *CommandHandler) Create(c echo.Context) error {
 	}
 
 	// Push command via WebSocket if node is online.
-	h.pushCommand(c.Request().Context(), cmd)
+	h.PushCommand(c.Request().Context(), cmd)
 
 	return c.JSON(http.StatusCreated, cmd)
 }
@@ -127,12 +162,7 @@ type bulkCommandRequest struct {
 	Selector store.CommandSelector `json:"selector"`
 	Command  string                `json:"command"`
 	Args     map[string]string     `json:"args"`
-	// FailFast cancels the commands of this fan-out that are still Pending
-	// once any node of it reports Failed. A node that was online when the
-	// fan-out ran already holds its command and is not stopped. It defaults to
-	// false, so a caller that does not send it keeps the fan-out behaviour it
-	// had.
-	FailFast bool `json:"failFast,omitempty"`
+	rolloutOptions
 }
 
 // CreateBulk handles POST /api/v1/nodes/commands.
@@ -156,12 +186,7 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to find nodes"})
 	}
 
-	created, err := h.fanOut(ctx, nodes, req.Command, req.Args, req.FailFast)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
-	}
-
-	return c.JSON(http.StatusCreated, created)
+	return h.startBatch(c, req.Command, req.Args, req.rolloutOptions, nodes, selectorText(req.Selector, nodes), nil)
 }
 
 // CreateForGroup handles POST /api/v1/groups/:id/commands.
@@ -182,71 +207,91 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to find nodes in group"})
 	}
 
-	created, err := h.fanOut(ctx, nodes, req.Command, req.Args, req.FailFast)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create command"})
-	}
-
-	return c.JSON(http.StatusCreated, created)
+	return h.startBatch(c, req.Command, req.Args, req.rolloutOptions, nodes, "group "+groupName(groupID, nodes), &groupID)
 }
 
-// fanOut queues one command per node and pushes each to the nodes that are
-// online, which is what both the selector and the group endpoint do.
-//
-// Every row it creates carries the same BatchID, so the rollout can be read
-// back and reasoned about as one operation instead of as N unrelated commands.
-// The identifier is minted even when fail-fast is off: knowing which commands
-// came from the same request is what the batch status in the API is built on,
-// and it costs one column.
-//
-// The rows are published with one CreateBatch call before any of them is
-// pushed. CancelBatchAfterFailure can only cancel the siblings that exist as
-// Pending rows when a node reports Failed, and an agent can claim a committed
-// row through its own poll or a reconnect replay without waiting for the push.
-// Writing the batch row by row would let the first node fail and cancel the
-// batch before the later rows exist, and they would then be created Pending
-// and delivered anyway. CreateBatch also marks the reset or upgrade lifecycle
-// in the same transaction, so a cancel can never run before that state is set
-// and leave it behind.
-//
-// Delivery itself is still one unthrottled pass. Holding a node back until an
-// earlier one finishes is the concurrency limit, and that needs the held command
-// to be hidden from the agent's own GetPending poll as well, which is a change
-// to the delivery path rather than to this fan-out.
-func (h *CommandHandler) fanOut(ctx context.Context, nodes []*store.ManagedNode, command string, args map[string]string, failFast bool) ([]*store.NodeCommand, error) {
-	batchID := uuid.New().String()
-	created := make([]*store.NodeCommand, 0, len(nodes))
-	for _, node := range nodes {
-		cmd := &store.NodeCommand{
-			ID:            uuid.New().String(),
-			ManagedNodeID: node.ID,
-			Command:       command,
-			Args:          args,
-			Phase:         store.CommandPending,
-			BatchID:       batchID,
-			FailFast:      failFast,
+// startBatch validates the rollout options, starts a batch over nodes and
+// answers with the batch record.
+func (h *CommandHandler) startBatch(c echo.Context, command string, args map[string]string, opts rolloutOptions, nodes []*store.ManagedNode, selection string, groupID *string) error {
+	if h.batches == nil {
+		return c.JSON(http.StatusServiceUnavailable, map[string]string{"error": "batches are not available"})
+	}
+	if opts.Concurrency < 0 || opts.RebootTimeoutSeconds < 0 {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "concurrency and rebootTimeoutSeconds must not be negative"})
+	}
+	stopOnFailure := true
+	if opts.StopOnFailure != nil {
+		stopOnFailure = *opts.StopOnFailure
+	}
+	timeout := opts.RebootTimeoutSeconds
+	if timeout == 0 {
+		timeout = store.DefaultRebootTimeoutSeconds
+	}
+
+	b, err := h.batches.Start(c.Request().Context(), batches.StartRequest{
+		Command:              command,
+		Args:                 args,
+		Nodes:                nodes,
+		Selection:            selection,
+		GroupID:              groupID,
+		Concurrency:          opts.Concurrency,
+		StopOnFailure:        stopOnFailure,
+		RebootTimeoutSeconds: timeout,
+	})
+	var busy *batches.ErrNodesBusy
+	switch {
+	case errors.Is(err, batches.ErrNoNodes):
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "no nodes match the selection"})
+	case errors.As(err, &busy):
+		return c.JSON(http.StatusConflict, map[string]any{"error": "nodes are already in a running batch", "nodeIDs": busy.NodeIDs})
+	case err != nil:
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to start batch"})
+	}
+	return c.JSON(http.StatusCreated, b)
+}
+
+// selectorText describes a bulk selector for the batch's Selection, one part
+// per selector field, joined with ", ".
+func selectorText(sel store.CommandSelector, nodes []*store.ManagedNode) string {
+	var parts []string
+	if sel.GroupID != "" {
+		parts = append(parts, "group "+groupName(sel.GroupID, nodes))
+	}
+	if len(sel.Labels) > 0 {
+		pairs := make([]string, 0, len(sel.Labels))
+		for _, k := range slices.Sorted(maps.Keys(sel.Labels)) {
+			pairs = append(pairs, k+"="+sel.Labels[k])
 		}
-		h.setResetExpiry(cmd)
-		created = append(created, cmd)
+		parts = append(parts, "label "+strings.Join(pairs, ", "))
 	}
-	if err := h.commands.CreateBatch(ctx, created); err != nil {
-		return nil, err
+	if n := len(sel.NodeIDs); n == 1 {
+		parts = append(parts, "1 selected node")
+	} else if n > 1 {
+		parts = append(parts, fmt.Sprintf("%d selected nodes", n))
 	}
-	for _, cmd := range created {
-		h.pushCommand(ctx, cmd)
-	}
-	return created, nil
+	return strings.Join(parts, ", ")
 }
 
-// pushCommand attempts to deliver a command via WebSocket if the hub is available
-// and the target node is online.
+// groupName returns the name of group groupID from the group the node store
+// preloads on each node, or the ID when no node carries it.
+func groupName(groupID string, nodes []*store.ManagedNode) string {
+	for _, n := range nodes {
+		if n.Group != nil && n.Group.ID == groupID && n.Group.Name != "" {
+			return n.Group.Name
+		}
+	}
+	return groupID
+}
+
+// PushCommand attempts to deliver a command via WebSocket if the hub is available
+// and the target node is online. It is also the scheduler's Deliver.
 //
 // To avoid double-delivery (push over WS, then the agent re-polls the same
 // still-Pending command via GetCommands), the command is atomically claimed
 // Pending→Delivered first and only pushed if this call won the claim. When the
 // node is offline we do NOT claim, leaving the command Pending for the next poll
 // or reconnect. Errors are best-effort: the command is persisted either way.
-func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand) {
+func (h *CommandHandler) PushCommand(ctx context.Context, cmd *store.NodeCommand) {
 	if h.hub == nil || !h.hub.IsOnline(cmd.ManagedNodeID) {
 		return
 	}
@@ -275,6 +320,11 @@ func (h *CommandHandler) Delete(c echo.Context) error {
 	ctx := c.Request().Context()
 	if err := h.commands.Delete(ctx, commandID); err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "command not found"})
+	}
+	// A running batch row whose command is gone settles as canceled and frees
+	// its slot.
+	if h.batches != nil {
+		h.batches.Tick(ctx)
 	}
 	return c.NoContent(http.StatusNoContent)
 }
@@ -335,7 +385,7 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 				h.applyExtensionTracking(ctx, authNodeID, cmd)
 			}
 		}
-		h.cancelBatchOnFailure(ctx, commandID, req.Phase)
+		h.AdvanceBatchOf(ctx, commandID)
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 
@@ -351,62 +401,24 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 		}
 	}
 
-	h.cancelBatchOnFailure(ctx, commandID, req.Phase)
+	h.AdvanceBatchOf(ctx, commandID)
 
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 }
 
-// cancelBatchOnFailure stops the rest of a fail-fast batch when the status just
-// written is a failure.
-//
-// It re-reads the command rather than trusting the request, because the batch
-// identity and the fail-fast flag are the server's, not the reporting node's: a
-// node that put failFast and a foreign batchID in its status body could
-// otherwise stop a rollout it is not part of.
-//
-// The phase check here only saves the read; whether a batch is actually stopped
-// is decided by store.CancelBatchAfterFailure from the row, so removing this
-// line changes nothing but the cost. Errors are logged and not returned: the
-// status report itself succeeded, and telling the node to retry it would make
-// it report the same failure again.
-func (h *CommandHandler) cancelBatchOnFailure(ctx context.Context, commandID, phase string) {
-	if phase != store.CommandFailed {
+// AdvanceBatchOf advances the batch of the command whose status was just
+// written, so the batch settles the node and fills its slot. The batch comes
+// from the stored command, never from the reporting node's request. The
+// WebSocket status path reaches it through ws.AgentHandler.OnCommandPhase.
+func (h *CommandHandler) AdvanceBatchOf(ctx context.Context, commandID string) {
+	if h.batches == nil {
 		return
 	}
 	cmd, err := h.commands.GetByID(ctx, commandID)
-	if err != nil || cmd == nil {
+	if err != nil || cmd == nil || cmd.BatchID == "" {
 		return
 	}
-	// The row was just written with this phase; assigning it keeps the decision
-	// from depending on whether the read observed that write.
-	cmd.Phase = phase
-	if _, err := store.CancelBatchAfterFailure(ctx, h.commands, cmd); err != nil {
-		log.Printf("failed to stop fail-fast batch %s after command %s failed: %v", cmd.BatchID, commandID, err)
-	}
-}
-
-// BatchStatus handles GET /api/v1/commands/batches/:batchID.
-//
-//	@Summary	Report the state of one fan-out of commands
-//	@Tags		Commands
-//	@Produce	json
-//	@Security	AdminBearer
-//	@Param		batchID	path		string	true	"Batch ID"
-//	@Success	200		{object}	store.BatchOutcome
-//	@Router		/api/v1/commands/batches/{batchID} [get]
-func (h *CommandHandler) BatchStatus(c echo.Context) error {
-	batchID := c.Param("batchID")
-	if batchID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{"error": "batchID is required"})
-	}
-	cmds, err := h.commands.ListByBatch(c.Request().Context(), batchID)
-	if err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to list batch commands"})
-	}
-	if len(cmds) == 0 {
-		return c.JSON(http.StatusNotFound, map[string]string{"error": "batch not found"})
-	}
-	return c.JSON(http.StatusOK, store.SummarizeBatch(batchID, cmds))
+	h.batches.Advance(ctx, cmd.BatchID)
 }
 
 // bundledExtension matches the wire shape AuroraBoot emits in

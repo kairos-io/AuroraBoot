@@ -110,19 +110,24 @@ func (w *webServer) groupNodes(groupID string) []map[string]any {
 	return nodes
 }
 
-// sendGroupCommand queues a command for every node in the group and returns
-// the IDs of the commands it created.
+// sendGroupCommand starts a batch of a command over every node in the group
+// and returns the IDs of the commands it created. The batch runs every node
+// at once, so each node of the group has its command when the batch starts.
 func (w *webServer) sendGroupCommand(groupID, command string, args map[string]string) []string {
 	resp, data := w.do(http.MethodPost, "/api/v1/groups/"+groupID+"/commands",
 		map[string]any{"command": command, "args": args})
 	ExpectWithOffset(1, resp.StatusCode).To(Equal(http.StatusCreated), string(data))
-	var cmds []struct {
-		ID string `json:"id"`
+	var batch struct {
+		Nodes []struct {
+			NodeID    string  `json:"nodeID"`
+			CommandID *string `json:"commandID"`
+		} `json:"nodes"`
 	}
-	ExpectWithOffset(1, json.Unmarshal(data, &cmds)).To(Succeed(), string(data))
-	ids := make([]string, 0, len(cmds))
-	for _, c := range cmds {
-		ids = append(ids, c.ID)
+	ExpectWithOffset(1, json.Unmarshal(data, &batch)).To(Succeed(), string(data))
+	ids := make([]string, 0, len(batch.Nodes))
+	for _, n := range batch.Nodes {
+		ExpectWithOffset(1, n.CommandID).NotTo(BeNil(), "node %s has no command in batch: %s", n.NodeID, data)
+		ids = append(ids, *n.CommandID)
 	}
 	return ids
 }
@@ -144,7 +149,7 @@ func (w *webServer) nodeCommands(nodeID string) []nodeCommand {
 }
 
 // commandFor returns the one command of a node whose ID is among ids, which is
-// how a group fan-out is matched to the node that received each command.
+// how a group batch is matched to the node that received each command.
 func (w *webServer) commandFor(nodeID string, ids []string) string {
 	var found []string
 	for _, c := range w.nodeCommands(nodeID) {

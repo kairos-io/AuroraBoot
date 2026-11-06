@@ -70,6 +70,7 @@ import (
 	netbootmgr "github.com/kairos-io/AuroraBoot/internal/netbootmgr"
 	"github.com/kairos-io/AuroraBoot/internal/secrets"
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
+	"github.com/kairos-io/AuroraBoot/pkg/batches"
 	"github.com/kairos-io/AuroraBoot/pkg/builder"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/isoserve"
@@ -374,10 +375,20 @@ func runWeb(c *cli.Context) error {
 	baseCtx, baseCancel := context.WithCancel(context.Background())
 	defer baseCancel()
 
+	// The scheduler pushes the commands a batch creates the way a single-node
+	// command is pushed, which needs only the command store and the hub, so it
+	// gets a command handler of its own rather than the one server.New builds.
+	batchStore := &gormstore.BatchStoreAdapter{S: store}
+	pusher := handlers.NewCommandHandler(commandStore, nodeStore, wsHub, nil, nil)
+	sched := batches.New(batchStore, pusher.PushCommand)
+	go sched.Run(baseCtx, 30*time.Second)
+
 	e := server.New(server.Config{
 		BaseContext:                  baseCtx,
 		NodeStore:                    nodeStore,
 		CommandStore:                 commandStore,
+		BatchStore:                   batchStore,
+		Batches:                      sched,
 		GroupStore:                   groupStore,
 		ArtifactStore:                artifactStore,
 		SecureBootKeySetStore:        secureBootKeySetStore,
