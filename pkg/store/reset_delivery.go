@@ -12,7 +12,7 @@ import (
 // window at request time, so a node that is offline for almost all of it can
 // claim the command just before the deadline and then be reported failed while
 // it is rebooting into the wipe. Once that happens the node is stuck: the
-// re-register path (NodeHandler.resolveReset) only advances a reset that is
+// re-register path (store.ResolveReset) only advances a reset that is
 // still in flight, so `failed` is never corrected and LastReset is never
 // stamped, and a CAPI provider sees a failure for a node that is wiping fine.
 //

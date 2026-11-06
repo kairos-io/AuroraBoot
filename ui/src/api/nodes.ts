@@ -1,4 +1,5 @@
 import { apiFetch } from "./client";
+import type { Batch, Rollout } from "./batches";
 
 export interface Node {
   id: string;
@@ -115,10 +116,11 @@ export function sendCommand(
 export function sendBulkCommand(
   selector: { groupID?: string; labels?: Record<string, string>; nodeIDs?: string[] },
   command: string,
-  args?: Record<string, unknown>
-): Promise<CommandResult[]> {
-  return apiFetch<CommandResult[]>(`/api/v1/nodes/commands`, {
+  args?: Record<string, unknown>,
+  rollout?: Rollout
+): Promise<Batch> {
+  return apiFetch<Batch>(`/api/v1/nodes/commands`, {
     method: "POST",
-    body: JSON.stringify({ selector, command, args }),
+    body: JSON.stringify({ selector, command, args, ...rollout }),
   });
 }

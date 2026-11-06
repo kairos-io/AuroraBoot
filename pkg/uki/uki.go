@@ -394,7 +394,7 @@ func Build(opts Options) (err error) {
 
 	switch outputType {
 	case string(constants.IsoOutput):
-		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalogs, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
+		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.CloudConfig, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalogs, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
 			return err
 		}
 	case string(constants.ContainerOutput):
@@ -849,7 +849,7 @@ func createSystemdConf(dir, secureBootEnroll string) error {
 	return nil
 }
 
-func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch string, extensionsCatalogs []string, extensionRequests []extensions.Request, insecure bool) error {
+func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, cloudConfig, keysDir, outputName, artifactName string, entries []utils.BootEntry, log logger.KairosLogger, arch string, extensionsCatalogs []string, extensionRequests []extensions.Request, insecure bool) error {
 	isoDir, err := os.MkdirTemp("", "auroraboot-iso-dir-")
 	if err != nil {
 		return err
@@ -891,6 +891,10 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 		return err
 	}
 
+	if err := writeISOCloudConfig(isoDir, cloudConfig); err != nil {
+		return err
+	}
+
 	if overlayISO != "" {
 		log.Infof("Overlay dir is set, copying files from %s", overlayISO)
 		log.Infof("Adding files from %s to iso", overlayISO)
@@ -927,6 +931,19 @@ func createISO(e *elemental.Elemental, sourceDir, outputDir, overlayISO, keysDir
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("error creating iso file: %w\n%s", err, string(out))
+	}
+	return nil
+}
+
+// writeISOCloudConfig places the cloud-config at the ISO root as config.yaml,
+// where the live system picks it up, same as build-iso does. It runs before
+// the overlay is copied, so a config.yaml in the overlay still takes over.
+func writeISOCloudConfig(isoDir, cloudConfig string) error {
+	if strings.TrimSpace(cloudConfig) == "" {
+		return nil
+	}
+	if err := os.WriteFile(filepath.Join(isoDir, "config.yaml"), []byte(cloudConfig), 0o600); err != nil {
+		return fmt.Errorf("writing cloud config to the iso: %w", err)
 	}
 	return nil
 }

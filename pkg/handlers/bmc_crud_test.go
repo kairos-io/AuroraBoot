@@ -83,6 +83,48 @@ var _ = Describe("BMC target CRUD ImageURL validation", func() {
 		Expect(bmcTargets.targets[0].EjectPowerCycle).To(BeTrue())
 	})
 
+	It("stores the password sent on create and never returns it", func() {
+		rec := create(`{"name":"h","endpoint":"https://10.0.0.9","username":"admin","password":"s3cret"}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		Expect(bmcTargets.targets).To(HaveLen(1))
+		Expect(bmcTargets.targets[0].Password).To(Equal("s3cret"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("s3cret"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("password"))
+	})
+
+	It("replaces the stored password when update sends a non-empty one", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9", Password: "old"}}
+		rec := update("bmc-1", `{"name":"h","endpoint":"https://10.0.0.9","password":"new-pass"}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(bmcTargets.targets[0].Password).To(Equal("new-pass"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("new-pass"))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("password"))
+	})
+
+	It("keeps the stored password when update omits it", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9", Password: "old"}}
+		rec := update("bmc-1", `{"name":"h","endpoint":"https://10.0.0.9","password":""}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(bmcTargets.targets[0].Password).To(Equal("old"))
+	})
+
+	It("does not return stored passwords when listing", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9", Password: "s3cret"}}
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/bmc-targets", nil)
+		rec := httptest.NewRecorder()
+		Expect(h.ListBMCTargets(e.NewContext(req, rec))).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		Expect(rec.Body.String()).NotTo(ContainSubstring("s3cret"))
+	})
+
+	It("rejects an update with an empty endpoint and keeps the stored one", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9"}}
+		rec := update("bmc-1", `{"name":"h"}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("endpoint is required"))
+		Expect(bmcTargets.targets[0].Endpoint).To(Equal("https://10.0.0.9"))
+	})
+
 	It("accepts a normal RFC1918 endpoint on create", func() {
 		rec := create(`{"name":"h","endpoint":"https://192.168.1.50"}`)
 		Expect(rec.Code).To(Equal(http.StatusCreated))
