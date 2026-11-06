@@ -171,9 +171,9 @@ type registerRequest struct {
 	AgentVersion      string              `json:"agentVersion"`
 	Addresses         []store.NodeAddress `json:"addresses,omitempty"`
 	BootState         string              `json:"bootState,omitempty"`
-	// Group names the group a new node joins, as written into the phonehome
-	// config by an artifact built with a target group. An unknown name
-	// leaves the node ungrouped.
+	// Group is the ID or name of the group a new node joins, as written into
+	// the phonehome config. Artifacts write the group ID; older ones wrote
+	// the name. An unknown group leaves the node ungrouped.
 	Group string `json:"group,omitempty"`
 	// Labels are a new node's initial labels.
 	Labels map[string]string `json:"labels,omitempty"`
@@ -240,7 +240,7 @@ func (h *NodeHandler) Register(c echo.Context) error {
 		Phase:        store.PhaseRegistered,
 		APIKey:       uuid.New().String(),
 		Labels:       make(map[string]string),
-		GroupID:      h.groupIDByName(c.Request().Context(), req.Group),
+		GroupID:      h.resolveGroupID(c.Request().Context(), req.Group),
 		// Optional; empty when an older agent does not report them. Stored exactly
 		// as received — interface filtering is the agent's responsibility.
 		Addresses: req.Addresses,
@@ -268,14 +268,18 @@ func (h *NodeHandler) Register(c echo.Context) error {
 	})
 }
 
-// groupIDByName returns the ID of the group called name, or nil when name is
-// empty or no such group exists. Registration goes ahead either way: the
-// group only places the node, and an admin can place it later.
-func (h *NodeHandler) groupIDByName(ctx context.Context, name string) *string {
-	if name == "" || h.groups == nil {
+// resolveGroupID returns the ID of the group whose ID or name is ref, or nil
+// when ref is empty or matches no group. The ID wins so a renamed group still
+// claims the nodes its artifacts register. Registration goes ahead either
+// way: the group only places the node, and an admin can place it later.
+func (h *NodeHandler) resolveGroupID(ctx context.Context, ref string) *string {
+	if ref == "" || h.groups == nil {
 		return nil
 	}
-	g, err := h.groups.GetByName(ctx, name)
+	if g, err := h.groups.GetByID(ctx, ref); err == nil && g != nil {
+		return &g.ID
+	}
+	g, err := h.groups.GetByName(ctx, ref)
 	if err != nil || g == nil {
 		return nil
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
+	"gopkg.in/yaml.v3"
 )
 
 var _ = Describe("ArtifactHandler", func() {
@@ -361,6 +362,21 @@ var _ = Describe("ArtifactHandler", func() {
 			Expect(fb.lastOpts.Provisioning.AllowedCommands).To(HaveLen(0))
 			Expect(fb.lastOpts.Provisioning.AllowedCommands).NotTo(BeNil())
 			Expect(fb.lastOpts.CloudConfig).To(ContainSubstring("allowed_commands: []"))
+		})
+
+		It("writes the target group's ID into the phonehome config", func() {
+			gs := &fakeGroupStore{groups: []*store.NodeGroup{{ID: "grp-1", Name: "edge"}}}
+			handler = handlers.NewArtifactHandler(fb, nil, gs, nil, nil, nil, "", "reg-token", "http://localhost:8080")
+
+			post(`{"baseImage":"quay.io/kairos/ubuntu:24.04","outputs":{"iso":true},"provisioning":{"registerAuroraBoot":true,"targetGroupId":"grp-1"}}`)
+
+			var doc struct {
+				Phonehome struct {
+					Group string `yaml:"group"`
+				} `yaml:"phonehome"`
+			}
+			Expect(yaml.Unmarshal([]byte(fb.lastOpts.CloudConfig), &doc)).To(Succeed())
+			Expect(doc.Phonehome.Group).To(Equal("grp-1"))
 		})
 
 		It("omits the phonehome stanza entirely when registerAuroraBoot is false", func() {

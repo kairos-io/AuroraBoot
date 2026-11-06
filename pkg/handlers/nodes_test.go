@@ -111,6 +111,47 @@ var _ = Describe("NodeHandler", func() {
 			Expect(node.Addresses).To(BeEmpty())
 			Expect(node.BootState).To(BeEmpty())
 		})
+
+		It("puts a new node in the group whose ID it sends", func() {
+			gs.groups = []*store.NodeGroup{{ID: "grp-1", Name: "edge"}}
+
+			id := registerNode(e, handler, `{"registrationToken":"reg-token","machineID":"machine-gid","group":"grp-1"}`)
+
+			Expect(getNode(e, handler, id).GroupID).To(HaveValue(Equal("grp-1")))
+		})
+
+		It("puts a new node in the group whose name it sends", func() {
+			gs.groups = []*store.NodeGroup{{ID: "grp-1", Name: "edge"}}
+
+			id := registerNode(e, handler, `{"registrationToken":"reg-token","machineID":"machine-gname","group":"edge"}`)
+
+			Expect(getNode(e, handler, id).GroupID).To(HaveValue(Equal("grp-1")))
+		})
+
+		It("keeps placing nodes by group ID after the group is renamed", func() {
+			gs.groups = []*store.NodeGroup{{ID: "grp-1", Name: "edge"}}
+			gs.groups[0].Name = "edge-renamed"
+
+			id := registerNode(e, handler, `{"registrationToken":"reg-token","machineID":"machine-renamed","group":"grp-1"}`)
+
+			Expect(getNode(e, handler, id).GroupID).To(HaveValue(Equal("grp-1")))
+		})
+
+		It("prefers a group ID match over a name match", func() {
+			gs.groups = []*store.NodeGroup{{ID: "grp-1", Name: "grp-2"}, {ID: "grp-2", Name: "other"}}
+
+			id := registerNode(e, handler, `{"registrationToken":"reg-token","machineID":"machine-both","group":"grp-2"}`)
+
+			Expect(getNode(e, handler, id).GroupID).To(HaveValue(Equal("grp-2")))
+		})
+
+		It("leaves a new node ungrouped when the group is unknown", func() {
+			gs.groups = []*store.NodeGroup{{ID: "grp-1", Name: "edge"}}
+
+			id := registerNode(e, handler, `{"registrationToken":"reg-token","machineID":"machine-nogroup","group":"missing"}`)
+
+			Expect(getNode(e, handler, id).GroupID).To(BeNil())
+		})
 	})
 
 	Describe("List", func() {
