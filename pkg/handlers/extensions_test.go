@@ -465,6 +465,61 @@ var _ = Describe("ExtensionHandler.Delete — bundle-blocks-delete", func() {
 	})
 })
 
+var _ = Describe("ExtensionHandler.Update: bundle-blocks-rename", func() {
+	var (
+		e       *echo.Echo
+		es      *fakeExtensionStore
+		bs      *fakeBundleStore
+		handler *handlers.ExtensionHandler
+		ctx     = context.Background()
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		es = newFakeExtensionStore()
+		bs = newFakeBundleStore()
+		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, es, bs, nil, nil, "")
+		_ = es.Create(ctx, &store.ExtensionRecord{ID: "e-1", Name: "tailscale-agent", Type: "sysext", Phase: "Ready"})
+	})
+
+	doPatch := func(id, body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPatch, "/api/v1/extensions/"+id, strings.NewReader(body))
+		req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+		rr := httptest.NewRecorder()
+		c := e.NewContext(req, rr)
+		c.SetParamNames("id")
+		c.SetParamValues(id)
+		Expect(handler.Update(c)).To(Succeed())
+		return rr
+	}
+
+	It("allows renaming when no bundle references the name", func() {
+		rec := doPatch("e-1", `{"name":"tailscale-renamed"}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+		got, _ := es.GetByID(ctx, "e-1")
+		Expect(got.Name).To(Equal("tailscale-renamed"))
+	})
+
+	It("returns 409 when a bundle references the old name", func() {
+		_ = bs.ReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+			{ArtifactID: "a-1", ExtensionName: "tailscale-agent", ExtensionType: "sysext"},
+		})
+		rec := doPatch("e-1", `{"name":"tailscale-renamed"}`)
+		Expect(rec.Code).To(Equal(http.StatusConflict))
+		Expect(rec.Body.String()).To(ContainSubstring("a-1"))
+		got, _ := es.GetByID(ctx, "e-1")
+		Expect(got.Name).To(Equal("tailscale-agent"))
+	})
+
+	It("accepts a referenced extension keeping its own name", func() {
+		_ = bs.ReplaceForArtifact(ctx, "a-1", []store.ArtifactExtensionBundle{
+			{ArtifactID: "a-1", ExtensionName: "tailscale-agent", ExtensionType: "sysext"},
+		})
+		rec := doPatch("e-1", `{"name":"tailscale-agent"}`)
+		Expect(rec.Code).To(Equal(http.StatusOK))
+	})
+})
+
 var _ = Describe("ExtensionHandler.Download", func() {
 	var (
 		e       *echo.Echo
