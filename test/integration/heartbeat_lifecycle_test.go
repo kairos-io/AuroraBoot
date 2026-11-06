@@ -100,6 +100,19 @@ var _ = Describe("Lifecycle settled from heartbeats", func() {
 		Entry("failed after falling back to recovery", func(b string, u time.Duration) { wsHeartbeat(b, u) }, "recovery", "failed"),
 	)
 
+	It("keeps an upgrade its command failed as failed when the node heartbeats from a later boot", func() {
+		cmdID := issue("upgrade")
+		resp := adminPut(testServerURL, "/api/v1/nodes/"+nodeID+"/commands/"+cmdID+"/status",
+			testAdminPassword, map[string]string{"phase": "Failed", "result": "exit status 1"})
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		resp.Body.Close()
+		Eventually(field("upgradeState"), 5*time.Second, 100*time.Millisecond).Should(Equal("failed"))
+
+		restHeartbeat("active", 0)
+
+		Consistently(field("upgradeState"), time.Second, 100*time.Millisecond).Should(Equal("failed"))
+	})
+
 	It("stamps the last upgrade when it settles as done", func() {
 		complete(issue("upgrade"))
 

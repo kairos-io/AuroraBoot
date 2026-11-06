@@ -30,6 +30,7 @@ import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { StatTile } from "@/components/fleet/StatTile";
 import { CommandTimeline } from "@/components/fleet/CommandTimeline";
 import { LabelChips } from "@/components/fleet/LabelChips";
+import { RecentBatches } from "@/components/fleet/RecentBatches";
 import { toneText } from "@/components/fleet/tones";
 import { ResourcesCard } from "@/components/fleet/ResourcesCard";
 import { useUIWebSocket } from "@/hooks/useUIWebSocket";
@@ -566,6 +567,8 @@ export function NodeDetail() {
               <LabelChips labels={n.labels || {}} onChange={handleLabels} />
             </CardContent>
           </Card>
+
+          <RecentBatches nodeID={n.id} />
         </div>
       </div>
 

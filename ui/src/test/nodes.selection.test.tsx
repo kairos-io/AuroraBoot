@@ -108,7 +108,7 @@ describe("Nodes selection", () => {
     const dialog = await screen.findByRole("dialog");
     fireEvent.click(within(dialog).getByRole("button", { name: /Reboot/ }));
     await act(async () => {
-      fireEvent.click(within(dialog).getByRole("button", { name: "Send reboot" }));
+      fireEvent.click(within(dialog).getByRole("button", { name: /^Reboot \d+ nodes$/ }));
     });
 
     await waitFor(() => expect(m.calls.filter((c) => c.url === "/api/v1/nodes/commands")).toHaveLength(1));
