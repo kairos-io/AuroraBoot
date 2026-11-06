@@ -104,6 +104,9 @@ func (s *stubArtifactStore) UpdateFiles(_ context.Context, id string, files []st
 	s.updates++
 	return nil
 }
+func (s *stubArtifactStore) UpdateNameSaved(context.Context, string, *string, *bool) error {
+	return nil
+}
 
 func (s *stubArtifactStore) ClearUploadToken(_ context.Context, id string) error {
 	s.mu.Lock()

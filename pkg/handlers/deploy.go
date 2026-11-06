@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -342,6 +343,17 @@ func (h *DeployHandler) defaultImageURL(ctx context.Context) (string, error) {
 	return v, err
 }
 
+// localServeAdvertisedURL returns the runtime advertised base URL for local
+// serving, or "" when no settings store is wired or the key is unset, in which
+// case the listener's launch BaseURL is used.
+func (h *DeployHandler) localServeAdvertisedURL(ctx context.Context) (string, error) {
+	if h.settings == nil {
+		return "", nil
+	}
+	v, _, err := h.settings.Get(ctx, SettingLocalServeAdvertisedURL)
+	return strings.TrimSpace(v), err
+}
+
 // localServeEnabled reports whether the runtime local-serve enable flag is set.
 // It is the gate (alongside a launch-configured listener) for serving the
 // artifact ISO locally. Defaults to false: missing setting, no settings store, or
@@ -482,22 +494,42 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 				"error": "local ISO serving is not enabled on this server; provide imageUrl with a URL the BMC can reach, set a default image URL, or enable AuroraBoot-served artifacts",
 			})
 		}
-		// ArtifactFiles stores each file's path relative to the server's working
-		// directory (e.g. "data/artifacts/<id>/foo.iso"). Resolve it to an
-		// absolute path: isoserve.Register requires an absolute path, and
-		// re-joining it with artifactsDir/artifactID would double the prefix into
-		// a bogus path that does not exist.
-		absISO, err := filepath.Abs(isoFile)
+		// ArtifactFiles holds either a bare file name (uploaded files, stored on
+		// disk under artifactsDir/<id>/) or a path that already carries its
+		// directory (local builds write "data/artifacts/<id>/foo.iso" relative to
+		// the server's working directory, or a full path). Only a bare name is
+		// joined with artifactsDir/artifactID; joining a path that already has
+		// the prefix would double it. isoserve.Register needs an absolute path.
+		isoPath := isoFile
+		if filepath.Base(isoFile) == isoFile {
+			isoPath = filepath.Join(h.artifactsDir, artifactID, isoFile)
+		}
+		absISO, err := filepath.Abs(isoPath)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("resolving artifact ISO path: %v", err)})
 		}
-		servedURL, token, err := h.isoServe.Register(absISO, redfishDeployTimeout+5*time.Minute)
+		advertisedURL, err := h.localServeAdvertisedURL(ctx)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image-source settings"})
+		}
+		useHTTPS = h.isoServe.UsesTLS()
+		if advertisedURL != "" {
+			if err := isoserve.ValidateMediaURL(advertisedURL); err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid localServeAdvertisedURL: %v", err)})
+			}
+			// The advertised URL may be a TLS-terminating proxy in front of a
+			// plain-HTTP listener, so the BMC protocol follows its scheme.
+			useHTTPS, err = isoserve.URLUsesHTTPS(advertisedURL)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid localServeAdvertisedURL: %v", err)})
+			}
+		}
+		servedURL, token, err := h.isoServe.RegisterAt(advertisedURL, absISO, redfishDeployTimeout+5*time.Minute)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to serve artifact ISO: %v", err)})
 		}
 		imageURL = servedURL
 		serveToken = token
-		useHTTPS = h.isoServe.UsesTLS()
 	}
 
 	dep := &store.Deployment{

@@ -76,6 +76,29 @@ var _ = Describe("ESP layout", func() {
 		Expect(err).To(MatchError(ContainSubstring(constants.UkiSystemdBootRiscv64Name)))
 	})
 
+	It("lists the auto-enroll keys from the public keys dir", func() {
+		files, err := imageFiles(sourceDir, keysDir, entries, constants.ArchAmd64)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(files).To(HaveKey("loader/keys"))
+		Expect(files["loader/keys/auto"]).To(ConsistOf(
+			filepath.Join(keysDir, "PK.auth"),
+			filepath.Join(keysDir, "KEK.auth"),
+			filepath.Join(keysDir, "db.auth"),
+		))
+	})
+
+	It("leaves out the auto-enroll keys when there is no public keys dir", func() {
+		files, err := imageFiles(sourceDir, "", entries, constants.ArchAmd64)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(files).To(HaveKey("loader/keys"))
+		Expect(files).ToNot(HaveKey("loader/keys/auto"))
+		for dir, list := range files {
+			for _, f := range list {
+				Expect(filepath.IsAbs(f)).To(BeTrue(), "%s lists relative path %s", dir, f)
+			}
+		}
+	})
+
 	It("refuses an architecture it has no fallback binary for", func() {
 		_, err := imageFiles(sourceDir, keysDir, entries, "ppc64le")
 		Expect(err).To(MatchError(ContainSubstring("unsupported arch: ppc64le")))

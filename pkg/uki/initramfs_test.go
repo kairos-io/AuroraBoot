@@ -202,3 +202,41 @@ var _ = Describe("createInitramfs", func() {
 		}
 	})
 })
+
+var _ = Describe("ZstdFile", func() {
+	var workDir, src string
+
+	BeforeEach(func() {
+		var err error
+		workDir, err = os.MkdirTemp("", "ZstdFile-")
+		Expect(err).ToNot(HaveOccurred())
+		src = filepath.Join(workDir, "input")
+		Expect(os.WriteFile(src, []byte("kairos initramfs payload\n"), 0o644)).To(Succeed())
+	})
+
+	AfterEach(func() {
+		os.RemoveAll(workDir)
+	})
+
+	It("round-trips the source contents", func() {
+		dst := filepath.Join(workDir, "output.zst")
+		Expect(ZstdFile(src, dst)).To(Succeed())
+
+		f, err := os.Open(dst)
+		Expect(err).ToNot(HaveOccurred())
+		defer f.Close()
+		zr, err := zstd.NewReader(f)
+		Expect(err).ToNot(HaveOccurred())
+		defer zr.Close()
+		got, err := io.ReadAll(zr)
+		Expect(err).ToNot(HaveOccurred())
+		Expect(got).To(Equal([]byte("kairos initramfs payload\n")))
+	})
+
+	It("returns an error when the compressed output cannot be written", func() {
+		if _, err := os.Stat("/dev/full"); err != nil {
+			Skip("/dev/full is not available")
+		}
+		Expect(ZstdFile(src, "/dev/full")).ToNot(Succeed())
+	})
+})

@@ -98,6 +98,7 @@ func (m *memArtifactStore) UpdateFiles(_ context.Context, id string, files []str
 	rec.ArtifactFiles = files
 	return nil
 }
+func (m *memArtifactStore) UpdateNameSaved(context.Context, string, *string, *bool) error { return nil }
 
 func (m *memArtifactStore) ClearUploadToken(_ context.Context, id string) error {
 	m.mu.Lock()
