@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 
 	. "github.com/onsi/ginkgo/v2"
@@ -14,27 +15,43 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// Reproduces kairos-io/kairos#5679: when the token file cannot be written,
-// rotate still answers 200 and swaps the in-memory token. This test asserts
-// that CURRENT (buggy) behavior; it flips once the handler returns 500 and
-// keeps the old token.
-var _ = Describe("SettingsHandler.RotateRegistrationToken persistence failure", func() {
-	It("returns 200 and changes the token although the file cannot be written", func() {
+var _ = Describe("SettingsHandler.RotateRegistrationToken persistence", func() {
+	rotate := func(handler *handlers.SettingsHandler) *httptest.ResponseRecorder {
 		e := echo.New()
-		token := auth.NewRegistrationToken("initial-token")
-		missing := filepath.Join(GinkgoT().TempDir(), "no-such-dir", "token")
-		handler := handlers.NewSettingsHandler(token, missing)
-
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/settings/registration-token/rotate", nil)
 		rec := httptest.NewRecorder()
 		Expect(handler.RotateRegistrationToken(e.NewContext(req, rec))).To(Succeed())
+		return rec
+	}
 
-		// BUG: should be 500 with the old token kept.
+	It("returns 500 and keeps the old token when the file cannot be written", func() {
+		token := auth.NewRegistrationToken("initial-token")
+		missing := filepath.Join(GinkgoT().TempDir(), "no-such-dir", "token")
+
+		rec := rotate(handlers.NewSettingsHandler(token, missing))
+
+		Expect(rec.Code).To(Equal(http.StatusInternalServerError))
+		var resp map[string]string
+		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp).To(HaveKey("error"))
+		Expect(resp).NotTo(HaveKey("registrationToken"))
+		Expect(token.Get()).To(Equal("initial-token"))
+	})
+
+	It("writes the new token to the file and swaps it in memory", func() {
+		token := auth.NewRegistrationToken("initial-token")
+		path := filepath.Join(GinkgoT().TempDir(), "token")
+
+		rec := rotate(handlers.NewSettingsHandler(token, path))
+
 		Expect(rec.Code).To(Equal(http.StatusOK))
 		var resp map[string]string
 		Expect(json.Unmarshal(rec.Body.Bytes(), &resp)).To(Succeed())
+		Expect(resp["registrationToken"]).NotTo(BeEmpty())
 		Expect(resp["registrationToken"]).NotTo(Equal("initial-token"))
 		Expect(token.Get()).To(Equal(resp["registrationToken"]))
-		Expect(token.Get()).NotTo(Equal("initial-token"))
+		onDisk, err := os.ReadFile(path)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(string(onDisk)).To(Equal(resp["registrationToken"]))
 	})
 })
