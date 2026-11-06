@@ -485,7 +485,7 @@ func (f *fakeCommandStore) UpdateStatus(_ context.Context, id string, phase stri
 			return nil
 		}
 	}
-	return fmt.Errorf("not found")
+	return store.ErrCommandNotFound
 }
 
 func (f *fakeCommandStore) UpdateStatusForNode(_ context.Context, id string, nodeID string, phase string, result string) error {

@@ -56,6 +56,20 @@ var _ = Describe("CommandHandler", func() {
 			Expect(cmd.Phase).To(Equal(store.CommandPending))
 		})
 
+		It("returns 404 for an unknown node and creates nothing", func() {
+			body := `{"command":"upgrade","args":{"version":"1.2.0"}}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/missing/commands", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID")
+			c.SetParamValues("missing")
+
+			Expect(handler.Create(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(cs.cmds).To(BeEmpty())
+		})
+
 		It("should reject command without command field", func() {
 			body := `{"args":{"version":"1.2.0"}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/node-1/commands", strings.NewReader(body))
@@ -100,6 +114,35 @@ var _ = Describe("CommandHandler", func() {
 			Expect(handler.CreateForGroup(c)).To(Succeed())
 			Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
 			Expect(cs.cmds).To(BeEmpty())
+		})
+
+		It("returns 404 for an unknown group", func() {
+			handler.WithGroups(&fakeGroupStore{groups: []*store.NodeGroup{{ID: "grp-1"}}})
+			body := `{"command":"reset"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/missing/commands", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("missing")
+
+			Expect(handler.CreateForGroup(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(cs.cmds).To(BeEmpty())
+		})
+
+		It("goes past the group check for a known group", func() {
+			handler.WithGroups(&fakeGroupStore{groups: []*store.NodeGroup{{ID: "grp-1"}}})
+			body := `{"command":"reset"}`
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/grp-1/commands", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("grp-1")
+
+			Expect(handler.CreateForGroup(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
 		})
 	})
 
@@ -188,6 +231,36 @@ var _ = Describe("CommandHandler", func() {
 			err := handler.UpdateStatus(c)
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusOK))
+		})
+
+		It("returns 404 to an admin for a command that does not exist", func() {
+			body := `{"phase":"Completed","result":"x"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/node-1/commands/missing/status", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID", "commandID")
+			c.SetParamValues("node-1", "missing")
+
+			Expect(handler.UpdateStatus(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+		})
+
+		It("returns 404 to an admin for a command under another node's path and leaves it alone", func() {
+			cs.cmds = []*store.NodeCommand{
+				{ID: "cmd-2", ManagedNodeID: "node-2", Phase: store.CommandDelivered},
+			}
+			body := `{"phase":"Completed","result":"x"}`
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/node-1/commands/cmd-2/status", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID", "commandID")
+			c.SetParamValues("node-1", "cmd-2")
+
+			Expect(handler.UpdateStatus(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusNotFound))
+			Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
 		})
 
 		It("should reject update without phase", func() {

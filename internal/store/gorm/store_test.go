@@ -581,6 +581,11 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.CompletedAt).To(BeNil())
 		})
 
+		It("reports ErrCommandNotFound when updating a command that does not exist", func() {
+			Expect(s.UpdateStatus(ctx, "no-such-command", store.CommandCompleted, "ok")).
+				To(MatchError(store.ErrCommandNotFound))
+		})
+
 		It("updates status scoped to the owning node", func() {
 			cmd := &store.NodeCommand{ManagedNodeID: node.ID, Command: store.CmdExec}
 			Expect(s.CommandCreate(ctx, cmd)).To(Succeed())

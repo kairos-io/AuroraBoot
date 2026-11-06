@@ -6,10 +6,10 @@ import (
 	"time"
 )
 
-// ErrCommandNotFound is returned by node-scoped command lookups/updates when no
-// command matches both the command id and the owning node. Callers use it to
-// fail closed (404/403) rather than silently succeeding on a foreign or
-// non-existent command.
+// ErrCommandNotFound is returned by command status updates when no command
+// matches the id, or, for node-scoped updates, both the command id and the
+// owning node. Callers use it to fail closed (404/403) rather than silently
+// succeeding on a foreign or non-existent command.
 var ErrCommandNotFound = errors.New("command not found")
 
 // ErrNoClaimCapacity is returned by NodeStore.ClaimNode when the target group
@@ -361,7 +361,8 @@ type CommandStore interface {
 	// upgrade also marks its node's pending lifecycle state failed in the same
 	// write, unless another command of the same kind still owns that state: a
 	// command that fails before the reboot never brings the node back with a
-	// boot state the re-register resolvers could settle it from.
+	// boot state the re-register resolvers could settle it from. It returns
+	// ErrCommandNotFound when no command has the id.
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
 	// UpdateStatusForNode is UpdateStatus scoped to the commands of nodeID. It
 	// returns ErrCommandNotFound when no command matches both the
