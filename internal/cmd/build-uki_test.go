@@ -5,6 +5,7 @@ import (
 	"os"
 
 	cmdpkg "github.com/kairos-io/AuroraBoot/internal/cmd"
+	"github.com/kairos-io/AuroraBoot/pkg/uki"
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 	"github.com/urfave/cli/v2"
@@ -118,5 +119,63 @@ var _ = Describe("build-uki", Label("uki", "cmd"), func() {
 		Expect(err).ToNot(BeNil())
 		Expect(err.Error()).To(ContainSubstring("reading cloud config"))
 		Expect(err.Error()).To(ContainSubstring("file '" + missing + "' not found"))
+	})
+
+	Describe("cmdline flags", Label("flags"), func() {
+		var opts uki.Options
+
+		// runParsed runs the real app and flag wiring, swapping only the
+		// root-gated Before and the build itself for a capture of the options.
+		runParsed := func(args ...string) error {
+			for i, c := range app.Commands {
+				if c.Name != "build-uki" {
+					continue
+				}
+				parsed := *c
+				parsed.Before = nil
+				parsed.Action = func(ctx *cli.Context) error {
+					var err error
+					opts, err = cmdpkg.BuildUKIOptions(ctx)
+					return err
+				}
+				app.Commands[i] = &parsed
+			}
+			return app.Run(append([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem"}, args...))
+		}
+
+		It("keeps commas inside a single-efi-cmdline value", func() {
+			Expect(runParsed(
+				"--single-efi-cmdline", "Serial: console=ttyS0,115200n8",
+				"--single-efi-cmdline", "My Entry: cmdline,options,here",
+				"some/image:latest",
+			)).To(Succeed())
+			Expect(opts.SingleEfiCmdlines).To(Equal([]string{
+				"Serial: console=ttyS0,115200n8",
+				"My Entry: cmdline,options,here",
+			}))
+		})
+
+		It("keeps commas inside an extra-cmdline value", func() {
+			Expect(runParsed(
+				"--extra-cmdline", "console=ttyS0,115200n8 rd.debug",
+				"--extra-cmdline", "a,b",
+				"some/image:latest",
+			)).To(Succeed())
+			Expect(opts.ExtraCmdlines).To(Equal([]string{"console=ttyS0,115200n8 rd.debug", "a,b"}))
+		})
+
+		It("accepts the short alias and does not carry values over to the next run", func() {
+			Expect(runParsed("-s", "First: a=1,b=2", "some/image:latest")).To(Succeed())
+			Expect(opts.SingleEfiCmdlines).To(Equal([]string{"First: a=1,b=2"}))
+			app = cmdpkg.GetApp("v0.0.0")
+			app.Writer = buf
+			Expect(runParsed("some/image:latest")).To(Succeed())
+			Expect(opts.SingleEfiCmdlines).To(BeEmpty())
+		})
+
+		It("still rejects extra-cmdline together with extend-cmdline", func() {
+			err = app.Run([]string{"", "build-uki", "--tpm-pcr-private-key", "pcr.key", "--sb-key", "sb.key", "--sb-cert", "sb.pem", "--extra-cmdline", "console=ttyS0,115200n8", "--extend-cmdline", "rd.debug", "some/image:latest"})
+			Expect(err).To(MatchError(ContainSubstring("mutually exclusive")))
+		})
 	})
 })
