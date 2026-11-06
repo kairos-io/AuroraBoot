@@ -158,11 +158,12 @@ func ReadCloudConfig(cloudConfig string, templateValues map[string]interface{}) 
 		}
 	} else if _, err := os.Stat(cloudConfig); err == nil {
 		dat, err := os.ReadFile(cloudConfig)
-		if err == nil {
-			result, err = render(string(dat), templateValues)
-			if err != nil {
-				return result, err
-			}
+		if err != nil {
+			return result, err
+		}
+		result, err = render(string(dat), templateValues)
+		if err != nil {
+			return result, err
 		}
 	} else if isUrl(cloudConfig) {
 		d, err := downloadFile(cloudConfig)

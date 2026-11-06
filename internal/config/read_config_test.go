@@ -64,3 +64,14 @@ var _ = Describe("ReadConfig --set handling", func() {
 		Expect(r).NotTo(BeNil())
 	})
 })
+
+var _ = Describe("ReadCloudConfig read errors", func() {
+	It("returns the read error for a path that exists but cannot be read", func() {
+		// A directory passes os.Stat and fails os.ReadFile, the same way an
+		// unreadable file does, and it also fails when the tests run as root.
+		_, err := config.ReadCloudConfig(GinkgoT().TempDir(), nil)
+		Expect(err).To(HaveOccurred())
+		Expect(err.Error()).NotTo(ContainSubstring("contents are empty"))
+		Expect(err.Error()).To(ContainSubstring("is a directory"))
+	})
+})
