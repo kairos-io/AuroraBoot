@@ -256,7 +256,6 @@ func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand
 		// claimed it and will deliver it; don't push a duplicate.
 		return
 	}
-	store.MarkResetDelivered(ctx, h.nodes, cmd)
 	payload := struct {
 		ID      string            `json:"id"`
 		Command string            `json:"command"`
@@ -266,7 +265,21 @@ func (h *CommandHandler) pushCommand(ctx context.Context, cmd *store.NodeCommand
 		Command: cmd.Command,
 		Args:    cmd.Args,
 	}
-	_ = h.hub.SendCommand(cmd.ManagedNodeID, payload)
+	if err := h.hub.SendCommand(cmd.ManagedNodeID, payload); err != nil {
+		// The node dropped between IsOnline and the write, so nothing was
+		// delivered. Put the claim back: Delivered is a terminal state as far as
+		// delivery goes (GetPending matches Pending only), so leaving it there
+		// would drop the command silently and the UI would show it as delivered
+		// forever.
+		if _, rerr := h.commands.ReleaseClaim(ctx, cmd.ID); rerr != nil {
+			log.Printf("commands: failed to requeue undelivered command %s for node %s: %v", cmd.ID, cmd.ManagedNodeID, rerr)
+		}
+		return
+	}
+	// Stamp only once the write succeeded: a released claim is not a delivery,
+	// and stamping it would extend the reset window of a node that never saw
+	// the command.
+	store.MarkResetDelivered(ctx, h.nodes, cmd)
 }
 
 // Delete handles DELETE /api/v1/nodes/:nodeID/commands/:commandID.
