@@ -1155,14 +1155,14 @@ func (h *ArtifactHandler) Update(c echo.Context) error {
 	if err := c.Bind(&patch); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
+	if err := h.store.UpdateNameSaved(ctx, id, patch.Name, patch.Saved); err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update"})
+	}
 	if patch.Name != nil {
 		rec.Name = *patch.Name
 	}
 	if patch.Saved != nil {
 		rec.Saved = *patch.Saved
-	}
-	if err := h.store.Update(ctx, rec); err != nil {
-		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update"})
 	}
 	return c.JSON(http.StatusOK, artifactResponse(rec))
 }

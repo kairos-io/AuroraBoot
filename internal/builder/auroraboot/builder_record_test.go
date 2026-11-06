@@ -96,6 +96,7 @@ func (s *recStore) UpdateFiles(_ context.Context, id string, files []string) err
 	}
 	return nil
 }
+func (s *recStore) UpdateNameSaved(context.Context, string, *string, *bool) error { return nil }
 func (s *recStore) ClearUploadToken(_ context.Context, id string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
