@@ -469,6 +469,7 @@ var _ = Describe("ExtensionHandler.Download", func() {
 	var (
 		e       *echo.Echo
 		tmp     string
+		es      *fakeExtensionStore
 		handler *handlers.ExtensionHandler
 	)
 
@@ -478,7 +479,9 @@ var _ = Describe("ExtensionHandler.Download", func() {
 		extDir := filepath.Join(tmp, "extensions", "e-1")
 		Expect(os.MkdirAll(extDir, 0o755)).To(Succeed())
 		Expect(os.WriteFile(filepath.Join(extDir, "tailscale-agent.sysext.raw"), []byte("RAW-BYTES"), 0o644)).To(Succeed())
-		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, newFakeExtensionStore(), newFakeBundleStore(), nil, nil, tmp)
+		es = newFakeExtensionStore()
+		Expect(es.Create(context.Background(), &store.ExtensionRecord{ID: "e-1", Name: "tailscale-agent", Type: "sysext", Phase: "Ready"})).To(Succeed())
+		handler = handlers.NewExtensionHandler(&fakeExtensionBuilder{}, es, newFakeBundleStore(), nil, nil, tmp)
 	})
 
 	do := func(id, filename string) *httptest.ResponseRecorder {
@@ -510,5 +513,28 @@ var _ = Describe("ExtensionHandler.Download", func() {
 	It("rejects path traversal in id", func() {
 		rec := do("../e-1", "foo.raw")
 		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+	})
+
+	It("returns 404 when the file is on disk but the extension record is gone", func() {
+		Expect(es.Delete(context.Background(), "e-1")).To(Succeed())
+		rec := do("e-1", "tailscale-agent.sysext.raw")
+		Expect(rec.Code).To(Equal(http.StatusNotFound))
+	})
+
+	It("returns 404 after the extension is deleted through the handler", func() {
+		req := httptest.NewRequest(http.MethodDelete, "/api/v1/extensions/e-1", nil)
+		rr := httptest.NewRecorder()
+		c := e.NewContext(req, rr)
+		c.SetParamNames("id")
+		c.SetParamValues("e-1")
+		Expect(handler.Delete(c)).To(Succeed())
+		Expect(rr.Code).To(Equal(http.StatusNoContent))
+
+		_, err := os.Stat(filepath.Join(tmp, "extensions", "e-1"))
+		Expect(os.IsNotExist(err)).To(BeTrue(), "the extension output directory should be removed")
+		Expect(filepath.Join(tmp, "extensions")).To(BeADirectory())
+
+		rec := do("e-1", "tailscale-agent.sysext.raw")
+		Expect(rec.Code).To(Equal(http.StatusNotFound))
 	})
 })
