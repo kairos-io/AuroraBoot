@@ -1,9 +1,8 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { NodeDetail } from "@/pages/NodeDetail";
-import { setToken } from "@/api/client";
 import { getNode } from "@/api/nodes";
 
 const NODE_ID = "0f9c2f1e-5b4a-4c0e-9d3f-7a1b2c3d4e5f";
@@ -66,10 +65,6 @@ function renderPage() {
 // KAIROS_IMAGE_LABEL into /etc/kairos-release, which the heartbeat merges into
 // osRelease, but the node view never rendered it.
 describe("NodeDetail OCI image", () => {
-  beforeEach(() => {
-    setToken("test-token");
-  });
-
   afterEach(() => {
     vi.clearAllMocks();
   });
