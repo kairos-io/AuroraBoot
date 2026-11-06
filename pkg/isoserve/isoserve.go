@@ -96,6 +96,18 @@ func New(cfg Config) *Server {
 // is unguessable and the path is fixed at mint time), so it does not need SSRF
 // re-validation.
 func (s *Server) Register(absPath string, ttl time.Duration) (url, token string, err error) {
+	return s.RegisterAt(s.baseURL, absPath, ttl)
+}
+
+// RegisterAt is Register with the returned URL built on baseURL instead of the
+// launch BaseURL, for when the BMC reaches this listener through a different
+// advertised address (e.g. a reverse proxy). An empty baseURL falls back to the
+// launch BaseURL. baseURL is not validated here; callers own that.
+func (s *Server) RegisterAt(baseURL, absPath string, ttl time.Duration) (url, token string, err error) {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if baseURL == "" {
+		baseURL = s.baseURL
+	}
 	if !filepath.IsAbs(absPath) {
 		return "", "", fmt.Errorf("registering iso: path %q is not absolute", absPath)
 	}
@@ -121,7 +133,7 @@ func (s *Server) Register(absPath string, ttl time.Duration) (url, token string,
 	s.mu.Unlock()
 
 	base := path.Base(clean)
-	url = fmt.Sprintf("%s%s/%s/%s", s.baseURL, routePrefix, tok, base)
+	url = fmt.Sprintf("%s%s/%s/%s", baseURL, routePrefix, tok, base)
 	return url, tok, nil
 }
 

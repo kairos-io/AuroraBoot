@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -342,6 +343,17 @@ func (h *DeployHandler) defaultImageURL(ctx context.Context) (string, error) {
 	return v, err
 }
 
+// localServeAdvertisedURL returns the runtime advertised base URL for local
+// serving, or "" when no settings store is wired or the key is unset, in which
+// case the listener's launch BaseURL is used.
+func (h *DeployHandler) localServeAdvertisedURL(ctx context.Context) (string, error) {
+	if h.settings == nil {
+		return "", nil
+	}
+	v, _, err := h.settings.Get(ctx, SettingLocalServeAdvertisedURL)
+	return strings.TrimSpace(v), err
+}
+
 // localServeEnabled reports whether the runtime local-serve enable flag is set.
 // It is the gate (alongside a launch-configured listener) for serving the
 // artifact ISO locally. Defaults to false: missing setting, no settings store, or
@@ -496,13 +508,28 @@ func (h *DeployHandler) DeployRedfish(c echo.Context) error {
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("resolving artifact ISO path: %v", err)})
 		}
-		servedURL, token, err := h.isoServe.Register(absISO, redfishDeployTimeout+5*time.Minute)
+		advertisedURL, err := h.localServeAdvertisedURL(ctx)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to read image-source settings"})
+		}
+		useHTTPS = h.isoServe.UsesTLS()
+		if advertisedURL != "" {
+			if err := isoserve.ValidateMediaURL(advertisedURL); err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid localServeAdvertisedURL: %v", err)})
+			}
+			// The advertised URL may be a TLS-terminating proxy in front of a
+			// plain-HTTP listener, so the BMC protocol follows its scheme.
+			useHTTPS, err = isoserve.URLUsesHTTPS(advertisedURL)
+			if err != nil {
+				return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid localServeAdvertisedURL: %v", err)})
+			}
+		}
+		servedURL, token, err := h.isoServe.RegisterAt(advertisedURL, absISO, redfishDeployTimeout+5*time.Minute)
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": fmt.Sprintf("failed to serve artifact ISO: %v", err)})
 		}
 		imageURL = servedURL
 		serveToken = token
-		useHTTPS = h.isoServe.UsesTLS()
 	}
 
 	dep := &store.Deployment{
