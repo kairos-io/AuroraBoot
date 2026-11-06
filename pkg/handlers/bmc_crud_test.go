@@ -117,6 +117,14 @@ var _ = Describe("BMC target CRUD ImageURL validation", func() {
 		Expect(rec.Body.String()).NotTo(ContainSubstring("s3cret"))
 	})
 
+	It("rejects an update with an empty endpoint and keeps the stored one", func() {
+		bmcTargets.targets = []*store.BMCTarget{{ID: "bmc-1", Endpoint: "https://10.0.0.9"}}
+		rec := update("bmc-1", `{"name":"h"}`)
+		Expect(rec.Code).To(Equal(http.StatusBadRequest))
+		Expect(rec.Body.String()).To(ContainSubstring("endpoint is required"))
+		Expect(bmcTargets.targets[0].Endpoint).To(Equal("https://10.0.0.9"))
+	})
+
 	It("accepts a normal RFC1918 endpoint on create", func() {
 		rec := create(`{"name":"h","endpoint":"https://192.168.1.50"}`)
 		Expect(rec.Code).To(Equal(http.StatusCreated))
