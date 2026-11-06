@@ -903,12 +903,13 @@ func (h *DeployHandler) UpdateBMCTarget(c echo.Context) error {
 	}
 	updated := req.BMCTarget
 	updated.Password = req.Password
+	if updated.Endpoint == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "endpoint is required"})
+	}
 	// SSRF-validate the BMC endpoint on write (same posture as Create and the CLI).
 	// The ping/refresh-all paths actively fetch this endpoint, so it must be guarded.
-	if updated.Endpoint != "" {
-		if err := isoserve.ValidateMediaURL(updated.Endpoint); err != nil {
-			return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid endpoint: %v", err)})
-		}
+	if err := isoserve.ValidateMediaURL(updated.Endpoint); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("invalid endpoint: %v", err)})
 	}
 	// SSRF-validate a per-BMC image-URL override on write (and again at deploy).
 	if updated.ImageURL != "" {
