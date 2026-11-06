@@ -15,6 +15,7 @@ package isoserve
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -186,6 +187,17 @@ func (s *Server) Start(ctx context.Context) error {
 		},
 	}
 
+	// Load the pair before binding. ServeTLS only reads it inside the serve
+	// goroutine, where a failure has no way back to the caller and would leave
+	// a bound port that accepts connections and never answers them.
+	if s.UsesTLS() {
+		pair, err := tls.LoadX509KeyPair(s.certFile, s.keyFile)
+		if err != nil {
+			return fmt.Errorf("starting iso-serve: loading TLS certificate %s and key %s: %w", s.certFile, s.keyFile, err)
+		}
+		s.httpSrv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{pair}}
+	}
+
 	ln, err := net.Listen("tcp", s.bindAddr)
 	if err != nil {
 		return fmt.Errorf("starting iso-serve: listening on %s: %w", s.bindAddr, err)
@@ -197,8 +209,8 @@ func (s *Server) Start(ctx context.Context) error {
 	go func() {
 		defer s.wg.Done()
 		var serveErr error
-		if s.certFile != "" && s.keyFile != "" {
-			serveErr = s.httpSrv.ServeTLS(ln, s.certFile, s.keyFile)
+		if s.UsesTLS() {
+			serveErr = s.httpSrv.ServeTLS(ln, "", "")
 		} else {
 			serveErr = s.httpSrv.Serve(ln)
 		}
