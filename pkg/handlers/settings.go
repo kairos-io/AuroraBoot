@@ -104,13 +104,16 @@ func (h *SettingsHandler) GetRegistrationToken(c echo.Context) error {
 //	@Security		AdminBearer
 //	@Success		200	{object}	APIRegistrationTokenResponse
 //	@Failure		413	{object}	APIError
+//	@Failure		500	{object}	APIError
 //	@Router			/api/v1/settings/registration-token/rotate [post]
 func (h *SettingsHandler) RotateRegistrationToken(c echo.Context) error {
 	token := uuid.New().String()
-	h.regToken.Set(token)
 	if h.regTokenFile != "" {
-		_ = os.WriteFile(h.regTokenFile, []byte(token), 0600)
+		if err := os.WriteFile(h.regTokenFile, []byte(token), 0600); err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to save registration token"})
+		}
 	}
+	h.regToken.Set(token)
 	return c.JSON(http.StatusOK, map[string]string{
 		"registrationToken": token,
 	})
