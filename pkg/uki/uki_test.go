@@ -520,3 +520,19 @@ ID=debian
 `, false),
 	)
 })
+
+var _ = Describe("host binaries", func() {
+	DescribeTable("lists only the binaries the output type runs",
+		func(outputType string, expected []string) {
+			Expect(hostBinaries(outputType)).To(Equal(expected))
+		},
+		Entry("iso", string(constants.IsoOutput), []string{"dd", "mformat", "mmd", "mcopy", "xorriso"}),
+		Entry("uki", string(constants.DefaultOutput), nil),
+		Entry("container", string(constants.ContainerOutput), nil),
+	)
+
+	It("fails the iso dependency check when a binary is missing", func() {
+		GinkgoT().Setenv("PATH", tTempDir())
+		Expect(checkBuildUKIDeps("amd64", string(constants.IsoOutput))).To(MatchError(ContainSubstring("executable file not found")))
+	})
+})
