@@ -18,6 +18,10 @@ var ErrCommandNotFound = errors.New("command not found")
 // "waiting for capacity" and requeue instead of treating it as an error.
 var ErrNoClaimCapacity = errors.New("no unclaimed node available in group")
 
+// ErrGroupNameTaken is returned by GroupStore.Create and GroupStore.Update when
+// another group already uses the name.
+var ErrGroupNameTaken = errors.New("group name already in use")
+
 // NodeGroup represents a logical group/environment for nodes (e.g., "production", "staging").
 type NodeGroup struct {
 	ID          string `json:"id" gorm:"primaryKey"`
