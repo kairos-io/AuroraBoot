@@ -927,11 +927,13 @@ func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry, arch strin
 		"loader":         {filepath.Join(sourceDir, "loader.conf")},
 		"loader/entries": {},
 		"loader/keys":    {},
-		"loader/keys/auto": {
+	}
+	if keysDir != "" {
+		data["loader/keys/auto"] = []string{
 			filepath.Join(keysDir, "PK.auth"),
 			filepath.Join(keysDir, "KEK.auth"),
 			filepath.Join(keysDir, "db.auth"),
-		},
+		}
 	}
 
 	for _, entry := range entries {
