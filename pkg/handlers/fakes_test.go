@@ -684,6 +684,23 @@ func (f *fakeArtifactStore) UpdateFiles(_ context.Context, id string, files []st
 	return fmt.Errorf("not found")
 }
 
+func (f *fakeArtifactStore) UpdateNameSaved(_ context.Context, id string, name *string, saved *bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, r := range f.records {
+		if r.ID == id {
+			if name != nil {
+				r.Name = *name
+			}
+			if saved != nil {
+				r.Saved = *saved
+			}
+			return nil
+		}
+	}
+	return fmt.Errorf("not found")
+}
+
 func (f *fakeArtifactStore) ClearUploadToken(_ context.Context, id string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()

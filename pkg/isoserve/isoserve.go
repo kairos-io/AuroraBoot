@@ -15,6 +15,7 @@ package isoserve
 import (
 	"context"
 	"crypto/rand"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -96,6 +97,18 @@ func New(cfg Config) *Server {
 // is unguessable and the path is fixed at mint time), so it does not need SSRF
 // re-validation.
 func (s *Server) Register(absPath string, ttl time.Duration) (url, token string, err error) {
+	return s.RegisterAt(s.baseURL, absPath, ttl)
+}
+
+// RegisterAt is Register with the returned URL built on baseURL instead of the
+// launch BaseURL, for when the BMC reaches this listener through a different
+// advertised address (e.g. a reverse proxy). An empty baseURL falls back to the
+// launch BaseURL. baseURL is not validated here; callers own that.
+func (s *Server) RegisterAt(baseURL, absPath string, ttl time.Duration) (url, token string, err error) {
+	baseURL = strings.TrimRight(baseURL, "/")
+	if baseURL == "" {
+		baseURL = s.baseURL
+	}
 	if !filepath.IsAbs(absPath) {
 		return "", "", fmt.Errorf("registering iso: path %q is not absolute", absPath)
 	}
@@ -121,8 +134,22 @@ func (s *Server) Register(absPath string, ttl time.Duration) (url, token string,
 	s.mu.Unlock()
 
 	base := path.Base(clean)
-	url = fmt.Sprintf("%s%s/%s/%s", s.baseURL, routePrefix, tok, base)
+	url = fmt.Sprintf("%s%s/%s/%s", baseURL, routePrefix, tok, base)
 	return url, tok, nil
+}
+
+// Extend moves a live token's expiry to ttl from now. It reports false, and
+// changes nothing, when the token is unknown, revoked or already expired.
+func (s *Server) Extend(token string, ttl time.Duration) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	e, ok := s.entries[token]
+	if !ok || time.Now().After(e.expiry) {
+		return false
+	}
+	e.expiry = time.Now().Add(ttl)
+	s.entries[token] = e
+	return true
 }
 
 // Revoke immediately invalidates a token. It is safe to call with an unknown or
@@ -160,6 +187,17 @@ func (s *Server) Start(ctx context.Context) error {
 		},
 	}
 
+	// Load the pair before binding. ServeTLS only reads it inside the serve
+	// goroutine, where a failure has no way back to the caller and would leave
+	// a bound port that accepts connections and never answers them.
+	if s.UsesTLS() {
+		pair, err := tls.LoadX509KeyPair(s.certFile, s.keyFile)
+		if err != nil {
+			return fmt.Errorf("starting iso-serve: loading TLS certificate %s and key %s: %w", s.certFile, s.keyFile, err)
+		}
+		s.httpSrv.TLSConfig = &tls.Config{Certificates: []tls.Certificate{pair}}
+	}
+
 	ln, err := net.Listen("tcp", s.bindAddr)
 	if err != nil {
 		return fmt.Errorf("starting iso-serve: listening on %s: %w", s.bindAddr, err)
@@ -171,8 +209,8 @@ func (s *Server) Start(ctx context.Context) error {
 	go func() {
 		defer s.wg.Done()
 		var serveErr error
-		if s.certFile != "" && s.keyFile != "" {
-			serveErr = s.httpSrv.ServeTLS(ln, s.certFile, s.keyFile)
+		if s.UsesTLS() {
+			serveErr = s.httpSrv.ServeTLS(ln, "", "")
 		} else {
 			serveErr = s.httpSrv.Serve(ln)
 		}

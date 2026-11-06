@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
+	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
 	"github.com/kairos-io/AuroraBoot/pkg/handlers"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
 	"github.com/labstack/echo/v4"
@@ -179,6 +181,54 @@ var _ = Describe("GroupHandler", func() {
 			var group store.NodeGroup
 			Expect(json.Unmarshal(rec.Body.Bytes(), &group)).To(Succeed())
 			Expect(group.Name).To(Equal("production"))
+			Expect(group.Description).To(Equal("Production environment"))
+		})
+
+		update := func(body string) store.NodeGroup {
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/groups/grp-1", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("id")
+			c.SetParamValues("grp-1")
+
+			Expect(handler.Update(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusOK))
+
+			var group store.NodeGroup
+			Expect(json.Unmarshal(rec.Body.Bytes(), &group)).To(Succeed())
+			return group
+		}
+
+		It("clears the description when it is sent as an empty string", func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod", Description: "old desc"},
+			}
+
+			group := update(`{"name":"prod","description":""}`)
+			Expect(group.Description).To(BeEmpty())
+			Expect(gs.groups[0].Description).To(BeEmpty())
+		})
+
+		It("leaves the description alone when the field is omitted", func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod", Description: "old desc"},
+			}
+
+			group := update(`{"name":"production"}`)
+			Expect(group.Name).To(Equal("production"))
+			Expect(group.Description).To(Equal("old desc"))
+			Expect(gs.groups[0].Description).To(Equal("old desc"))
+		})
+
+		It("leaves the name alone when it is sent as an empty string", func() {
+			gs.groups = []*store.NodeGroup{
+				{ID: "grp-1", Name: "prod", Description: "old desc"},
+			}
+
+			group := update(`{"name":"","description":"new desc"}`)
+			Expect(group.Name).To(Equal("prod"))
+			Expect(group.Description).To(Equal("new desc"))
 		})
 	})
 
@@ -197,5 +247,65 @@ var _ = Describe("GroupHandler", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(rec.Code).To(Equal(http.StatusNoContent))
 		})
+	})
+})
+
+var _ = Describe("GroupHandler with the database store", func() {
+	var (
+		e       *echo.Echo
+		handler *handlers.GroupHandler
+	)
+
+	BeforeEach(func() {
+		e = echo.New()
+		s, err := gormstore.New(filepath.Join(GinkgoT().TempDir(), "groups.db"))
+		Expect(err).NotTo(HaveOccurred())
+		handler = handlers.NewGroupHandler(&gormstore.GroupStoreAdapter{S: s})
+	})
+
+	create := func(body string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/groups", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		Expect(handler.Create(e.NewContext(req, rec))).To(Succeed())
+		return rec
+	}
+
+	createGroup := func(name string) store.NodeGroup {
+		rec := create(`{"name":"` + name + `"}`)
+		Expect(rec.Code).To(Equal(http.StatusCreated))
+		var g store.NodeGroup
+		Expect(json.Unmarshal(rec.Body.Bytes(), &g)).To(Succeed())
+		return g
+	}
+
+	errorOf := func(rec *httptest.ResponseRecorder) string {
+		var body map[string]string
+		Expect(json.Unmarshal(rec.Body.Bytes(), &body)).To(Succeed())
+		return body["error"]
+	}
+
+	It("answers 409 when creating a group whose name is taken", func() {
+		createGroup("prod")
+
+		rec := create(`{"name":"prod"}`)
+		Expect(rec.Code).To(Equal(http.StatusConflict))
+		Expect(errorOf(rec)).To(Equal(`a group named "prod" already exists`))
+	})
+
+	It("answers 409 when renaming a group to a name that is taken", func() {
+		createGroup("prod")
+		staging := createGroup("staging")
+
+		req := httptest.NewRequest(http.MethodPut, "/api/v1/groups/"+staging.ID, strings.NewReader(`{"name":"prod"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		c := e.NewContext(req, rec)
+		c.SetParamNames("id")
+		c.SetParamValues(staging.ID)
+
+		Expect(handler.Update(c)).To(Succeed())
+		Expect(rec.Code).To(Equal(http.StatusConflict))
+		Expect(errorOf(rec)).To(Equal(`a group named "prod" already exists`))
 	})
 })

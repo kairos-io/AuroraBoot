@@ -13,6 +13,7 @@ package secureboot
 import (
 	"bytes"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/pem"
 	"errors"
@@ -373,6 +374,12 @@ func generateAuthKeys(log logger.KairosLogger, guid efiutil.EFIGUID, keyPath, ke
 			return fmt.Errorf("loading custom keys (type %s): %w", keyType, err)
 		}
 		appendDatabaseSkippingDuplicates(sigdb, customSigDb, log, keyType, "custom")
+
+		customHashDb, err := getCustomHashes(customDerCertDir, keyType)
+		if err != nil {
+			return fmt.Errorf("loading custom hashes (type %s): %w", keyType, err)
+		}
+		appendDatabaseSkippingDuplicates(sigdb, customHashDb, log, keyType, "custom")
 	}
 
 	var efiVarType efivar.Efivar
@@ -440,7 +447,19 @@ func prepareCustomDerDir(l logger.KairosLogger, customCertDir string) (string, e
 			for _, sigEntry := range sig.Signatures {
 				l.Infof("	Signature Owner: %s\n", sigEntry.Owner.Format())
 				switch sig.SignatureType {
-				case signature.CERT_X509_GUID, signature.CERT_SHA256_GUID:
+				case signature.CERT_SHA256_GUID:
+					if len(sigEntry.Data) != sha256.Size {
+						l.Errorf("hash error: SHA256 entry of %d bytes", len(sigEntry.Data))
+						continue
+					}
+					hashDir := filepath.Join(tmpDir, customHashesDir, keyType)
+					if err := os.MkdirAll(hashDir, 0755); err != nil {
+						return "", fmt.Errorf("creating hash directory for key type %s: %w", keyType, err)
+					}
+					if err := os.WriteFile(filepath.Join(hashDir, fmt.Sprintf("%s-%x", keyType, sigEntry.Data)), sigEntry.Data, 0644); err != nil {
+						return "", fmt.Errorf("writing custom hash file: %w", err)
+					}
+				case signature.CERT_X509_GUID:
 					cert, err := x509.ParseCertificate(sigEntry.Data)
 					if err != nil {
 						l.Errorf("cert error: %s", err)
@@ -461,6 +480,41 @@ func prepareCustomDerDir(l logger.KairosLogger, customCertDir string) (string, e
 	}
 
 	return tmpDir, nil
+}
+
+// customHashesDir holds the SHA256 entries prepareCustomDerDir keeps apart
+// from the certificates, as sbctl reads everything under "custom" as X.509.
+const customHashesDir = "custom-hashes"
+
+// customOwnerGUID is the owner GUID certs.GetCustomCerts gives custom certs.
+const customOwnerGUID = "88a69775-5ad7-45d9-9f34-cec43e1f1989"
+
+// getCustomHashes reads the SHA256 entries prepareCustomDerDir wrote for a
+// variable into a signature database.
+func getCustomHashes(customDerCertDir, keyType string) (*signature.SignatureDatabase, error) {
+	sigdb := signature.NewSignatureDatabase()
+	hashDir := filepath.Join(customDerCertDir, customHashesDir, keyType)
+	files, err := os.ReadDir(hashDir)
+	if os.IsNotExist(err) {
+		return sigdb, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	owner := *efiutil.StringToGUID(customOwnerGUID)
+	for _, file := range files {
+		if !file.Type().IsRegular() {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(hashDir, file.Name()))
+		if err != nil {
+			return nil, err
+		}
+		if err := sigdb.Append(signature.CERT_SHA256_GUID, owner, data); err != nil {
+			return nil, fmt.Errorf("%s: %w", file.Name(), err)
+		}
+	}
+	return sigdb, nil
 }
 
 // appendCustomDerCerts appends custom DER certificates to the final .der file

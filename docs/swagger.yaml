@@ -378,8 +378,12 @@ definitions:
   handlers.APIUpdateGroupRequest:
     properties:
       description:
+        description: Description replaces the group description; an empty string clears
+          it and an omitted field keeps the current one.
         type: string
       name:
+        description: Name replaces the group name; an empty or omitted name keeps
+          the current one.
         type: string
     type: object
   handlers.DownloadLinkRequest:
@@ -1453,6 +1457,10 @@ paths:
           description: Bad Request
           schema:
             $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: Conflict
+          schema:
+            $ref: '#/definitions/handlers.APIError'
         "413":
           description: Request Entity Too Large
           schema:
@@ -1527,6 +1535,10 @@ paths:
             $ref: '#/definitions/store.NodeGroup'
         "404":
           description: Not Found
+          schema:
+            $ref: '#/definitions/handlers.APIError'
+        "409":
+          description: Conflict
           schema:
             $ref: '#/definitions/handlers.APIError'
         "413":

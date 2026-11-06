@@ -141,8 +141,10 @@ type APICreateGroupRequest struct {
 
 // APIUpdateGroupRequest is the JSON body of PUT /api/v1/groups/:id.
 type APIUpdateGroupRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	// Name replaces the group name; an empty or omitted name keeps the current one.
+	Name string `json:"name"`
+	// Description replaces the group description; an empty string clears it and an omitted field keeps the current one.
+	Description *string `json:"description"`
 }
 
 // --- Commands ---

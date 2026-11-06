@@ -18,6 +18,10 @@ var ErrCommandNotFound = errors.New("command not found")
 // "waiting for capacity" and requeue instead of treating it as an error.
 var ErrNoClaimCapacity = errors.New("no unclaimed node available in group")
 
+// ErrGroupNameTaken is returned by GroupStore.Create and GroupStore.Update when
+// another group already uses the name.
+var ErrGroupNameTaken = errors.New("group name already in use")
+
 // NodeGroup represents a logical group/environment for nodes (e.g., "production", "staging").
 type NodeGroup struct {
 	ID          string `json:"id" gorm:"primaryKey"`
@@ -571,6 +575,11 @@ type ArtifactStore interface {
 	// record at entry, then writes back a stale phase/message alongside the
 	// new file list. Column-scoped writes converge cleanly.
 	UpdateFiles(ctx context.Context, id string, files []string) error
+	// UpdateNameSaved writes only the name and saved columns for id, and only
+	// the ones that are non-nil. The PATCH handler uses this instead of Update
+	// so its snapshotted phase, message, files and upload token never race
+	// back over a concurrent write from the builder.
+	UpdateNameSaved(ctx context.Context, id string, name *string, saved *bool) error
 	// ClearUploadToken zeroes the upload_token column for id. watchCRPhase
 	// calls this on the terminal transition so a leaked token cannot be
 	// used to overwrite artifacts of a finished build.

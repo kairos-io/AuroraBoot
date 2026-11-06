@@ -3,9 +3,10 @@
 // example, auroraboot) can drive UKI builds without shelling out to the
 // auroraboot binary.
 //
-// The pipeline still relies on a handful of host binaries being available on
-// PATH: dd, mkfs.msdos, mmd, mcopy, mformat and (for ISO output) xorriso.
-// Build will return an error up-front if any of them are missing.
+// ISO output still relies on a handful of host binaries being available on
+// PATH: dd, mformat, mmd, mcopy and xorriso. The uki and container outputs
+// need none of them. Build will return an error up-front if any binary the
+// requested output needs is missing.
 package uki
 
 import (
@@ -223,13 +224,13 @@ func Build(opts Options) (err error) {
 		config.Arch = opts.Arch
 	}
 
-	if err := checkBuildUKIDeps(config.Arch); err != nil {
-		return err
-	}
-
 	outputType := opts.OutputType
 	if outputType == "" {
 		outputType = string(constants.DefaultOutput)
+	}
+
+	if err := checkBuildUKIDeps(config.Arch, outputType); err != nil {
+		return err
 	}
 	outputDir := opts.OutputDir
 	if outputDir == "" {
@@ -387,6 +388,10 @@ func Build(opts Options) (err error) {
 		return err
 	}
 
+	if err := os.MkdirAll(outputDir, os.ModeDir|os.ModePerm); err != nil {
+		return fmt.Errorf("creating output dir %s: %w", outputDir, err)
+	}
+
 	switch outputType {
 	case string(constants.IsoOutput):
 		if err := createISO(e, sourceDir, outputDir, opts.OverlayISO, opts.PublicKeysDir, outputName, opts.Name, entries, *log, config.Arch, opts.ExtensionsCatalogs, opts.Extensions, opts.AllowInsecureRegistries); err != nil {
@@ -528,9 +533,16 @@ func resolveSdBootFiles(sourceDir, arch string, inSource bool) (stub, sdBoot, ou
 	return stub, sdBootPath, outEfi, nil
 }
 
-func checkBuildUKIDeps(arch string) error {
-	neededBinaries := []string{"dd", "mkfs.msdos", "mmd", "mcopy", "xorriso"}
-	for _, b := range neededBinaries {
+// hostBinaries returns the host binaries Build runs for the given output type.
+func hostBinaries(outputType string) []string {
+	if outputType == string(constants.IsoOutput) {
+		return []string{"dd", "mformat", "mmd", "mcopy", "xorriso"}
+	}
+	return nil
+}
+
+func checkBuildUKIDeps(arch, outputType string) error {
+	for _, b := range hostBinaries(outputType) {
 		if _, err := exec.LookPath(b); err != nil {
 			return err
 		}
@@ -743,13 +755,24 @@ func ZstdFile(sourcePath, targetPath string) error {
 	if err != nil {
 		return fmt.Errorf("error creating compressed initramfs file: %w", err)
 	}
-	defer outputFile.Close()
 
-	zstdWriter, _ := zstd.NewWriter(outputFile, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
-	defer zstdWriter.Close()
+	zstdWriter, err := zstd.NewWriter(outputFile, zstd.WithEncoderLevel(zstd.SpeedBestCompression))
+	if err != nil {
+		_ = outputFile.Close()
+		return fmt.Errorf("error creating zstd encoder: %w", err)
+	}
 
 	if _, err := io.Copy(zstdWriter, inputFile); err != nil {
+		_ = zstdWriter.Close()
+		_ = outputFile.Close()
 		return fmt.Errorf("error writing data to the compress initramfs file: %w", err)
+	}
+	if err := zstdWriter.Close(); err != nil {
+		_ = outputFile.Close()
+		return fmt.Errorf("error finishing the compressed initramfs file: %w", err)
+	}
+	if err := outputFile.Close(); err != nil {
+		return fmt.Errorf("error closing the compressed initramfs file: %w", err)
 	}
 	return nil
 }
@@ -904,11 +927,13 @@ func imageFiles(sourceDir, keysDir string, entries []utils.BootEntry, arch strin
 		"loader":         {filepath.Join(sourceDir, "loader.conf")},
 		"loader/entries": {},
 		"loader/keys":    {},
-		"loader/keys/auto": {
+	}
+	if keysDir != "" {
+		data["loader/keys/auto"] = []string{
 			filepath.Join(keysDir, "PK.auth"),
 			filepath.Join(keysDir, "KEK.auth"),
 			filepath.Join(keysDir, "db.auth"),
-		},
+		}
 	}
 
 	for _, entry := range entries {

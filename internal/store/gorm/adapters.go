@@ -139,6 +139,9 @@ func (a *ArtifactStoreAdapter) UpdatePhaseMessage(ctx context.Context, id, phase
 func (a *ArtifactStoreAdapter) UpdateFiles(ctx context.Context, id string, files []string) error {
 	return a.S.ArtifactUpdateFiles(ctx, id, files)
 }
+func (a *ArtifactStoreAdapter) UpdateNameSaved(ctx context.Context, id string, name *string, saved *bool) error {
+	return a.S.ArtifactUpdateNameSaved(ctx, id, name, saved)
+}
 func (a *ArtifactStoreAdapter) ClearUploadToken(ctx context.Context, id string) error {
 	return a.S.ArtifactClearUploadToken(ctx, id)
 }

@@ -8,6 +8,7 @@ import (
 
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
+	"gorm.io/gorm"
 
 	gormstore "github.com/kairos-io/AuroraBoot/internal/store/gorm"
 	"github.com/kairos-io/AuroraBoot/pkg/store"
@@ -345,6 +346,42 @@ var _ = Describe("Gorm Store", func() {
 			Expect(found.GroupID).To(HaveValue(Equal(g.ID)))
 			Expect(found.Group).NotTo(BeNil())
 			Expect(found.Group.Name).To(Equal("target-grp"))
+		})
+
+		It("refuses to set a group on an unknown node", func() {
+			g := &store.NodeGroup{Name: "orphan-grp"}
+			Expect(s.Create(ctx, g)).To(Succeed())
+
+			Expect(s.SetGroup(ctx, "no-such-node", &g.ID)).To(MatchError(gorm.ErrRecordNotFound))
+		})
+
+		It("refuses to move a node into an unknown group", func() {
+			n := &store.ManagedNode{MachineID: "sg2"}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			missing := "no-such-group"
+			Expect(s.SetGroup(ctx, n.ID, &missing)).To(MatchError(gorm.ErrRecordNotFound))
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.GroupID).To(BeNil())
+		})
+
+		It("moves a node out of its group", func() {
+			g := &store.NodeGroup{Name: "leave-grp"}
+			Expect(s.Create(ctx, g)).To(Succeed())
+			n := &store.ManagedNode{MachineID: "sg3", GroupID: &g.ID}
+			Expect(s.Register(ctx, n)).To(Succeed())
+
+			Expect(s.SetGroup(ctx, n.ID, nil)).To(Succeed())
+
+			found, err := s.NodeGetByID(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(found.GroupID).To(BeNil())
+		})
+
+		It("refuses to set labels on an unknown node", func() {
+			Expect(s.SetLabels(ctx, "no-such-node", map[string]string{"a": "b"})).To(MatchError(gorm.ErrRecordNotFound))
 		})
 
 		It("sets labels", func() {
@@ -905,6 +942,53 @@ var _ = Describe("Gorm Store", func() {
 			Expect(refreshed.ArtifactFiles).To(Equal([]string{"kairos.iso", "kairos.iso.sha256"}))
 			Expect(refreshed.UploadToken).To(Equal("tok"))
 			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+	})
+
+	Describe("ArtifactUpdateNameSaved", func() {
+		It("writes only name and saved and does not clobber a concurrent phase write", func() {
+			rec := &store.ArtifactRecord{
+				ID: "art-name", Name: "old", Phase: store.ArtifactBuilding, BaseImage: "img",
+				UploadToken: "tok",
+			}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			Expect(s.ArtifactUpdatePhaseMessage(ctx, "art-name", store.ArtifactReady, "done")).To(Succeed())
+			Expect(s.ArtifactUpdateFiles(ctx, "art-name", []string{"kairos.iso"})).To(Succeed())
+
+			name, saved := "renamed", true
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-name", &name, &saved)).To(Succeed())
+
+			refreshed, err := s.ArtifactGetByID(ctx, "art-name")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Name).To(Equal("renamed"))
+			Expect(refreshed.Saved).To(BeTrue())
+			Expect(refreshed.Phase).To(Equal(store.ArtifactReady))
+			Expect(refreshed.Message).To(Equal("done"))
+			Expect(refreshed.ArtifactFiles).To(Equal([]string{"kairos.iso"}))
+			Expect(refreshed.UploadToken).To(Equal("tok"))
+			Expect(refreshed.BaseImage).To(Equal("img"))
+		})
+
+		It("writes zero values and skips nil fields", func() {
+			rec := &store.ArtifactRecord{ID: "art-zero", Name: "keep", Saved: true}
+			Expect(s.ArtifactCreate(ctx, rec)).To(Succeed())
+
+			unsaved := false
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-zero", nil, &unsaved)).To(Succeed())
+			refreshed, err := s.ArtifactGetByID(ctx, "art-zero")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Name).To(Equal("keep"))
+			Expect(refreshed.Saved).To(BeFalse())
+
+			empty := ""
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-zero", &empty, nil)).To(Succeed())
+			refreshed, err = s.ArtifactGetByID(ctx, "art-zero")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(refreshed.Name).To(BeEmpty())
+			Expect(refreshed.Saved).To(BeFalse())
+
+			Expect(s.ArtifactUpdateNameSaved(ctx, "art-zero", nil, nil)).To(Succeed())
 		})
 	})
 

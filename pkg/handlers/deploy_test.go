@@ -276,6 +276,13 @@ var _ = Describe("DeployHandler.DeployRedfish", func() {
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 	})
 
+	It("serves an uploaded ISO stored as a bare file name from the artifacts dir", func() {
+		artifacts.records[0].ArtifactFiles = []string{"kairos.iso"}
+		h := newHandler(true)
+		rec := doDeploy(h, `{"endpoint":"http://10.0.0.9","username":"u","password":"p"}`)
+		Expect(rec.Code).To(Equal(http.StatusAccepted), rec.Body.String())
+	})
+
 	It("returns 400 when the artifact has no ISO", func() {
 		artifacts.records[0].ArtifactFiles = []string{"image.raw"}
 		h := newHandler(true)

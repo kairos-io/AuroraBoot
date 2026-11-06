@@ -804,6 +804,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.APIError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
@@ -894,6 +900,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
@@ -2580,9 +2592,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "description": {
+                    "description": "Description replaces the group description; an empty string clears it and an omitted field keeps the current one.",
                     "type": "string"
                 },
                 "name": {
+                    "description": "Name replaces the group name; an empty or omitted name keeps the current one.",
                     "type": "string"
                 }
             }

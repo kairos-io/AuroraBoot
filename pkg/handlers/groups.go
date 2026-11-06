@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"fmt"
 	"net/http"
 
 	"github.com/google/uuid"
@@ -34,6 +36,7 @@ type createGroupRequest struct {
 //	@Param			body	body		APICreateGroupRequest	true	"Group payload"
 //	@Success		201		{object}	store.NodeGroup
 //	@Failure		400		{object}	APIError
+//	@Failure		409		{object}	APIError
 //	@Failure		413		{object}	APIError
 //	@Router			/api/v1/groups [post]
 func (h *GroupHandler) Create(c echo.Context) error {
@@ -53,6 +56,9 @@ func (h *GroupHandler) Create(c echo.Context) error {
 	}
 
 	if err := h.groups.Create(c.Request().Context(), group); err != nil {
+		if errors.Is(err, store.ErrGroupNameTaken) {
+			return nameTaken(c, req.Name)
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to create group"})
 	}
 
@@ -119,9 +125,11 @@ func setNodeCount(g *store.NodeGroup, counts map[string]int) {
 }
 
 // updateGroupRequest is the expected body for updating a group.
+// An omitted description leaves the stored one unchanged; an empty string
+// clears it.
 type updateGroupRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Name        string  `json:"name"`
+	Description *string `json:"description"`
 }
 
 // Update handles PUT /api/v1/groups/:id.
@@ -135,6 +143,7 @@ type updateGroupRequest struct {
 //	@Param		body	body		APIUpdateGroupRequest	true	"Update payload"
 //	@Success	200		{object}	store.NodeGroup
 //	@Failure	404		{object}	APIError
+//	@Failure	409		{object}	APIError
 //	@Failure	413		{object}	APIError
 //	@Router		/api/v1/groups/{id} [put]
 func (h *GroupHandler) Update(c echo.Context) error {
@@ -154,15 +163,22 @@ func (h *GroupHandler) Update(c echo.Context) error {
 	if req.Name != "" {
 		group.Name = req.Name
 	}
-	if req.Description != "" {
-		group.Description = req.Description
+	if req.Description != nil {
+		group.Description = *req.Description
 	}
 
 	if err := h.groups.Update(ctx, group); err != nil {
+		if errors.Is(err, store.ErrGroupNameTaken) {
+			return nameTaken(c, group.Name)
+		}
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update group"})
 	}
 
 	return c.JSON(http.StatusOK, group)
+}
+
+func nameTaken(c echo.Context, name string) error {
+	return c.JSON(http.StatusConflict, map[string]string{"error": fmt.Sprintf("a group named %q already exists", name)})
 }
 
 // Delete handles DELETE /api/v1/groups/:id.
