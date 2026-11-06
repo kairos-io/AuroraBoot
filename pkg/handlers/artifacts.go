@@ -448,11 +448,11 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		Confext: conHierarchies,
 	}
 
-	// Resolve target group name for cloud-config injection.
-	groupName := ""
+	// The cloud-config carries the group ID, which survives a group rename.
+	groupID := ""
 	if req.Provisioning.TargetGroupId != "" && h.groups != nil {
 		if g, err := h.groups.GetByID(ctx, req.Provisioning.TargetGroupId); err == nil {
-			groupName = g.Name
+			groupID = g.ID
 		}
 	}
 
@@ -465,7 +465,7 @@ func (h *ArtifactHandler) Create(c echo.Context) error {
 		registerAuroraBoot: registerAuroraBoot,
 		aurorabootURL:      h.aurorabootURL,
 		regToken:           regToken,
-		groupName:          groupName,
+		groupID:            groupID,
 		allowedCommands:    allowedCommands,
 		variant:            req.Variant,
 		kubernetesDistro:   req.KubernetesDistro,
@@ -1610,7 +1610,7 @@ type cloudConfigParams struct {
 	registerAuroraBoot bool
 	aurorabootURL      string
 	regToken           string
-	groupName          string
+	groupID            string
 	// allowedCommands is always emitted verbatim when registerAuroraBoot is true.
 	// Callers substitute phonehomeSafeDefaults for nil input before calling.
 	allowedCommands   []string
@@ -1678,7 +1678,7 @@ func buildCloudConfig(p cloudConfigParams) string {
 		doc["phonehome"] = map[string]interface{}{
 			"url":                p.aurorabootURL,
 			"registration_token": p.regToken,
-			"group":              p.groupName,
+			"group":              p.groupID,
 			"allowed_commands":   allowedYAML,
 		}
 	}

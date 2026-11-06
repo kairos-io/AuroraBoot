@@ -343,10 +343,11 @@ definitions:
         type: string
       group:
         description: |-
-          Group is the name of the group a new node joins (optional). The holder
-          of the registration token chooses it for a new node, so the
-          registration token decides group placement. An unknown name leaves the
-          node ungrouped. Ignored when the node registers again.
+          Group is the ID or name of the group a new node joins (optional); an ID
+          match wins over a name match. The holder of the registration token
+          chooses it for a new node, so the registration token decides group
+          placement. An unknown group leaves the node ungrouped. Ignored when the
+          node registers again.
         example: edge-sites
         type: string
       hostname:
