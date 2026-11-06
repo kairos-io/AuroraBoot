@@ -521,6 +521,26 @@ ID=debian
 	)
 })
 
+var _ = Describe("single-efi-cmdline file names", func() {
+	It("rejects titles that only differ by case", func() {
+		opts := validTestOptions()
+		opts.SingleEfiCmdlines = []string{"Debug: rd.debug", "debug: rd.shell"}
+		Expect(opts.validate()).To(MatchError(`uki.Build: boot entries "Kairos (Debug)" and "Kairos (debug)" both produce debug.efi, use distinct titles`))
+	})
+
+	It("rejects a title that maps onto the default entry", func() {
+		opts := validTestOptions()
+		opts.SingleEfiCmdlines = []string{"Norole: rd.debug"}
+		Expect(opts.validate()).To(MatchError(`uki.Build: boot entries "Kairos" and "Kairos (Norole)" both produce norole.efi, use distinct titles`))
+	})
+
+	It("accepts distinct titles", func() {
+		opts := validTestOptions()
+		opts.SingleEfiCmdlines = []string{"Debug: rd.debug", "Shell: rd.shell"}
+		Expect(opts.validate()).To(Succeed())
+	})
+})
+
 var _ = Describe("writeISOCloudConfig", func() {
 	It("writes the cloud-config to config.yaml at the ISO root", func() {
 		isoDir := tTempDir()

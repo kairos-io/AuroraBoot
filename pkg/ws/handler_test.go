@@ -41,6 +41,12 @@ type commandData struct {
 	Args    map[string]string `json:"args,omitempty"`
 }
 
+// bootReport is one call of AgentHandler.OnNodeBooted.
+type bootReport struct {
+	nodeID, bootState string
+	bootedAt          *time.Time
+}
+
 type commandStatusData struct {
 	ID     string `json:"id"`
 	Phase  string `json:"phase"`
@@ -82,6 +88,8 @@ var _ = Describe("WebSocket Handler", func() {
 		nodeID    string
 		apiKey    string
 		finalized chan string
+		phases    chan string
+		booted    chan bootReport
 	)
 
 	bg := context.Background()
@@ -129,11 +137,19 @@ var _ = Describe("WebSocket Handler", func() {
 		// three). A fresh local per spec has no writer.
 		finalized = make(chan string, 8)
 		specFinalized := finalized
+		phases = make(chan string, 8)
+		specPhases := phases
+		booted = make(chan bootReport, 8)
+		specBooted := booted
 		agentHandler := &ws.AgentHandler{
-			Hub:      hub,
-			Nodes:    nodes,
-			Commands: commands,
-			Finalize: func(_ context.Context, id string) { specFinalized <- id },
+			Hub:            hub,
+			Nodes:          nodes,
+			Commands:       commands,
+			Finalize:       func(_ context.Context, id string) { specFinalized <- id },
+			OnCommandPhase: func(_ context.Context, id string) { specPhases <- id },
+			OnNodeBooted: func(_ context.Context, id, bootState string, bootedAt *time.Time) {
+				specBooted <- bootReport{nodeID: id, bootState: bootState, bootedAt: bootedAt}
+			},
 		}
 		uiHandler := &ws.UIHandler{Hub: hub}
 
@@ -336,59 +352,59 @@ var _ = Describe("WebSocket Handler", func() {
 			}, 10*time.Second, 100*time.Millisecond).Should(Equal(store.CommandCompleted))
 		})
 
-		// A real agent reports a failed upgrade over this frame, not over the
-		// REST status endpoint, so the fail-fast rule has to be applied here
-		// too (kairos-io/kairos#4267).
-		It("stops the rest of a fail-fast batch when a node reports a failure", func() {
-			batchID := fmt.Sprintf("batch-%d", testCounter.Add(1))
-			mine := &store.NodeCommand{
-				ManagedNodeID: nodeID, Command: "upgrade",
-				BatchID: batchID, FailFast: true,
-			}
-			Expect(commands.Create(bg, mine)).To(Succeed())
-			Expect(commands.UpdateStatus(bg, mine.ID, store.CommandDelivered, "")).To(Succeed())
-
-			// A sibling of the same batch, still waiting for its node, and one
-			// already handed to its node. Only the first may be canceled.
-			sibling := &store.NodeCommand{
-				ManagedNodeID: "some-other-node", Command: "upgrade",
-				BatchID: batchID, FailFast: true,
-			}
-			Expect(commands.Create(bg, sibling)).To(Succeed())
-			delivered := &store.NodeCommand{
-				ManagedNodeID: "a-third-node", Command: "upgrade",
-				BatchID: batchID, FailFast: true,
-			}
-			Expect(commands.Create(bg, delivered)).To(Succeed())
-			Expect(commands.UpdateStatus(bg, delivered.ID, store.CommandRunning, "")).To(Succeed())
+		// A batch waits on its nodes' command reports, and a real agent sends
+		// them over this frame, so every applied report reaches the hook.
+		It("hands every applied status report to OnCommandPhase", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: nodeID, Command: "exec"}
+			Expect(commands.Create(bg, cmd)).To(Succeed())
+			Expect(commands.UpdateStatus(bg, cmd.ID, store.CommandDelivered, "")).To(Succeed())
 
 			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
 			Expect(err).NotTo(HaveOccurred())
 			defer conn.Close()
 
-			Eventually(func() bool {
-				return hub.IsOnline(nodeID)
-			}, 10*time.Second, 100*time.Millisecond).Should(BeTrue())
+			Expect(sendMsg(conn, "command_status", commandStatusData{ID: cmd.ID, Phase: store.CommandRunning})).To(Succeed())
+			Eventually(phases, 10*time.Second).Should(Receive(Equal(cmd.ID)))
+			Expect(sendMsg(conn, "command_status", commandStatusData{ID: cmd.ID, Phase: store.CommandFailed, Result: "boom"})).To(Succeed())
+			Eventually(phases, 10*time.Second).Should(Receive(Equal(cmd.ID)))
+		})
 
-			Expect(sendMsg(conn, "command_status", commandStatusData{
-				ID:     mine.ID,
-				Phase:  store.CommandFailed,
-				Result: "downloading artifact image: HTTP 500",
+		It("does not hand a rejected status report to OnCommandPhase", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Expect(sendMsg(conn, "command_status", commandStatusData{ID: "not-a-command", Phase: store.CommandFailed})).To(Succeed())
+			Consistently(phases, time.Second).ShouldNot(Receive())
+		})
+
+		It("hands a heartbeat that carries an uptime to OnNodeBooted with its boot time", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			before := time.Now()
+			Expect(sendMsg(conn, "heartbeat", map[string]any{
+				"agentVersion": "2.0.0",
+				"bootState":    "active",
+				"metrics":      map[string]any{"uptimeSeconds": 3600},
 			})).To(Succeed())
 
-			phaseOf := func(id string) func() string {
-				return func() string {
-					c, _ := commands.GetByID(bg, id)
-					if c == nil {
-						return ""
-					}
-					return c.Phase
-				}
-			}
-			Eventually(phaseOf(sibling.ID), 10*time.Second, 100*time.Millisecond).
-				Should(Equal(store.CommandCanceled))
-			Expect(phaseOf(mine.ID)()).To(Equal(store.CommandFailed))
-			Expect(phaseOf(delivered.ID)()).To(Equal(store.CommandRunning))
+			var got bootReport
+			Eventually(booted, 10*time.Second).Should(Receive(&got))
+			Expect(got.nodeID).To(Equal(nodeID))
+			Expect(got.bootState).To(Equal("active"))
+			Expect(got.bootedAt).NotTo(BeNil())
+			Expect(*got.bootedAt).To(BeTemporally("~", before.Add(-time.Hour), 5*time.Second))
+		})
+
+		It("does not hand a heartbeat without an uptime to OnNodeBooted", func() {
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Expect(sendMsg(conn, "heartbeat", map[string]any{"agentVersion": "2.0.0", "bootState": "active"})).To(Succeed())
+			Consistently(booted, time.Second).ShouldNot(Receive())
 		})
 
 		It("should reject a command_status for a command owned by another node", func() {

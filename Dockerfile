@@ -98,12 +98,21 @@ RUN go build -tags ui -ldflags "-X main.version=${VERSION}" -o auroraboot
 
 
 # RISC-V 64 stage - uses fedorariscv/base since official fedora:42 lacks riscv64
-FROM fedorariscv/base:44 AS riscv64
+FROM fedorariscv/base:45 AS riscv64
 ENV BUILDKIT_PROGRESS=plain
 ENV TMPDIR=/tmp
 # scripts/retry runs a mirror fetch again if it fails, so one dropped
 # request no longer ends the build. See kairos-io/kairos#5565.
 COPY scripts/retry /usr/local/bin/retry
+# The base image ships no usable repo config and Fedora has no riscv64 mirrors,
+# so use the Fedora RISC-V Koji repo and turn the stock Fedora repos off
+RUN printf '%s\n' '[fedora-riscv-koji]' 'name=Fedora RISC-V Koji' \
+        'baseurl=https://openkoji.iscas.ac.cn/kojifiles/repos/f$releasever-build/latest/riscv64/' \
+        'enabled=1' 'gpgcheck=0' > /etc/yum.repos.d/openkoji-fedora.repo && \
+    printf '[fedora]\nenabled=0\n' > /etc/yum.repos.d/fedora.repo && \
+    printf '[updates]\nenabled=0\n' > /etc/yum.repos.d/fedora-updates.repo && \
+    printf '[updates-testing]\nenabled=0\n' > /etc/yum.repos.d/fedora-updates-testing.repo && \
+    printf '[fedora-cisco-openh264]\nenabled=0\n' > /etc/yum.repos.d/fedora-cisco-openh264.repo
 # Install base dependencies (same as main base stage)
 RUN retry dnf -y update && \
     retry dnf -y install dnf-plugins-core && \
