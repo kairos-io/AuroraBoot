@@ -2,8 +2,17 @@ package isoserve_test
 
 import (
 	"context"
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
+	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -106,6 +115,33 @@ var _ = Describe("isoserve.Server", func() {
 		}, time.Second, 10*time.Millisecond).Should(Equal(http.StatusNotFound))
 	})
 
+	It("keeps serving an extended token past its original TTL", func() {
+		url, token, err := srv.Register(isoPath, 50*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(srv.Extend(token, time.Minute)).To(BeTrue())
+
+		time.Sleep(100 * time.Millisecond)
+		resp, body := get(url, nil)
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(body).To(Equal(payload))
+	})
+
+	It("does not extend an unknown, revoked or expired token", func() {
+		Expect(srv.Extend("not-a-real-token", time.Minute)).To(BeFalse())
+
+		_, revoked, err := srv.Register(isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		srv.Revoke(revoked)
+		Expect(srv.Extend(revoked, time.Minute)).To(BeFalse())
+
+		expiredURL, expired, err := srv.Register(isoPath, 10*time.Millisecond)
+		Expect(err).NotTo(HaveOccurred())
+		time.Sleep(50 * time.Millisecond)
+		Expect(srv.Extend(expired, time.Minute)).To(BeFalse())
+		resp, _ := get(expiredURL, nil)
+		Expect(resp.StatusCode).To(Equal(http.StatusNotFound))
+	})
+
 	It("returns 404 after a token is revoked", func() {
 		url, token, err := srv.Register(isoPath, time.Minute)
 		Expect(err).NotTo(HaveOccurred())
@@ -138,6 +174,22 @@ var _ = Describe("isoserve.Server", func() {
 		Expect(resp.StatusCode).To(Equal(http.StatusOK))
 		Expect(body).To(Equal(payload))
 		Expect(body).NotTo(ContainSubstring("TOP-SECRET"))
+	})
+
+	It("builds the URL on the given advertised base and still serves the token", func() {
+		url, token, err := srv.RegisterAt("https://iso.example.com/proxy/", isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(url).To(Equal("https://iso.example.com/proxy/redfish/iso/" + token + "/kairos.iso"))
+
+		resp, body := get(ts.URL+strings.TrimPrefix(url, "https://iso.example.com/proxy"), nil)
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(body).To(Equal(payload))
+	})
+
+	It("falls back to the launch BaseURL when the advertised base is empty", func() {
+		url, token, err := srv.RegisterAt("", isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		Expect(url).To(Equal(ts.URL + "/redfish/iso/" + token + "/kairos.iso"))
 	})
 
 	It("rejects a non-absolute or non-existent path at registration", func() {
@@ -223,6 +275,73 @@ var _ = Describe("isoserve.Server", func() {
 			"key was given without a certificate"),
 	)
 
+	// freeAddr returns a loopback address nothing is listening on, so a test can
+	// check afterwards that a failed Start left the port unbound.
+	freeAddr := func() string {
+		ln, err := net.Listen("tcp", "127.0.0.1:0")
+		Expect(err).NotTo(HaveOccurred())
+		addr := ln.Addr().String()
+		Expect(ln.Close()).To(Succeed())
+		return addr
+	}
+
+	DescribeTable("refuses to start when the TLS pair cannot be loaded",
+		func(write func(dir string) (cert, key string)) {
+			cert, key := write(GinkgoT().TempDir())
+			addr := freeAddr()
+			bad := isoserve.New(isoserve.Config{BindAddr: addr, CertFile: cert, KeyFile: key})
+			err := bad.Start(context.Background())
+			Expect(err).To(HaveOccurred())
+			Expect(err.Error()).To(ContainSubstring(cert))
+			Expect(err.Error()).To(ContainSubstring(key))
+			Expect(bad.Addr()).To(BeNil())
+
+			conn, dialErr := net.DialTimeout("tcp", addr, time.Second)
+			if dialErr == nil {
+				_ = conn.Close()
+			}
+			Expect(dialErr).To(HaveOccurred(), "nothing should be listening on %s", addr)
+		},
+		Entry("missing files", func(dir string) (string, string) {
+			return filepath.Join(dir, "missing-cert.pem"), filepath.Join(dir, "missing-key.pem")
+		}),
+		Entry("garbage files", func(dir string) (string, string) {
+			cert := filepath.Join(dir, "cert.pem")
+			key := filepath.Join(dir, "key.pem")
+			Expect(os.WriteFile(cert, []byte("not a certificate"), 0600)).To(Succeed())
+			Expect(os.WriteFile(key, []byte("not a key"), 0600)).To(Succeed())
+			return cert, key
+		}),
+	)
+
+	It("serves over TLS with a valid certificate and key", func() {
+		dir := GinkgoT().TempDir()
+		cert, key, pool := writeSelfSigned(dir)
+
+		tlsSrv := isoserve.New(isoserve.Config{BindAddr: "127.0.0.1:0", CertFile: cert, KeyFile: key})
+		Expect(tlsSrv.Start(context.Background())).To(Succeed())
+		defer func() {
+			ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+			defer cancel()
+			Expect(tlsSrv.Shutdown(ctx)).To(Succeed())
+		}()
+		Expect(tlsSrv.UsesTLS()).To(BeTrue())
+
+		url, _, err := tlsSrv.Register(isoPath, time.Minute)
+		Expect(err).NotTo(HaveOccurred())
+		client := &http.Client{
+			Timeout:   5 * time.Second,
+			Transport: &http.Transport{TLSClientConfig: &tls.Config{RootCAs: pool, ServerName: "127.0.0.1"}},
+		}
+		resp, err := client.Get("https://" + tlsSrv.Addr().String() + url)
+		Expect(err).NotTo(HaveOccurred())
+		body, err := io.ReadAll(resp.Body)
+		Expect(err).NotTo(HaveOccurred())
+		_ = resp.Body.Close()
+		Expect(resp.StatusCode).To(Equal(http.StatusOK))
+		Expect(body).To(Equal(payload))
+	})
+
 	It("still serves plain HTTP when neither TLS file is given", func() {
 		plain := isoserve.New(isoserve.Config{BindAddr: "127.0.0.1:0"})
 		Expect(plain.Start(context.Background())).To(Succeed())
@@ -233,3 +352,34 @@ var _ = Describe("isoserve.Server", func() {
 		Expect(plain.Shutdown(ctx)).To(Succeed())
 	})
 })
+
+// writeSelfSigned writes a self-signed certificate for 127.0.0.1 and its key
+// into dir, and returns their paths plus a pool that trusts the certificate.
+func writeSelfSigned(dir string) (certPath, keyPath string, pool *x509.CertPool) {
+	priv, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	Expect(err).NotTo(HaveOccurred())
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "isoserve-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+		IPAddresses:  []net.IP{net.ParseIP("127.0.0.1")},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &priv.PublicKey, priv)
+	Expect(err).NotTo(HaveOccurred())
+	keyDER, err := x509.MarshalECPrivateKey(priv)
+	Expect(err).NotTo(HaveOccurred())
+
+	certPath = filepath.Join(dir, "cert.pem")
+	keyPath = filepath.Join(dir, "key.pem")
+	Expect(os.WriteFile(certPath, pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der}), 0600)).To(Succeed())
+	Expect(os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER}), 0600)).To(Succeed())
+
+	parsed, err := x509.ParseCertificate(der)
+	Expect(err).NotTo(HaveOccurred())
+	pool = x509.NewCertPool()
+	pool.AddCert(parsed)
+	return certPath, keyPath, pool
+}

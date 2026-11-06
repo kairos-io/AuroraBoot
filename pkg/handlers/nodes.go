@@ -448,6 +448,7 @@ type setLabelsRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetLabelsRequest	true	"Labels payload"
 //	@Success		200
+//	@Failure		404		{object}	APIError
 //	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/labels [put]
 func (h *NodeHandler) SetLabels(c echo.Context) error {
@@ -456,7 +457,11 @@ func (h *NodeHandler) SetLabels(c echo.Context) error {
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 	}
-	if err := h.nodes.SetLabels(c.Request().Context(), nodeID, req.Labels); err != nil {
+	ctx := c.Request().Context()
+	if _, err := h.nodes.GetByID(ctx, nodeID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
+	}
+	if err := h.nodes.SetLabels(ctx, nodeID, req.Labels); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to set labels"})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
@@ -477,6 +482,7 @@ type setGroupRequest struct {
 //	@Param			nodeID	path		string				true	"Node ID"
 //	@Param			body	body		APISetGroupRequest	true	"Target group"
 //	@Success		200
+//	@Failure		404		{object}	APIError
 //	@Failure		413		{object}	APIError
 //	@Router			/api/v1/nodes/{nodeID}/group [put]
 func (h *NodeHandler) SetGroup(c echo.Context) error {
@@ -488,7 +494,16 @@ func (h *NodeHandler) SetGroup(c echo.Context) error {
 	if req.GroupID != nil && *req.GroupID == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "groupID must name a group, or be null for no group"})
 	}
-	if err := h.nodes.SetGroup(c.Request().Context(), nodeID, req.GroupID); err != nil {
+	ctx := c.Request().Context()
+	if _, err := h.nodes.GetByID(ctx, nodeID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
+	}
+	if req.GroupID != nil {
+		if _, err := h.groups.GetByID(ctx, *req.GroupID); err != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "group not found"})
+		}
+	}
+	if err := h.nodes.SetGroup(ctx, nodeID, req.GroupID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to set group"})
 	}
 	return c.JSON(http.StatusOK, map[string]string{"status": "ok"})

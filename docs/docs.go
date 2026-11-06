@@ -804,6 +804,12 @@ const docTemplate = `{
                             "$ref": "#/definitions/handlers.APIError"
                         }
                     },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
                     "413": {
                         "description": "Request Entity Too Large",
                         "schema": {
@@ -894,6 +900,12 @@ const docTemplate = `{
                     },
                     "404": {
                         "description": "Not Found",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }

@@ -224,7 +224,8 @@ func New(cfg Config) *echo.Echo {
 	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore).
 		WithResetTimeout(cfg.ResetTimeout)
-	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL).WithLinkSigner(linkSigner)
+	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL).WithLinkSigner(linkSigner).
+		WithRegistrationToken(sharedRegToken)
 	var extensionHandler *handlers.ExtensionHandler
 	if cfg.ExtensionBuilder != nil {
 		extensionHandler = handlers.NewExtensionHandler(

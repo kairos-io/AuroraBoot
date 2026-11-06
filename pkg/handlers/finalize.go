@@ -117,6 +117,7 @@ func (h *DeployHandler) finalizeDeployment(ctx context.Context, dep *store.Deplo
 		return err
 	}
 
+	h.releaseServedISO(dep.ID)
 	h.markEjected(ctx, dep.ID)
 	return nil
 }

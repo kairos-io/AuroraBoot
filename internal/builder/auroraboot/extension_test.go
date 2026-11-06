@@ -111,6 +111,9 @@ func (f *fakeArtifactStore) UpdatePhaseMessage(context.Context, string, string, 
 func (f *fakeArtifactStore) UpdateFiles(context.Context, string, []string) error {
 	return nil
 }
+func (f *fakeArtifactStore) UpdateNameSaved(context.Context, string, *string, *bool) error {
+	return nil
+}
 
 var _ store.ArtifactStore = (*fakeArtifactStore)(nil)
 

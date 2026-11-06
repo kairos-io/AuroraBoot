@@ -227,11 +227,14 @@ func (f *fakeArtifactStore) UpdatePhaseMessage(context.Context, string, string, 
 	return nil
 }
 func (f *fakeArtifactStore) UpdateFiles(context.Context, string, []string) error { return nil }
-func (f *fakeArtifactStore) ClearUploadToken(context.Context, string) error      { return nil }
-func (f *fakeArtifactStore) Delete(context.Context, string) error                { return nil }
-func (f *fakeArtifactStore) DeleteByPhase(context.Context, string) error         { return nil }
-func (f *fakeArtifactStore) GetLogs(context.Context, string) (string, error)     { return "", nil }
-func (f *fakeArtifactStore) AppendLog(context.Context, string, string) error     { return nil }
+func (f *fakeArtifactStore) UpdateNameSaved(context.Context, string, *string, *bool) error {
+	return nil
+}
+func (f *fakeArtifactStore) ClearUploadToken(context.Context, string) error  { return nil }
+func (f *fakeArtifactStore) Delete(context.Context, string) error            { return nil }
+func (f *fakeArtifactStore) DeleteByPhase(context.Context, string) error     { return nil }
+func (f *fakeArtifactStore) GetLogs(context.Context, string) (string, error) { return "", nil }
+func (f *fakeArtifactStore) AppendLog(context.Context, string, string) error { return nil }
 
 var _ = Describe("Server", func() {
 	var (

@@ -72,11 +72,11 @@ var BuildUKICmd = cli.Command{
 			Value: false,
 			Usage: "Include the cmdline in the .config file. Only the extra values are included.",
 		},
-		&cli.StringSliceFlag{
+		&wholeStringSliceFlag{cli.StringSliceFlag{
 			Name:    "extra-cmdline",
 			Aliases: []string{"c"},
 			Usage:   "Add extra efi files with this cmdline for the default 'norole' artifacts. This creates efi files with the default cmdline and extra efi files with the default+provided cmdline.",
-		},
+		}},
 		&cli.StringFlag{
 			Name:    "extend-cmdline",
 			Aliases: []string{"x"},
@@ -86,11 +86,11 @@ var BuildUKICmd = cli.Command{
 			Name:  "cloud-config",
 			Usage: "The cloud config to embed in the UKI",
 		},
-		&cli.StringSliceFlag{
+		&wholeStringSliceFlag{cli.StringSliceFlag{
 			Name:    "single-efi-cmdline",
 			Aliases: []string{"s"},
 			Usage:   "Add one extra efi file with the default+provided cmdline. The syntax is '--single-efi-cmdline \"My Entry: cmdline,options,here\"'. The boot entry name is the text under which it appears in systemd-boot menu.",
-		},
+		}},
 		&cli.StringFlag{
 			Name:     "public-keys",
 			Usage:    "Directory with the public keys for auto enrolling them under Secure Boot",
@@ -148,7 +148,7 @@ var BuildUKICmd = cli.Command{
 	Before: func(ctx *cli.Context) error {
 		// TODO: Use MutuallyExclusiveFlags when urfave/cli v3 is stable:
 		// https://github.com/urfave/cli/blob/7ec374fe2abd3e9c75369f6bb4191fe7866bd89c/command.go#L128
-		if len(ctx.StringSlice("extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
+		if len(wholeStringSliceValues(ctx, "extra-cmdline")) > 0 && ctx.String("extend-cmdline") != "" {
 			return errors.New("extra-cmdline and extend-cmdline flags are mutually exclusive")
 		}
 		for _, value := range ctx.StringSlice("extension") {
@@ -167,61 +167,71 @@ var BuildUKICmd = cli.Command{
 			return errors.New("no image provided")
 		}
 
-		logLevel := "info"
-		if ctx.Bool("debug") {
-			logLevel = "debug"
+		opts, err := buildUKIOptions(ctx)
+		if err != nil {
+			return err
 		}
-		log := logger.NewKairosLogger("auroraboot", logLevel, false)
-		extensionRequests := make([]extensions.Request, 0, len(ctx.StringSlice("extension")))
-		for _, value := range ctx.StringSlice("extension") {
-			request, err := extensions.ParseRequest(value)
-			if err != nil {
-				return err
-			}
-			extensionRequests = append(extensionRequests, request)
-		}
-
-		cloudConfig := ""
-		ccPath := ctx.String("cloud-config")
-		if ccPath == "" && len(ctx.Lineage()) > 1 {
-			// A same-named app-level flag given before the subcommand would
-			// otherwise be shadowed by this command's flag.
-			ccPath = ctx.Lineage()[1].String("cloud-config")
-		}
-		if ccPath != "" {
-			cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
-			if err != nil {
-				return fmt.Errorf("reading cloud config: %w", err)
-			}
-			cloudConfig = cc
-		}
-
-		return uki.Build(uki.Options{
-			Source:                  args.Get(0),
-			OutputDir:               ctx.String("output-dir"),
-			OutputType:              ctx.String("output-type"),
-			Name:                    ctx.String("name"),
-			OverlayRootfs:           ctx.String("overlay-rootfs"),
-			OverlayISO:              ctx.String("overlay-iso"),
-			BootBranding:            ctx.String("boot-branding"),
-			IncludeVersionInConfig:  ctx.Bool("include-version-in-config"),
-			IncludeCmdlineInConfig:  ctx.Bool("include-cmdline-in-config"),
-			ExtraCmdlines:           ctx.StringSlice("extra-cmdline"),
-			ExtendCmdline:           ctx.String("extend-cmdline"),
-			SingleEfiCmdlines:       ctx.StringSlice("single-efi-cmdline"),
-			PublicKeysDir:           ctx.String("public-keys"),
-			TPMPCRPrivateKey:        ctx.String("tpm-pcr-private-key"),
-			SBKey:                   ctx.String("sb-key"),
-			SBCert:                  ctx.String("sb-cert"),
-			SecureBootEnroll:        ctx.String("secure-boot-enroll"),
-			Splash:                  ctx.String("splash"),
-			CmdLinesV2:              ctx.Bool("cmd-lines-v2"),
-			SdBootInSource:          ctx.Bool("sdboot-in-source"),
-			AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
-			Extensions:              extensionRequests,
-			ExtensionsCatalogs:      ctx.StringSlice("extensions-catalog"),
-			CloudConfig:             cloudConfig,
-			Logger:                  &log,
-		})
+		return uki.Build(opts)
 	},
+}
+
+// buildUKIOptions maps the build-uki flags and arguments onto uki.Options.
+func buildUKIOptions(ctx *cli.Context) (uki.Options, error) {
+	args := ctx.Args()
+	logLevel := "info"
+	if ctx.Bool("debug") {
+		logLevel = "debug"
+	}
+	log := logger.NewKairosLogger("auroraboot", logLevel, false)
+	extensionRequests := make([]extensions.Request, 0, len(ctx.StringSlice("extension")))
+	for _, value := range ctx.StringSlice("extension") {
+		request, err := extensions.ParseRequest(value)
+		if err != nil {
+			return uki.Options{}, err
+		}
+		extensionRequests = append(extensionRequests, request)
+	}
+
+	cloudConfig := ""
+	ccPath := ctx.String("cloud-config")
+	if ccPath == "" && len(ctx.Lineage()) > 1 {
+		// A same-named app-level flag given before the subcommand would
+		// otherwise be shadowed by this command's flag.
+		ccPath = ctx.Lineage()[1].String("cloud-config")
+	}
+	if ccPath != "" {
+		cc, err := config.ReadCloudConfig(ccPath, map[string]interface{}{})
+		if err != nil {
+			return uki.Options{}, fmt.Errorf("reading cloud config: %w", err)
+		}
+		cloudConfig = cc
+	}
+
+	return uki.Options{
+		Source:                  args.Get(0),
+		OutputDir:               ctx.String("output-dir"),
+		OutputType:              ctx.String("output-type"),
+		Name:                    ctx.String("name"),
+		OverlayRootfs:           ctx.String("overlay-rootfs"),
+		OverlayISO:              ctx.String("overlay-iso"),
+		BootBranding:            ctx.String("boot-branding"),
+		IncludeVersionInConfig:  ctx.Bool("include-version-in-config"),
+		IncludeCmdlineInConfig:  ctx.Bool("include-cmdline-in-config"),
+		ExtraCmdlines:           wholeStringSliceValues(ctx, "extra-cmdline"),
+		ExtendCmdline:           ctx.String("extend-cmdline"),
+		SingleEfiCmdlines:       wholeStringSliceValues(ctx, "single-efi-cmdline"),
+		PublicKeysDir:           ctx.String("public-keys"),
+		TPMPCRPrivateKey:        ctx.String("tpm-pcr-private-key"),
+		SBKey:                   ctx.String("sb-key"),
+		SBCert:                  ctx.String("sb-cert"),
+		SecureBootEnroll:        ctx.String("secure-boot-enroll"),
+		Splash:                  ctx.String("splash"),
+		CmdLinesV2:              ctx.Bool("cmd-lines-v2"),
+		SdBootInSource:          ctx.Bool("sdboot-in-source"),
+		AllowInsecureRegistries: ctx.Bool("allow-insecure-registries"),
+		Extensions:              extensionRequests,
+		ExtensionsCatalogs:      ctx.StringSlice("extensions-catalog"),
+		CloudConfig:             cloudConfig,
+		Logger:                  &log,
+	}, nil
 }
