@@ -843,10 +843,17 @@ func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 	return res.RowsAffected == 1, nil
 }
 
-// UpdateStatus records a command's phase and result.
+// UpdateStatus records a command's phase and result. A command that does not
+// exist surfaces as store.ErrCommandNotFound.
 func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
-	_, err := s.updateStatus(ctx, phase, result, "id = ?", id)
-	return err
+	n, err := s.updateStatus(ctx, phase, result, "id = ?", id)
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return store.ErrCommandNotFound
+	}
+	return nil
 }
 
 // UpdateStatusForNode updates a command's status scoped to its owning node.

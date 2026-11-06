@@ -231,7 +231,8 @@ func New(cfg Config) *echo.Echo {
 	nodeHandler.SetMetrics(metricsBuf)
 	cmdHandler := handlers.NewCommandHandler(cfg.CommandStore, cfg.NodeStore, hub, cfg.NodeExtensionStore, cfg.ExtensionStore).
 		WithResetTimeout(cfg.ResetTimeout).
-		WithBatches(cfg.Batches)
+		WithBatches(cfg.Batches).
+		WithGroups(cfg.GroupStore)
 	nodeHandler.WithBatches(cfg.Batches)
 	artifactHandler := handlers.NewArtifactHandler(cfg.Builder, cfg.ArtifactStore, cfg.GroupStore, cfg.SecureBootKeySetStore, cfg.ExtensionStore, cfg.ArtifactExtensionBundleStore, cfg.ArtifactsDir, regToken, cfg.AuroraBootURL).WithLinkSigner(linkSigner).
 		WithRegistrationToken(sharedRegToken)
