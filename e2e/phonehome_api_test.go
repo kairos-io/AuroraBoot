@@ -110,19 +110,55 @@ func (w *webServer) groupNodes(groupID string) []map[string]any {
 	return nodes
 }
 
-// sendGroupCommand queues a command for every node in the group and returns
-// the IDs of the commands it created.
-func (w *webServer) sendGroupCommand(groupID, command string, args map[string]string) []string {
-	resp, data := w.do(http.MethodPost, "/api/v1/groups/"+groupID+"/commands",
-		map[string]any{"command": command, "args": args})
+// sendGroupCommand starts a batch of a command over every node in the group
+// and returns the batch ID. rollout holds the batch settings sent next to the
+// command, such as concurrency; nil runs every node at once.
+func (w *webServer) sendGroupCommand(groupID, command string, args map[string]string, rollout map[string]any) string {
+	body := map[string]any{"command": command, "args": args}
+	for k, v := range rollout {
+		body[k] = v
+	}
+	resp, data := w.do(http.MethodPost, "/api/v1/groups/"+groupID+"/commands", body)
 	ExpectWithOffset(1, resp.StatusCode).To(Equal(http.StatusCreated), string(data))
-	var cmds []struct {
+	var batch struct {
 		ID string `json:"id"`
 	}
-	ExpectWithOffset(1, json.Unmarshal(data, &cmds)).To(Succeed(), string(data))
-	ids := make([]string, 0, len(cmds))
-	for _, c := range cmds {
-		ids = append(ids, c.ID)
+	ExpectWithOffset(1, json.Unmarshal(data, &batch)).To(Succeed(), string(data))
+	ExpectWithOffset(1, batch.ID).ToNot(BeEmpty(), string(data))
+	return batch.ID
+}
+
+// batch returns a batch record with its node rows in rollout order.
+func (w *webServer) batch(id string) map[string]any {
+	resp, data := w.do(http.MethodGet, "/api/v1/batches/"+id, nil)
+	ExpectWithOffset(1, resp.StatusCode).To(Equal(http.StatusOK), string(data))
+	var b map[string]any
+	ExpectWithOffset(1, json.Unmarshal(data, &b)).To(Succeed(), string(data))
+	return b
+}
+
+// batchNodes returns the node rows of a batch record.
+func batchNodes(b map[string]any) []map[string]any {
+	raw, _ := b["nodes"].([]any)
+	rows := make([]map[string]any, 0, len(raw))
+	for _, r := range raw {
+		row, ok := r.(map[string]any)
+		ExpectWithOffset(1, ok).To(BeTrue(), "batch node row %v", r)
+		rows = append(rows, row)
+	}
+	return rows
+}
+
+// batchCommandIDs returns the IDs of the commands a batch created. A batch
+// that runs every node at once has created a command for each node by the
+// time the group endpoint returns.
+func (w *webServer) batchCommandIDs(batchID string) []string {
+	b := w.batch(batchID)
+	var ids []string
+	for _, row := range batchNodes(b) {
+		id, _ := row["commandID"].(string)
+		ExpectWithOffset(1, id).NotTo(BeEmpty(), "node %v has no command in batch %v", row["nodeID"], b)
+		ids = append(ids, id)
 	}
 	return ids
 }
@@ -144,7 +180,7 @@ func (w *webServer) nodeCommands(nodeID string) []nodeCommand {
 }
 
 // commandFor returns the one command of a node whose ID is among ids, which is
-// how a group fan-out is matched to the node that received each command.
+// how a group batch is matched to the node that received each command.
 func (w *webServer) commandFor(nodeID string, ids []string) string {
 	var found []string
 	for _, c := range w.nodeCommands(nodeID) {

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, waitFor, fireEvent, within } from "@testing-library/react";
+import { act, render, screen, waitFor, fireEvent, within } from "@testing-library/react";
 import { MemoryRouter, Route, Routes } from "react-router";
 
 import { GroupDetail } from "@/pages/GroupDetail";
@@ -34,7 +34,7 @@ const nodes = [
 
 type Call = { url: string; method: string; body: unknown };
 
-function mockFetch() {
+function mockFetch(post?: (url: string) => Response | undefined) {
   const calls: Call[] = [];
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
@@ -44,14 +44,29 @@ function mockFetch() {
     if (method !== "GET") {
       const body = init?.body ? JSON.parse(String(init.body)) : undefined;
       calls.push({ url, method, body });
+      const answer = post?.(url);
+      if (answer) return answer;
       if (url === "/api/v1/groups/g1" && method === "PUT") return json({ ...group, ...body });
       return json([]);
     }
     if (url.startsWith("/api/v1/groups/g1")) return json(group);
     if (url.startsWith("/api/v1/nodes")) return json(nodes);
+    if (url.startsWith("/api/v1/batches")) return json({ batches: [], total: 0 });
     return json([]);
   });
   return { fn, calls };
+}
+
+const jsonResponse = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+
+async function sendReboot(trigger: HTMLElement) {
+  fireEvent.click(trigger);
+  const dialog = await screen.findByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: /Reboot/ }));
+  await act(async () => {
+    fireEvent.click(within(dialog).getByRole("button", { name: /^Reboot \d+ nodes?$/ }));
+  });
 }
 
 function renderPage() {
@@ -113,6 +128,44 @@ describe("Group detail", () => {
       }),
     );
     expect(await screen.findByRole("heading", { name: "edge-shops" })).toBeInTheDocument();
+  });
+
+  it("records the group when it sends a command to selected nodes", async () => {
+    const m = mockFetch((url) =>
+      url === "/api/v1/nodes/commands" ? jsonResponse({ id: "b1" }, 201) : undefined,
+    );
+    vi.stubGlobal("fetch", m.fn);
+    renderPage();
+    const table = within(await screen.findByRole("table"));
+    await table.findByText("pos-milan-01");
+    fireEvent.click(table.getByRole("checkbox", { name: "Select pos-milan-01" }));
+    fireEvent.click(table.getByRole("checkbox", { name: "Select pos-rome-01" }));
+
+    const bar = within(screen.getByRole("region", { name: "Selection" }));
+    await sendReboot(bar.getByRole("button", { name: "Send command" }));
+
+    await waitFor(() => expect(m.calls.filter((c) => c.url === "/api/v1/nodes/commands")).toHaveLength(1));
+    const sent = m.calls.find((c) => c.url === "/api/v1/nodes/commands")!.body as {
+      selector: { groupID?: string; nodeIDs: string[] };
+    };
+    expect(sent.selector).toEqual({ groupID: "g1", nodeIDs: ["n1", "n3"] });
+  });
+
+  it("says why a command sent to the group was refused", async () => {
+    const m = mockFetch((url) =>
+      url === "/api/v1/groups/g1/commands"
+        ? jsonResponse({ error: "nodes are already in a running batch", nodeIDs: ["n1"] }, 409)
+        : undefined,
+    );
+    vi.stubGlobal("fetch", m.fn);
+    renderPage();
+    await screen.findByText("pos-milan-01");
+
+    await sendReboot(screen.getAllByRole("button", { name: "Send command" })[0]);
+
+    expect(
+      await screen.findByText("Failed to send command: nodes are already in a running batch"),
+    ).toBeInTheDocument();
   });
 
   it("shows the node table without a Group column and with selection", async () => {

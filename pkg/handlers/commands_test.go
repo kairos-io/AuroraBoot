@@ -71,26 +71,24 @@ var _ = Describe("CommandHandler", func() {
 		})
 	})
 
+	// The scheduler is what starts a batch; a server built without one has
+	// nothing to start it with.
 	Describe("CreateBulk", func() {
-		It("should create commands for selected nodes", func() {
+		It("answers 503 without a scheduler", func() {
 			body := `{"selector":{"nodeIDs":["node-1","node-2"]},"command":"upgrade","args":{"version":"2.0"}}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/nodes/commands", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
 			rec := httptest.NewRecorder()
 			c := e.NewContext(req, rec)
 
-			err := handler.CreateBulk(c)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-
-			var cmds []*store.NodeCommand
-			Expect(json.Unmarshal(rec.Body.Bytes(), &cmds)).To(Succeed())
-			Expect(cmds).To(HaveLen(2))
+			Expect(handler.CreateBulk(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+			Expect(cs.cmds).To(BeEmpty())
 		})
 	})
 
 	Describe("CreateForGroup", func() {
-		It("should create commands for all nodes in a group", func() {
+		It("answers 503 without a scheduler", func() {
 			body := `{"command":"reset"}`
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/groups/grp-1/commands", strings.NewReader(body))
 			req.Header.Set("Content-Type", "application/json")
@@ -99,13 +97,9 @@ var _ = Describe("CommandHandler", func() {
 			c.SetParamNames("id")
 			c.SetParamValues("grp-1")
 
-			err := handler.CreateForGroup(c)
-			Expect(err).NotTo(HaveOccurred())
-			Expect(rec.Code).To(Equal(http.StatusCreated))
-
-			var cmds []*store.NodeCommand
-			Expect(json.Unmarshal(rec.Body.Bytes(), &cmds)).To(Succeed())
-			Expect(cmds).To(HaveLen(2))
+			Expect(handler.CreateForGroup(c)).To(Succeed())
+			Expect(rec.Code).To(Equal(http.StatusServiceUnavailable))
+			Expect(cs.cmds).To(BeEmpty())
 		})
 	})
 
