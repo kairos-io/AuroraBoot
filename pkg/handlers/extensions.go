@@ -365,14 +365,21 @@ func (h *ExtensionHandler) Delete(c echo.Context) error {
 	if err := h.store.Delete(ctx, rec.ID); err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "delete failed"})
 	}
+	// Remove the build output after the record, so a download racing the
+	// delete either finds the record gone or the file gone.
+	if h.artifactsDir != "" && isSafePathSegment(rec.ID) {
+		if err := os.RemoveAll(filepath.Join(h.artifactsDir, "extensions", rec.ID)); err != nil {
+			fmt.Fprintf(os.Stderr, "extension delete: remove output of %q failed: %v\n", rec.ID, err)
+		}
+	}
 	return c.NoContent(http.StatusNoContent)
 }
 
 // Download handles GET /api/v1/extensions/:id/download/:filename. Auth is
 // applied by the router's download middleware (admin credential, node API
 // key from the Authorization header, or the extension's own download token
-// in ?token=). This handler only enforces path-traversal safety and streams
-// the file.
+// in ?token=). This handler enforces path-traversal safety, returns 404 when
+// the extension record no longer exists, and streams the file.
 func (h *ExtensionHandler) Download(c echo.Context) error {
 	id := c.Param("id")
 	filename := c.Param("filename")
@@ -388,6 +395,9 @@ func (h *ExtensionHandler) Download(c echo.Context) error {
 	resolvedPath := filepath.Clean(path)
 	if !strings.HasPrefix(resolvedPath, resolvedDir+string(filepath.Separator)) {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "invalid path"})
+	}
+	if _, err := h.store.GetByID(c.Request().Context(), id); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
 	}
 	f, err := os.Open(resolvedPath)
 	if err != nil {
