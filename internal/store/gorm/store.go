@@ -408,11 +408,15 @@ func (s *Store) SetLabels(ctx context.Context, nodeID string, labels map[string]
 }
 
 func (s *Store) NodeDelete(ctx context.Context, id string) error {
-	// Delete associated commands first.
-	if err := s.db.WithContext(ctx).Where("managed_node_id = ?", id).Delete(&store.NodeCommand{}).Error; err != nil {
-		return err
-	}
-	return s.db.WithContext(ctx).Delete(&store.ManagedNode{}, "id = ?", id).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("managed_node_id = ?", id).Delete(&store.NodeCommand{}).Error; err != nil {
+			return err
+		}
+		if err := tx.Where("node_id = ?", id).Delete(&store.NodeExtensionRow{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&store.ManagedNode{}, "id = ?", id).Error
+	})
 }
 
 // nodeClaimedByKey returns the node in groupID currently claimed by claimKey, or
