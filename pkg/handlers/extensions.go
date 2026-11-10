@@ -307,6 +307,8 @@ type extensionPatch struct {
 }
 
 // Update handles PATCH /api/v1/extensions/:id. Only `name` is mutable.
+// Renaming is blocked with 409 when any artifact bundle references the
+// current name, same as Delete.
 func (h *ExtensionHandler) Update(c echo.Context) error {
 	var patch extensionPatch
 	if err := c.Bind(&patch); err != nil || patch.Name == "" {
@@ -316,6 +318,18 @@ func (h *ExtensionHandler) Update(c echo.Context) error {
 	rec, err := h.store.GetByID(ctx, c.Param("id"))
 	if err != nil {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "not found"})
+	}
+	if patch.Name != rec.Name && h.bundles != nil {
+		artifacts, err := h.bundles.ArtifactsReferencingExtension(ctx, rec.Name)
+		if err != nil {
+			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "bundle lookup failed"})
+		}
+		if len(artifacts) > 0 {
+			return c.JSON(http.StatusConflict, map[string]any{
+				"error":     "extension is referenced by one or more artifact bundles and cannot be renamed",
+				"artifacts": artifacts,
+			})
+		}
 	}
 	rec.Name = patch.Name
 	if err := h.store.Create(ctx, rec); err != nil {
