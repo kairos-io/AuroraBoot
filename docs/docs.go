@@ -2803,7 +2803,7 @@ const docTemplate = `{
                     "example": "active"
                 },
                 "group": {
-                    "description": "Group is the name of the group a new node joins (optional). The holder\nof the registration token chooses it for a new node, so the\nregistration token decides group placement. An unknown name leaves the\nnode ungrouped. Ignored when the node registers again.",
+                    "description": "Group is the ID or name of the group a new node joins (optional); an ID\nmatch wins over a name match. The holder of the registration token\nchooses it for a new node, so the registration token decides group\nplacement. An unknown group leaves the node ungrouped. Ignored when the\nnode registers again.",
                     "type": "string",
                     "example": "edge-sites"
                 },

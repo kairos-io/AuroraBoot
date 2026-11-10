@@ -10,8 +10,8 @@ import (
 )
 
 // The agent sends the group and labels from its phonehome config when it
-// registers. An artifact built with a target group writes that group's name
-// into the config.
+// registers. An artifact built with a target group writes that group's ID
+// into the config; older artifacts wrote its name.
 var _ = Describe("Registration with a group and labels", func() {
 	var suffix string
 
