@@ -32,6 +32,8 @@ type CommandHandler struct {
 	// batches starts and advances rolling batches. nil answers the batch
 	// endpoints with 503.
 	batches *batches.Scheduler
+	// groups resolves the group a group command names. nil skips the check.
+	groups store.GroupStore
 }
 
 // NewCommandHandler creates a new CommandHandler.
@@ -88,6 +90,13 @@ type rolloutOptions struct {
 	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
 }
 
+// WithGroups wires the group store CreateForGroup checks the group against.
+// Returns the handler for chaining.
+func (h *CommandHandler) WithGroups(groups store.GroupStore) *CommandHandler {
+	h.groups = groups
+	return h
+}
+
 // groupCommandRequest is the expected body for sending a command to a group.
 // It is deliberately not bulkCommandRequest: the group is named in the path,
 // so a selector in the body would be silently ignored.
@@ -107,6 +116,7 @@ type groupCommandRequest struct {
 //	@Param		nodeID	path		string					true	"Node ID"
 //	@Param		body	body		APICreateCommandRequest	true	"Command payload"
 //	@Success	201		{object}	store.NodeCommand
+//	@Failure	404		{object}	APIError
 //	@Failure	409		{object}	APIBusyNodesError	"The node is in a running batch"
 //	@Failure	413		{object}	APIError
 //	@Router		/api/v1/nodes/{nodeID}/commands [post]
@@ -119,6 +129,11 @@ func (h *CommandHandler) Create(c echo.Context) error {
 
 	if req.Command == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "command is required"})
+	}
+
+	ctx := c.Request().Context()
+	if _, err := h.nodes.GetByID(ctx, nodeID); err != nil {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "node not found"})
 	}
 
 	cmd := &store.NodeCommand{
@@ -135,7 +150,6 @@ func (h *CommandHandler) Create(c echo.Context) error {
 	// Both reboot the node, so the agent's ack only means the reboot is
 	// scheduled, and the re-register resolver reports the real outcome
 	// (kairos-io/kairos#4255).
-	ctx := c.Request().Context()
 	create := func() error { return h.commands.CreateBatch(ctx, []*store.NodeCommand{cmd}) }
 
 	// A batch settles a node that reboots from the node's lifecycle state,
@@ -226,6 +240,7 @@ func (h *CommandHandler) CreateBulk(c echo.Context) error {
 //	@Param		body	body		APIGroupCommandRequest	true	"Command and rollout options"
 //	@Success	201		{object}	store.CommandBatch
 //	@Failure	400		{object}	APIError
+//	@Failure	404		{object}	APIError
 //	@Failure	409		{object}	APIBusyNodesError
 //	@Failure	413		{object}	APIError
 //	@Failure	503		{object}	APIError
@@ -242,6 +257,11 @@ func (h *CommandHandler) CreateForGroup(c echo.Context) error {
 	}
 
 	ctx := c.Request().Context()
+	if h.groups != nil {
+		if _, err := h.groups.GetByID(ctx, groupID); err != nil {
+			return c.JSON(http.StatusNotFound, map[string]string{"error": "group not found"})
+		}
+	}
 	nodes, err := h.nodes.ListByGroup(ctx, groupID)
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to find nodes in group"})
@@ -390,8 +410,9 @@ type updateStatusRequest struct {
 // This handler is mounted on both the agent group (node API key) and the admin
 // group (admin bearer). For agent callers we scope the update to the
 // authenticated node: a node may only update the status of commands addressed
-// to it, never another node's (BOLA). Admins legitimately act across nodes, so
-// their updates are unscoped.
+// to it, never another node's (BOLA). Admins may update any node's command,
+// under the path of the node that owns it: a command that does not exist or
+// belongs to another node answers 404.
 func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 	commandID := c.Param("commandID")
 	nodeID := c.Param("nodeID")
@@ -429,8 +450,11 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 		return c.JSON(http.StatusOK, map[string]string{"status": "ok"})
 	}
 
-	// Admin request: act across nodes.
-	if err := h.commands.UpdateStatus(ctx, commandID, req.Phase, req.Result); err != nil {
+	err := h.commands.UpdateStatusForNode(ctx, commandID, nodeID, req.Phase, req.Result)
+	if errors.Is(err, store.ErrCommandNotFound) {
+		return c.JSON(http.StatusNotFound, map[string]string{"error": "command not found"})
+	}
+	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update command status"})
 	}
 
