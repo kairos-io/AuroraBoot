@@ -2327,6 +2327,12 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/handlers.APIError"
                         }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "$ref": "#/definitions/handlers.APIError"
+                        }
                     }
                 }
             }
