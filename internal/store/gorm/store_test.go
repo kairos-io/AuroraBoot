@@ -1030,6 +1030,40 @@ var _ = Describe("Gorm Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(records).To(HaveLen(2))
 		})
+
+		It("removes the bundle rows of the deleted artifacts only", func() {
+			Expect(s.ArtifactCreate(ctx, &store.ArtifactRecord{ID: "art-err", Phase: store.ArtifactError, BaseImage: "img"})).To(Succeed())
+			Expect(s.ArtifactCreate(ctx, &store.ArtifactRecord{ID: "art-ok", Phase: store.ArtifactReady, BaseImage: "img"})).To(Succeed())
+			Expect(s.BundleReplaceForArtifact(ctx, "art-err", []store.ArtifactExtensionBundle{{ExtensionName: "ext-a", ExtensionType: "sysext"}})).To(Succeed())
+			Expect(s.BundleReplaceForArtifact(ctx, "art-ok", []store.ArtifactExtensionBundle{{ExtensionName: "ext-b", ExtensionType: "sysext"}})).To(Succeed())
+
+			Expect(s.ArtifactDeleteByPhase(ctx, store.ArtifactError)).To(Succeed())
+
+			ids, err := s.BundleArtifactsReferencingExtension(ctx, "ext-a")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ids).To(BeEmpty())
+			ids, err = s.BundleArtifactsReferencingExtension(ctx, "ext-b")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ids).To(ConsistOf("art-ok"))
+		})
+	})
+
+	Describe("ArtifactStore Delete", func() {
+		It("removes the artifact's bundle rows and leaves other artifacts' rows", func() {
+			Expect(s.ArtifactCreate(ctx, &store.ArtifactRecord{ID: "art-del", Phase: store.ArtifactReady, BaseImage: "img"})).To(Succeed())
+			Expect(s.ArtifactCreate(ctx, &store.ArtifactRecord{ID: "art-keep", Phase: store.ArtifactReady, BaseImage: "img"})).To(Succeed())
+			Expect(s.BundleReplaceForArtifact(ctx, "art-del", []store.ArtifactExtensionBundle{{ExtensionName: "ext-a", ExtensionType: "sysext"}})).To(Succeed())
+			Expect(s.BundleReplaceForArtifact(ctx, "art-keep", []store.ArtifactExtensionBundle{{ExtensionName: "ext-a", ExtensionType: "sysext"}})).To(Succeed())
+
+			Expect(s.ArtifactDelete(ctx, "art-del")).To(Succeed())
+
+			rows, err := s.BundleListForArtifact(ctx, "art-del")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rows).To(BeEmpty())
+			ids, err := s.BundleArtifactsReferencingExtension(ctx, "ext-a")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(ids).To(ConsistOf("art-keep"))
+		})
 	})
 
 	Describe("ArtifactUpdate vs AppendLog", func() {
