@@ -19,8 +19,10 @@ import (
 // Claiming the command is the first proof that the reset reached the node, so
 // it restarts the clock exactly as a mid-reset re-register does.
 //
-// Call this from every path that wins a ClaimForDelivery, right after the
-// claim. It is a no-op for any command that is not a reset. Best-effort, like
+// Call this from every path that wins a ClaimForDelivery, once the command is
+// handed over: after the claim on the poll path, after a successful write on
+// the push paths (a failed push releases the claim and delivered nothing). It
+// is a no-op for any command that is not a reset. Best-effort, like
 // the rest of the reset lifecycle: a store error is logged and discarded,
 // because failing an agent's command poll over a bookkeeping write would cost
 // more than the refreshed budget is worth, and the next delivery or
