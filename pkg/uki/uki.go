@@ -1170,7 +1170,7 @@ func getUkiCmdline(baseCmdline, cmdlineExtend, bootBranding string, extraCmdline
 
 // GetUkiSingleCmdlines returns boot entries for the `single-efi-cmdline` flag
 // values, using the standard UKI base cmdline. Each user value may optionally
-// include a "Title: cmdline" prefix.
+// include a "Title: cmdline" prefix; a title holds no '=' and no '/'.
 func GetUkiSingleCmdlines(bootBranding string, cmdlines []string, l logger.KairosLogger) []utils.BootEntry {
 	return getUkiSingleCmdlines(constants.UkiCmdline, bootBranding, cmdlines, l)
 }
@@ -1182,19 +1182,31 @@ func getUkiSingleCmdlines(baseCmdline, bootBranding string, cmdlines []string, _
 
 	for _, userValue := range cmdlines {
 		bootEntry := utils.BootEntry{}
-		before, after, hasTitle := strings.Cut(userValue, ":")
+		title, cmdline, hasTitle := cutEntryTitle(userValue)
 		if hasTitle {
-			bootEntry.Title = fmt.Sprintf("%s (%s)", bootBranding, before)
-			bootEntry.Cmdline = defaultCmdLine + " " + after
-			bootEntry.FileName = strings.ToLower(strings.ReplaceAll(before, " ", "_"))
+			bootEntry.Title = fmt.Sprintf("%s (%s)", bootBranding, title)
+			bootEntry.Cmdline = defaultCmdLine + " " + cmdline
+			bootEntry.FileName = strings.ToLower(strings.ReplaceAll(title, " ", "_"))
 		} else {
 			bootEntry.Title = bootBranding
-			bootEntry.Cmdline = defaultCmdLine + " " + before
-			bootEntry.FileName = nameFromCmdline(baseCmdline, "single_entry", before)
+			bootEntry.Cmdline = defaultCmdLine + " " + cmdline
+			bootEntry.FileName = nameFromCmdline(baseCmdline, "single_entry", cmdline)
 		}
 		result = append(result, bootEntry)
 	}
 	return result
+}
+
+// cutEntryTitle splits a single-efi-cmdline value into "Title: cmdline".
+// The text before the first colon is only a title when it holds no '=' and
+// no '/', so untitled values such as ip=a::b:c keep every colon and a title
+// never puts a path separator in the EFI file name.
+func cutEntryTitle(userValue string) (title, cmdline string, hasTitle bool) {
+	before, after, found := strings.Cut(userValue, ":")
+	if !found || strings.ContainsAny(before, "=/") {
+		return "", userValue, false
+	}
+	return before, after, true
 }
 
 // NameFromCmdline returns a filesystem-safe basename derived from cmdline,
