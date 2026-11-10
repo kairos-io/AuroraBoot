@@ -89,7 +89,7 @@ var BuildUKICmd = cli.Command{
 		&wholeStringSliceFlag{cli.StringSliceFlag{
 			Name:    "single-efi-cmdline",
 			Aliases: []string{"s"},
-			Usage:   "Add one extra efi file with the default+provided cmdline. The syntax is '--single-efi-cmdline \"My Entry: cmdline,options,here\"'. The boot entry name is the text under which it appears in systemd-boot menu.",
+			Usage:   "Add one extra efi file with the default+provided cmdline. The syntax is '--single-efi-cmdline \"My Entry: cmdline,options,here\"'. The boot entry name is the text under which it appears in systemd-boot menu. Text before the first ':' is only a title if it has no '=' or '/'.",
 		}},
 		&cli.StringFlag{
 			Name:     "public-keys",

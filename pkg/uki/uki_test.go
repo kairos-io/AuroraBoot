@@ -541,6 +541,27 @@ var _ = Describe("single-efi-cmdline file names", func() {
 	})
 })
 
+var _ = Describe("single-efi-cmdline titles", func() {
+	DescribeTable(
+		"only treats the text before the first colon as a title when it looks like one",
+		func(value, wantTitle, wantExtra, wantFileName string) {
+			entries := getUkiSingleCmdlines("base", "Kairos", []string{value}, logger.KairosLogger{})
+			Expect(entries).To(HaveLen(1))
+			Expect(entries[0].Title).To(Equal(wantTitle))
+			Expect(entries[0].Cmdline).To(Equal("base " + wantExtra))
+			Expect(entries[0].FileName).To(Equal(wantFileName))
+		},
+		Entry("titled", "My Entry: quiet", "Kairos (My Entry)", " quiet", "my_entry"),
+		Entry("untitled plain", "quiet", "Kairos", "quiet", "single_entry_quiet"),
+		Entry("untitled with colons and '='",
+			"ip=10.0.0.2::10.0.0.1:255.255.255.0::eth0:none",
+			"Kairos",
+			"ip=10.0.0.2::10.0.0.1:255.255.255.0::eth0:none",
+			"single_entry_ip_10.0.0.2_10.0.0.1_255.255.255.0_eth0_none"),
+		Entry("slash before the colon", "a/b: quiet", "Kairos", "a/b: quiet", "single_entry_a_b_quiet"),
+	)
+})
+
 var _ = Describe("writeISOCloudConfig", func() {
 	It("writes the cloud-config to config.yaml at the ISO root", func() {
 		isoDir := tTempDir()
