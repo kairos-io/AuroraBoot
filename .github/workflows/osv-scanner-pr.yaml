@@ -24,7 +24,7 @@ jobs:
   # against code already on main is in both scans and cancels out.
   scan-pr:
     if: ${{ github.event_name == 'pull_request' }}
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.7.0"
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@v2.7.1"
     with:
       # Apply ignores (e.g. unfixed Moby client CVEs) to all scanned manifests under ./
       scan-args: |-
@@ -38,7 +38,7 @@ jobs:
   # it reads GITHUB_BASE_REF, which GitHub sets for pull_request only.
   scan-baseline:
     if: ${{ github.event_name != 'pull_request' }}
-    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.0"
+    uses: "google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@v2.7.1"
     with:
       # Apply ignores (e.g. unfixed Moby client CVEs) to all scanned manifests under ./
       scan-args: |-
