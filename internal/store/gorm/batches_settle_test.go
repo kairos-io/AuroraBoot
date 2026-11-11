@@ -480,6 +480,31 @@ var _ = Describe("Gorm batch settling", func() {
 		Expect(advance(id)).To(BeEmpty())
 	})
 
+	// Reproduces kairos-io/kairos#6003: a delivered command that never reports
+	// keeps its row running and its node busy after the batch is stopped, for
+	// as long as the node keeps sending heartbeats.
+	It("keeps a node busy after a hand stop when its delivered command never reports (kairos#6003)", func() {
+		nodes := register(1)
+		id := newBatch(nodes, store.CmdExec, 1, true)
+		cmds := advance(id)
+		claim(cmds[0].ID)
+		Expect(s.BatchStop(ctx, id, "stopped by the user", time.Now())).To(Succeed())
+
+		// Two days later the node is still online and the command never reported.
+		later := time.Now().Add(48 * time.Hour)
+		heardFrom(nodes[0].ID, later)
+		Expect(advanceAt(id, later)).To(BeEmpty())
+
+		b := get(id)
+		Expect(b.Phase).To(Equal(store.BatchStopped))
+		Expect(b.FinishedAt).To(BeNil())
+		Expect(b.Nodes[0].State).To(Equal(store.BatchNodeRunning))
+		Expect(commandPhase(cmds[0].ID)).To(Equal(store.CommandDelivered))
+		busy, err := s.BatchBusyNodes(ctx, []string{nodes[0].ID})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(busy).To(ConsistOf(nodes[0].ID))
+	})
+
 	It("finishes a batch stopped by hand when no node holds a slot", func() {
 		nodes := register(2)
 		id := newBatch(nodes, store.CmdExec, 1, true)
