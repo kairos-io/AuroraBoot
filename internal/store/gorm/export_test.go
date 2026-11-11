@@ -19,3 +19,6 @@ func SetLogCap(n int) (restore func()) {
 	logCap = n
 	return func() { logCap = maxLogChars }
 }
+
+// RebootTimeout is the deadline length a batch gives a rebooting node.
+var RebootTimeout = rebootTimeout
