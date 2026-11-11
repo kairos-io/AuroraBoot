@@ -378,6 +378,42 @@ var _ = Describe("WebSocket Handler", func() {
 			Consistently(phases, time.Second).ShouldNot(Receive())
 		})
 
+		It("drops a status report with an unknown phase and does not hand it to OnCommandPhase", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: nodeID, Command: "exec"}
+			Expect(commands.Create(bg, cmd)).To(Succeed())
+			Expect(commands.UpdateStatus(bg, cmd.ID, store.CommandDelivered, "")).To(Succeed())
+
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Expect(sendMsg(conn, "command_status", commandStatusData{ID: cmd.ID, Phase: "Bogus", Result: "x"})).To(Succeed())
+			Consistently(phases, time.Second).ShouldNot(Receive())
+			c, err := commands.GetByID(bg, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Phase).To(Equal(store.CommandDelivered))
+		})
+
+		It("drops a report that moves a finished command back to Running", func() {
+			cmd := &store.NodeCommand{ManagedNodeID: nodeID, Command: "exec"}
+			Expect(commands.Create(bg, cmd)).To(Succeed())
+			Expect(commands.UpdateStatus(bg, cmd.ID, store.CommandDelivered, "")).To(Succeed())
+
+			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
+			Expect(err).NotTo(HaveOccurred())
+			defer conn.Close()
+
+			Expect(sendMsg(conn, "command_status", commandStatusData{ID: cmd.ID, Phase: store.CommandCompleted, Result: "first"})).To(Succeed())
+			Eventually(phases, 10*time.Second).Should(Receive(Equal(cmd.ID)))
+
+			Expect(sendMsg(conn, "command_status", commandStatusData{ID: cmd.ID, Phase: store.CommandRunning, Result: "later"})).To(Succeed())
+			Consistently(phases, time.Second).ShouldNot(Receive())
+			c, err := commands.GetByID(bg, cmd.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(c.Phase).To(Equal(store.CommandCompleted))
+			Expect(c.Result).To(Equal("first"))
+		})
+
 		It("hands a heartbeat that carries an uptime to OnNodeBooted with its boot time", func() {
 			conn, _, err := dialWS(server, "/api/v1/ws?token="+apiKey)
 			Expect(err).NotTo(HaveOccurred())

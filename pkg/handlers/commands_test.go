@@ -277,6 +277,58 @@ var _ = Describe("CommandHandler", func() {
 			Expect(rec.Code).To(Equal(http.StatusBadRequest))
 		})
 
+		put := func(nodeID, cmdID, body string, agent bool) *httptest.ResponseRecorder {
+			req := httptest.NewRequest(http.MethodPut, "/api/v1/nodes/"+nodeID+"/commands/"+cmdID+"/status", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			rec := httptest.NewRecorder()
+			c := e.NewContext(req, rec)
+			c.SetParamNames("nodeID", "commandID")
+			c.SetParamValues(nodeID, cmdID)
+			if agent {
+				c.Set(auth.ContextKeyNodeID, nodeID)
+			}
+			Expect(handler.UpdateStatus(c)).To(Succeed())
+			return rec
+		}
+
+		for _, agent := range []bool{false, true} {
+			agent := agent
+			who := "an admin"
+			if agent {
+				who = "an agent"
+			}
+
+			It("returns 400 to "+who+" for an unknown phase and leaves the command alone", func() {
+				cs.cmds = []*store.NodeCommand{
+					{ID: "cmd-1", ManagedNodeID: "node-1", Phase: store.CommandDelivered},
+				}
+				rec := put("node-1", "cmd-1", `{"phase":"Bogus","result":"x"}`, agent)
+				Expect(rec.Code).To(Equal(http.StatusBadRequest))
+				Expect(cs.cmds[0].Phase).To(Equal(store.CommandDelivered))
+				Expect(cs.cmds[0].Result).To(BeEmpty())
+			})
+
+			It("returns 409 to "+who+" moving a finished command back to Running and keeps its result", func() {
+				cs.cmds = []*store.NodeCommand{
+					{ID: "cmd-1", ManagedNodeID: "node-1", Phase: store.CommandCompleted, Result: "first"},
+				}
+				rec := put("node-1", "cmd-1", `{"phase":"Running","result":"later"}`, agent)
+				Expect(rec.Code).To(Equal(http.StatusConflict))
+				Expect(cs.cmds[0].Phase).To(Equal(store.CommandCompleted))
+				Expect(cs.cmds[0].Result).To(Equal("first"))
+			})
+
+			It("returns 200 to "+who+" repeating the terminal phase and keeps the first result", func() {
+				cs.cmds = []*store.NodeCommand{
+					{ID: "cmd-1", ManagedNodeID: "node-1", Phase: store.CommandFailed, Result: "first"},
+				}
+				rec := put("node-1", "cmd-1", `{"phase":"Failed","result":"second"}`, agent)
+				Expect(rec.Code).To(Equal(http.StatusOK))
+				Expect(cs.cmds[0].Phase).To(Equal(store.CommandFailed))
+				Expect(cs.cmds[0].Result).To(Equal("first"))
+			})
+		}
+
 		// Agent callers (node API key auth sets the node identity in context)
 		// may only update commands addressed to them. The path :nodeID has
 		// already been bound to the identity by RequireNodeMatch, so the risk
