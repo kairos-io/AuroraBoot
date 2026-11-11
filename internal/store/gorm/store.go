@@ -844,14 +844,15 @@ func (s *Store) ClaimForDelivery(ctx context.Context, id string) (bool, error) {
 }
 
 // UpdateStatus records a command's phase and result. A command that does not
-// exist surfaces as store.ErrCommandNotFound.
+// exist surfaces as store.ErrCommandNotFound, one that already ended in
+// another terminal phase as store.ErrCommandTerminal.
 func (s *Store) UpdateStatus(ctx context.Context, id string, phase string, result string) error {
 	n, err := s.updateStatus(ctx, phase, result, "id = ?", id)
 	if err != nil {
 		return err
 	}
 	if n == 0 {
-		return store.ErrCommandNotFound
+		return s.unwrittenStatus(ctx, phase, "id = ?", id)
 	}
 	return nil
 }
@@ -867,13 +868,33 @@ func (s *Store) UpdateStatusForNode(ctx context.Context, id string, nodeID strin
 		return err
 	}
 	if n == 0 {
-		return store.ErrCommandNotFound
+		return s.unwrittenStatus(ctx, phase, "id = ? AND managed_node_id = ?", id, nodeID)
 	}
 	return nil
 }
 
+// unwrittenStatus explains why updateStatus wrote no row. No matching command
+// is store.ErrCommandNotFound. A command that already ended in phase is a
+// repeated report and succeeds without a write; one that ended in another
+// terminal phase is store.ErrCommandTerminal.
+func (s *Store) unwrittenStatus(ctx context.Context, phase, where string, args ...any) error {
+	var cmd store.NodeCommand
+	err := s.db.WithContext(ctx).Select("phase").Where(where, args...).Take(&cmd).Error
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return store.ErrCommandNotFound
+	}
+	if err != nil {
+		return err
+	}
+	if cmd.Phase == phase {
+		return nil
+	}
+	return store.ErrCommandTerminal
+}
+
 // updateStatus writes phase and result to the commands matching where and
-// returns how many it wrote.
+// returns how many it wrote. A command already in a terminal phase never
+// matches, so the guard holds inside the same UPDATE that writes the row.
 //
 // A reset or upgrade that fails before the reboot leaves the pending state
 // CreateBatch set for it with nothing to settle it: the node never comes back
@@ -900,6 +921,7 @@ func (s *Store) updateStatus(ctx context.Context, phase, result, where string, a
 				{Name: "managed_node_id"}, {Name: "command"},
 			}}).
 			Where(where, args...).
+			Where("phase NOT IN ?", store.TerminalCommandPhases).
 			Updates(updates).Error; err != nil {
 			return err
 		}

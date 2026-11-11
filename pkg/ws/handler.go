@@ -350,11 +350,16 @@ func (h *AgentHandler) recordMetrics(nodeID string, raw json.RawMessage) {
 // handleCommandStatus applies a command_status report from the agent. The
 // update is scoped to nodeID — the node this WS connection authenticated as —
 // so a node cannot move another node's command by sending its id. A miss
-// (foreign or unknown command) is rejected without broadcasting.
+// (foreign or unknown command), an unknown phase, or a report on a command
+// that already finished is rejected without broadcasting.
 func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) {
 	var status commandStatusData
 	if err := json.Unmarshal(data, &status); err != nil {
 		log.Printf("ws invalid command_status: %v", err)
+		return
+	}
+	if !store.IsValidCommandPhase(status.Phase) {
+		log.Printf("ws: node %s reported unknown phase %q for command %s; ignored", nodeID, status.Phase, status.ID)
 		return
 	}
 
@@ -364,6 +369,8 @@ func (h *AgentHandler) handleCommandStatus(nodeID string, data json.RawMessage) 
 	if err := h.Commands.UpdateStatusForNode(ctx, status.ID, nodeID, status.Phase, status.Result); err != nil {
 		if errors.Is(err, store.ErrCommandNotFound) {
 			log.Printf("ws: node %s attempted to update command %s it does not own; rejected", nodeID, status.ID)
+		} else if errors.Is(err, store.ErrCommandTerminal) {
+			log.Printf("ws: node %s reported %s for command %s that already finished; ignored", nodeID, status.Phase, status.ID)
 		} else {
 			log.Printf("ws: failed to update command status for %s: %v", status.ID, err)
 		}
