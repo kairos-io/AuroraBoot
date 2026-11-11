@@ -480,29 +480,33 @@ var _ = Describe("Gorm batch settling", func() {
 		Expect(advance(id)).To(BeEmpty())
 	})
 
-	// Reproduces kairos-io/kairos#6003: a delivered command that never reports
-	// keeps its row running and its node busy after the batch is stopped, for
-	// as long as the node keeps sending heartbeats.
-	It("keeps a node busy after a hand stop when its delivered command never reports (kairos#6003)", func() {
+	It("times out a node that keeps sending heartbeats when its delivered command never reports after a hand stop", func() {
 		nodes := register(1)
 		id := newBatch(nodes, store.CmdExec, 1, true)
-		cmds := advance(id)
+		start := time.Now()
+		cmds := advanceAt(id, start)
 		claim(cmds[0].ID)
-		Expect(s.BatchStop(ctx, id, "stopped by the user", time.Now())).To(Succeed())
+		stopped := start.Add(5 * time.Minute)
+		Expect(s.BatchStop(ctx, id, "stopped by the user", stopped)).To(Succeed())
+		Expect(get(id).Nodes[0].Deadline).To(HaveValue(BeTemporally("~", stopped.Add(10*time.Minute), time.Second)))
 
-		// Two days later the node is still online and the command never reported.
-		later := time.Now().Add(48 * time.Hour)
+		heardFrom(nodes[0].ID, stopped.Add(9*time.Minute))
+		Expect(advanceAt(id, stopped.Add(9*time.Minute))).To(BeEmpty())
+		Expect(get(id).Nodes[0].State).To(Equal(store.BatchNodeRunning))
+
+		later := stopped.Add(48 * time.Hour)
 		heardFrom(nodes[0].ID, later)
 		Expect(advanceAt(id, later)).To(BeEmpty())
 
 		b := get(id)
 		Expect(b.Phase).To(Equal(store.BatchStopped))
-		Expect(b.FinishedAt).To(BeNil())
-		Expect(b.Nodes[0].State).To(Equal(store.BatchNodeRunning))
+		Expect(b.FinishedAt).NotTo(BeNil())
+		Expect(b.Nodes[0].State).To(Equal(store.BatchNodeTimedOut))
+		Expect(b.Nodes[0].Message).To(Equal("did not finish its command after the batch stopped"))
 		Expect(commandPhase(cmds[0].ID)).To(Equal(store.CommandDelivered))
 		busy, err := s.BatchBusyNodes(ctx, []string{nodes[0].ID})
 		Expect(err).NotTo(HaveOccurred())
-		Expect(busy).To(ConsistOf(nodes[0].ID))
+		Expect(busy).To(BeEmpty())
 	})
 
 	It("finishes a batch stopped by hand when no node holds a slot", func() {
