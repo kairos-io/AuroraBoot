@@ -99,7 +99,7 @@ definitions:
       rebootTimeoutSeconds:
         description: |-
           RebootTimeoutSeconds is how long a node that reboots may take to come
-          back. Defaults to 600.
+          back. Defaults to 600, at most 604800 (7 days).
         type: integer
       selector:
         $ref: '#/definitions/store.CommandSelector'
@@ -264,7 +264,7 @@ definitions:
       rebootTimeoutSeconds:
         description: |-
           RebootTimeoutSeconds is how long a node that reboots may take to come
-          back. Defaults to 600.
+          back. Defaults to 600, at most 604800 (7 days).
         type: integer
       stopOnFailure:
         description: StopOnFailure stops the batch when a node fails. Defaults to

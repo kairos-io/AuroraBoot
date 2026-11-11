@@ -125,7 +125,8 @@ type RolloutOptions struct {
 	// StopOnFailure stops the batch when a node fails. nil means true.
 	StopOnFailure *bool `json:"stopOnFailure,omitempty"`
 	// RebootTimeoutSeconds is how long a node that reboots may take to come
-	// back. 0 uses the server default.
+	// back. 0 uses the server default; the server rejects more than 604800
+	// (7 days).
 	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
 }
 

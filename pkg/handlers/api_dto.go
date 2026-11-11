@@ -171,7 +171,7 @@ type APIRolloutOptions struct {
 	// StopOnFailure stops the batch when a node fails. Defaults to true.
 	StopOnFailure *bool `json:"stopOnFailure,omitempty"`
 	// RebootTimeoutSeconds is how long a node that reboots may take to come
-	// back. Defaults to 600.
+	// back. Defaults to 600, at most 604800 (7 days).
 	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
 }
 
