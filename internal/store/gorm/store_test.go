@@ -412,6 +412,30 @@ var _ = Describe("Gorm Store", func() {
 			Expect(err).NotTo(HaveOccurred())
 			Expect(cmds).To(BeEmpty())
 		})
+
+		It("deletes a node's extension rows with the node", func() {
+			n := &store.ManagedNode{MachineID: "del-ext"}
+			Expect(s.Register(ctx, n)).To(Succeed())
+			other := &store.ManagedNode{MachineID: "keep-ext"}
+			Expect(s.Register(ctx, other)).To(Succeed())
+
+			for _, nodeID := range []string{n.ID, other.ID} {
+				Expect(s.NodeExtensionUpsert(ctx, &store.NodeExtensionRow{
+					NodeID: nodeID, Name: "foo", Type: "sysext", BootState: "active", Version: "1",
+				})).To(Succeed())
+			}
+
+			Expect(s.NodeDelete(ctx, n.ID)).To(Succeed())
+
+			rows, err := s.NodeExtensionListForNode(ctx, n.ID)
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rows).To(BeEmpty())
+
+			rows, err = s.NodeExtensionListForExtensionByName(ctx, "sysext", "foo")
+			Expect(err).NotTo(HaveOccurred())
+			Expect(rows).To(HaveLen(1))
+			Expect(rows[0].NodeID).To(Equal(other.ID))
+		})
 	})
 
 	Describe("CommandStore", func() {
