@@ -1,6 +1,9 @@
 package config_test
 
 import (
+	"os"
+	"path/filepath"
+
 	. "github.com/onsi/ginkgo/v2"
 	. "github.com/onsi/gomega"
 
@@ -55,6 +58,35 @@ var _ = Describe("ReadConfig --set handling", func() {
 		// from the release-artifact target. A nested map cannot fit a string.
 		_, _, err := config.ReadConfig("", "", []string{"container_image.nested=x"})
 		Expect(err).To(MatchError(ContainSubstring("applying --set values to release artifact")))
+	})
+
+	It("honours the deprecated insecure key from --set", func() {
+		c, _, err := config.ReadConfig("", "", []string{"insecure=true"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.AllowInsecureRegistriesBool()).To(BeTrue())
+		Expect(c.DeprecatedInsecure).To(BeFalse())
+	})
+
+	It("reads allow-insecure-registries from --set", func() {
+		c, _, err := config.ReadConfig("", "", []string{"allow-insecure-registries=true"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.AllowInsecureRegistriesBool()).To(BeTrue())
+	})
+
+	It("does not let --set insecure=true override an explicit allow-insecure-registries=false", func() {
+		c, _, err := config.ReadConfig("", "", []string{"insecure=true", "allow-insecure-registries=false"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.AllowInsecureRegistries).NotTo(BeNil())
+		Expect(c.AllowInsecureRegistriesBool()).To(BeFalse())
+	})
+
+	It("does not let --set insecure=true override allow-insecure-registries: false from the config file", func() {
+		f := filepath.Join(GinkgoT().TempDir(), "config.yaml")
+		Expect(os.WriteFile(f, []byte("allow-insecure-registries: false\n"), 0o600)).To(Succeed())
+		c, _, err := config.ReadConfig(f, "", []string{"insecure=true"})
+		Expect(err).NotTo(HaveOccurred())
+		Expect(c.AllowInsecureRegistries).NotTo(BeNil())
+		Expect(c.AllowInsecureRegistriesBool()).To(BeFalse())
 	})
 
 	It("accepts an empty option set", func() {

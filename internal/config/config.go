@@ -132,6 +132,8 @@ func ReadConfig(fileConfig, cloudConfig string, options []string) (*schema.Confi
 		}
 	}
 
+	c.HandleDeprecations(internal.Log)
+
 	if cloudConfig != "" {
 		var err error
 		c.CloudConfig, err = ReadCloudConfig(cloudConfig, templateValues)
