@@ -39,10 +39,10 @@ require (
 	github.com/twpayne/go-vfs/v5 v5.0.5
 	github.com/u-root/u-root v0.16.0
 	github.com/urfave/cli/v2 v2.27.7
-	golang.org/x/exp v0.0.0-20261106192419-47ce03d25ef0
-	golang.org/x/mod v0.42.0
-	golang.org/x/sync v0.24.0
-	golang.org/x/sys v0.49.0
+	golang.org/x/exp v0.0.0-20261109185158-a52e3aef5920
+	golang.org/x/mod v0.43.0
+	golang.org/x/sync v0.25.0
+	golang.org/x/sys v0.50.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 	gorm.io/driver/postgres v1.6.3
