@@ -2,5 +2,5 @@ package auroraboot
 
 const (
 	defaultKairosInitImage   = "quay.io/kairos/kairos-init"
-	defaultKairosInitVersion = "v4.4.0"
+	defaultKairosInitVersion = "v4.5.0"
 )
