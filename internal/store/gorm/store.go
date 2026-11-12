@@ -1161,7 +1161,12 @@ func (s *Store) ArtifactClearUploadToken(ctx context.Context, id string) error {
 }
 
 func (s *Store) ArtifactDelete(ctx context.Context, id string) error {
-	return s.db.WithContext(ctx).Delete(&store.ArtifactRecord{}, "id = ?", id).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("artifact_id = ?", id).Delete(&store.ArtifactExtensionBundle{}).Error; err != nil {
+			return err
+		}
+		return tx.Delete(&store.ArtifactRecord{}, "id = ?", id).Error
+	})
 }
 
 func (s *Store) ArtifactGetLogs(ctx context.Context, id string) (string, error) {
@@ -1173,7 +1178,13 @@ func (s *Store) ArtifactGetLogs(ctx context.Context, id string) (string, error) 
 }
 
 func (s *Store) ArtifactDeleteByPhase(ctx context.Context, phase string) error {
-	return s.db.WithContext(ctx).Where("phase = ?", phase).Delete(&store.ArtifactRecord{}).Error
+	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		ids := tx.Model(&store.ArtifactRecord{}).Select("id").Where("phase = ?", phase)
+		if err := tx.Where("artifact_id IN (?)", ids).Delete(&store.ArtifactExtensionBundle{}).Error; err != nil {
+			return err
+		}
+		return tx.Where("phase = ?", phase).Delete(&store.ArtifactRecord{}).Error
+	})
 }
 
 func (s *Store) ArtifactAppendLog(ctx context.Context, id string, text string) error {
