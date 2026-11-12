@@ -12,6 +12,11 @@ import (
 // succeeding on a foreign or non-existent command.
 var ErrCommandNotFound = errors.New("command not found")
 
+// ErrCommandTerminal is returned by command status updates when the command
+// already reached a terminal phase other than the one reported. A terminal
+// command is never moved again; repeating the phase it ended in is a no-op.
+var ErrCommandTerminal = errors.New("command already reached a terminal phase")
+
 // ErrNoClaimCapacity is returned by NodeStore.ClaimNode when the target group
 // has no unclaimed node available. It is a distinct, expected outcome — not a
 // failure — so a caller (e.g. a CAPI infrastructure provider) can surface
@@ -209,6 +214,19 @@ const (
 	CommandCanceled = "Canceled"
 )
 
+// TerminalCommandPhases are the phases a command can no longer move out of.
+var TerminalCommandPhases = []string{CommandCompleted, CommandFailed, CommandExpired, CommandCanceled}
+
+// IsValidCommandPhase reports whether phase is one of the known command phases.
+func IsValidCommandPhase(phase string) bool {
+	switch phase {
+	case CommandPending, CommandDelivered, CommandRunning,
+		CommandCompleted, CommandFailed, CommandExpired, CommandCanceled:
+		return true
+	}
+	return false
+}
+
 // IsTerminalCommandPhase reports whether a phase is one the command can no
 // longer move out of, so a caller can tell the rows that still have work
 // ahead of them from the ones that are only history.
@@ -362,12 +380,14 @@ type CommandStore interface {
 	// write, unless another command of the same kind still owns that state: a
 	// command that fails before the reboot never brings the node back with a
 	// boot state the re-register resolvers could settle it from. It returns
-	// ErrCommandNotFound when no command has the id.
+	// ErrCommandNotFound when no command has the id, and ErrCommandTerminal
+	// when the command already ended in another terminal phase.
 	UpdateStatus(ctx context.Context, id string, phase string, result string) error
 	// UpdateStatusForNode is UpdateStatus scoped to the commands of nodeID. It
 	// returns ErrCommandNotFound when no command matches both the
 	// command id and the owning node, so callers can fail closed (403/404)
-	// instead of silently succeeding on a foreign or missing command.
+	// instead of silently succeeding on a foreign or missing command, and
+	// ErrCommandTerminal like UpdateStatus.
 	UpdateStatusForNode(ctx context.Context, id string, nodeID string, phase string, result string) error
 	ListByNode(ctx context.Context, nodeID string) ([]*NodeCommand, error)
 	// ExpireBefore moves every command of nodeID that carries an ExpiresAt at

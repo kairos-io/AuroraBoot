@@ -480,12 +480,24 @@ func (f *fakeCommandStore) UpdateStatus(_ context.Context, id string, phase stri
 	defer f.mu.Unlock()
 	for _, cmd := range f.cmds {
 		if cmd.ID == id {
-			cmd.Phase = phase
-			cmd.Result = result
-			return nil
+			return applyFakeStatus(cmd, phase, result)
 		}
 	}
 	return store.ErrCommandNotFound
+}
+
+// applyFakeStatus models the gorm store's terminal guard: a finished command
+// keeps its phase and result, and repeating the phase it ended in is a no-op.
+func applyFakeStatus(cmd *store.NodeCommand, phase, result string) error {
+	if store.IsTerminalCommandPhase(cmd.Phase) {
+		if cmd.Phase == phase {
+			return nil
+		}
+		return store.ErrCommandTerminal
+	}
+	cmd.Phase = phase
+	cmd.Result = result
+	return nil
 }
 
 func (f *fakeCommandStore) UpdateStatusForNode(_ context.Context, id string, nodeID string, phase string, result string) error {
@@ -493,9 +505,7 @@ func (f *fakeCommandStore) UpdateStatusForNode(_ context.Context, id string, nod
 	defer f.mu.Unlock()
 	for _, cmd := range f.cmds {
 		if cmd.ID == id && cmd.ManagedNodeID == nodeID {
-			cmd.Phase = phase
-			cmd.Result = result
-			return nil
+			return applyFakeStatus(cmd, phase, result)
 		}
 	}
 	return store.ErrCommandNotFound

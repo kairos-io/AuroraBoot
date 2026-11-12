@@ -424,6 +424,9 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 	if req.Phase == "" {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "phase is required"})
 	}
+	if !store.IsValidCommandPhase(req.Phase) {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": "unknown phase"})
+	}
 
 	ctx := c.Request().Context()
 
@@ -434,6 +437,9 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 		err := h.commands.UpdateStatusForNode(ctx, commandID, authNodeID, req.Phase, req.Result)
 		if errors.Is(err, store.ErrCommandNotFound) {
 			return c.JSON(http.StatusForbidden, map[string]string{"error": "forbidden"})
+		}
+		if errors.Is(err, store.ErrCommandTerminal) {
+			return c.JSON(http.StatusConflict, map[string]string{"error": "command already finished"})
 		}
 		if err != nil {
 			return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update command status"})
@@ -453,6 +459,9 @@ func (h *CommandHandler) UpdateStatus(c echo.Context) error {
 	err := h.commands.UpdateStatusForNode(ctx, commandID, nodeID, req.Phase, req.Result)
 	if errors.Is(err, store.ErrCommandNotFound) {
 		return c.JSON(http.StatusNotFound, map[string]string{"error": "command not found"})
+	}
+	if errors.Is(err, store.ErrCommandTerminal) {
+		return c.JSON(http.StatusConflict, map[string]string{"error": "command already finished"})
 	}
 	if err != nil {
 		return c.JSON(http.StatusInternalServerError, map[string]string{"error": "failed to update command status"})
