@@ -178,6 +178,24 @@ var _ = Describe("Rolling batches", func() {
 		}
 	})
 
+	It("rejects a reboot timeout above the maximum", func() {
+		online(1)
+		for _, timeout := range []int{store.MaxRebootTimeoutSeconds + 1, 10000000000} {
+			resp := adminPost(testServerURL, "/api/v1/groups/"+groupID+"/commands", testAdminPassword,
+				map[string]any{"command": "reboot", "rebootTimeoutSeconds": timeout})
+			Expect(resp.StatusCode).To(Equal(http.StatusBadRequest))
+			var got map[string]any
+			decodeJSON(resp, &got)
+			Expect(got["error"]).To(Equal("rebootTimeoutSeconds must not exceed 604800 (7 days)"))
+		}
+	})
+
+	It("accepts a reboot timeout at the maximum", func() {
+		online(1)
+		batch := startGroup(map[string]any{"command": "reboot", "rebootTimeoutSeconds": store.MaxRebootTimeoutSeconds})
+		Expect(batch["rebootTimeoutSeconds"]).To(Equal(float64(store.MaxRebootTimeoutSeconds)))
+	})
+
 	It("rejects a single-node upgrade for a node in a running batch", func() {
 		online(2)
 		startGroup(map[string]any{"command": "exec", "args": map[string]string{"cmd": "true"}, "concurrency": 1})

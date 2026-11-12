@@ -420,6 +420,9 @@ func rebootTimeout(seconds int) time.Duration {
 	if seconds <= 0 {
 		seconds = store.DefaultRebootTimeoutSeconds
 	}
+	if seconds > store.MaxRebootTimeoutSeconds {
+		seconds = store.MaxRebootTimeoutSeconds
+	}
 	return time.Duration(seconds) * time.Second
 }
 

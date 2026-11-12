@@ -31,6 +31,10 @@ const (
 // back when the batch does not say.
 const DefaultRebootTimeoutSeconds = 600
 
+// MaxRebootTimeoutSeconds is the longest a batch may wait for a rebooting node
+// to come back: 7 days.
+const MaxRebootTimeoutSeconds = 7 * 24 * 60 * 60
+
 // IsFinalBatchNodeState reports whether a node in state takes no further part
 // in its batch.
 func IsFinalBatchNodeState(state string) bool {

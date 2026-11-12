@@ -2493,7 +2493,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "rebootTimeoutSeconds": {
-                    "description": "RebootTimeoutSeconds is how long a node that reboots may take to come\nback. Defaults to 600.",
+                    "description": "RebootTimeoutSeconds is how long a node that reboots may take to come\nback. Defaults to 600, at most 604800 (7 days).",
                     "type": "integer"
                 },
                 "selector": {
@@ -2720,7 +2720,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "rebootTimeoutSeconds": {
-                    "description": "RebootTimeoutSeconds is how long a node that reboots may take to come\nback. Defaults to 600.",
+                    "description": "RebootTimeoutSeconds is how long a node that reboots may take to come\nback. Defaults to 600, at most 604800 (7 days).",
                     "type": "integer"
                 },
                 "stopOnFailure": {

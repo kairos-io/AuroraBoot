@@ -86,7 +86,8 @@ type rolloutOptions struct {
 	// StopOnFailure stops the batch when a node fails. nil means true.
 	StopOnFailure *bool `json:"stopOnFailure,omitempty"`
 	// RebootTimeoutSeconds is how long a node that reboots may take to come
-	// back. 0 means store.DefaultRebootTimeoutSeconds.
+	// back. 0 means store.DefaultRebootTimeoutSeconds; at most
+	// store.MaxRebootTimeoutSeconds.
 	RebootTimeoutSeconds int `json:"rebootTimeoutSeconds,omitempty"`
 }
 
@@ -278,6 +279,9 @@ func (h *CommandHandler) startBatch(c echo.Context, command string, args map[str
 	}
 	if opts.Concurrency < 0 || opts.RebootTimeoutSeconds < 0 {
 		return c.JSON(http.StatusBadRequest, map[string]string{"error": "concurrency and rebootTimeoutSeconds must not be negative"})
+	}
+	if opts.RebootTimeoutSeconds > store.MaxRebootTimeoutSeconds {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": fmt.Sprintf("rebootTimeoutSeconds must not exceed %d (7 days)", store.MaxRebootTimeoutSeconds)})
 	}
 	stopOnFailure := true
 	if opts.StopOnFailure != nil {
