@@ -328,7 +328,7 @@ jobs:
           export RAW_IMAGE=$(find $PWD/build -name *.raw)
           go run github.com/onsi/ginkgo/v2/ginkgo run --label-filter "raw-bootable" -v --fail-fast -r ./e2e
   test-bootable-raw-efi-boot-active:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     needs: build-image
     strategy:
       fail-fast: false
