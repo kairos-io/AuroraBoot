@@ -35,13 +35,21 @@ func (s *oneArtifactStore) GetByID(_ context.Context, id string) (*store.Artifac
 var _ = Describe("Artifact download of a file name with escaped characters", func() {
 	const isoName = "kairos-hadron-v0.5.3-standard-amd64-generic-v4.3.0-k3sv1.37.2+k3s1.iso"
 
+	// File names with a literal "%". Sent with the "%" escaped as "%25", Go
+	// keeps no raw path and Echo hands over the decoded name already.
+	percentNames := []string{"50%.iso", "a+b%c.iso", "a%41.iso", "a%2Fb.iso", "plain+k3s1.iso"}
+
 	var app http.Handler
 
 	BeforeEach(func() {
 		artifactsDir := GinkgoT().TempDir()
 		dir := filepath.Join(artifactsDir, "a1")
 		Expect(os.MkdirAll(dir, 0o755)).To(Succeed())
-		Expect(os.WriteFile(filepath.Join(dir, isoName), []byte("iso"), 0o644)).To(Succeed())
+		var files []string
+		for _, name := range append([]string{isoName}, percentNames...) {
+			Expect(os.WriteFile(filepath.Join(dir, name), []byte("iso:"+name), 0o644)).To(Succeed())
+			files = append(files, filepath.Join(dir, name))
+		}
 
 		app = server.New(server.Config{
 			NodeStore:    &fakeNodeStore{},
@@ -50,7 +58,7 @@ var _ = Describe("Artifact download of a file name with escaped characters", fun
 			ArtifactStore: &oneArtifactStore{rec: &store.ArtifactRecord{
 				ID:            "a1",
 				Phase:         store.ArtifactReady,
-				ArtifactFiles: []string{filepath.Join(dir, isoName)},
+				ArtifactFiles: files,
 			}},
 			Builder:       &fakeBuilder{},
 			AdminPassword: "admin-pass",
@@ -77,7 +85,7 @@ var _ = Describe("Artifact download of a file name with escaped characters", fun
 		for _, name := range []string{isoName, escaped} {
 			rec := get("/api/v1/artifacts/a1/download/"+name, "admin-pass")
 			Expect(rec.Code).To(Equal(http.StatusOK), "%s: %s", name, rec.Body.String())
-			Expect(rec.Body.String()).To(Equal("iso"))
+			Expect(rec.Body.String()).To(Equal("iso:" + isoName))
 		}
 	})
 
@@ -101,9 +109,24 @@ var _ = Describe("Artifact download of a file name with escaped characters", fun
 		for _, path := range []string{link.Path, strings.Replace(link.Path, isoName, escaped, 1)} {
 			dl := get(path, "")
 			Expect(dl.Code).To(Equal(http.StatusOK), "%s: %s", path, dl.Body.String())
-			Expect(dl.Body.String()).To(Equal("iso"))
+			Expect(dl.Body.String()).To(Equal("iso:" + isoName))
 		}
 	})
+
+	DescribeTable("serves a file with a literal % in its name, decoded once",
+		func(path, name string) {
+			rec := get("/api/v1/artifacts/a1/download/"+path, "admin-pass")
+			Expect(rec.Code).To(Equal(http.StatusOK), rec.Body.String())
+			Expect(rec.Body.String()).To(Equal("iso:" + name))
+		},
+		Entry("50%.iso", "50%25.iso", "50%.iso"),
+		Entry("a+b%c.iso", "a+b%25c.iso", "a+b%c.iso"),
+		Entry("a%41.iso", "a%2541.iso", "a%41.iso"),
+		Entry("a%2Fb.iso", "a%252Fb.iso", "a%2Fb.iso"),
+		Entry("plain+k3s1.iso", "plain+k3s1.iso", "plain+k3s1.iso"),
+		// encodeURIComponent output: the %2B makes Go keep a raw path.
+		Entry("a+b%c.iso with + escaped", "a%2Bb%25c.iso", "a+b%c.iso"),
+	)
 
 	It("still refuses an escaped path separator", func() {
 		rec := get("/api/v1/artifacts/a1/download/..%2Fa1%2F"+escaped, "admin-pass")
