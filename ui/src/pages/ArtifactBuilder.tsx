@@ -403,7 +403,7 @@ const TEMPLATES: BuildTemplate[] = [
     },
   },
   {
-    name: "Fedora 40",
+    name: `Fedora ${FEDORA_VERSION}`,
     description: "Fedora base, auto-kairosified, ISO",
     values: {
       baseImage: `fedora:${FEDORA_VERSION}`,
@@ -415,7 +415,7 @@ const TEMPLATES: BuildTemplate[] = [
     },
   },
   {
-    name: "openSUSE Leap 15.6",
+    name: `openSUSE Leap ${OPENSUSE_LEAP_VERSION}`,
     description: "openSUSE Leap base, auto-kairosified, ISO",
     values: {
       baseImage: `opensuse/leap:${OPENSUSE_LEAP_VERSION}`,
