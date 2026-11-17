@@ -1,3 +1,41 @@
+> ## This repository has been archived pending migration into kairos-io/kairos
+>
+> AuroraBoot is being absorbed into the
+> [kairos-io/kairos](https://github.com/kairos-io/kairos) monorepo as
+> part of the plan tracked in
+> [kairos-io/kairos#4423](https://github.com/kairos-io/kairos/issues/4423).
+> The last standalone release is
+> [v0.31.0](https://github.com/kairos-io/AuroraBoot/releases/tag/v0.31.0).
+> Every existing tag, release, container image and Helm chart version stays
+> available where it is, so anything already published keeps working.
+>
+> New development happens at
+> [github.com/kairos-io/kairos/auroraboot](https://github.com/kairos-io/kairos/tree/master/auroraboot).
+> If that link returns 404, the subtree import is not yet complete; see
+> the tracking issue above for the current state and timeline.
+>
+> **To pick up newer AuroraBoot code,** use a Kairos release. From the move
+> on, AuroraBoot is released together with Kairos and carries the Kairos
+> version number, so the AuroraBoot that matches Kairos `vX.Y.Z` is the
+> one published with that release.
+>
+> **On pull requests and issues.** This repository no longer accepts them.
+> Open issues on
+> [kairos-io/kairos](https://github.com/kairos-io/kairos/issues) and send
+> code changes there, under `auroraboot/`.
+>
+> **On backports to older lines.** The default answer is: consume the
+> latest release. We will only unarchive this repository for fixes we
+> judge important enough (typically security fixes or breakage with no
+> reasonable workaround). Convenience backports and feature backports
+> do not qualify. To request one, open an issue on
+> [kairos-io/kairos](https://github.com/kairos-io/kairos/issues)
+> describing the AuroraBoot version, the fix, and why moving to the
+> latest release is not viable. If we agree the fix meets the bar, we
+> will unarchive temporarily to land it and cut a new patch tag.
+
+---
+
 <p align="center">
   <img src="docs/screenshots/dashboard-zero-state.png" alt="Kairos dashboard" width="820" />
 </p>
